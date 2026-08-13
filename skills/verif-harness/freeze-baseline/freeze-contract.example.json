@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "freeze_name": "stage5-verification-freeze",
+  "baseline_ref": "v0.1.0",
+  "rtl_root": "rtl",
+  "require_rtl_unchanged": true,
+  "required_evidence": [
+    "artifacts/regression/report.json",
+    "artifacts/coverage-closure.json",
+    "artifacts/assertion-closure.json",
+    "artifacts/change-control.json"
+  ],
+  "state_checks": [
+    {
+      "path": "artifacts/coverage-closure.json",
+      "key_path": [
+        "summary",
+        "state"
+      ],
+      "allowed": [
+        "READY_FOR_HUMAN_FREEZE_REVIEW"
+      ]
+    },
+    {
+      "path": "artifacts/assertion-closure.json",
+      "key_path": [
+        "summary",
+        "state"
+      ],
+      "allowed": [
+        "READY_FOR_HUMAN_FREEZE_REVIEW"
+      ]
+    }
+  ],
+  "include_files": [
+    ".harness-config.json",
+    "sim/docs/verification/verification_plan.md",
+    "sim/docs/verification/testcase_list.md"
+  ],
+  "tool_versions": {
+    "simulator": "reviewed simulator and version",
+    "uvm": "reviewed UVM version",
+    "verif-harness": "bundled skill revision"
+  }
+}

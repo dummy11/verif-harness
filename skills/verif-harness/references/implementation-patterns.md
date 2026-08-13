@@ -48,3 +48,37 @@ identity.
 A structural audit may report missing evidence, internal inconsistencies, or
 that a Human approval is already recorded. It cannot validate unavailable raw
 artifacts, approve waivers, resolve open questions, or sign off a stage.
+
+## Completion modes
+
+Completing a UVC or scoreboard means replacing structural TODOs with behavior
+that is fully declared in a reviewed contract. For ready/valid source drivers,
+declare clocking blocks, handshake signals, payload mappings, and timeout. For
+scoreboards, declare alignment, expected/actual expressions, masking,
+tolerance, residual policy, and no-compare behavior. An unsupported protocol or
+alignment scheme is an open design item, not a reason to generate guessed code.
+
+## Regression triage
+
+Preserve the primary log, original seed, same-seed rerun log, normalized failure
+signature, and matched classification rule. Regex-based classifications are
+triage candidates. Missing logs, missing reruns, mismatched seeds, and unknown
+signatures must stay visible blockers.
+
+## Coverage and assertion closure
+
+Tool-neutral JSON is an adapter contract, not a replacement for native
+simulator evidence. Coverage closure requires database identity, one status per
+planned item, nonzero hits for covered items, and complete approved-waiver
+metadata for exclusions. Assertion closure requires compile and bind evidence,
+nonzero attempts, failure counts, and vacuity handling. `READY_FOR_*_REVIEW`
+never means approved.
+
+## Change control and freeze manifests
+
+Every post-baseline changed file should map to a structured change request with
+explicit test, coverage, assertion, documentation, and regression impact. A
+freeze manifest should be created only from a clean Git commit, record the
+baseline and RTL diff policy, validate machine-readable evidence states, and
+hash every required artifact. Creating a manifest must not create a Git tag,
+push a branch, approve a gate, or authorize publication.

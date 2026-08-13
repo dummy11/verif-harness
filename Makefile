@@ -8,6 +8,7 @@ test:
 	python3 skills/verif-harness/tests/test_lifecycle_tools.py
 	python3 skills/verif-harness/add-regression-runner/scripts/test_regression_tools.py
 	python3 skills/verif-harness/tests/test_stage2plus_tools.py
+	python3 skills/verif-harness/tests/test_freeze_tools.py
 
 structure:
 	python3 scripts/check_structure.py

@@ -42,13 +42,33 @@ def main() -> int:
     if entries != expected_entries:
         failures.append(f"unexpected compile order: {entries}")
     skill = ROOT / "skills/verif-harness/SKILL.md"
-    if "oss-readiness" not in skill.read_text(encoding="utf-8"):
-        failures.append("bundled skill lacks oss-readiness mode")
+    skill_text = skill.read_text(encoding="utf-8")
+    modes = [
+        "init", "add-interface", "add-shared-pkg", "add-uvc-skeleton",
+        "add-harness-layer", "add-env-layer", "finalize-filelist-and-make",
+        "doctor", "add-regression-runner", "add-simulator-profile",
+        "add-testcase", "add-coverage-skeleton", "add-assertion-skeleton",
+        "add-refmodel-bridge", "complete-uvc", "complete-scoreboard",
+        "add-ci-hook", "add-performance-gate", "regression-triage",
+        "coverage-closure", "assertion-closure", "audit-traceability",
+        "change-control", "stage-gate-review", "signoff-audit",
+        "freeze-baseline", "oss-readiness", "patterns",
+    ]
+    for mode in modes:
+        if f"`{mode}" not in skill_text:
+            failures.append(f"bundled skill lacks mode: {mode}")
+    for mode in (
+        "add-simulator-profile", "complete-uvc", "complete-scoreboard",
+        "regression-triage", "coverage-closure", "assertion-closure",
+        "change-control", "freeze-baseline",
+    ):
+        if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
+            failures.append(f"mode lacks instructions: {mode}")
     for failure in failures:
         print(f"ERROR: {failure}")
     if failures:
         return 1
-    print(f"Structure check PASS: {len(entries)} simple_fifo sources")
+    print(f"Structure check PASS: {len(entries)} simple_fifo sources, {len(modes)} skill modes")
     return 0
 
 

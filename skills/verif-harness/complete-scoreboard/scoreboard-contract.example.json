@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "class_name": "demo_scoreboard",
+  "base_class": "uvm_scoreboard",
+  "expected_type": "demo_item",
+  "actual_type": "demo_item",
+  "alignment": "fifo",
+  "fields": [
+    {
+      "name": "data",
+      "kind": "exact",
+      "expected_expr": "expected_item.data",
+      "actual_expr": "actual_item.data"
+    },
+    {
+      "name": "flags",
+      "kind": "masked",
+      "expected_expr": "expected_item.flags",
+      "actual_expr": "actual_item.flags",
+      "mask_expr": "'hff"
+    },
+    {
+      "name": "latency",
+      "kind": "abs_tolerance",
+      "expected_expr": "expected_item.latency",
+      "actual_expr": "actual_item.latency",
+      "tolerance": 1
+    }
+  ],
+  "plan_refs": [
+    "reference_model_spec.md § comparison policy"
+  ]
+}

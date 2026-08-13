@@ -22,15 +22,23 @@ Support these explicit modes:
 - `finalize-filelist-and-make`
 - `doctor`
 - `add-regression-runner`
+- `add-simulator-profile`
 - `add-testcase`
 - `add-coverage-skeleton`
 - `add-assertion-skeleton`
 - `add-refmodel-bridge`
+- `complete-uvc`
+- `complete-scoreboard`
 - `add-ci-hook`
 - `add-performance-gate`
+- `regression-triage`
+- `coverage-closure`
+- `assertion-closure`
 - `audit-traceability`
+- `change-control`
 - `stage-gate-review <completed-stage>`
 - `signoff-audit <stage>`
+- `freeze-baseline`
 - `oss-readiness`
 - `patterns [topic]`
 
@@ -124,6 +132,13 @@ regression launcher, result collector, same-seed failed-only rerun support, and
 unit tests. Integrate with an existing Makefile only after inspecting its
 targets; do not replace a working project-specific launcher.
 
+### `add-simulator-profile`
+
+Read `add-simulator-profile/INSTRUCTIONS.md`. Generate a normalized simulator
+profile and Makefile fragment from reviewed command-token, capability,
+environment-key, and evidence contracts. A generated profile is configured,
+not tested or supported.
+
 ### `add-testcase`
 
 Read `add-testcase/INSTRUCTIONS.md`. Generate one test/vseq control skeleton
@@ -148,6 +163,20 @@ Read `add-refmodel-bridge/INSTRUCTIONS.md`. Generate a structural Syscan wrapper
 or DPI-C import package from a reviewed backend contract. Leave alignment,
 masking, numeric behavior, compare policy, and engagement proof project-specific.
 
+### `complete-uvc`
+
+Read `complete-uvc/INSTRUCTIONS.md`. Generate concrete ready/valid source driver
+and monitor behavior from explicit clocking-block, handshake, payload-mapping,
+timeout, and plan-reference inputs. Do not infer protocol semantics or apply
+this mode to unsupported protocols.
+
+### `complete-scoreboard`
+
+Read `complete-scoreboard/INSTRUCTIONS.md`. Generate a FIFO-aligned scoreboard
+with exact, masked, and absolute-tolerance comparisons from a reviewed contract.
+Alignment, masking, numeric policy, and reset flushing remain explicit project
+decisions.
+
 ### `add-ci-hook`
 
 Read `add-ci-hook/INSTRUCTIONS.md`. Generate a GitLab CI or Jenkins fragment
@@ -160,6 +189,27 @@ Read `add-performance-gate/INSTRUCTIONS.md`. Evaluate marked log records using
 a reviewed JSON contract with fixed operands and comparison operators. Do not
 invent metrics, formulas, thresholds, expected counts, or waivers.
 
+### `regression-triage`
+
+Read `regression-triage/INSTRUCTIONS.md`, then run
+`regression-triage/scripts/triage_regression.py`. Group failures with reviewed
+regex signatures and require same-seed rerun evidence. Classifications are
+candidates for Human triage, not automatic root causes or waivers.
+
+### `coverage-closure`
+
+Read `coverage-closure/INSTRUCTIONS.md`, then run
+`coverage-closure/scripts/audit_coverage_closure.py`. Audit a tool-neutral
+coverage export for plan completeness, hits, exclusions, waiver metadata,
+database identity, and total consistency. Readiness is not freeze approval.
+
+### `assertion-closure`
+
+Read `assertion-closure/INSTRUCTIONS.md`, then run
+`assertion-closure/scripts/audit_assertion_closure.py`. Audit compile,
+bind/elaboration, attempts, failures, vacuity, and waiver metadata. Zero
+failures with zero attempts is never closure.
+
 ### `audit-traceability`
 
 Read `audit-traceability/INSTRUCTIONS.md`, then run
@@ -167,6 +217,13 @@ Read `audit-traceability/INSTRUCTIONS.md`, then run
 default. Audit default-manifest entries, UVM test classes, testcase document
 references, and verification IDs. It may emit a report but must not change the
 plans or promote tests automatically.
+
+### `change-control`
+
+Read `change-control/INSTRUCTIONS.md`, then run
+`change-control/scripts/audit_change_control.py`. Audit structured post-baseline
+change requests, impact evidence, recorded decisions, and optional Git-diff
+coverage. Never approve a request or modify a frozen decision.
 
 ### `stage-gate-review <completed-stage>`
 
@@ -182,6 +239,13 @@ Read `signoff-audit/INSTRUCTIONS.md`, then run
 `signoff-audit/scripts/audit_signoff.py`. Audit sign-off packet structure,
 regression-manifest uniqueness, evidence topics, approval metadata, and Git RTL
 scope. `APPROVED_RECORDED` reports existing metadata; it is not a new approval.
+
+### `freeze-baseline`
+
+Read `freeze-baseline/INSTRUCTIONS.md`, then run
+`freeze-baseline/scripts/build_freeze_manifest.py`. On a clean Git commit,
+validate required evidence states and produce a SHA-256 manifest outside the
+repository for Human review. Never tag, push, approve, or publish.
 
 ### `oss-readiness`
 
@@ -216,9 +280,10 @@ Stage 2+ implementation and evidence contracts, read
 
 ## Scope boundary
 
-The skill implements Stage 0 and Stage 1 M1.1 scaffolding, additive Stage 2+
-control skeletons, explicit-contract generators/evaluators, regression
-infrastructure, structural audits, and gate-packet generation. Meaningful
-stimulus and all project semantics remain Human-reviewed project inputs.
-Generated structure, a clean audit, or recorded approval metadata never proves
-functional correctness and never grants approval.
+The 28 modes cover Stage 0 and Stage 1 M1.1 scaffolding, additive Stage 2+
+control skeletons, simulator/UVC/scoreboard completion, deterministic
+regression and triage, coverage/assertion/change closure, structural audits,
+gate packets, and a hash-anchored freeze candidate. Meaningful stimulus and all
+project semantics remain Human-reviewed project inputs. Generated structure, a
+clean audit, or recorded approval metadata never proves functional correctness
+and never grants approval.

@@ -5,6 +5,14 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Eight contract-driven lifecycle modes: simulator profiles, UVC completion,
+  scoreboard completion, regression triage, coverage closure, assertion
+  closure, change control, and freeze-baseline manifests.
+- A 28-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
+- Unit tests for all new generators and evidence auditors.
+
 ## [0.1.0] - 2026-08-13
 
 ### Added

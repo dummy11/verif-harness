@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "protocol": "ready_valid_source",
+  "item_type": "demo_item",
+  "driver_class": "demo_driver",
+  "driver_base": "uvm_driver #(demo_item)",
+  "driver_vif_type": "virtual demo_stream_if.driver",
+  "driver_vif_key": "vif",
+  "monitor_class": "demo_monitor",
+  "monitor_base": "uvm_monitor",
+  "monitor_vif_type": "virtual demo_stream_if.monitor",
+  "monitor_vif_key": "vif",
+  "driver_clocking": "driver_cb",
+  "monitor_clocking": "monitor_cb",
+  "valid_signal": "valid",
+  "ready_signal": "ready",
+  "timeout_cycles": 1000,
+  "mappings": [
+    {
+      "signal": "data",
+      "item_field": "data"
+    }
+  ],
+  "plan_refs": [
+    "verification_plan.md § ready/valid transfer"
+  ]
+}

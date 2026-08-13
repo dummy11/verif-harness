@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "tool": "simulator-name and version",
+  "database_ids": [
+    "coverage-db-sha256-or-run-id"
+  ],
+  "plan_items": [
+    {
+      "id": "COV.DEMO.001",
+      "status": "covered",
+      "hits": 4,
+      "plan_ref": "coverage_plan.md § demo"
+    },
+    {
+      "id": "COV.DEMO.002",
+      "status": "excluded",
+      "hits": 0,
+      "plan_ref": "coverage_plan.md § reserved encoding",
+      "waiver": {
+        "id": "CW-001",
+        "status": "Approved",
+        "reviewer": "Human reviewer",
+        "decision_date": "2026-01-01",
+        "rationale": "Reserved encoding is unreachable by specification."
+      }
+    }
+  ],
+  "reported": {
+    "covered": 1,
+    "excluded": 1,
+    "uncovered": 0,
+    "closure_percent": 100.0
+  }
+}

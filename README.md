@@ -51,7 +51,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 - Interface, SVA, bind, filelist, and smoke-test patterns.
 - A license-free `simple_fifo` example for Verilator.
 - Simulator-independent Python structure and public-release checks.
-- A bundled Codex skill for Stage 0 through sign-off workflows.
+- A bundled 28-mode Codex skill for Stage 0 through verification freeze.
 - GitHub CI, documentation deployment, and tagged-release automation.
 
 ## Requirements
@@ -141,6 +141,8 @@ $verif-harness Integrate this DUT into a verification environment.
 
 The skill reads repository instructions and RTL ports, but preserves the rule
 that DUT RTL and Human approval decisions are outside agent authority.
+See [docs/skill_modes.md](docs/skill_modes.md) for every mode, its purpose,
+usage, and recommended lifecycle position.
 
 ## Documentation
 

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "name": "verilator-lint",
+  "simulator": "verilator",
+  "version": "5.x",
+  "status": "configured",
+  "compile_tokens": [
+    "verilator",
+    "--lint-only",
+    "-f",
+    "{filelist}",
+    "--top-module",
+    "{top}"
+  ],
+  "run_tokens": [],
+  "environment_keys": [],
+  "capabilities": [
+    "systemverilog-lint"
+  ],
+  "evidence_paths": [
+    "artifacts/verilator/lint.log"
+  ]
+}

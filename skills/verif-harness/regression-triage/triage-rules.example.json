@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "acceptable_verdicts": [
+    "PASS",
+    "PASS-LIVE"
+  ],
+  "rules": [
+    {
+      "name": "compile_or_elaboration",
+      "candidate_classification": "INFRASTRUCTURE",
+      "patterns": [
+        "(?i)compile(?:r)? error",
+        "(?i)elaboration failed"
+      ]
+    },
+    {
+      "name": "scoreboard_mismatch",
+      "candidate_classification": "FUNCTIONAL",
+      "patterns": [
+        "(?i)(?:scoreboard|compare).*mismatch"
+      ]
+    }
+  ]
+}

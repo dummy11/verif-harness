@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "baseline_ref": "v0.1.0",
+  "changes": [
+    {
+      "id": "CR-001",
+      "status": "approved",
+      "description": "Add reviewed verification-only protocol coverage.",
+      "files": [
+        "sim/testbench/coverage/demo_coverage.svh"
+      ],
+      "reviewer": "Human reviewer",
+      "decision_date": "2026-01-01",
+      "rationale": "Required by the approved coverage plan.",
+      "impact": {
+        "tests": [
+          "demo_protocol_test"
+        ],
+        "coverage_ids": [
+          "COV.DEMO.001"
+        ],
+        "assertion_ids": [],
+        "docs": [
+          "sim/docs/verification/coverage_plan.md"
+        ],
+        "regressions": [
+          "nightly/demo_protocol_test seed 1 PASS"
+        ]
+      }
+    }
+  ]
+}

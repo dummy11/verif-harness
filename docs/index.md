@@ -9,6 +9,7 @@ optional Codex-assisted workflow.
 - [DUT integration](dut_integration.md)
 - [Compile flow](compile_flow.md)
 - [Simulator support](simulator_support.md)
+- [Codex skill modes](skill_modes.md)
 - [Troubleshooting](troubleshooting.md)
 
 The executable example is documented in `examples/simple_fifo/README.md` at

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tool": "simulator-name and version",
+  "compile_log": "artifacts/assertions/compile.log",
+  "elaboration_log": "artifacts/assertions/elaboration.log",
+  "assertions": [
+    {
+      "id": "SVA.DEMO.001",
+      "compiled": true,
+      "bound": true,
+      "attempts": 12,
+      "passes": 12,
+      "failures": 0,
+      "vacuous": false,
+      "plan_ref": "assertion_plan.md § handshake stability"
+    }
+  ]
+}
