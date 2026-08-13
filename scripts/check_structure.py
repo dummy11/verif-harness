@@ -64,6 +64,28 @@ def main() -> int:
     ):
         if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
             failures.append(f"mode lacks instructions: {mode}")
+    skill_docs = [
+        "skills/verif-harness/README.md",
+        "skills/verif-harness/docs/user_guide.md",
+        "skills/verif-harness/docs/architecture.md",
+        "skills/verif-harness/docs/troubleshooting.md",
+    ]
+    for relative in skill_docs:
+        if not (ROOT / relative).is_file():
+            failures.append(f"missing skill documentation: {relative}")
+        elif relative.startswith("skills/verif-harness/docs/"):
+            content = (ROOT / relative).read_text(encoding="utf-8")
+            if not any("\u4e00" <= character <= "\u9fff" for character in content):
+                failures.append(f"skill documentation is not Chinese: {relative}")
+    guide = ROOT / "skills/verif-harness/docs/user_guide.md"
+    if guide.is_file():
+        guide_text = guide.read_text(encoding="utf-8")
+        for mode in modes:
+            if f"`{mode}" not in guide_text:
+                failures.append(f"skill user guide lacks mode: {mode}")
+        for label in ("**用途**", "**适用场景**", "**输入**", "**用法**", "**输出**"):
+            if guide_text.count(label) < len(modes):
+                failures.append(f"skill user guide lacks per-mode field: {label}")
     for failure in failures:
         print(f"ERROR: {failure}")
     if failures:

@@ -267,6 +267,11 @@ Stage 2+ implementation and evidence contracts, read
 
 ## Resource map
 
+- `README.md`: 中文模式目录、快速用法和权限边界。
+- `docs/user_guide.md`: 中文 Stage 0→freeze 流程，以及 28 个模式的输入、
+  输出、用法、用途、场景和人工检查点。
+- `docs/architecture.md`: 中文模式分层、数据流、证据状态和权限架构。
+- `docs/troubleshooting.md`: 中文常见故障、false-green 风险和恢复方法。
 - `references/stage1-patterns.md`: compile order, layering, bind, and M1.1
   conventions.
 - `references/regression-patterns.md`: result contract, seed policy,

@@ -12,6 +12,8 @@ Versioning.
   closure, change control, and freeze-baseline manifests.
 - A 28-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
 - Unit tests for all new generators and evidence auditors.
+- A Chinese skill documentation set with a 28-mode README, detailed
+  Stage 0-to-freeze user guide, architecture, and troubleshooting guide.
 
 ## [0.1.0] - 2026-08-13
 

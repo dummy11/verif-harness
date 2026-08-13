@@ -141,6 +141,10 @@ $verif-harness Integrate this DUT into a verification environment.
 
 The skill reads repository instructions and RTL ports, but preserves the rule
 that DUT RTL and Human approval decisions are outside agent authority.
+The bundled Chinese [skill README](skills/verif-harness/README.md) provides the
+quick-start catalog, while its
+[complete user guide](skills/verif-harness/docs/user_guide.md) documents every
+mode's inputs, outputs, usage, scenarios, and Human review points.
 See [docs/skill_modes.md](docs/skill_modes.md) for every mode, its purpose,
 usage, and recommended lifecycle position.
 
