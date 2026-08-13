@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install Verilator and documentation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator
+          python -m pip install --requirement requirements-docs.txt
+      - name: Record tools
+        run: |
+          python --version
+          verilator --version
+      - name: Run structure, unit, and public-release checks
+        run: make check
+      - name: Run executable example
+        run: make example
+      - name: Build documentation
+        run: make docs

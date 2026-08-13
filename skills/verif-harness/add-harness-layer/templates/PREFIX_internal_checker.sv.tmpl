@@ -1,0 +1,16 @@
+// <verif_root>/testbench/top/sva/<PREFIX>_internal_checker.sv
+// Internal design-intent checkers — bound to DUT internal hierarchy in later milestones.
+// Milestone 1.1: module definitions only, no bind statements (real bind requires stable
+// probe signals inside RTL, deferred until Milestone 1.4+ per project plan).
+//
+// Future bind targets (project-specific, edit these when populating):
+//   bind <DUT_TOP>.<internal_fifo_inst> <PREFIX>_internal_fifo_checker u_x (.*);
+//   bind <DUT_TOP>.<internal_ctrl_inst> <PREFIX>_internal_ctrl_checker u_y (.*);
+
+module <PREFIX>_internal_fifo_checker ();
+  // Stage 3: FIFO wfull / rempty transitions, A.FIFO.* assertions.
+endmodule
+
+module <PREFIX>_internal_ctrl_checker ();
+  // Stage 3: control FSM state assertions.
+endmodule

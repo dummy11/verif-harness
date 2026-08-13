@@ -1,0 +1,15 @@
+# <verif_root>/filelist/sim.f
+# Top-level filelist for VCS elab; combines rtl.f + tb.f + tool options.
+
+# Common flags
++define+UVM_NO_DEPRECATED
+-ntb_opts uvm-1.2
+
+# RTL sources
+-f <verif_root>/filelist/rtl.f
+
+# TB sources
+-f <verif_root>/filelist/tb.f
+
+# Top module for elaboration
+-top <PREFIX>_tb_top

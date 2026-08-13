@@ -1,0 +1,33 @@
+# Neutral worked example shared by add-interface and add-harness-layer.
+# Place at <verif_root>/docs/verification/harness-spec.yaml and adapt only from
+# an approved DUT interface specification.
+
+prefix: demo
+dut_top: demo_fifo
+
+interfaces:
+  - name: ctrl_if
+    input_args: []
+    signals:
+      - {name: clk, width: 1, dir: clkrst}
+      - {name: rst_n, width: 1, dir: clkrst}
+    ports: [clk, rst_n]
+
+  - name: fifo_if
+    parameters:
+      - {name: DATA_WIDTH, default: 8}
+    input_args: [clk, rst_n]
+    signals:
+      - {name: push, width: 1, dir: to-dut}
+      - {name: write_data, width: "[DATA_WIDTH-1:0]", dir: to-dut}
+      - {name: full, width: 1, dir: from-dut}
+      - {name: pop, width: 1, dir: to-dut}
+      - {name: read_data, width: "[DATA_WIDTH-1:0]", dir: from-dut}
+      - {name: empty, width: 1, dir: from-dut}
+    ports: [push, write_data, full, pop, read_data, empty]
+
+straps: []
+status_probes: []
+variants:
+  - name: default
+    defines: []

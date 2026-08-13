@@ -1,0 +1,9 @@
+build/
+dist/
+site/
+__pycache__/
+*.pyc
+*.vcd
+*.fst
+.DS_Store
+.venv/

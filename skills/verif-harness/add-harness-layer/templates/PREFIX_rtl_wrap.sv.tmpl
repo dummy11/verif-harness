@@ -1,0 +1,33 @@
+// <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_rtl_wrap.sv
+// Pure port-mapping wrapper: interface signals ↔ DUT top port list.
+// See references/stage1-patterns.md § 4.1 for scope discipline
+// (this file must contain zero UVM code and zero decisions).
+
+module <PREFIX>_rtl_wrap (
+  // >>> GENERATED_WRAP_PORTS <<<
+  // Generator emits one `<if_type>.dut_mp <name>` line per protocol interface
+  // in the harness-spec. Example:
+  //   <PREFIX>_ctrl_if.dut_mp                     ctrl,
+  //   <PREFIX>_data_in_if.dut_mp                  din,
+  //   <PREFIX>_data_out_if.dut_mp                 dout,
+  //   <PREFIX>_sram_if.dut_mp                     ws_sram,
+  //   <PREFIX>_sram_if.dut_mp                     scale_sram
+);
+  <DUT_TOP> u_dut (
+    // >>> GENERATED_PORT_MAP <<<
+    // Generator emits one `.<dut_port>(<if_name>.<field>)` line per DUT port
+    // (from rtl_parser.py output, mapped via harness-spec's interface groupings +
+    // port_map overrides). Example format:
+    //     .clk                    (ctrl.clk),
+    //     .rst_n                  (ctrl.rst_n),
+    //     .compute_start          (ctrl.compute_start),
+    //     .s_acc_vld              (din.vld),
+    //     .s_acc_rdy              (din.rdy),
+    //     .s_acc_data             (din.data),
+    //     .weight_sum_rden        (ws_sram.rden),
+    //     .weight_sum_data        (ws_sram.rdata),
+    //     ...
+    //     .mac_acc_fifo_underflow (dout.exc_underflow)
+    // Preserve original DUT port order. No trailing comma on last line.
+  );
+endmodule

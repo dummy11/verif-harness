@@ -1,0 +1,21 @@
+{
+  "class_name": "demo_cov_model",
+  "base_class": "uvm_component",
+  "fields": [
+    {"type": "int unsigned", "name": "sample_value"}
+  ],
+  "covergroups": [
+    {
+      "name": "cg_demo",
+      "plan_refs": ["coverage_plan.md § demo"],
+      "coverpoints": [
+        {
+          "name": "cp_demo",
+          "expression": "sample_value",
+          "bins": ["bins low = {[0:3]};", "bins high = {[4:7]};"]
+        }
+      ],
+      "crosses": []
+    }
+  ]
+}

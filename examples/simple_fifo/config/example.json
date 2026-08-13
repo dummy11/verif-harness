@@ -1,0 +1,5 @@
+{
+  "top": "simple_fifo_tb_top",
+  "filelist": "examples/simple_fifo/filelists/simple_fifo.f",
+  "expected_marker": "SIMPLE_FIFO_SMOKE PASS"
+}

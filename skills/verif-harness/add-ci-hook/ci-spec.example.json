@@ -1,0 +1,13 @@
+{
+  "provider": "gitlab",
+  "job_name": "rtl_smoke",
+  "stage": "verify",
+  "tags": ["eda"],
+  "timeout": "2h",
+  "variables": {"GIT_STRATEGY": "fetch"},
+  "commands": [
+    "make -C sim/regress compile",
+    "make -C sim/regress smoke GIT_PULL=0"
+  ],
+  "artifacts": ["sim/output/**/run.log", "sim/output/**/report.*"]
+}

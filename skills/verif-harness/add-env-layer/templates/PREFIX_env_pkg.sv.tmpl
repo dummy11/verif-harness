@@ -1,0 +1,23 @@
+// <verif_root>/testbench/env/<PREFIX>_env_pkg.sv
+// Env package — includes env_cfg / vseqr / env / scoreboard / cov_collector.
+// Depends on: uvm + tb_pkg + pack_pkg + harness_api_pkg + all UVC packages.
+
+package <PREFIX>_env_pkg;
+  import uvm_pkg::*;
+  import <PREFIX>_tb_pkg::*;
+  import <PREFIX>_pack_pkg::*;
+  import <PREFIX>_harness_api_pkg::*;
+// >>> GENERATED_UVC_IMPORTS <<<
+// One `import <PREFIX>_<name>_agent_pkg::*;` per UVC. Example (acc):
+//   import <PREFIX>_ctrl_agent_pkg::*;
+//   import <PREFIX>_data_in_agent_pkg::*;
+//   import <PREFIX>_data_out_agent_pkg::*;
+//   import <PREFIX>_sram_agent_pkg::*;
+  `include "uvm_macros.svh"
+
+  `include "<PREFIX>_env_cfg.svh"
+  `include "<PREFIX>_virtual_sequencer.svh"
+  `include "<PREFIX>_scoreboard.svh"
+  `include "<PREFIX>_cov_collector.svh"
+  `include "<PREFIX>_env.svh"
+endpackage

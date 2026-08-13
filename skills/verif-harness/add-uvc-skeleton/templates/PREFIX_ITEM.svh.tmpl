@@ -1,0 +1,21 @@
+// <agent_dir>/<PREFIX>_<ITEM_NAME>.svh
+// Transaction item for <AGENT_SHORT> UVC. M1.1 skeleton — no rand fields yet.
+// M1.3+ fills constraints per acc_constraints.md or equivalent DUT spec.
+
+class <PREFIX>_<ITEM_NAME> extends uvm_sequence_item;
+  `uvm_object_utils(<PREFIX>_<ITEM_NAME>)
+
+// >>> GENERATED_RAND_FIELDS <<<
+// Optional — for M1.1 skeleton, none required. Later milestones add:
+//   rand bit [2:0]  ifm_dtype;
+//   rand bit [4:0]  weight_dtype;
+//   ... (from harness-spec.yaml `item_fields:` or design docs)
+
+  function new(string name = "<PREFIX>_<ITEM_NAME>");
+    super.new(name);
+  endfunction
+
+// >>> GENERATED_CONSTRAINTS <<<
+// M1.3+ adds `constraint c_<name> { ... }` blocks; empty at M1.1 skeleton.
+
+endclass

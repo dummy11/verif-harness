@@ -1,0 +1,65 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_if.sv
+// Environment control interface: reset / DFT / status + cycle-accurate tasks.
+// See references/stage1-patterns.md § 4.2 (tb_harness/) and § 4.3 (single-source rules).
+
+interface <PREFIX>_harness_if (
+  input logic clk
+);
+  // Control signals (env → harness → DUT / DFT)
+  logic rst_n;
+  logic test_mode;         // routed by <PREFIX>_dut_harness to ctrl_if.ptest_icg_mode
+  logic scan_enable;       // static, default 0
+  logic mbist_enable;      // static, default 0
+  logic clk_always_on;     // routed by <PREFIX>_dut_harness to ctrl_if.clk_always_on
+
+  // Status signals (DUT / harness → env, aggregated in <PREFIX>_dut_harness)
+  logic dut_compute_done;
+  logic dut_output_drained;
+  logic dut_hung;          // Stage 2+ optional; M1.1 ties 1'b0
+
+  // ---- Cycle-accurate tasks (Milestone 1.1: signatures + body; refinement in 1.2+) ----
+
+  task automatic apply_cold_reset(
+    input int unsigned assert_cycles  = 10,
+    input int unsigned release_cycles = 3
+  );
+    rst_n <= 1'b0;
+    repeat (assert_cycles)  @(posedge clk);
+    rst_n <= 1'b1;
+    repeat (release_cycles) @(posedge clk);
+  endtask
+
+  task automatic wait_compute_done(
+    input int unsigned timeout_cycles = 100_000
+  );
+    int unsigned cnt = 0;
+    while (!dut_compute_done) begin
+      @(posedge clk);
+      if (++cnt >= timeout_cycles) begin
+        $fatal(1, "[<PREFIX>_HARNESS] wait_compute_done timeout after %0d cycles",
+               timeout_cycles);
+      end
+    end
+  endtask
+
+  task automatic wait_output_drain(
+    input int unsigned timeout_cycles = 10_000
+  );
+    int unsigned cnt = 0;
+    while (!dut_output_drained) begin
+      @(posedge clk);
+      if (++cnt >= timeout_cycles) begin
+        $fatal(1, "[<PREFIX>_HARNESS] wait_output_drain timeout after %0d cycles",
+               timeout_cycles);
+      end
+    end
+  endtask
+
+  function automatic bit is_compute_done();
+    return dut_compute_done;
+  endfunction
+
+  function automatic bit is_output_drained();
+    return dut_output_drained;
+  endfunction
+endinterface

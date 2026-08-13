@@ -1,0 +1,28 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_monitor.svh
+// Monitor for <AGENT_SHORT> UVC. M1.1 skeleton — empty run_phase.
+// M1.3+ implements sampling → analysis_port write on handshake.
+
+class <PREFIX>_<AGENT_SHORT>_monitor extends uvm_monitor;
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_monitor)
+
+  virtual <PREFIX>_<IFACE_NAME>       vif;
+  <PREFIX>_<AGENT_SHORT>_agent_cfg    cfg;
+
+  uvm_analysis_port #(<PREFIX>_<ITEM_NAME>) ap;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+    ap = new("ap", this);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    // M1.3+ will fetch vif via uvm_config_db.
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    // M1.3+ will implement sampling loop.
+    // Trigger point (per tb_architecture.md § <AGENT_SHORT>_agent):
+    //   e.g. @(posedge vif.<clk>); if (<handshake_condition>) ap.write(item);
+  endtask
+endclass

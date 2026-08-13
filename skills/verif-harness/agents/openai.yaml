@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verification Harness"
+  short_description: "Build, audit, and publish RTL verification workflows"
+  default_prompt: "Use $verif-harness to inspect this RTL verification project and recommend the next safe mode."

@@ -1,0 +1,33 @@
+// <verif_root>/testbench/env/<PREFIX>_scoreboard.svh
+// Scoreboard with analysis_imp per source. M1.1 skeleton — write bodies empty.
+// M1.5+ implements pass-through beat counter; Stage 2 adds refmodel compare.
+// See references/stage1-patterns.md § 7 for suffix convention.
+
+// >>> GENERATED_IMP_DECLS <<<
+// One `uvm_analysis_imp_decl(_<suffix>)` per analysis source. Example (acc):
+//   `uvm_analysis_imp_decl(_config)
+//   `uvm_analysis_imp_decl(_input)
+//   `uvm_analysis_imp_decl(_output)
+//   `uvm_analysis_imp_decl(_exception)
+//   `uvm_analysis_imp_decl(_sram_ws)
+//   `uvm_analysis_imp_decl(_sram_scale)
+
+class <PREFIX>_scoreboard extends uvm_component;
+  `uvm_component_utils(<PREFIX>_scoreboard)
+
+// >>> GENERATED_IMP_FIELDS <<<
+// Typed handle per suffix. Example:
+//   uvm_analysis_imp_config     #(<PREFIX>_cfg_item,             <PREFIX>_scoreboard) ap_config;
+//   uvm_analysis_imp_input      #(<PREFIX>_psum_item,            <PREFIX>_scoreboard) ap_input;
+//   ...
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+// >>> GENERATED_IMP_NEWS <<<
+// One `ap_<suffix> = new("ap_<suffix>", this);` per imp field.
+  endfunction
+
+// >>> GENERATED_WRITE_BODIES <<<
+// One empty `function void write_<suffix>(<item> t); endfunction` per suffix.
+// M1.5+ fills these with counter logic / refmodel calls.
+endclass

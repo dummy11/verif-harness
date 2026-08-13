@@ -1,0 +1,33 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_agent.svh
+// Top agent for parameterized UVC — holds N sub-agents, one per concrete
+// interface instance (e.g. ws WIDTH=352 + scale WIDTH=256 for acc sram).
+
+class <PREFIX>_<AGENT_SHORT>_agent extends uvm_agent;
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_agent)
+
+  <PREFIX>_<AGENT_SHORT>_agent_cfg cfg;
+// >>> GENERATED_SUB_AGENT_HANDLES <<<
+// One `<PREFIX>_<AGENT_SHORT>_sub_agent #(<WIDTH>) <inst_name>;` per
+// instance in harness-spec.yaml. Example (acc sram):
+//   <PREFIX>_sram_sub_agent #(352) ws_sub_agent;
+//   <PREFIX>_sram_sub_agent #(256) scale_sub_agent;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+
+    if (!uvm_config_db#(<PREFIX>_<AGENT_SHORT>_agent_cfg)::get(this, "", "cfg", cfg)) begin
+      `uvm_fatal("NO_CFG", "<PREFIX>_<AGENT_SHORT>_agent_cfg not set")
+    end
+
+    if (cfg.is_active) begin
+// >>> GENERATED_SUB_AGENT_CREATE <<<
+// One create() per instance. Example (acc sram):
+//   ws_sub_agent    = <PREFIX>_sram_sub_agent #(352)::type_id::create("ws_sub_agent",    this);
+//   scale_sub_agent = <PREFIX>_sram_sub_agent #(256)::type_id::create("scale_sub_agent", this);
+    end
+  endfunction
+endclass

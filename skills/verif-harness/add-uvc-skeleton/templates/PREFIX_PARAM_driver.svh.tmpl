@@ -1,0 +1,21 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_driver.svh
+// Parameterized driver for <AGENT_SHORT> UVC (sram-style memory-model agent).
+// One driver class parameterized on WIDTH — used by each concrete sub_agent.
+// M1.1 skeleton; M1.4+ implements memory model + 1-cycle rdata response
+// (per stage1-patterns.md § LD5 strict-1-cycle latency rule).
+
+class <PREFIX>_<AGENT_SHORT>_driver #(parameter int WIDTH = <DEFAULT_WIDTH>)
+  extends uvm_driver #(<PREFIX>_<ITEM_NAME>);
+  `uvm_component_param_utils(<PREFIX>_<AGENT_SHORT>_driver#(WIDTH))
+
+  // Internal memory model (M1.4+ populates + advances read pointer)
+  logic [WIDTH-1:0] mem [$];
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    // M1.4+ will implement rden → 1-cycle rdata response.
+  endtask
+endclass

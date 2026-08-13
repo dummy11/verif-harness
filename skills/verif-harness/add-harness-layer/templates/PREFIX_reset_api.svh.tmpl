@@ -1,0 +1,14 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_reset_api.svh
+// Reset sub-API (env control layer). Wraps interface's apply_cold_reset task.
+
+class <PREFIX>_reset_api;
+  virtual <PREFIX>_harness_if vif;
+
+  function new(virtual <PREFIX>_harness_if vif);
+    this.vif = vif;
+  endfunction
+
+  task cold_reset(int unsigned cycles = 10);
+    vif.apply_cold_reset(cycles);
+  endtask
+endclass

@@ -1,0 +1,100 @@
+# <verif_root>/filelist/tb.f
+# Testbench compile list.
+# Order strict per stage1-patterns.md § 1.3 (interface → shared pkg → api pkg
+# → UVC pkgs → env pkg → test pkg → structural modules → SVA → clkrst → tb_top).
+
+# ============================================================================
+# +incdir — every directory containing .svh a package will include.
+# ============================================================================
+# >>> GENERATED_INCDIRS <<<
+# One `+incdir+<path>` per UVC dir + `seq/` sub-dir + env + test + pkg +
+# tb_harness. Example (acc):
+#   +incdir+<verif_root>/testbench/uvc/ctrl_agent
+#   +incdir+<verif_root>/testbench/uvc/ctrl_agent/seq
+#   +incdir+<verif_root>/testbench/uvc/data_in_agent
+#   +incdir+<verif_root>/testbench/uvc/data_in_agent/seq
+#   +incdir+<verif_root>/testbench/uvc/data_out_agent
+#   +incdir+<verif_root>/testbench/uvc/data_out_agent/seq
+#   +incdir+<verif_root>/testbench/uvc/sram_agent
+#   +incdir+<verif_root>/testbench/uvc/sram_agent/seq
+#   +incdir+<verif_root>/testbench/env
+#   +incdir+<verif_root>/testbench/env/vseq
+#   +incdir+<verif_root>/testbench/test
+#   +incdir+<verif_root>/testbench/pkg
+#   +incdir+<verif_root>/testbench/top/harness/tb_harness
+
+# ============================================================================
+# 1) Interfaces ($unit CU, must be first — populate $unit scope with type names)
+# ============================================================================
+# >>> GENERATED_INTERFACES <<<
+# One .sv per protocol interface, plus <prefix>_harness_if.sv. Example:
+#   <verif_root>/testbench/top/if/<PREFIX>_ctrl_if.sv
+#   <verif_root>/testbench/top/if/<PREFIX>_data_in_if.sv
+#   <verif_root>/testbench/top/if/<PREFIX>_data_out_if.sv
+#   <verif_root>/testbench/top/if/<PREFIX>_sram_if.sv
+#   <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_if.sv
+
+# ============================================================================
+# 2) uvm_pkg is provided by tool (-ntb_opts uvm-1.2)
+# ============================================================================
+
+# ============================================================================
+# 3) Shared packages (typedef/enum + pack functions)
+# ============================================================================
+# >>> GENERATED_SHARED_PKGS <<<
+#   <verif_root>/testbench/pkg/<PREFIX>_tb_pkg.sv
+#   <verif_root>/testbench/pkg/<PREFIX>_pack_pkg.sv
+
+# ============================================================================
+# 4a) tb_harness API package (BEFORE env_pkg; env_cfg references its type)
+# ============================================================================
+# >>> GENERATED_HARNESS_API_PKG <<<
+#   <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_api_pkg.sv
+
+# ============================================================================
+# 4b) UVC packages
+# ============================================================================
+# >>> GENERATED_UVC_PKGS <<<
+# One <PREFIX>_<name>_agent_pkg.sv per UVC. Example:
+#   <verif_root>/testbench/uvc/ctrl_agent/<PREFIX>_ctrl_agent_pkg.sv
+#   <verif_root>/testbench/uvc/data_in_agent/<PREFIX>_data_in_agent_pkg.sv
+#   <verif_root>/testbench/uvc/data_out_agent/<PREFIX>_data_out_agent_pkg.sv
+#   <verif_root>/testbench/uvc/sram_agent/<PREFIX>_sram_agent_pkg.sv
+
+# ============================================================================
+# 5) Env package
+# ============================================================================
+# >>> GENERATED_ENV_PKG <<<
+#   <verif_root>/testbench/env/<PREFIX>_env_pkg.sv
+
+# ============================================================================
+# 6) Test package
+# ============================================================================
+# >>> GENERATED_TEST_PKG <<<
+#   <verif_root>/testbench/test/<PREFIX>_test_pkg.sv
+
+# ============================================================================
+# 7) DUT-side harness modules
+# ============================================================================
+# >>> GENERATED_DUT_HARNESS <<<
+#   <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_rtl_wrap.sv
+#   <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_select.sv
+#   <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_harness.sv
+
+# ============================================================================
+# 8) Assertion checker module stubs
+# ============================================================================
+# >>> GENERATED_SVA <<<
+# One per protocol interface + <PREFIX>_internal_checker.sv. Example:
+#   <verif_root>/testbench/top/sva/<PREFIX>_ctrl_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_din_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_dout_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_sram_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_internal_checker.sv
+
+# ============================================================================
+# 9) Clock generator + TB top
+# ============================================================================
+# >>> GENERATED_TOP <<<
+#   <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_clkrst_gen.sv
+#   <verif_root>/testbench/top/<PREFIX>_tb_top.sv

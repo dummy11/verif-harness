@@ -1,0 +1,37 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_agent_pkg.sv
+// UVC package entry for <PREFIX>_<AGENT_SHORT>_agent.
+// See references/stage1-patterns.md § 1.1 (interfaces are NOT included here —
+// class inside references virtual <IFACE> via $unit scope).
+
+package <PREFIX>_<AGENT_SHORT>_agent_pkg;
+  import uvm_pkg::*;
+  import <PREFIX>_tb_pkg::*;
+// >>> GENERATED_EXTRA_IMPORTS <<<
+// Optional additional imports (e.g. `import <PREFIX>_pack_pkg::*;` for UVCs
+// that pack/unpack wide data). Skill decides based on whether the UVC's
+// item declares fields typed with lane_typedef from tb_pkg. If none, emit
+// no extra imports.
+  `include "uvm_macros.svh"
+
+// >>> GENERATED_UVC_INCLUDES <<<
+// Include order matters (see stage1-patterns.md § 3.2 / § 3.3):
+//   1. <agent_cfg>.svh       (config object, no dependencies)
+//   2. <item>.svh            (sequence item, referenced by seqr/drv/mon)
+//   3. <sequencer>.svh       (uvm_sequencer #(item))
+//   4. <driver>.svh          (references item + agent_cfg)
+//   5. <monitor>.svh         (references item + agent_cfg)
+//   6. <cov>.svh             (subscribes item)
+//   7. (parameterized only) <sub_agent>.svh
+//   8. <agent>.svh           (holds all above)
+//   9. seq/<default_seq>.svh (references item + sequencer)
+//
+// Example (ctrl UVC):
+//   `include "<PREFIX>_ctrl_agent_cfg.svh"
+//   `include "<PREFIX>_cfg_item.svh"
+//   `include "<PREFIX>_ctrl_sequencer.svh"
+//   `include "<PREFIX>_ctrl_driver.svh"
+//   `include "<PREFIX>_ctrl_monitor.svh"
+//   `include "<PREFIX>_ctrl_cov.svh"
+//   `include "<PREFIX>_ctrl_agent.svh"
+//   `include "seq/<PREFIX>_ctrl_default_seq.svh"
+endpackage

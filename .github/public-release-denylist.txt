@@ -1,0 +1,9 @@
+# One case-insensitive project-specific identifier per line.
+# This file is excluded from content matching because it defines the patterns.
+npu8860
+npu_conv_acc
+acc-verif
+AccSystemCModel
+acc_verification
+axera
+git-ext

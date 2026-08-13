@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "verif-harness config",
+  "description": "Per-project configuration for the verif-harness skill. Lives at <project-root>/.harness-config.json.",
+  "type": "object",
+  "required": ["project_name", "rtl", "verif"],
+  "additionalProperties": false,
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "description": "Short project identifier. Used in generated doc titles.",
+      "minLength": 1
+    },
+    "rtl": {
+      "type": "object",
+      "required": ["root", "top_module", "top_file"],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Directory containing RTL sources, project-root-relative. E.g., 'rtl/'."
+        },
+        "top_module": {
+          "type": "string",
+          "description": "SystemVerilog/Verilog module name of the DUT top. E.g., 'demo_fifo'."
+        },
+        "top_file": {
+          "type": "string",
+          "description": "Project-root-relative path to the file containing the DUT top module."
+        }
+      }
+    },
+    "verif": {
+      "type": "object",
+      "required": ["root", "docs_root"],
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "description": "Verification base directory, project-root-relative. E.g., 'sim/'."
+        },
+        "docs_root": {
+          "type": "string",
+          "description": "Directory holding all verification-side markdown docs. E.g., 'sim/docs/'."
+        },
+        "verification_subdir": {
+          "type": "string",
+          "default": "verification",
+          "description": "Subdirectory under docs_root for verification plans."
+        },
+        "governance_subdir": {
+          "type": "string",
+          "default": "governance",
+          "description": "Subdirectory under docs_root for workflow governance."
+        }
+      }
+    },
+    "design_docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": ["string", "null"],
+          "description": "Directory of pre-existing RTL design docs, or null if none."
+        }
+      }
+    },
+    "reference_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "spec_path": {
+          "type": ["string", "null"],
+          "description": "Absolute path to the upstream reference model spec markdown, or null if none."
+        }
+      }
+    }
+  }
+}

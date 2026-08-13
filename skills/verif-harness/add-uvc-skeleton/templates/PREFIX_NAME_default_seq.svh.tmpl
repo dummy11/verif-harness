@@ -1,0 +1,16 @@
+// <agent_dir>/seq/<PREFIX>_<AGENT_SHORT>_default_seq.svh
+// Default sequence stub for <AGENT_SHORT> UVC. M1.1 skeleton — empty body.
+// M1.3+ implements per-milestone sequence logic (start_job / stream / etc.).
+
+class <PREFIX>_<AGENT_SHORT>_default_seq extends uvm_sequence #(<PREFIX>_<ITEM_NAME>);
+  `uvm_object_utils(<PREFIX>_<AGENT_SHORT>_default_seq)
+
+  function new(string name = "<PREFIX>_<AGENT_SHORT>_default_seq");
+    super.new(name);
+  endfunction
+
+  task body();
+    // M1.3+ will implement per acc_ctrl_start_job / acc_psum_stream / etc.
+    // See tb_architecture.md § acc_<AGENT_SHORT>_agent for expected behavior.
+  endtask
+endclass

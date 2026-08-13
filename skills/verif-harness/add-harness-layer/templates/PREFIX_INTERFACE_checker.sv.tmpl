@@ -1,0 +1,10 @@
+// <verif_root>/testbench/top/sva/<PREFIX>_<CHECKER_NAME>_checker.sv
+// External protocol checker for <PREFIX>_<INTERFACE_NAME>.
+// Bound by <PREFIX>_dut_harness via type-level bind (see references/stage1-patterns.md § 5).
+// Milestone 1.1: portless empty stub. Stage 3+ will add assertion bodies here — since
+// bind places the checker inside the interface's scope, all interface signals are
+// reachable by name without port passing.
+
+module <PREFIX>_<CHECKER_NAME>_checker ();
+  // Stage 3 assertion bodies (`default disable iff (!rst_n)` recommended).
+endmodule

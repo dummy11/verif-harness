@@ -1,0 +1,25 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_driver.svh
+// Driver for <AGENT_SHORT> UVC. M1.1 skeleton — empty run_phase.
+// M1.3+ implements actual protocol state machine per acc_interface.md.
+
+class <PREFIX>_<AGENT_SHORT>_driver extends uvm_driver #(<PREFIX>_<ITEM_NAME>);
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_driver)
+
+  virtual <PREFIX>_<IFACE_NAME>       vif;
+  <PREFIX>_<AGENT_SHORT>_agent_cfg    cfg;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    // M1.3+ will fetch vif and cfg via uvm_config_db.
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    // M1.3+ will implement protocol state machine here.
+    // See <verif_root>/docs/verification/tb_architecture.md § <AGENT_SHORT>_agent
+    // for the driver's expected behavior.
+  endtask
+endclass

@@ -1,0 +1,26 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_strap_api.svh
+// DFT strap sub-API (env control layer). Immediate function-set on interface signals.
+
+class <PREFIX>_strap_api;
+  virtual <PREFIX>_harness_if vif;
+
+  function new(virtual <PREFIX>_harness_if vif);
+    this.vif = vif;
+  endfunction
+
+  function void set_test_mode(bit enable);
+    vif.test_mode = enable;
+  endfunction
+
+  function void set_scan_enable(bit enable);
+    vif.scan_enable = enable;
+  endfunction
+
+  function void set_mbist_enable(bit enable);
+    vif.mbist_enable = enable;
+  endfunction
+
+  function void set_clk_always_on(bit enable);
+    vif.clk_always_on = enable;
+  endfunction
+endclass

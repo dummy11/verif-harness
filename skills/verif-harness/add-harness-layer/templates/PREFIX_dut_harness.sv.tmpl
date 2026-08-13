@@ -1,0 +1,57 @@
+// <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_harness.sv
+// DUT-side structural integration entry:
+//   1) Route <PREFIX>_harness_if control signals (rst_n / DFT) into ctrl_if
+//   2) Aggregate DUT status back into <PREFIX>_harness_if
+//   3) Instantiate <PREFIX>_dut_select (variant switch)
+//   4) Bind external protocol checkers by interface type (§ 5.3 / § 5.5)
+// See references/stage1-patterns.md § 4.1 and § 4.3 (single-source rules).
+
+module <PREFIX>_dut_harness (
+  // >>> GENERATED_HARNESS_PORTS <<<
+  // Generator emits one `<if_type>` port per protocol interface in the harness-spec,
+  // plus the env control interface `<PREFIX>_harness_if harness`. Example:
+  //   <PREFIX>_harness_if                        harness,
+  //   <PREFIX>_ctrl_if                           ctrl,
+  //   <PREFIX>_data_in_if                        din,
+  //   <PREFIX>_data_out_if                       dout,
+  //   <PREFIX>_sram_if                           ws_sram,
+  //   <PREFIX>_sram_if                           scale_sram
+);
+  // ---- Reset / DFT wiring (harness_if is sole source; § 4.3 Rule 1 & Rule 3) ----
+  assign ctrl.rst_n = harness.rst_n;
+  // >>> GENERATED_STRAP_ASSIGNS <<<
+  // Generator emits one line per entry in harness-spec's `straps:`, e.g.:
+  //   assign ctrl.ptest_icg_mode = harness.test_mode;
+  //   assign ctrl.clk_always_on  = harness.clk_always_on;
+
+  // ---- DUT status aggregation ----
+  // Milestone 1.1: tie to 1'b0 per stage1-patterns § 10.3.
+  // Later milestones replace with `bind` probes into DUT internals.
+  // >>> GENERATED_STATUS_ASSIGNS <<<
+  // Generator emits one line per entry in harness-spec's `status_probes:`, e.g.:
+  //   assign harness.dut_compute_done   = 1'b0;
+  //   assign harness.dut_output_drained = 1'b0;
+  //   assign harness.dut_hung           = 1'b0;
+
+  // ---- DUT variant selection ----
+  <PREFIX>_dut_select u_dut_sel (
+    // >>> GENERATED_DUT_SELECT_PORTS <<<
+    // Generator connects each protocol interface port through by name (harness excluded), e.g.:
+    //   .ctrl       (ctrl),
+    //   .din        (din),
+    //   .dout       (dout),
+    //   .ws_sram    (ws_sram),
+    //   .scale_sram (scale_sram)
+  );
+
+  // ---- External protocol checkers (type-level bind per § 5.2 / § 5.5) ----
+  // Checker modules are portless empty stubs in M1.1; Stage 3 adds assertion bodies.
+  // Type-level bind covers all instances of a parameterized interface (e.g. sram_if
+  // WIDTH=352 and WIDTH=256 are both matched by a single bind).
+  // >>> GENERATED_BINDS <<<
+  // Generator emits one bind per protocol interface, e.g.:
+  //   bind <PREFIX>_ctrl_if     <PREFIX>_ctrl_checker u_ctrl_chk ();
+  //   bind <PREFIX>_data_in_if  <PREFIX>_din_checker  u_din_chk  ();
+  //   bind <PREFIX>_data_out_if <PREFIX>_dout_checker u_dout_chk ();
+  //   bind <PREFIX>_sram_if     <PREFIX>_sram_checker u_sram_chk ();
+endmodule

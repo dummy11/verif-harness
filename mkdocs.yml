@@ -1,0 +1,21 @@
+site_name: verif-harness
+site_description: Reusable SystemVerilog/UVM DUT integration harness
+repo_url: https://github.com/dummy11/verif-harness
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Harness design: harness_design.md
+  - DUT integration: dut_integration.md
+  - UVM integration: uvm_integration.md
+  - Interfaces: interface_guidelines.md
+  - Bind and SVA: bind_and_sva.md
+  - Compile flow: compile_flow.md
+  - Simulator support: simulator_support.md
+  - Tool versions: tool_versions.md
+  - Coding style: coding_style.md
+  - Troubleshooting: troubleshooting.md
+  - Roadmap: roadmap.md
+  - Public release checklist: public_release_checklist.md
+strict: true

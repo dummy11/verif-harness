@@ -1,0 +1,50 @@
+// <verif_root>/testbench/top/if/<PREFIX>_<IFACE_NAME>.sv
+// Protocol interface <PREFIX>_<IFACE_NAME>.
+// See references/stage1-patterns.md § 2 (Interface Design).
+//
+// Modports (auto-derived from signal `dir` roles in harness-spec.yaml):
+//   - <DRIVER_MODPORT> : `to-dut` signals as output; `from-dut` + `clkrst` as input
+//   - monitor    : all signals as input
+//   - dut_mp     : `to-dut` + `clkrst` as input; `from-dut` as output
+//   - clkrst_gen : emitted only if any signal has dir=clkrst; those as output
+
+interface <PREFIX>_<IFACE_NAME><GENERATED_HEADER>
+
+// >>> GENERATED_LOCAL_PARAMS <<<
+// Optional. Emitted only if `local_params:` present in spec.
+// Format: `  localparam int NAME = EXPR;` per entry. Add blank line after block.
+// Example (data_in_if):
+//   localparam int DATA_WIDTH = PIXEL_NUM * OC_NUM * DIN_WIDTH;  // 4736
+//   localparam int RDY_WIDTH  = PIXEL_NUM * OC_NUM;              // 128
+
+  // ---- Signal declarations ----
+// >>> GENERATED_SIGNALS <<<
+// One `logic <bracketed_width> <name>;` line per signal, preserving spec order.
+// If width==1, omit brackets. Else emit `[<expr>]`. Align signal names for readability.
+// Example (data_in_if):
+//   logic [PIXEL_NUM-1:0]  vld;
+//   logic [RDY_WIDTH-1:0]  rdy;
+//   logic [DATA_WIDTH-1:0] data;
+
+  // ---- Modports ----
+// >>> GENERATED_MODPORT_DRIVER <<<
+// modport <DRIVER_MODPORT> ( ... );
+//   input:  input_args + <clkrst-sigs> + <from-dut-sigs>   (in declaration order)
+//   output: <to-dut-sigs>                                   (in declaration order)
+// Emit each direction group in a single `input`/`output` line (line-wrap if >72 chars).
+
+// >>> GENERATED_MODPORT_MONITOR <<<
+// modport monitor ( input <input_args + all-signals-in-spec-order> );
+
+// >>> GENERATED_MODPORT_DUT_MP <<<
+// modport dut_mp ( ... );
+//   input:  input_args + <clkrst-sigs> + <to-dut-sigs>     (in declaration order)
+//   output: <from-dut-sigs>                                 (in declaration order)
+
+// >>> GENERATED_MODPORT_CLKRST_GEN <<<
+// Emitted ONLY if any signal has `dir: clkrst`. Format:
+//   modport clkrst_gen ( output <clkrst-sigs> );
+// If no clkrst signals present, this marker + all subsequent `//` example
+// lines are deleted (no clkrst_gen modport in the output).
+
+endinterface

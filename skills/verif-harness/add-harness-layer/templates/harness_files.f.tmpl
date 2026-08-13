@@ -1,0 +1,35 @@
+# Harness-layer filelist snippet — append to <verif_root>/filelist/tb.f
+# Order must respect stage1-patterns.md § 1.3.
+#
+# Assumptions:
+#   - Interfaces already exist under <verif_root>/testbench/top/if/
+#   - Shared packages (<PREFIX>_tb_pkg / <PREFIX>_pack_pkg) already compiled before this snippet
+#   - UVC packages compiled AFTER this snippet's harness_api_pkg but BEFORE env_pkg
+#
+# Add these ranges into an existing tb.f — do not use standalone unless tb.f is fresh.
+
+# +incdir for tb_harness svh
++incdir+<verif_root>/testbench/top/harness/tb_harness
+
+# 1) Interfaces — harness_if joins the ones under top/if/
+<verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_if.sv
+
+# 4a) tb_harness API package (BEFORE env_pkg; env_cfg references its aggregate class type)
+<verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_api_pkg.sv
+
+# 7) DUT-side harness modules (AFTER all packages)
+<verif_root>/testbench/top/harness/dut_harness/<PREFIX>_rtl_wrap.sv
+<verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_select.sv
+<verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_harness.sv
+
+# 8) Assertion checker module stubs (AFTER dut_harness so bind targets resolve at elab)
+# >>> GENERATED_CHECKER_FILES <<<
+# Generator emits one line per protocol interface, plus internal_checker. Example:
+#   <verif_root>/testbench/top/sva/<PREFIX>_ctrl_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_din_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_dout_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_sram_checker.sv
+#   <verif_root>/testbench/top/sva/<PREFIX>_internal_checker.sv
+
+# 9) Clock generator (BEFORE tb_top)
+<verif_root>/testbench/top/harness/tb_harness/<PREFIX>_clkrst_gen.sv

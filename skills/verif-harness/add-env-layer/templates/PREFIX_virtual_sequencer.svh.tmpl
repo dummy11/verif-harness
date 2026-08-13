@@ -1,0 +1,19 @@
+// <verif_root>/testbench/env/<PREFIX>_virtual_sequencer.svh
+// Virtual sequencer — holds sub-sequencer handles for cross-UVC coordination.
+// Does not drive interfaces itself; vseq (M1.5+) picks up handles.
+
+class <PREFIX>_virtual_sequencer extends uvm_sequencer;
+  `uvm_component_utils(<PREFIX>_virtual_sequencer)
+
+// >>> GENERATED_SUB_SEQR_HANDLES <<<
+// One handle per UVC sequencer. Example (acc):
+//   <PREFIX>_ctrl_sequencer      ctrl_seqr;
+//   <PREFIX>_data_in_sequencer   din_seqr;
+//   <PREFIX>_data_out_sequencer  dout_seqr;
+//   <PREFIX>_sram_sequencer      ws_seqr;    // reachable via sub_agent
+//   <PREFIX>_sram_sequencer      scale_seqr;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+endclass

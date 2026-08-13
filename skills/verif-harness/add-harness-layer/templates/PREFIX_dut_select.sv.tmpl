@@ -1,0 +1,38 @@
+// <verif_root>/testbench/top/harness/dut_harness/<PREFIX>_dut_select.sv
+// DUT variant selector. See references/stage1-patterns.md § 4.1.
+// Default fallback: if no variant macro is defined, force DUT_RTL so `make compile`
+// works without any +define on the command line.
+
+`ifndef DUT_RTL
+  `ifndef DUT_GATE
+    `ifndef DUT_MODEL
+      `define DUT_RTL
+    `endif
+  `endif
+`endif
+
+module <PREFIX>_dut_select (
+  // >>> GENERATED_WRAP_PORTS <<<
+  // Same interface port list as <PREFIX>_rtl_wrap. Generator duplicates from
+  // rtl_wrap's port block.
+);
+`ifdef DUT_RTL
+  <PREFIX>_rtl_wrap u_impl (
+    // >>> GENERATED_WRAP_INST_CONNECTIONS <<<
+    // Generator connects each interface port through by name, e.g.:
+    //     .ctrl       (ctrl),
+    //     .din        (din),
+    //     .dout       (dout),
+    //     .ws_sram    (ws_sram),
+    //     .scale_sram (scale_sram)
+  );
+`elsif DUT_GATE
+  // Reserved: <PREFIX>_gate_wrap u_impl (.*);
+  initial $fatal(1, "DUT_GATE variant not implemented");
+`elsif DUT_MODEL
+  // Reserved: <PREFIX>_model_wrap u_impl (.*);
+  initial $fatal(1, "DUT_MODEL variant not implemented");
+`else
+  initial $fatal(1, "No DUT variant selected — define +DUT_RTL / +DUT_GATE / +DUT_MODEL");
+`endif
+endmodule

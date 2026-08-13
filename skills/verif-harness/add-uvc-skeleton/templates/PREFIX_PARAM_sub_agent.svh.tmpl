@@ -1,0 +1,30 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_sub_agent.svh
+// Parameterized sub-agent — one instance per concrete WIDTH under the top
+// <AGENT_SHORT> agent. See tb_architecture.md § acc_sram_agent for the
+// pattern rationale (parameterized interface with multiple instances share
+// one UVC top, but each instance gets its own sub-agent).
+
+class <PREFIX>_<AGENT_SHORT>_sub_agent #(parameter int WIDTH = <DEFAULT_WIDTH>)
+  extends uvm_agent;
+  `uvm_component_param_utils(<PREFIX>_<AGENT_SHORT>_sub_agent#(WIDTH))
+
+  <PREFIX>_<AGENT_SHORT>_sequencer            sequencer;
+  <PREFIX>_<AGENT_SHORT>_driver #(WIDTH)      driver;
+  <PREFIX>_<AGENT_SHORT>_monitor #(WIDTH)     monitor;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    sequencer = <PREFIX>_<AGENT_SHORT>_sequencer::type_id::create("sequencer", this);
+    driver    = <PREFIX>_<AGENT_SHORT>_driver #(WIDTH)::type_id::create("driver", this);
+    monitor   = <PREFIX>_<AGENT_SHORT>_monitor #(WIDTH)::type_id::create("monitor", this);
+  endfunction
+
+  function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+    driver.seq_item_port.connect(sequencer.seq_item_export);
+  endfunction
+endclass

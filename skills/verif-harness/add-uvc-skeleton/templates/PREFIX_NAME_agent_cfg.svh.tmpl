@@ -1,0 +1,19 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_agent_cfg.svh
+// UVC-local configuration object for <AGENT_SHORT> agent.
+
+class <PREFIX>_<AGENT_SHORT>_agent_cfg extends uvm_object;
+  `uvm_object_utils(<PREFIX>_<AGENT_SHORT>_agent_cfg)
+
+  bit                         is_active = 1;
+  virtual <PREFIX>_<IFACE_NAME> vif;
+// >>> GENERATED_KNOBS <<<
+// Optional UVC-local knobs (backpressure prob, stall pattern, etc.).
+// Read from harness-spec.yaml's optional `uvc:` block per interface.
+// Example (data_in UVC):
+//   int in_stall_prob = 0;
+//   int per_pixel_stall_prob[8] = '{default:0};
+
+  function new(string name = "<PREFIX>_<AGENT_SHORT>_agent_cfg");
+    super.new(name);
+  endfunction
+endclass

@@ -1,0 +1,18 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_clkrst_gen.sv
+// Clock / reset generator module. Drives <PREFIX>_ctrl_if.clkrst_gen modport.
+// Not a UVM agent — see references/stage1-patterns.md § 9 for rationale.
+// Milestone 1.1: only initializes clk=0. Toggle waveform + DFT drive land in
+// Milestone 1.2. rst_n is driven from <PREFIX>_harness_if via <PREFIX>_dut_harness,
+// NOT from here (§ 4.3 Rule 1).
+
+module <PREFIX>_clkrst_gen (
+  <PREFIX>_ctrl_if.clkrst_gen clkrst_mp
+);
+  initial begin
+    clkrst_mp.clk = 1'b0;
+  end
+
+  // Milestone 1.2 will add:
+  //   forever #(clk_period_ns/2.0*1ns) clkrst_mp.clk = ~clkrst_mp.clk;
+  //   (clk_period_ns knob comes from <PREFIX>_env_cfg)
+endmodule

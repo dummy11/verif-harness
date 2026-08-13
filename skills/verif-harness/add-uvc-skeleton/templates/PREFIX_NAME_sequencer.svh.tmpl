@@ -1,0 +1,10 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_sequencer.svh
+// UVC sequencer for <AGENT_SHORT> agent — parameterized on transaction type.
+
+class <PREFIX>_<AGENT_SHORT>_sequencer extends uvm_sequencer #(<PREFIX>_<ITEM_NAME>);
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_sequencer)
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+endclass

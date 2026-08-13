@@ -1,0 +1,47 @@
+// <verif_root>/testbench/env/<PREFIX>_env.svh
+// Top-level env — instantiates all UVC agents + vseqr + scoreboard + cov_collector.
+// M1.1 skeleton — build_phase creates children; analysis-port wiring lands in M1.5+.
+
+class <PREFIX>_env extends uvm_env;
+  `uvm_component_utils(<PREFIX>_env)
+
+  <PREFIX>_env_cfg               cfg;
+
+// >>> GENERATED_AGENT_DECLARATIONS <<<
+// One handle per UVC. Example (acc):
+//   <PREFIX>_ctrl_agent          ctrl_agent_h;
+//   <PREFIX>_data_in_agent       din_agent_h;
+//   <PREFIX>_data_out_agent      dout_agent_h;
+//   <PREFIX>_sram_agent          sram_agent_h;
+
+  <PREFIX>_virtual_sequencer     vseqr;
+  <PREFIX>_scoreboard            sb;
+  <PREFIX>_cov_collector         cov;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+
+    if (!uvm_config_db#(<PREFIX>_env_cfg)::get(this, "", "cfg", cfg)) begin
+      `uvm_fatal("NO_CFG", "<PREFIX>_env_cfg not set")
+    end
+
+// >>> GENERATED_AGENT_BUILD <<<
+// One if-guarded create per UVC. Example:
+//   if (cfg.enable_ctrl_agent)
+//     ctrl_agent_h = <PREFIX>_ctrl_agent::type_id::create("ctrl_agent_h", this);
+//   ...
+
+    vseqr = <PREFIX>_virtual_sequencer::type_id::create("vseqr", this);
+    sb    = <PREFIX>_scoreboard::type_id::create("sb",    this);
+    cov   = <PREFIX>_cov_collector::type_id::create("cov", this);
+  endfunction
+
+  function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+    // M1.5+ will wire analysis ports + vseqr sub-seqr handles here.
+  endfunction
+endclass

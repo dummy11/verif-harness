@@ -1,0 +1,31 @@
+// <verif_root>/testbench/test/<PREFIX>_base_test.svh
+// Base UVM test — creates env from env_cfg. Concrete tests (sanity, directed,
+// random) extend this. M1.1 skeleton; M1.6+ adds acc_sanity_test etc.
+
+class <PREFIX>_base_test extends uvm_test;
+  `uvm_component_utils(<PREFIX>_base_test)
+
+  <PREFIX>_env       env;
+  <PREFIX>_env_cfg   cfg;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+
+    // <PREFIX>_tb_top constructs the cfg object and sets it into config_db
+    // before invoking run_test(). This test just retrieves and forwards to env.
+    if (!uvm_config_db#(<PREFIX>_env_cfg)::get(this, "", "cfg", cfg)) begin
+      `uvm_fatal("NO_CFG", "<PREFIX>_env_cfg not set by <PREFIX>_tb_top")
+    end
+    uvm_config_db#(<PREFIX>_env_cfg)::set(this, "env", "cfg", cfg);
+
+    env = <PREFIX>_env::type_id::create("env", this);
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    // Concrete tests (M1.6+) implement raise/drop_objection and vseq start.
+  endtask
+endclass

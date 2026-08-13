@@ -1,0 +1,44 @@
+// <verif_root>/testbench/pkg/<PREFIX>_pack_pkg.sv
+// Pack / unpack functions for wide packed data buses.
+// See references/stage1-patterns.md § 1.3 (compile-order) and design docs for
+// pack layout specification. All driver / monitor / refmodel bridge MUST use
+// the same functions here to guarantee round-trip consistency.
+
+package <PREFIX>_pack_pkg;
+  import <PREFIX>_tb_pkg::*;
+
+// >>> GENERATED_PACK_FUNCTIONS <<<
+// One pack_<sig> + unpack_<sig> pair per pack_pattern entry in harness-spec.yaml.
+// If no pack_pattern present, emit only a comment:
+//   // No pack helpers required at this stage.
+//
+// Example (acc s_acc_data — 8 pixels × 16 OCs × 37 bits = 4736):
+//
+//   function automatic logic [ACC_S_DATA_WIDTH-1:0] pack_s_acc_data(
+//     input psum_lane_t lanes
+//   );
+//     logic [ACC_S_DATA_WIDTH-1:0] packed_data;
+//     packed_data = '0;
+//     for (int pi = 0; pi < PIXEL_NUM; pi++) begin
+//       for (int oc = 0; oc < OC_NUM; oc++) begin
+//         int lsb = pi * (OC_NUM * DIN_WIDTH) + oc * DIN_WIDTH;
+//         packed_data[lsb +: DIN_WIDTH] = lanes[pi][oc];
+//       end
+//     end
+//     return packed_data;
+//   endfunction
+//
+//   function automatic psum_lane_t unpack_s_acc_data(
+//     input logic [ACC_S_DATA_WIDTH-1:0] packed_data
+//   );
+//     psum_lane_t lanes;
+//     for (int pi = 0; pi < PIXEL_NUM; pi++) begin
+//       for (int oc = 0; oc < OC_NUM; oc++) begin
+//         int lsb = pi * (OC_NUM * DIN_WIDTH) + oc * DIN_WIDTH;
+//         lanes[pi][oc] = packed_data[lsb +: DIN_WIDTH];
+//       end
+//     end
+//     return lanes;
+//   endfunction
+
+endpackage

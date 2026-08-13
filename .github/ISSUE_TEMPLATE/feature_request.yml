@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a reusable verification-infrastructure improvement
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the reusable problem without private project details.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Harness architecture
+        - Generator or template
+        - Simulator integration
+        - Codex skill
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation approach
+      description: Explain how the feature can be tested with public artifacts.
+    validations:
+      required: true

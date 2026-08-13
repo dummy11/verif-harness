@@ -1,0 +1,42 @@
+{
+  "marker": "PERF_RECORD|",
+  "schema_field": "schema",
+  "schema_value": "1",
+  "required_fields": [
+    "schema",
+    "case",
+    "job",
+    "domain",
+    "input_handshakes",
+    "expected_input_beats",
+    "input_valid_cycles",
+    "input_bubbles"
+  ],
+  "key_fields": ["case", "job"],
+  "predicates": [
+    {
+      "name": "input_count",
+      "lhs": {"field": "input_handshakes"},
+      "op": "eq",
+      "rhs": {"field": "expected_input_beats"},
+      "tolerance": 0.0
+    },
+    {
+      "name": "input_utilization",
+      "lhs": {"ratio": ["input_handshakes", "input_valid_cycles"]},
+      "op": "ge",
+      "rhs": {"value": 1.0},
+      "tolerance": 0.0
+    },
+    {
+      "name": "zero_input_bubbles",
+      "lhs": {"field": "input_bubbles"},
+      "op": "eq",
+      "rhs": {"value": 0},
+      "tolerance": 0.0
+    }
+  ],
+  "completeness": [
+    {"field": "domain", "required_values": ["INT", "FP"]}
+  ]
+}

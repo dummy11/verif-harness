@@ -1,0 +1,36 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_agent.svh
+// Top UVC agent for <AGENT_SHORT>. Non-parameterized case.
+
+class <PREFIX>_<AGENT_SHORT>_agent extends uvm_agent;
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_agent)
+
+  <PREFIX>_<AGENT_SHORT>_sequencer sequencer;
+  <PREFIX>_<AGENT_SHORT>_driver    driver;
+  <PREFIX>_<AGENT_SHORT>_monitor   monitor;
+  <PREFIX>_<AGENT_SHORT>_agent_cfg cfg;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+
+    if (!uvm_config_db#(<PREFIX>_<AGENT_SHORT>_agent_cfg)::get(this, "", "cfg", cfg)) begin
+      `uvm_fatal("NO_CFG", "<PREFIX>_<AGENT_SHORT>_agent_cfg not set")
+    end
+
+    if (cfg.is_active) begin
+      sequencer = <PREFIX>_<AGENT_SHORT>_sequencer::type_id::create("sequencer", this);
+      driver    = <PREFIX>_<AGENT_SHORT>_driver::type_id::create("driver", this);
+    end
+    monitor = <PREFIX>_<AGENT_SHORT>_monitor::type_id::create("monitor", this);
+  endfunction
+
+  function void connect_phase(uvm_phase phase);
+    super.connect_phase(phase);
+    if (cfg.is_active) begin
+      driver.seq_item_port.connect(sequencer.seq_item_export);
+    end
+  endfunction
+endclass

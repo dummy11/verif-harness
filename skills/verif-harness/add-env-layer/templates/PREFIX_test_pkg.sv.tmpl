@@ -1,0 +1,19 @@
+// <verif_root>/testbench/test/<PREFIX>_test_pkg.sv
+// Test package — imports env_pkg + all UVC pkgs; includes base_test.
+// Concrete tests (M1.6+ sanity, S2+ directed, S4+ random) added later.
+
+package <PREFIX>_test_pkg;
+  import uvm_pkg::*;
+  import <PREFIX>_tb_pkg::*;
+  import <PREFIX>_env_pkg::*;
+  import <PREFIX>_harness_api_pkg::*;
+// >>> GENERATED_UVC_IMPORTS <<<
+// Same list as env_pkg — one `import <PREFIX>_<name>_agent_pkg::*;` per UVC.
+  `include "uvm_macros.svh"
+
+  `include "<PREFIX>_base_test.svh"
+// >>> GENERATED_CONCRETE_TESTS <<<
+// Empty at M1.1 skeleton. M1.6+ adds:
+//   `include "<PREFIX>_sanity_test.svh"
+// Stage 2+ adds directed tests. Stage 4+ adds random tests.
+endpackage

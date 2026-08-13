@@ -1,0 +1,30 @@
+{
+  "module_name": "demo_protocol_checker",
+  "ports": [
+    "input logic clk",
+    "input logic rst_n",
+    "input logic valid",
+    "input logic ready"
+  ],
+  "clock": "posedge clk",
+  "disable_iff": "!rst_n",
+  "assertions": [
+    {
+      "id": "A.PROTO.001",
+      "name": "valid_known",
+      "plan_ref": "assertion_plan.md § protocol",
+      "property": "valid |-> !$isunknown(valid)",
+      "message": "valid is unknown"
+    }
+  ],
+  "bind": {
+    "target": "demo_dut",
+    "instance": "u_demo_protocol_checker",
+    "connections": {
+      "clk": "clk",
+      "rst_n": "rst_n",
+      "valid": "valid",
+      "ready": "ready"
+    }
+  }
+}

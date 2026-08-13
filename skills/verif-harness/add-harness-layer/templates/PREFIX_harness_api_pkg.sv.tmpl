@@ -1,0 +1,19 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_harness_api_pkg.sv
+// Environment Control API package.
+// Class API is defined in this package, NOT inside the interface (LD12 B decision;
+// see references/stage1-patterns.md § 4.2). virtual <PREFIX>_harness_if type reference
+// resolves from $unit — ensure <PREFIX>_harness_if.sv compiles before this package
+// (per stage1-patterns.md § 1.3 filelist order).
+
+package <PREFIX>_harness_api_pkg;
+  import uvm_pkg::*;
+  `include "uvm_macros.svh"
+
+  // Sub-API classes
+  `include "<PREFIX>_reset_api.svh"
+  `include "<PREFIX>_status_api.svh"
+  `include "<PREFIX>_strap_api.svh"
+
+  // Aggregate API — must be last (holds sub-API handles)
+  `include "<PREFIX>_harness_api.svh"
+endpackage

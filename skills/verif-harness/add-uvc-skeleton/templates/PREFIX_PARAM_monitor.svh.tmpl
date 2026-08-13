@@ -1,0 +1,18 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_monitor.svh
+// Parameterized monitor for <AGENT_SHORT> UVC.
+
+class <PREFIX>_<AGENT_SHORT>_monitor #(parameter int WIDTH = <DEFAULT_WIDTH>)
+  extends uvm_monitor;
+  `uvm_component_param_utils(<PREFIX>_<AGENT_SHORT>_monitor#(WIDTH))
+
+  uvm_analysis_port #(<PREFIX>_<ITEM_NAME>) ap;
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+    ap = new("ap", this);
+  endfunction
+
+  task run_phase(uvm_phase phase);
+    // M1.4+ will implement rden/rdata sampling.
+  endtask
+endclass

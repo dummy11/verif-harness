@@ -1,0 +1,26 @@
+// <verif_root>/testbench/top/harness/tb_harness/<PREFIX>_status_api.svh
+// Status sub-API (env control layer). Wraps interface's wait_* tasks and query functions.
+
+class <PREFIX>_status_api;
+  virtual <PREFIX>_harness_if vif;
+
+  function new(virtual <PREFIX>_harness_if vif);
+    this.vif = vif;
+  endfunction
+
+  task wait_compute_done(int unsigned t = 100_000);
+    vif.wait_compute_done(t);
+  endtask
+
+  task wait_output_drain(int unsigned t = 10_000);
+    vif.wait_output_drain(t);
+  endtask
+
+  function bit is_done();
+    return vif.is_compute_done();
+  endfunction
+
+  function bit is_drained();
+    return vif.is_output_drained();
+  endfunction
+endclass

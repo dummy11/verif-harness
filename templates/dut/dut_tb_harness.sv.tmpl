@@ -1,0 +1,9 @@
+module <DUT>_tb_harness;
+  logic clk = 1'b0;
+  logic rst_n = 1'b0;
+  <DUT>_if dut_if (clk, rst_n);
+
+  // TODO: generate reviewed clock/reset behavior.
+  // TODO: instantiate the read-only DUT and map every port explicitly.
+  // TODO: publish virtual interfaces when UVM is enabled.
+endmodule

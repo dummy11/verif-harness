@@ -1,0 +1,6 @@
+--timing
+--assert
+-Wall
+-Wno-fatal
+--binary
+--top-module simple_fifo_tb_top

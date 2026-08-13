@@ -1,0 +1,72 @@
+// <verif_root>/testbench/top/<PREFIX>_tb_top.sv
+// Extra-thin TB top per stage1-patterns.md § 8. Four responsibilities only:
+//   1) Instantiate clock/reset backbone wires + all interfaces
+//   2) Instantiate clkrst_gen + dut_harness
+//   3) Assemble env_cfg + uvm_config_db::set
+//   4) run_test()
+// Target line count: 100-200.
+
+module <PREFIX>_tb_top;
+  import uvm_pkg::*;
+  import <PREFIX>_tb_pkg::*;
+  import <PREFIX>_harness_api_pkg::*;
+  import <PREFIX>_env_pkg::*;
+  import <PREFIX>_test_pkg::*;
+  `include "uvm_macros.svh"
+
+  // ---- Clock / reset backbone wires ----
+  logic clk;
+  logic rst_n;
+
+  // ---- Interface instances (protocol + env control) ----
+// >>> GENERATED_INTERFACE_INSTANCES <<<
+// One line per protocol interface (with concrete WIDTH for parameterized),
+// plus one line for harness_if. Example (acc):
+//   <PREFIX>_ctrl_if                       ctrl_if_inst();
+//   <PREFIX>_data_in_if                    din_if_inst    (.clk(clk), .rst_n(rst_n));
+//   <PREFIX>_data_out_if                   dout_if_inst   (.clk(clk), .rst_n(rst_n));
+//   <PREFIX>_sram_if #(.WIDTH(352))        ws_if_inst     (.clk(clk), .rst_n(rst_n));
+//   <PREFIX>_sram_if #(.WIDTH(256))        scale_if_inst  (.clk(clk), .rst_n(rst_n));
+//   <PREFIX>_harness_if                    harness_if_inst(.clk(clk));
+
+  // ---- Clock generator drives ctrl_if.clk via modport ----
+  <PREFIX>_clkrst_gen u_clkrst_gen (
+    .clkrst_mp (ctrl_if_inst.clkrst_gen)
+  );
+
+  // Fan out ctrl_if.clk to other interface constructors;
+  // rst_n is driven by harness_if inside <PREFIX>_dut_harness.
+  assign clk   = ctrl_if_inst.clk;
+  assign rst_n = harness_if_inst.rst_n;
+
+  // ---- DUT-side integration ----
+  <PREFIX>_dut_harness u_dut_harness (
+// >>> GENERATED_DUT_HARNESS_PORT_CONNECTIONS <<<
+// One line per interface passed to dut_harness. Example:
+//   .harness    (harness_if_inst),
+//   .ctrl       (ctrl_if_inst),
+//   .din        (din_if_inst),
+//   .dout       (dout_if_inst),
+//   .ws_sram    (ws_if_inst),
+//   .scale_sram (scale_if_inst)
+  );
+
+  // ---- Env config assembly + run_test ----
+  initial begin
+    <PREFIX>_env_cfg cfg;
+    cfg = <PREFIX>_env_cfg::type_id::create("cfg");
+
+// >>> GENERATED_CFG_ASSIGNMENTS <<<
+// One vif assignment per interface, plus harness_api creation. Example:
+//   cfg.ctrl_vif    = ctrl_if_inst;
+//   cfg.din_vif     = din_if_inst;
+//   cfg.dout_vif    = dout_if_inst;
+//   cfg.ws_vif      = ws_if_inst;
+//   cfg.scale_vif   = scale_if_inst;
+//   cfg.harness_vif = harness_if_inst;
+//   cfg.harness_api = new(harness_if_inst);
+
+    uvm_config_db#(<PREFIX>_env_cfg)::set(null, "uvm_test_top", "cfg", cfg);
+    run_test();
+  end
+endmodule

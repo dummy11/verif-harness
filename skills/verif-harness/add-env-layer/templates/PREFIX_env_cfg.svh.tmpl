@@ -1,0 +1,45 @@
+// <verif_root>/testbench/env/<PREFIX>_env_cfg.svh
+// Env-level configuration object (LD9 single-container principle).
+// tb_top does exactly one uvm_config_db::set() of this object.
+
+class <PREFIX>_env_cfg extends uvm_object;
+  `uvm_object_utils(<PREFIX>_env_cfg)
+
+  // ---- Virtual interface handles ----
+// >>> GENERATED_VIF_HANDLES <<<
+// One line per protocol interface, plus per parameterized instance. Example (acc):
+//   virtual <PREFIX>_ctrl_if                        ctrl_vif;
+//   virtual <PREFIX>_data_in_if                     din_vif;
+//   virtual <PREFIX>_data_out_if                    dout_vif;
+//   virtual <PREFIX>_sram_if #(.WIDTH(352))         ws_vif;
+//   virtual <PREFIX>_sram_if #(.WIDTH(256))         scale_vif;
+//   virtual <PREFIX>_harness_if                     harness_vif;
+
+  // ---- Env control API handle ----
+  <PREFIX>_harness_api_pkg::<PREFIX>_harness_api    harness_api;
+
+  // ---- Env-wide knobs ----
+// >>> GENERATED_KNOBS <<<
+// Standard set (adjust from harness-spec.yaml env_knobs section):
+//   real  clk_period_ns          = 2.0;
+//   real  rst_release_delay_ns   = 10.0;
+//   bit   dft_icg_mode           = 1'b0;
+//   bit   dft_clk_always_on      = 1'b0;
+//   bp_mode_e bp_mode            = BP_FULL;
+//   int   in_stall_prob          = 0;
+//   bit   refmodel_check         = 1'b1;
+//   unsupported_action_e unsupported_action = UNSUP_FATAL;
+//   int unsigned timeout_cycles  = 100_000;
+
+  // ---- Agent enable flags ----
+// >>> GENERATED_AGENT_ENABLES <<<
+// One line per UVC. Example:
+//   bit enable_ctrl_agent        = 1'b1;
+//   bit enable_data_in_agent     = 1'b1;
+//   bit enable_data_out_agent    = 1'b1;
+//   bit enable_sram_agent        = 1'b1;
+
+  function new(string name = "<PREFIX>_env_cfg");
+    super.new(name);
+  endfunction
+endclass

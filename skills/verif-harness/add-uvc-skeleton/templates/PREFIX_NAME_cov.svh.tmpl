@@ -1,0 +1,15 @@
+// <agent_dir>/<PREFIX>_<AGENT_SHORT>_cov.svh
+// UVC-local coverage subscriber. M1.1 skeleton — Stage 3 fills covergroups
+// per coverage_plan.md.
+
+class <PREFIX>_<AGENT_SHORT>_cov extends uvm_subscriber #(<PREFIX>_<ITEM_NAME>);
+  `uvm_component_utils(<PREFIX>_<AGENT_SHORT>_cov)
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+  endfunction
+
+  function void write(<PREFIX>_<ITEM_NAME> t);
+    // Stage 3 will sample UVC-local covergroups here.
+  endfunction
+endclass

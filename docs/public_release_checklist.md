@@ -1,0 +1,23 @@
+# Public release checklist
+
+Automation prepares evidence; a Human owner makes the publication decision.
+
+## Required before first public push
+
+- [ ] Confirm copyright ownership and permission for every imported file.
+- [ ] Review the Apache-2.0 license choice.
+- [ ] Review all source, templates, documentation, tests, and examples.
+- [ ] Run `make release-check` on a host with Verilator 5.x.
+- [ ] Confirm the example prints `SIMPLE_FIFO_SMOKE PASS`.
+- [ ] Run `python3 scripts/check_public_release.py` after the final commit.
+- [ ] Review `git log --all`, all tags, author metadata, and remote URLs.
+- [ ] Enable GitHub secret scanning and private vulnerability reporting.
+- [ ] Require CI checks on the default branch.
+- [ ] Enable GitHub Pages with Actions as its source.
+- [ ] Approve repository visibility as Public.
+
+## Release
+
+After CI passes and the Human owner approves publication, push `main`, create
+or push the `v0.1.0` tag, and verify that the release workflow publishes the
+archive and checksum. Do not tag an unverified commit merely to trigger CI.

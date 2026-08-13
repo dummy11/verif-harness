@@ -1,0 +1,29 @@
+.PHONY: setup test structure format sanitize example check release-check docs
+
+setup:
+	./scripts/setup.sh
+
+test:
+	python3 -m unittest discover -s tests -p 'test_*.py'
+	python3 skills/verif-harness/tests/test_lifecycle_tools.py
+	python3 skills/verif-harness/add-regression-runner/scripts/test_regression_tools.py
+	python3 skills/verif-harness/tests/test_stage2plus_tools.py
+
+structure:
+	python3 scripts/check_structure.py
+
+format:
+	python3 scripts/check_text_format.py
+
+sanitize:
+	python3 scripts/check_public_release.py
+
+example:
+	./scripts/run_example.sh
+
+check: structure format test sanitize
+
+release-check: check example
+
+docs:
+	python3 -m mkdocs build --strict

@@ -1,0 +1,27 @@
+// <verif_root>/testbench/env/<PREFIX>_cov_collector.svh
+// Env-level coverage collector. M1.1 skeleton; Stage 3 fills covergroups
+// per coverage_plan.md.
+//
+// Suffix convention (per stage1-patterns.md § 7): use `_cov_<name>` prefix
+// to avoid collision with scoreboard's `_<name>` suffixes in the same pkg.
+
+// >>> GENERATED_IMP_DECLS <<<
+// One `uvm_analysis_imp_decl(_cov_<suffix>)` per subscribed source.
+// Example: `uvm_analysis_imp_decl(_cov_config)` etc.
+
+class <PREFIX>_cov_collector extends uvm_component;
+  `uvm_component_utils(<PREFIX>_cov_collector)
+
+// >>> GENERATED_IMP_FIELDS <<<
+// Typed handle per suffix. Same pattern as scoreboard but different suffix
+// namespace (`_cov_*` instead of `_*`).
+
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+// >>> GENERATED_IMP_NEWS <<<
+// One `ap_<cov_suffix> = new("ap_<cov_suffix>", this);` per imp field.
+  endfunction
+
+// >>> GENERATED_WRITE_BODIES <<<
+// One empty write function per suffix. Stage 3 fills with covergroup sample().
+endclass

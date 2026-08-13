@@ -1,0 +1,35 @@
+# <verif_root>/regress/Makefile
+# Milestone 1.1: only "compile" target (skeleton compile check).
+# Later milestones will add: run / regress / cov / etc.
+
+VCS       ?= vcs
+VLOGAN    ?= vlogan
+SIMV      ?= simv_<PREFIX>
+
+# PROJ_ROOT is the PROJECT ROOT (parent of <verif_root>), NOT verif_root itself.
+# Since this Makefile lives at <verif_root>/regress/Makefile, project root is
+# two levels up. All filelist paths are written relative to PROJ_ROOT so that
+# both TB (verif_root/testbench/...) and RTL (rtl/...) fit under one cwd.
+PROJ_ROOT := $(abspath $(CURDIR)/../..)
+
+# Common flags
+UVM_OPTS  := -ntb_opts uvm-1.2
+COMMON_FLAGS := -sverilog -full64 -kdb -debug_access+all -assert svaext $(UVM_OPTS)
+
+.PHONY: help compile clean
+
+help:
+	@echo "PROJ_ROOT = $(PROJ_ROOT)"
+	@echo "Targets:"
+	@echo "  make compile  - vlogan + vcs elab (Milestone 1.1 skeleton check)"
+	@echo "  make clean    - remove build artifacts"
+
+compile:
+	cd $(PROJ_ROOT) && $(VLOGAN) $(COMMON_FLAGS) -f <verif_root>/filelist/tb.f
+	cd $(PROJ_ROOT) && $(VCS) $(COMMON_FLAGS) -f <verif_root>/filelist/sim.f -o $(SIMV)
+	@echo "==== Milestone 1.1 compile PASS ===="
+
+clean:
+	rm -rf $(PROJ_ROOT)/csrc $(PROJ_ROOT)/simv* $(PROJ_ROOT)/AN.DB \
+	       $(PROJ_ROOT)/*.log $(PROJ_ROOT)/*.vpd $(PROJ_ROOT)/ucli.key \
+	       $(PROJ_ROOT)/DVEfiles $(PROJ_ROOT)/inter.vpd
