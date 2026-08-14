@@ -8,6 +8,10 @@ Automation prepares evidence; a Human owner makes the publication decision.
 - [ ] Review the Apache-2.0 license choice.
 - [ ] Review all source, templates, documentation, tests, and examples.
 - [ ] Run `make release-check` on a host with Verilator 5.x.
+- [ ] Run `make setup-xverif check-xverif` and verify the locked commit,
+      license hash, wrappers, and real xbit smoke.
+- [ ] Confirm `.deps/` and all xverif/vendor build artifacts are absent from
+      the release archive; review `THIRD_PARTY_NOTICES.md`.
 - [ ] Confirm the example prints `SIMPLE_FIFO_SMOKE PASS`.
 - [ ] Run `python3 scripts/check_public_release.py` after the final commit.
 - [ ] Review `git log --all`, all tags, author metadata, and remote URLs.

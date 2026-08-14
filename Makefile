@@ -1,7 +1,13 @@
-.PHONY: setup test structure format sanitize example check release-check docs
+.PHONY: setup setup-xverif check-xverif test structure format sanitize example check release-check docs
 
 setup:
 	./scripts/setup.sh
+
+setup-xverif:
+	python3 scripts/setup_xverif.py
+
+check-xverif:
+	python3 scripts/check_xverif.py
 
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'

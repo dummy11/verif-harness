@@ -80,6 +80,21 @@ BLANK2077/xverif tools/<selected-tool>
 deterministic native evidence
 ```
 
+默认工具根来自 `deps/xverif.lock.json` 管理的 `.deps/xverif` checkout：
+
+```text
+deps/xverif.lock.json
+  -> scripts/setup_xverif.py
+  -> temporary clone + exact detached commit
+  -> origin/commit/clean/license/wrapper validation
+  -> atomic publish .deps/xverif
+  -> CLI adapter discovery
+```
+
+`.deps/xverif` 被 Git 忽略，不属于 verif-harness 源码或 release；xverif 的源码
+所有权、MIT License、release 和 issue 仍归上游项目。显式 `--xverif-root` 与
+`XVERIF_HOME` 只用于受控开发/部署 override，不允许失败后自动切换。
+
 该路径不会自动从 CLI 切换 MCP、从 local 切换 LSF、从 JSON 切换 XOUT，
 也不会把工具 `PASS` 提升为 Stage approval。
 

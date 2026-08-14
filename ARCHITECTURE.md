@@ -85,4 +85,10 @@ SHA-256. It never invents a unified `xverif` executable, changes native action
 semantics, reverse-parses XOUT, or silently falls back between CLI/MCP,
 local/LSF, output formats, backends, or data sources.
 
+The default xverif implementation is a separately owned, commit-pinned source
+checkout under `.deps/xverif`. `deps/xverif.lock.json` is the dependency
+contract; setup validates repository, commit, clean state, MIT License hash,
+and wrapper inventory before the adapter can consume it. The checkout is
+Git-ignored and excluded from verif-harness source archives.
+
 See [docs/harness_design.md](docs/harness_design.md) for implementation rules.

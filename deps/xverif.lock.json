@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "name": "xverif",
+  "repository": "https://github.com/BLANK2077/xverif.git",
+  "commit": "ebec1bab852a971d06a45b2556d09c3d6488c21d",
+  "license": "MIT",
+  "license_file_sha256": "f64c58537ae9534f10aef9527aeaf21d2d5d014ab9e2d9c6fac61b0a673c1c74",
+  "tools": [
+    "xbit",
+    "xentry",
+    "xloc",
+    "xsva",
+    "xcov",
+    "xdebug",
+    "xwaveform"
+  ]
+}

@@ -112,6 +112,28 @@ class XverifAdapterTest(unittest.TestCase):
         self.assertEqual(payload["tool"], "xbit")
         self.assertEqual(len(payload["wrapper_sha256"]), 64)
 
+    def test_project_managed_dependency_is_discovered(self) -> None:
+        managed = self.project / ".deps/xverif/tools"
+        managed.mkdir(parents=True)
+        wrapper = managed / "xbit"
+        wrapper.write_text(FAKE_TOOL, encoding="utf-8")
+        wrapper.chmod(0o755)
+        request_path = self.write_request(request("doctor"))
+        out_dir = self.project / "managed-evidence"
+        result = subprocess.run(
+            [
+                sys.executable, str(ADAPTER), "run",
+                "--project-root", str(self.project),
+                "--request", str(request_path),
+                "--out-dir", str(out_dir),
+            ],
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads((out_dir / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["state"], "PASS")
+        self.assertEqual(payload["tool_identity"]["xverif_root"], str(managed.parent.resolve()))
+
     def test_pass_captures_json_logs_and_artifact_hash(self) -> None:
         relative = "result/summary.json"
         result, payload = self.run_adapter(

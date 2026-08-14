@@ -21,6 +21,8 @@ every run. Contributors should include exact tool versions with bug reports.
 `./scripts/setup.sh --install-verilator` supports Homebrew and apt-based hosts.
 
 xverif integration uses an approved checkout of
-`git@github.com:BLANK2077/xverif.git`. The adapter records the selected wrapper
-SHA-256 and checkout commit for every run; it does not claim one moving branch
-or tag as universally supported.
+`https://github.com/BLANK2077/xverif.git`. The exact reviewed commit is stored
+in `deps/xverif.lock.json`; `./scripts/setup.sh --with-xverif` installs it into
+`.deps/xverif`. The adapter records the selected wrapper SHA-256 and checkout
+commit for every run. Updating the lock is a separately reviewed dependency
+change, never an implicit branch update.

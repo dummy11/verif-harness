@@ -2,7 +2,7 @@
 
 Use this mode when `verif-harness` has selected a concrete deterministic
 operation provided by the xverif tool suite. The authoritative upstream is
-`git@github.com:BLANK2077/xverif.git`. xverif is a repository of tool wrappers,
+`https://github.com/BLANK2077/xverif.git`. xverif is a repository of tool wrappers,
 not one executable named `xverif`.
 
 ## Required reading
@@ -28,13 +28,17 @@ one explicit request and records deterministic evidence.
 
 ## Procedure
 
-1. Clone or identify the approved xverif checkout. Set `XVERIF_HOME` to that
-   root or pass `--xverif-root`.
+1. In a complete verif-harness checkout, run
+   `./scripts/setup.sh --with-xverif`. This reads `deps/xverif.lock.json`,
+   installs the exact detached commit under `.deps/xverif`, and validates
+   origin, clean state, MIT License hash, and wrappers. In a standalone Skill
+   installation, identify an equivalent approved checkout and set
+   `XVERIF_HOME` or pass `--xverif-root`.
 2. Probe only the selected wrapper:
 
    ```bash
    python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
-     --xverif-root <xverif-root> --tool xbit \
+     --tool xbit \
      --out /tmp/xverif-probe.json
    ```
 
@@ -50,7 +54,6 @@ one explicit request and records deterministic evidence.
    ```bash
    python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
      --project-root . --request xverif-request.json \
-     --xverif-root <xverif-root> \
      --out-dir artifacts/xverif/<unique-run-id>
    ```
 
@@ -73,3 +76,6 @@ one explicit request and records deterministic evidence.
   approved xverif checkout and the selected tool's native tests/evidence.
 - `PASS` is operation evidence, never Stage approval, waiver approval,
   verification closure, or freeze authorization.
+- Never run `git pull` in `.deps/xverif`, vendor its source into verif-harness,
+  or publish the managed checkout. Upgrade only by reviewing and changing the
+  lock, reinstalling a clean checkout, and rerunning public and native tests.

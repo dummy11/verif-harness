@@ -11,6 +11,9 @@ This repository contains public, reusable verification infrastructure.
   layered as described in `ARCHITECTURE.md`.
 - Treat generated files as review candidates, not approved semantics.
 - Do not claim simulator support without reproducible evidence.
+- Keep optional xverif source under Git-ignored `.deps/`; never vendor it or
+  publish proprietary EDA dependencies. Treat its lock changes as reviewed
+  dependency upgrades and preserve separate licensing/ownership.
 
 ## Required checks
 

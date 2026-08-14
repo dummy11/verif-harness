@@ -37,7 +37,7 @@ $verif-harness stage-gate-review 4
 | `add-env-layer` | 生成 env、scoreboard/coverage shell、base test 和 `tb_top` | 建立最小 UVM 顶层 | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
-| `xverif` | 通过受控 CLI adapter 调用 xverif 确定性工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --xverif-root <root> --tool xbit` |
+| `xverif` | 通过受控 CLI adapter 调用固定版本 xverif 工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | 生成 simulator command/capability profile | 增加一个评审后的 simulator 配置 | `$verif-harness add-simulator-profile` |
 | `add-testcase` | 生成 test/vseq 并加入 candidate list | 实现一个计划内场景 | `$verif-harness add-testcase` |
@@ -83,8 +83,25 @@ xverif tools/xbit|xdebug|xcov|xentry|xloc|xsva|xwaveform
 `verif-harness` 决定验证阶段、任务语义和人工边界；adapter 只执行严格 JSON
 request 并归档 argv、Git commit、wrapper hash、stdout/stderr 与 artifact hash；
 xverif 执行底层确定性操作。权威上游是
-`git@github.com:BLANK2077/xverif.git`。xverif 是工具族，不假设存在名为
+`https://github.com/BLANK2077/xverif.git`。xverif 是工具族，不假设存在名为
 `xverif` 的统一 executable。
+
+在完整 `verif-harness` 仓库中，一次性安装固定版本：
+
+```bash
+./scripts/setup.sh --with-xverif
+```
+
+安装器读取 `deps/xverif.lock.json`，把独立 checkout 原子安装到 Git 忽略的
+`.deps/xverif`，并校验 origin、完整 commit、clean 状态、MIT License hash、
+七个 wrapper 和真实 `xbit` smoke。之后可省略 `--xverif-root`：
+
+```bash
+python3 scripts/verif_harness.py xverif probe --tool xbit
+```
+
+xverif 仍是可选、单独许可、单独维护的底层工具；checkout 不进入
+verif-harness source archive 或 release。
 
 ## 权限边界
 

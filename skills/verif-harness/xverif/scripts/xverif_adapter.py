@@ -325,14 +325,31 @@ def run_request(
     return result
 
 
-def xverif_root_argument(value: Path | None) -> Path:
-    raw = value or (Path(os.environ["XVERIF_HOME"]) if "XVERIF_HOME" in os.environ else None)
-    if raw is None:
-        fail("set XVERIF_HOME or pass --xverif-root")
-    root = raw.expanduser().resolve()
-    if not root.is_dir():
-        fail(f"xverif root does not exist: {root}")
-    return root
+def xverif_root_argument(value: Path | None, project_root: Path | None = None) -> Path:
+    candidates: list[Path] = []
+    if value is not None:
+        candidates.append(value)
+    elif "XVERIF_HOME" in os.environ:
+        candidates.append(Path(os.environ["XVERIF_HOME"]))
+    else:
+        if project_root is not None:
+            candidates.append(project_root / ".deps/xverif")
+        candidates.append(Path.cwd() / ".deps/xverif")
+        repository_root = Path(__file__).resolve().parents[4]
+        candidates.append(repository_root / ".deps/xverif")
+    unique: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved not in unique:
+            unique.append(resolved)
+    for candidate in unique:
+        if candidate.is_dir():
+            return candidate
+    searched = ", ".join(str(candidate) for candidate in unique)
+    fail(
+        "xverif root not found; run scripts/setup.sh --with-xverif, set "
+        f"XVERIF_HOME, or pass --xverif-root (searched: {searched})"
+    )
 
 
 def main() -> int:
@@ -348,8 +365,8 @@ def main() -> int:
     run_parser.add_argument("--xverif-root", type=Path)
     run_parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
-    root = xverif_root_argument(args.xverif_root)
     if args.command == "probe":
+        root = xverif_root_argument(args.xverif_root)
         payload = probe(root, args.tool)
         output = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         if args.out:
@@ -359,9 +376,9 @@ def main() -> int:
         else:
             print(output, end="")
         return 0 if payload["state"] == "PASS" else 1
-    result = run_request(
-        args.project_root.resolve(), args.request.resolve(), args.out_dir.resolve(), root
-    )
+    project_root = args.project_root.resolve()
+    root = xverif_root_argument(args.xverif_root, project_root)
+    result = run_request(project_root, args.request.resolve(), args.out_dir.resolve(), root)
     print(args.out_dir / "result.json")
     return 0 if result["state"] == "PASS" else 1
 

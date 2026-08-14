@@ -82,9 +82,17 @@ evidence 本身必须进入 required-evidence 哈希集合。不能伪造 metada
 
 ## `xverif` adapter 报 `set XVERIF_HOME`
 
-设置 `XVERIF_HOME` 指向已批准的 `BLANK2077/xverif` checkout 根目录，或显式传
-`--xverif-root <root>`。该目录下必须存在 `tools/<selected-tool>`。不要把 PyPI
-同名包或任意 executable 当成该工具仓库。
+在完整 verif-harness 仓库先运行 `./scripts/setup.sh --with-xverif`，确认
+`.deps/xverif` 已按 lock 安装。独立 Skill 环境可设置 `XVERIF_HOME` 指向已批准
+checkout，或显式传 `--xverif-root <root>`。该目录下必须存在
+`tools/<selected-tool>`。不要把 PyPI 同名包或任意 executable 当成该工具仓库。
+
+## managed xverif 返回 `BLOCKED`
+
+检查 `origin`、`HEAD`、`git status --porcelain`、`LICENSE` hash 和七个 wrapper。
+安装器不会覆盖、清理、checkout 或 pull 已存在目录。不要在 `.deps/xverif`
+直接 `git pull`；依赖升级必须先评审新 commit/许可证/第三方边界并更新 lock，
+再用新 checkout 重跑 `make setup-xverif check-xverif`。
 
 ## xverif probe PASS，但执行失败
 

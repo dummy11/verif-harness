@@ -2,7 +2,7 @@
 
 ## 定位
 
-权威上游为 `git@github.com:BLANK2077/xverif.git`。仓库提供多个确定性工具，
+权威上游为 `https://github.com/BLANK2077/xverif.git`。仓库提供多个确定性工具，
 而不是一个名为 `xverif` 的统一 executable：
 
 | 工具 | 主要用途 |
@@ -28,6 +28,28 @@ Codex Agent
 `verif-harness` 的计划、roadmap、coverage/assertion/test plan 是“为什么执行”的
 source of truth。两者不能互相替代。
 
+## 托管依赖合同
+
+完整 verif-harness 仓库通过 `deps/xverif.lock.json` 固定 repository、完整 Git
+commit、MIT License hash 和 wrapper inventory。`scripts/setup_xverif.py` 只在目标
+不存在时执行 temporary clone、detached checkout、完整校验和 atomic publish：
+
+```text
+deps/xverif.lock.json
+  -> .deps/.xverif.install-<pid>
+  -> validate origin/HEAD/clean/LICENSE/tools
+  -> os.replace
+  -> .deps/xverif
+```
+
+目标已存在时只验证，不 pull、不 checkout、不 reset、不 clean、不覆盖。lock 或
+checkout 漂移返回 `BLOCKED`。`.deps/` 被 Git、文本格式检查和公开资产扫描排除，
+因为它是单独许可的第三方 checkout，不属于 verif-harness 发布内容；该排除不能
+用于隐藏 verif-harness 自身的敏感文件。
+
+查找优先级固定为：显式 `--xverif-root` → `XVERIF_HOME` → project/current/
+repository `.deps/xverif` → fail closed。
+
 ## 请求合同
 
 请求使用 `xverif-request.schema.json`。adapter 还执行 JSON Schema 之外的路径、
@@ -52,7 +74,7 @@ placeholder、secret-like argv 和精确字段检查。
 
 ## xverif 身份合同
 
-`--xverif-root` 或 `XVERIF_HOME` 指向已批准 checkout。adapter 只从
+托管 `.deps/xverif`、`--xverif-root` 或 `XVERIF_HOME` 指向已批准 checkout。adapter 只从
 `<xverif-root>/tools/<tool>` 解析 wrapper，并记录：
 
 - wrapper 绝对路径、大小无关的 SHA-256；

@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SUFFIXES = {".md", ".py", ".sh", ".sv", ".svh", ".f", ".yml", ".yaml", ".json", ".toml", ".tmpl"}
-SKIP = {".git", "build", "dist", "site", "__pycache__", ".venv"}
+SKIP = {".git", ".deps", "build", "dist", "site", "__pycache__", ".venv"}
 
 
 def main() -> int:

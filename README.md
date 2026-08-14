@@ -53,7 +53,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 - Simulator-independent Python structure and public-release checks.
 - A bundled 29-mode Codex skill for Stage 0 through verification freeze.
 - A fail-closed CLI adapter for deterministic tools from
-  `git@github.com:BLANK2077/xverif.git`.
+  `https://github.com/BLANK2077/xverif.git`.
 - GitHub CI, documentation deployment, and tagged-release automation.
 
 ## Requirements
@@ -81,6 +81,17 @@ Expected result with Verilator installed:
 SIMPLE_FIFO_SMOKE PASS
 ```
 
+Enable the optional commit-pinned xverif dependency with one additional flag:
+
+```bash
+./scripts/setup.sh --with-xverif
+```
+
+This installs source from the reviewed upstream into the Git-ignored
+`.deps/xverif` directory and verifies its repository, exact commit, clean
+state, MIT License hash, wrappers, and a real `xbit` adapter smoke. Core
+verif-harness workflows remain usable without xverif.
+
 ## Generate a DUT integration skeleton
 
 ```bash
@@ -94,17 +105,20 @@ Review and replace every TODO against the approved DUT specification.
 ## Delegate to xverif
 
 `verif-harness` remains the planning and governance framework. Its CLI adapter
-can execute one reviewed operation from an approved xverif checkout while
+can execute one reviewed operation from the managed xverif checkout while
 capturing argv, Git identity, wrapper and artifact hashes, and native output:
 
 ```bash
 python3 scripts/verif_harness.py xverif probe \
-  --xverif-root /path/to/xverif --tool xbit
+  --tool xbit
 ```
 
 xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
 `xwaveform`), not a single `xverif` executable. See
 [docs/xverif_integration.md](docs/xverif_integration.md).
+The pinned checkout is an optional dependency, not vendored verif-harness
+source; attribution and proprietary-EDA boundaries are recorded in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Adding a new DUT
 
@@ -145,6 +159,8 @@ skills/verif-harness/    Reusable Codex skill
 templates/dut/           Standalone DUT integration templates
 tests/                   Python and structural tests
 .github/                 CI, Pages, release, issue, and PR automation
+deps/                    Reviewed optional-dependency locks and schemas
+.deps/                   Git-ignored managed dependency checkouts
 ```
 
 ## Codex skill

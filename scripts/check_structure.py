@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_DIRS = [
-    "docs", "examples/simple_fifo", "scripts", "templates/dut", "tests",
+    "deps", "docs", "examples/simple_fifo", "scripts", "templates/dut", "tests",
     "skills/verif-harness", ".github/workflows", ".github/ISSUE_TEMPLATE",
 ]
 
@@ -19,6 +19,29 @@ def main() -> int:
     for name in REQUIRED_DIRS:
         if not (ROOT / name).is_dir():
             failures.append(f"missing directory: {name}")
+    for name in (
+        "THIRD_PARTY_NOTICES.md", "deps/xverif.lock.json",
+        "deps/xverif.lock.schema.json", "scripts/setup_xverif.py",
+        "scripts/check_xverif.py",
+    ):
+        if not (ROOT / name).is_file():
+            failures.append(f"missing managed-dependency file: {name}")
+    lock_path = ROOT / "deps/xverif.lock.json"
+    if lock_path.is_file():
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        if lock.get("repository") != "https://github.com/BLANK2077/xverif.git":
+            failures.append("xverif lock repository is not the reviewed upstream")
+        commit = lock.get("commit", "")
+        if not isinstance(commit, str) or len(commit) != 40 or any(
+            character not in "0123456789abcdef" for character in commit
+        ):
+            failures.append("xverif lock commit is not a full lowercase object ID")
+        if lock.get("license") != "MIT":
+            failures.append("xverif lock license is not MIT")
+        if lock.get("tools") != [
+            "xbit", "xentry", "xloc", "xsva", "xcov", "xdebug", "xwaveform",
+        ]:
+            failures.append("xverif lock tools do not match the reviewed wrapper set")
     config_path = ROOT / "examples/simple_fifo/config/example.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     filelist_path = ROOT / config["filelist"]

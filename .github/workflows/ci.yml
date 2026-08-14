@@ -32,6 +32,10 @@ jobs:
           verilator --version
       - name: Run structure, unit, and public-release checks
         run: make check
+      - name: Install and verify pinned xverif dependency
+        run: |
+          make setup-xverif
+          make check-xverif
       - name: Run executable example
         run: make example
       - name: Build documentation

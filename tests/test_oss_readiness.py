@@ -39,6 +39,17 @@ class OssReadinessTest(unittest.TestCase):
             findings = MODULE.scan_worktree(root, MODULE.deny_terms(root))
             self.assertEqual(findings, [])
 
+    def test_excludes_managed_dependency_checkout_from_public_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            dependency = root / ".deps/xverif/vendor.bin"
+            dependency.parent.mkdir(parents=True)
+            dependency.write_text(
+                "path=/" + "home/private/vendor\n", encoding="utf-8"
+            )
+            findings = MODULE.scan_worktree(root, [])
+            self.assertEqual(findings, [])
+
 
 if __name__ == "__main__":
     unittest.main()

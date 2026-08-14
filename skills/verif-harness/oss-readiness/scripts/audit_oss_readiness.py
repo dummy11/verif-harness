@@ -13,13 +13,13 @@ from pathlib import Path
 
 REQUIRED = [
     "README.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md",
-    "SECURITY.md", "ARCHITECTURE.md", "AGENTS.md",
+    "SECURITY.md", "ARCHITECTURE.md", "AGENTS.md", "THIRD_PARTY_NOTICES.md",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml",
     ".github/pull_request_template.md", ".github/workflows/ci.yml",
     "examples/simple_fifo/README.md", "scripts/run_example.sh",
 ]
-SKIP_PARTS = {".git", "build", "dist", "site", "__pycache__", ".venv"}
+SKIP_PARTS = {".git", ".deps", "build", "dist", "site", "__pycache__", ".venv"}
 SKIP_FILES = {Path(".github/public-release-denylist.txt")}
 GENERIC_PATTERNS = {
     "ABSOLUTE_USER_PATH": re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+/"),

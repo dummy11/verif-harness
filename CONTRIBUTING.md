@@ -10,6 +10,9 @@ Thank you for improving verif-harness.
    names, paths, URLs, credentials, license servers, or scheduler settings.
 4. Add tests for generator or checker behavior.
 5. Document simulator-specific behavior without claiming untested support.
+6. Treat `deps/xverif.lock.json` changes as dependency upgrades: review the
+   upstream commit, license and third-party boundary, run `make setup-xverif
+   check-xverif`, and never commit `.deps/`.
 
 ## Development checks
 

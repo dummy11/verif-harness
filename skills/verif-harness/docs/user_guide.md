@@ -742,19 +742,30 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 
 **输入**：
 
-- 已批准的 xverif checkout root，权威 upstream 为
-  `git@github.com:BLANK2077/xverif.git`；
+- 完整仓库的 `deps/xverif.lock.json`，固定
+  `https://github.com/BLANK2077/xverif.git`、完整 commit、MIT License hash
+  和七个 wrapper；独立 Skill 部署则提供等价的已批准 checkout root；
 - `xverif-request.json`：`tool`、evidence 分类用 `operation`、native `arguments`、
   可选项目相对 `stdin_path`、working directory、环境变量名、timeout、
   `json/xout/text`、接受退出码和 expected artifacts；
 - selected tool 的 upstream reference/action schema；
 - 项目 `AGENTS.md`、verification plan 和当前 stage 的证据要求。
 
-**用法**：先确认 selected wrapper 和上游身份：
+**用法**：在完整 verif-harness 仓库一次性安装并验证固定版本：
+
+```bash
+./scripts/setup.sh --with-xverif
+# 或：make setup-xverif check-xverif
+```
+
+安装器只在 `.deps/xverif` 不存在时执行 temporary clone、detached checkout、
+完整校验和 atomic publish；已有目录只验证，不 pull、不 checkout、不覆盖。
+
+然后确认 selected wrapper 和上游身份：
 
 ```bash
 python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
-  --xverif-root <xverif-root> --tool xbit \
+  --tool xbit \
   --out /tmp/xverif-xbit-probe.json
 ```
 
@@ -763,16 +774,17 @@ python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
 ```bash
 python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
   --project-root . --request xverif-request.json \
-  --xverif-root <xverif-root> \
   --out-dir artifacts/xverif/xbit-conv-001
 ```
 
 也可经开源项目根 CLI 进入同一 adapter：
 
 ```bash
-python3 scripts/verif_harness.py xverif probe \
-  --xverif-root <xverif-root> --tool xbit
+python3 scripts/verif_harness.py xverif probe --tool xbit
 ```
+
+adapter 按显式 `--xverif-root` → `XVERIF_HOME` → project/current/repository
+`.deps/xverif` 的固定顺序查找；正常托管使用无需传路径。
 
 `xbit` JSON 示例 request 的核心字段为：
 
@@ -809,7 +821,9 @@ python3 scripts/verif_harness.py xverif probe \
 argument、环境、EDA/NPI/license/LSF 条件、output completeness、result semantics 与
 项目 stage evidence 的映射；决定失败后的下一动作，不允许自动 fallback。
 
-**边界**：xverif 是工具仓库而不是统一 executable；adapter 只允许七个 one-shot
+**边界**：xverif 是可选、单独许可和维护的工具仓库，而不是统一 executable；
+`.deps/xverif` 不进入 verif-harness Git/source archive/release；不得直接 pull 或
+vendor 上游源码。adapter 只允许七个 one-shot
 wrapper，不调用 MCP/loop/admin；不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
 JSON/XOUT、local/LSF、backend 或 data source；adapter `PASS` 不是 testcase PASS、
 coverage/assertion closure、waiver、Stage approval 或 freeze。

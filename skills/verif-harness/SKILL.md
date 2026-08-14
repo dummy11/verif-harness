@@ -130,7 +130,10 @@ mode. Do not repair findings unless the user asks.
 
 Read `xverif/INSTRUCTIONS.md`, the request schema, and
 `references/xverif-adapter-contract.md`. Route one reviewed operation to the
-allowlisted CLI wrapper under an approved `BLANK2077/xverif` checkout. Preserve
+allowlisted CLI wrapper under the commit-pinned managed `BLANK2077/xverif`
+checkout. When operating in the verif-harness repository, use
+`scripts/setup_xverif.py` and `deps/xverif.lock.json`; do not clone a moving
+branch, vendor upstream source, or silently update an existing checkout. Preserve
 native argv and JSON/XOUT/text semantics, capture tool Git identity and hashes,
 and fail closed on protocol, timeout, or artifact errors. Do not invent a
 single `xverif` executable, auto-switch surfaces/backends, or interpret adapter
@@ -293,6 +296,8 @@ Stage 2+ implementation and evidence contracts, read
 - `references/xverif-adapter-contract.md`: xverif 工具族、request/result、
   JSON/XOUT、provenance 和权限合同。
 - `xverif/`: request schema、example 和 deterministic CLI adapter。
+- Repository `deps/xverif.lock.json` and `scripts/setup_xverif.py`: optional
+  managed dependency identity, installation, and validation.
 - `oss-readiness/`: public-release structure and sensitive-data audit.
 - `assets/`: Stage 0 governance assets and templates copied into projects.
 - Each write mode has one `INSTRUCTIONS.md`; read it completely before acting.

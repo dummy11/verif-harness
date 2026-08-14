@@ -1,5 +1,17 @@
 # Troubleshooting
 
+## Managed xverif is missing or blocked
+
+Run `./scripts/setup.sh --with-xverif` or `make setup-xverif check-xverif` from
+the verif-harness root. The installer refuses to overwrite an existing
+`.deps/xverif`; it also fails closed when origin, commit, clean state, MIT
+License hash, or wrapper inventory differs from `deps/xverif.lock.json`.
+
+Do not repair drift with an implicit `git pull`, reset, or clean. Preserve any
+local content, review the dependency change, and create a fresh checkout from
+the updated lock. Explicit `--xverif-root` and `XVERIF_HOME` remain controlled
+overrides, not automatic fallbacks after a managed-checkout failure.
+
 ## Verilator is missing
 
 Run `./scripts/setup.sh` for the diagnostic and install Verilator 5.x using the

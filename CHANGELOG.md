@@ -7,6 +7,10 @@ Versioning.
 
 ### Added
 
+- Commit-pinned optional xverif dependency management with one-command setup,
+  lock/schema validation, default discovery, provenance checks, real xbit CI
+  smoke, and third-party notices without vendoring xverif source.
+
 - Eight contract-driven lifecycle modes: simulator profiles, UVC completion,
   scoreboard completion, regression triage, coverage closure, assertion
   closure, change control, and freeze-baseline manifests.

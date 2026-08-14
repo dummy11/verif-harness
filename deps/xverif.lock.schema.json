@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dummy11/verif-harness/schemas/xverif.lock.schema.json",
+  "title": "verif-harness managed xverif dependency lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "repository",
+    "commit",
+    "license",
+    "license_file_sha256",
+    "tools"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {"const": "xverif"},
+    "repository": {
+      "const": "https://github.com/BLANK2077/xverif.git"
+    },
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "license": {"const": "MIT"},
+    "license_file_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["xbit", "xcov", "xdebug", "xentry", "xloc", "xsva", "xwaveform"]
+      }
+    }
+  }
+}
