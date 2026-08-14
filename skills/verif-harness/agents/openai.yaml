@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Harness"
   short_description: "Build and audit RTL verification with deterministic tools"
-  default_prompt: "Use $verif-harness to inspect this RTL verification project, select the next safe mode, and delegate deterministic fact queries through xverif when appropriate."
+  default_prompt: "Use $verif-harness to inspect this RTL verification project, select the next safe mode, delegate deterministic verification facts through xverif, and inspect VCD/FST waveforms through WavePeek when appropriate."

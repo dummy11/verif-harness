@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "wavepeek",
+  "repository": "https://github.com/kleverhq/wavepeek.git",
+  "commit": "8779507b06f6b77be49f0d934ea9339140a8df2a",
+  "ref": "refs/tags/v2.2.3",
+  "version": "2.2.3",
+  "license": "Apache-2.0",
+  "license_file_sha256": "1a9448bf8d44bab1b69f1b354449972c0c22a132f3a64b9e3c994e02d50b4f7c",
+  "cargo_lock_sha256": "2b1a314a078520740f68ddf4d8d6bd8295e1f862181a75c6a1dbc871a4d6e40a",
+  "binary": "wavepeek",
+  "cargo_features": [],
+  "release_base_url": "https://github.com/kleverhq/wavepeek/releases/download/v2.2.3",
+  "release_assets": {
+    "aarch64-apple-darwin": {
+      "archive": "wavepeek-aarch64-apple-darwin.tar.gz",
+      "sha256": "764a6b413dfb9bfce4f0bf9f5b2f77c476d646feea26c9d4e18590baee4e49e5"
+    },
+    "x86_64-apple-darwin": {
+      "archive": "wavepeek-x86_64-apple-darwin.tar.gz",
+      "sha256": "ac6510391449f5aa994ab42d71a133acfe50ba4b3553d2424a48bd2f08b9146a"
+    },
+    "aarch64-unknown-linux-gnu": {
+      "archive": "wavepeek-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "254ba9bd7c72343c482cbbb1920fe89a7bb6345bcca695b7becba463849407a6"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "archive": "wavepeek-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "2eafcd37b6cef74eab6a2340d61dad530afc436baecace5d5bd6e8f46c13f704"
+    }
+  }
+}

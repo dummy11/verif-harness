@@ -1,4 +1,4 @@
-.PHONY: setup setup-xverif check-xverif test structure format sanitize example check release-check docs
+.PHONY: setup setup-xverif check-xverif setup-wavepeek check-wavepeek test structure format sanitize example check release-check docs
 
 setup:
 	./scripts/setup.sh
@@ -8,6 +8,12 @@ setup-xverif:
 
 check-xverif:
 	python3 scripts/check_xverif.py
+
+setup-wavepeek:
+	python3 scripts/setup_wavepeek.py
+
+check-wavepeek:
+	python3 scripts/check_wavepeek.py
 
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'

@@ -14,6 +14,9 @@ This repository contains public, reusable verification infrastructure.
 - Keep optional xverif source under Git-ignored `.deps/`; never vendor it or
   publish proprietary EDA dependencies. Treat its lock changes as reviewed
   dependency upgrades and preserve separate licensing/ownership.
+- Keep optional WavePeek source and binaries under Git-ignored `.deps/`; pin
+  source, Cargo.lock, license, and version, keep FSDB disabled by default, and
+  preserve WavePeek's separate Apache-2.0 ownership and release boundary.
 
 ## Required checks
 

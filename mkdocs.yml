@@ -15,6 +15,7 @@ nav:
   - Simulator support: simulator_support.md
   - Codex skill modes: skill_modes.md
   - xverif integration: xverif_integration.md
+  - WavePeek integration: wavepeek_integration.md
   - Tool versions: tool_versions.md
   - Coding style: coding_style.md
   - Troubleshooting: troubleshooting.md

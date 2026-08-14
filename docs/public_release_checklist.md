@@ -12,6 +12,10 @@ Automation prepares evidence; a Human owner makes the publication decision.
       license hash, wrappers, and real xbit smoke.
 - [ ] Confirm `.deps/` and all xverif/vendor build artifacts are absent from
       the release archive; review `THIRD_PARTY_NOTICES.md`.
+- [ ] Run `make setup-wavepeek check-wavepeek`; verify the locked source,
+      Apache-2.0/Cargo.lock hashes, VCD/FST-only build, and real schema smoke.
+- [ ] Confirm WavePeek source, binary, Cargo target data, waveforms, and any
+      FSDB/Verdi material are absent from the release archive.
 - [ ] Confirm the example prints `SIMPLE_FIFO_SMOKE PASS`.
 - [ ] Run `python3 scripts/check_public_release.py` after the final commit.
 - [ ] Review `git log --all`, all tags, author metadata, and remote URLs.

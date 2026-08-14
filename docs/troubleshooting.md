@@ -1,5 +1,21 @@
 # Troubleshooting
 
+## Managed WavePeek is missing or blocked
+
+Run `./scripts/setup.sh --with-wavepeek` or `make setup-wavepeek
+check-wavepeek`. The installer refuses partial, dirty, wrong-origin,
+wrong-commit, wrong-license, wrong-Cargo.lock, or wrong-version state. It never
+updates an existing checkout. Preserve any user files, move the exact failed
+`.deps/wavepeek*` paths aside manually, then reinstall. Network access to the
+locked GitHub source tag and official release archive is required initially.
+
+## WavePeek cannot open FSDB
+
+The managed public build deliberately supports VCD/FST only. FSDB needs the
+upstream `fsdb` feature and a separately licensed Verdi SDK. Configure that as
+an explicit local extension; do not add vendor files, licenses, or FSDB data to
+this repository.
+
 ## Managed xverif is missing or blocked
 
 Run `./scripts/setup.sh --with-xverif` or `make setup-xverif check-xverif` from

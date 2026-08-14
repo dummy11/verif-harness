@@ -4,7 +4,7 @@
 Stage 0 文档基线、UVM/harness 实现、Golden 对拍、coverage/assertion、回归、
 CI、sign-off 和 verification freeze candidate。
 
-它包含 29 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
+它包含 30 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
 waiver、stage gate 和最终 freeze approval 始终在 Human 权限边界内。
 
 ## 基本使用
@@ -23,7 +23,7 @@ $verif-harness stage-gate-review 4
 - 不存在 `.harness-config.json`：从 `init` 开始。
 - 状态不明确时只报告冲突，不自动执行写模式。
 
-## 29 个模式
+## 30 个模式
 
 <!-- markdownlint-disable MD013 -->
 
@@ -38,6 +38,7 @@ $verif-harness stage-gate-review 4
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
 | `xverif` | 通过受控 CLI adapter 调用固定版本 xverif 工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
+| `wavepeek` | 通过受控 CLI adapter 调用固定版本 WavePeek | 对 VCD/FST 做有界、可复现的波形查询 | `$verif-harness wavepeek probe` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | 生成 simulator command/capability profile | 增加一个评审后的 simulator 配置 | `$verif-harness add-simulator-profile` |
 | `add-testcase` | 生成 test/vseq 并加入 candidate list | 实现一个计划内场景 | `$verif-harness add-testcase` |
@@ -102,6 +103,31 @@ python3 scripts/verif_harness.py xverif probe --tool xbit
 
 xverif 仍是可选、单独许可、单独维护的底层工具；checkout 不进入
 verif-harness source archive 或 release。
+
+## WavePeek 集成
+
+```text
+Codex Agent
+   ↓
+verif-harness Skill / framework
+   ↓
+WavePeek CLI adapter
+   ↓
+kleverhq/wavepeek
+```
+
+一次性安装固定 commit、Apache-2.0 License 和 Cargo.lock 对应的 VCD/FST-only
+版本：
+
+```bash
+./scripts/setup.sh --with-wavepeek
+python3 scripts/verif_harness.py wavepeek probe
+```
+
+源码位于 `.deps/wavepeek`，编译后的 CLI 位于
+`.deps/wavepeek-bin/wavepeek`；两者都不进入 Git 或 release。默认不启用需要
+Verdi SDK 的 FSDB feature。adapter 只执行显式 request 并保存 provenance，
+不能把命令 PASS 解释为验证签核。
 
 ## 权限边界
 

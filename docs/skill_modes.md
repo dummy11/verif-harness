@@ -1,6 +1,6 @@
 # Codex skill modes
 
-The bundled `verif-harness` skill provides 29 explicit modes. Invoke one from a
+The bundled `verif-harness` skill provides 30 explicit modes. Invoke one from a
 verification project root, for example:
 
 ```text
@@ -23,6 +23,7 @@ DUT RTL root. Review and approval remain Human responsibilities.
 | `finalize-filelist-and-make` | Generate compile-order filelists and a compile-only target | Close the M1.1 compile loop | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | Audit config, documents, stage state, legacy files, and RTL dirtiness | Resume or diagnose a project | `$verif-harness doctor` |
 | `xverif` | Delegate one reviewed request to the commit-pinned managed xverif CLI tool and capture provenance | Need deterministic bit/debug/coverage/entry/log/SVA/waveform evidence | `$verif-harness xverif probe --tool xbit` |
+| `wavepeek` | Delegate one bounded query to commit-pinned WavePeek and capture provenance | Need deterministic VCD/FST hierarchy, value, change, property, or transfer evidence | `$verif-harness wavepeek probe` |
 | `add-regression-runner` | Add isolated seeded regression and strict result collection | Move from single tests to repeatable batches | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | Generate a normalized command/capability profile | Add a reviewed simulator configuration without claiming support | `$verif-harness add-simulator-profile` |
 | `add-testcase` | Add a test/vseq skeleton to a candidate list | Implement a planned scenario | `$verif-harness add-testcase` |
@@ -57,6 +58,7 @@ init
   -> add-testcase / add-coverage-skeleton / add-assertion-skeleton
   -> add-refmodel-bridge / add-regression-runner
   -> xverif as needed for deterministic native evidence
+  -> wavepeek as needed for bounded VCD/FST evidence
   -> add-ci-hook / add-performance-gate
   -> regression-triage
   -> audit-traceability / coverage-closure / assertion-closure

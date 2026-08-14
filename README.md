@@ -51,9 +51,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 - Interface, SVA, bind, filelist, and smoke-test patterns.
 - A license-free `simple_fifo` example for Verilator.
 - Simulator-independent Python structure and public-release checks.
-- A bundled 29-mode Codex skill for Stage 0 through verification freeze.
+- A bundled 30-mode Codex skill for Stage 0 through verification freeze.
 - A fail-closed CLI adapter for deterministic tools from
   `https://github.com/BLANK2077/xverif.git`.
+- Commit-pinned WavePeek integration for bounded VCD/FST inspection.
 - GitHub CI, documentation deployment, and tagged-release automation.
 
 ## Requirements
@@ -92,6 +93,19 @@ This installs source from the reviewed upstream into the Git-ignored
 state, MIT License hash, wrappers, and a real `xbit` adapter smoke. Core
 verif-harness workflows remain usable without xverif.
 
+Enable the optional commit-pinned WavePeek dependency independently or with
+the xverif flag:
+
+```bash
+./scripts/setup.sh --with-wavepeek
+./scripts/setup.sh --with-xverif --with-wavepeek
+```
+
+This verifies the exact WavePeek source, Apache-2.0 License and Cargo.lock,
+then downloads the matching official VCD/FST-only release asset by platform
+and verifies its pinned SHA-256 below Git-ignored `.deps/`. FSDB support is not
+enabled, and installing WavePeek does not require a Rust toolchain.
+
 ## Generate a DUT integration skeleton
 
 ```bash
@@ -119,6 +133,23 @@ xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
 The pinned checkout is an optional dependency, not vendored verif-harness
 source; attribution and proprietary-EDA boundaries are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Inspect a waveform with WavePeek
+
+WavePeek is a separate deterministic CLI for bounded VCD/FST queries. After
+managed setup, probe it or execute a reviewed request:
+
+```bash
+python3 scripts/verif_harness.py wavepeek probe
+python3 scripts/verif_harness.py wavepeek run \
+  --project-root . \
+  --request skills/verif-harness/wavepeek/wavepeek-request.example.json \
+  --out-dir artifacts/wavepeek/schema-smoke
+```
+
+The adapter captures Git and binary identity plus stdout/stderr hashes. Its
+PASS is execution evidence, not a waveform interpretation or sign-off. See
+[docs/wavepeek_integration.md](docs/wavepeek_integration.md).
 
 ## Adding a new DUT
 

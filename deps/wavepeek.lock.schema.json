@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dummy11/verif-harness/schemas/wavepeek.lock.schema.json",
+  "title": "verif-harness managed WavePeek dependency lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "name", "repository", "commit", "ref", "version",
+    "license", "license_file_sha256", "cargo_lock_sha256", "binary",
+    "cargo_features", "release_base_url", "release_assets"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {"const": "wavepeek"},
+    "repository": {"const": "https://github.com/kleverhq/wavepeek.git"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "ref": {"const": "refs/tags/v2.2.3"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "license": {"const": "Apache-2.0"},
+    "license_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cargo_lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "binary": {"const": "wavepeek"},
+    "cargo_features": {"type": "array", "maxItems": 0},
+    "release_base_url": {"const": "https://github.com/kleverhq/wavepeek/releases/download/v2.2.3"},
+    "release_assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"],
+      "properties": {
+        "aarch64-apple-darwin": {"$ref": "#/$defs/asset"},
+        "x86_64-apple-darwin": {"$ref": "#/$defs/asset"},
+        "aarch64-unknown-linux-gnu": {"$ref": "#/$defs/asset"},
+        "x86_64-unknown-linux-gnu": {"$ref": "#/$defs/asset"}
+      }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive", "sha256"],
+      "properties": {
+        "archive": {"type": "string", "pattern": "^wavepeek-[a-z0-9_-]+\\.tar\\.gz$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

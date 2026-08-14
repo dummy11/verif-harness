@@ -1,5 +1,24 @@
 # Third-party notices
 
+## WavePeek
+
+verif-harness can optionally download and build a commit-pinned source checkout
+of [kleverhq/wavepeek](https://github.com/kleverhq/wavepeek). Source is stored
+under `.deps/wavepeek`; the executable is stored under
+`.deps/wavepeek-bin/wavepeek`. Neither is copied into verif-harness source
+archives or releases.
+
+WavePeek is separately owned and licensed under Apache License 2.0. The exact
+reviewed license file is pinned by SHA-256 in `deps/wavepeek.lock.json` and is
+available in the managed checkout. Copyright 2026 esynr3z. The upstream
+license is at <https://github.com/kleverhq/wavepeek/blob/main/LICENSE>.
+
+The managed default build enables no optional Cargo features and supports
+VCD/FST. FSDB support requires the separately licensed Synopsys Verdi FSDB
+Reader SDK; verif-harness does not download, redistribute, configure, or grant
+rights to that SDK. Never publish waveform data, Verdi files, vendor libraries,
+license configuration, or locally built WavePeek artifacts with this project.
+
 ## xverif
 
 verif-harness can optionally download a commit-pinned source checkout of

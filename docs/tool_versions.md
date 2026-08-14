@@ -8,6 +8,7 @@
 | UVM | IEEE 1800.2-compatible | Commercial simulator integration |
 | VCS | User-validated | Full UVM integration target |
 | xverif | Approved Git commit | Deterministic bit/debug/coverage/SVA tool delegation |
+| WavePeek | 2.2.3 / approved Git commit | Deterministic VCD/FST waveform queries |
 
 On Ubuntu, install the packaged Verilator with:
 
@@ -26,3 +27,9 @@ in `deps/xverif.lock.json`; `./scripts/setup.sh --with-xverif` installs it into
 `.deps/xverif`. The adapter records the selected wrapper SHA-256 and checkout
 commit for every run. Updating the lock is a separately reviewed dependency
 change, never an implicit branch update.
+
+WavePeek uses reviewed source from `https://github.com/kleverhq/wavepeek.git`.
+Its lock records the exact commit, version, License and Cargo.lock hashes.
+`./scripts/setup.sh --with-wavepeek` verifies an official platform-specific
+VCD/FST release archive against a pinned SHA-256; public CI does not enable
+proprietary FSDB support and no local Rust build is required.

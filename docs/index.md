@@ -11,6 +11,7 @@ optional Codex-assisted workflow.
 - [Simulator support](simulator_support.md)
 - [Codex skill modes](skill_modes.md)
 - [xverif integration](xverif_integration.md)
+- [WavePeek integration](wavepeek_integration.md)
 - [Troubleshooting](troubleshooting.md)
 
 The executable example is documented in `examples/simple_fifo/README.md` at

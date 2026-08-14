@@ -56,6 +56,7 @@ clock/reset 连接、tie-off、bind、adapter 和 virtual-interface 发布；`tb
 - `add-ci-hook`
 - `regression-triage`
 - `xverif`
+- `wavepeek`
 
 Regression 记录 argv、seed、隔离运行目录、日志和严格结果。CI 模式只生成
 可评审 fragment；triage 只输出候选分类，并保留同 seed 重跑证据。
@@ -97,6 +98,21 @@ deps/xverif.lock.json
 
 该路径不会自动从 CLI 切换 MCP、从 local 切换 LSF、从 JSON 切换 XOUT，
 也不会把工具 `PASS` 提升为 Stage approval。
+
+WavePeek 使用平行但独立的 managed 路径：
+
+```text
+deps/wavepeek.lock.json
+  -> scripts/setup_wavepeek.py
+  -> exact tagged source + platform release archive SHA-256
+  -> .deps/wavepeek + .deps/wavepeek-bin/wavepeek
+  -> WavePeek CLI adapter
+  -> result.json + stdout/stderr + hashes
+```
+
+默认 build 不启用 Cargo feature，只覆盖可公开重现的 VCD/FST；需要专有 Verdi
+SDK 的 FSDB 不属于 public CI。adapter 校验 JSON/JSONL 完整性并保存 provenance，
+但不替代波形语义、root cause、waiver 或 closure 的人工判断。
 
 ### 治理与闭合层
 
@@ -157,13 +173,14 @@ stage packet -> Human sign-off -> freeze manifest
 
 ```text
 SKILL.md                       模式分发与全局约束
-README.md                      29 模式快速目录
+README.md                      30 模式快速目录
 docs/                          用户指南、架构和故障处理
 <mode>/INSTRUCTIONS.md         前置条件、流程与权限边界
 <mode>/*.example.json          合约示例
 <mode>/scripts/                确定性生成器和审计器
 references/                    实现、回归和生命周期模式
 xverif/                        CLI request schema、example 和 adapter
+wavepeek/                      波形 request schema、example 和 adapter
 assets/                        Stage 0 治理资产
 tests/                         合约、拒绝覆盖和 false-green 测试
 ```

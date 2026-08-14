@@ -4,13 +4,15 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 install_verilator=false
 with_xverif=false
+with_wavepeek=false
 
 for argument in "$@"; do
   case "$argument" in
     --install-verilator) install_verilator=true ;;
     --with-xverif) with_xverif=true ;;
+    --with-wavepeek) with_wavepeek=true ;;
     *)
-      echo "usage: $0 [--install-verilator] [--with-xverif]" >&2
+      echo "usage: $0 [--install-verilator] [--with-xverif] [--with-wavepeek]" >&2
       exit 2
       ;;
   esac
@@ -37,6 +39,11 @@ if [[ "$with_xverif" == true ]]; then
   python3 "$project_root/scripts/check_xverif.py"
 fi
 
+if [[ "$with_wavepeek" == true ]]; then
+  python3 "$project_root/scripts/setup_wavepeek.py" --project-root "$project_root"
+  python3 "$project_root/scripts/check_wavepeek.py"
+fi
+
 if command -v verilator >/dev/null 2>&1; then
   verilator --version
   echo "Setup PASS: run ./scripts/run_example.sh"
@@ -47,4 +54,8 @@ fi
 
 if [[ "$with_xverif" != true ]]; then
   echo "Optional xverif setup: ./scripts/setup.sh --with-xverif"
+fi
+
+if [[ "$with_wavepeek" != true ]]; then
+  echo "Optional WavePeek setup: ./scripts/setup.sh --with-wavepeek"
 fi

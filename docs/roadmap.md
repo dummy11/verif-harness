@@ -20,6 +20,7 @@
 - Versioned simulator option profiles.
 - Schema-validated CLI delegation to deterministic xverif tools.
 - Commit-pinned, separately licensed xverif source dependency management.
+- Commit-pinned, separately licensed WavePeek VCD/FST integration.
 
 ## v0.4 — regression integration
 

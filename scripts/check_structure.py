@@ -22,7 +22,9 @@ def main() -> int:
     for name in (
         "THIRD_PARTY_NOTICES.md", "deps/xverif.lock.json",
         "deps/xverif.lock.schema.json", "scripts/setup_xverif.py",
-        "scripts/check_xverif.py",
+        "scripts/check_xverif.py", "deps/wavepeek.lock.json",
+        "deps/wavepeek.lock.schema.json", "scripts/setup_wavepeek.py",
+        "scripts/check_wavepeek.py",
     ):
         if not (ROOT / name).is_file():
             failures.append(f"missing managed-dependency file: {name}")
@@ -42,6 +44,19 @@ def main() -> int:
             "xbit", "xentry", "xloc", "xsva", "xcov", "xdebug", "xwaveform",
         ]:
             failures.append("xverif lock tools do not match the reviewed wrapper set")
+    wavepeek_lock_path = ROOT / "deps/wavepeek.lock.json"
+    if wavepeek_lock_path.is_file():
+        lock = json.loads(wavepeek_lock_path.read_text(encoding="utf-8"))
+        if lock.get("repository") != "https://github.com/kleverhq/wavepeek.git":
+            failures.append("WavePeek lock repository is not the reviewed upstream")
+        if lock.get("commit") != "8779507b06f6b77be49f0d934ea9339140a8df2a":
+            failures.append("WavePeek lock commit is not the reviewed object ID")
+        if lock.get("version") != "2.2.3" or lock.get("license") != "Apache-2.0":
+            failures.append("WavePeek lock version or license differs from review")
+        if lock.get("ref") != "refs/tags/v2.2.3":
+            failures.append("WavePeek lock tag differs from the reviewed release")
+        if lock.get("cargo_features") != []:
+            failures.append("WavePeek default lock must not enable FSDB or other features")
     config_path = ROOT / "examples/simple_fifo/config/example.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     filelist_path = ROOT / config["filelist"]
@@ -75,7 +90,7 @@ def main() -> int:
         "add-ci-hook", "add-performance-gate", "regression-triage",
         "coverage-closure", "assertion-closure", "audit-traceability",
         "change-control", "stage-gate-review", "signoff-audit",
-        "freeze-baseline", "oss-readiness", "xverif", "patterns",
+        "freeze-baseline", "oss-readiness", "xverif", "wavepeek", "patterns",
     ]
     for mode in modes:
         if f"`{mode}" not in skill_text:
@@ -83,7 +98,7 @@ def main() -> int:
     for mode in (
         "add-simulator-profile", "complete-uvc", "complete-scoreboard",
         "regression-triage", "coverage-closure", "assertion-closure",
-        "change-control", "freeze-baseline", "xverif",
+        "change-control", "freeze-baseline", "xverif", "wavepeek",
     ):
         if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
             failures.append(f"mode lacks instructions: {mode}")

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "verif-harness WavePeek adapter request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "arguments", "working_directory", "environment_keys", "timeout_seconds", "output_format", "acceptable_exit_codes", "expected_artifacts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "operation": {"enum": ["version", "info", "scope", "signal", "value", "change", "property", "extract", "schema", "docs", "skill", "help"]},
+    "arguments": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "working_directory": {"type": "string", "minLength": 1},
+    "environment_keys": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}},
+    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+    "output_format": {"enum": ["json", "jsonl", "text"]},
+    "acceptable_exit_codes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+    "expected_artifacts": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  }
+}

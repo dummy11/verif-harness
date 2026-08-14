@@ -7,6 +7,10 @@ Versioning.
 
 ### Added
 
+- Commit-pinned optional WavePeek 2.2.3 source/release management, fail-closed
+  waveform adapter, real schema smoke, CI, and VCD/FST-only public boundary.
+- A 30th `wavepeek` Skill mode for deterministic, bounded waveform evidence.
+
 - Commit-pinned optional xverif dependency management with one-command setup,
   lock/schema validation, default discovery, provenance checks, real xbit CI
   smoke, and third-party notices without vendoring xverif source.
@@ -14,9 +18,9 @@ Versioning.
 - Eight contract-driven lifecycle modes: simulator profiles, UVC completion,
   scoreboard completion, regression triage, coverage closure, assertion
   closure, change control, and freeze-baseline manifests.
-- A 29-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
+- A 30-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
 - Unit tests for all new generators and evidence auditors.
-- A Chinese skill documentation set with a 29-mode README, detailed
+- A Chinese skill documentation set with a 30-mode README, detailed
   Stage 0-to-freeze user guide, architecture, and troubleshooting guide.
 - A 29th `xverif` mode with a schema-validated, fail-closed CLI adapter for the
   `BLANK2077/xverif` tool suite, native JSON/XOUT/text evidence, and Git/hash

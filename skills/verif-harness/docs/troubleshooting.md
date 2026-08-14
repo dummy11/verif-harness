@@ -113,6 +113,27 @@ command 必须真的输出 JSON；使用 `xout` 时第一条非空行必须是 `
 并核对 expected artifacts。adapter PASS 只说明调用合同满足，不证明 scan/
 analysis complete、coverage closed、assertion correct 或 regression passed。
 
+## managed WavePeek 返回 `BLOCKED`
+
+检查 `.deps/wavepeek` 与 `.deps/wavepeek-bin/wavepeek` 是否只存在一半、source
+是否 dirty、origin/HEAD/License/Cargo.lock 是否与 lock 不同，或 binary version
+是否不匹配。安装器不覆盖已有状态。先保存人工文件，由 Human 明确移走这两个
+exact path，再运行 `make setup-wavepeek check-wavepeek`。首次安装需要访问固定
+GitHub tag 和官方 release archive，不需要 Rust 或 crates.io。
+
+## WavePeek 返回 `PROTOCOL_ERROR`
+
+让 request 的 `output_format` 与 native flag 对齐：`json` 查询使用 `--json`
+（`schema` 本身直接输出 JSON）；`jsonl` 查询使用 `--jsonl`，并必须有完整
+`begin`/`end` 和连续 `seq`；human output 使用 `text`。不要放宽 parser 来掩盖
+contract mismatch。
+
+## WavePeek 无法读取 FSDB
+
+managed build 有意不启用 `fsdb` feature。FSDB 依赖单独许可的 Verdi SDK，不能
+通过把 vendor header/library 或 license 变量加入公开仓库来修复。需要时建立经
+Human 批准的本地 extension，并继续保证 Git/release 脱敏。
+
 ## `oss-readiness` 为零 finding，仍不能公开
 
 零 finding 只说明自动规则没有发现问题，不证明权属、无保密信息或已获公开许可。

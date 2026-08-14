@@ -13,6 +13,10 @@ Thank you for improving verif-harness.
 6. Treat `deps/xverif.lock.json` changes as dependency upgrades: review the
    upstream commit, license and third-party boundary, run `make setup-xverif
    check-xverif`, and never commit `.deps/`.
+7. Treat `deps/wavepeek.lock.json` changes as dependency upgrades: review the
+   source commit, version, Apache-2.0 License, Cargo.lock, default feature set,
+   and run `make setup-wavepeek check-wavepeek`. Never commit source, binaries,
+   waveforms, Cargo targets, or proprietary FSDB/Verdi material from `.deps/`.
 
 ## Development checks
 

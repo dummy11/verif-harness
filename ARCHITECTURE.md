@@ -91,4 +91,19 @@ contract; setup validates repository, commit, clean state, MIT License hash,
 and wrapper inventory before the adapter can consume it. The checkout is
 Git-ignored and excluded from verif-harness source archives.
 
+WavePeek follows the same ownership boundary with a separate deterministic
+waveform path:
+
+```text
+reviewed WavePeek request
+  -> verif-harness WavePeek adapter
+  -> .deps/wavepeek-bin/wavepeek
+  -> bounded VCD/FST JSON, JSONL, or text evidence
+```
+
+`deps/wavepeek.lock.json` pins source commit, version, Apache-2.0 License,
+Cargo.lock, and an empty feature set. Source and binary stay under `.deps/`.
+The managed build omits proprietary FSDB support. Query PASS is execution
+evidence and never changes verification approval state.
+
 See [docs/harness_design.md](docs/harness_design.md) for implementation rules.

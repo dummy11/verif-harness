@@ -3,7 +3,7 @@
 本文是 `verif-harness` 的完整操作手册，包含：
 
 - RTL 验证项目从 0 到 freeze 的推荐顺序；
-- 29 个模式各自的用途、输入、输出、用法和适用场景；
+- 30 个模式各自的用途、输入、输出、用法和适用场景；
 - 每个阶段必须由人工完成的决策；
 - 各模式的能力边界和不能据此得出的结论。
 
@@ -59,7 +59,9 @@ Stage 0：文档与治理基线
 `regression-triage` 在任何非全绿 regression 后使用；`change-control` 在任何
 approved/frozen baseline 发生变化时立即使用。
 
-`xverif` 不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派通道：需要做
+`xverif` 与 `wavepeek` 都不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派通道。
+
+`xverif` 需要做
 SystemVerilog bit 计算、设计/波形事实查询、coverage database 查询、entry 解码、
 日志位置恢复、SVA 解释或波形渲染时，由 `verif-harness` 先选择验证任务，再经
 CLI adapter 调用对应 xverif native tool。
@@ -827,6 +829,68 @@ vendor 上游源码。adapter 只允许七个 one-shot
 wrapper，不调用 MCP/loop/admin；不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
 JSON/XOUT、local/LSF、backend 或 data source；adapter `PASS` 不是 testcase PASS、
 coverage/assertion closure、waiver、Stage approval 或 freeze。
+
+### 5.14 `wavepeek`
+
+**用途**：把显式、有限范围的 VCD/FST 波形查询交给固定 commit 的
+`kleverhq/wavepeek` CLI，并归档可重放的工具身份、argv、stdout/stderr 和 hash
+证据。典型操作包括 `info`、`scope`、`signal`、`value`、`change`、`property`
+和各类 `extract`。
+
+**适用场景**：回归失败后定位首个变化；检查某个时窗内握手或 payload；抽取
+APB/AHB/AXI/AXI-Stream 传输；在 coverage/assertion triage 中取得确定性波形
+事实；CI 中执行不依赖 GUI 的 VCD/FST 查询。不用于猜测信号、无限制导出整份
+波形或自动宣布 root cause。
+
+**输入**：固定上游 URL/tag/commit/version/Apache-2.0 License hash/Cargo.lock
+hash/空 feature 集/四个平台官方 release archive SHA-256 的
+`deps/wavepeek.lock.json`；含 `operation`、native
+`arguments`、项目内 working directory、environment-key names、timeout、
+`json/jsonl/text`、accepted exit codes 和 expected artifacts 的 request；以及已
+授权的 VCD/FST、明确 scope/signal/time/property/protocol mapping。参数以固定
+版本的 `wavepeek help/docs/schema` 为准。
+
+**用法**：先安装并执行真实 schema smoke：
+
+```bash
+./scripts/setup.sh --with-wavepeek
+# 或：make setup-wavepeek check-wavepeek
+python3 scripts/verif_harness.py wavepeek probe
+```
+
+安装器只在 source 和 binary 都不存在时工作：clone exact tagged commit，校验
+origin/HEAD/clean/License/Cargo.lock，下载当前平台官方 VCD/FST release archive，
+校验 lock 中 SHA-256，然后原子发布 `.deps/wavepeek` 和
+`.deps/wavepeek-bin/wavepeek`。已有、partial、dirty 或 mismatched 状态只返回
+`BLOCKED`，不 pull、不覆盖。安装不需要 Rust 或 crates.io。
+
+复制 `wavepeek/wavepeek-request.example.json` 后执行：
+
+```bash
+python3 scripts/verif_harness.py wavepeek run \
+  --project-root . --request wavepeek-request.json \
+  --out-dir artifacts/wavepeek/query-001
+```
+
+例如查询 request 的 `operation` 为 `info` 时，`arguments` 可为
+`["info", "--waves", "waves/failure.vcd", "--json"]`，`output_format` 必须
+为 `json`。JSONL request 必须使用 native `--jsonl`。
+
+**输出**：安装器发布 Git-ignored `.deps/wavepeek` source 和
+`.deps/wavepeek-bin/wavepeek` executable；adapter 在全新 out-dir 生成
+`result.json`、`stdout.log`、`stderr.log`，记录 source Git identity、binary/
+request/output/artifact hashes、argv、cwd、exit code、parsed JSON/JSONL 和
+blockers。timeout、非预期 exit、非法 JSON、残缺 JSONL、缺 artifact 都 fail
+closed。
+
+**人工参与**：选择有意义的信号、时窗、采样事件、mapping、property 和 expected
+value；判断结果能否支持 root cause、bug/waiver/closure；审阅 lock upgrade 与
+Apache-2.0 边界。需要 FSDB 时还必须确认 Verdi SDK 许可和本地隔离策略。
+
+**边界**：WavePeek 保持独立源码所有权和发布边界；source、binary、Cargo target
+和 waveform 不进入 verif-harness Git/release。默认不启用需要专有 Verdi SDK
+的 `fsdb` feature。adapter 不使用 shell、不转存 environment values、不自动
+扩大查询，也不把 PASS 解释为 RTL 正确、root cause 确认或 freeze 完成。
 
 ## 6. 治理、闭合与发布模式
 

@@ -56,6 +56,10 @@ def main() -> int:
         "xverif", help="delegate a reviewed request through the deterministic xverif adapter"
     )
     xverif.add_argument("adapter_args", nargs=argparse.REMAINDER)
+    wavepeek = subparsers.add_parser(
+        "wavepeek", help="delegate a reviewed request through the deterministic WavePeek adapter"
+    )
+    wavepeek.add_argument("adapter_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command == "xverif":
         if not args.adapter_args:
@@ -67,6 +71,14 @@ def main() -> int:
         return subprocess.run(
             [sys.executable, str(adapter), *args.adapter_args], check=False
         ).returncode
+    if args.command == "wavepeek":
+        if not args.adapter_args:
+            parser.error("wavepeek requires adapter arguments; use 'wavepeek probe' or 'wavepeek run'")
+        adapter = (
+            Path(__file__).resolve().parents[1]
+            / "skills/verif-harness/wavepeek/scripts/wavepeek_adapter.py"
+        )
+        return subprocess.run([sys.executable, str(adapter), *args.adapter_args], check=False).returncode
     targets = generate(args.dut, args.output.resolve(), args.templates.resolve(), args.dry_run)
     print(json.dumps({"dry_run": args.dry_run, "files": [str(path) for path in targets]}, indent=2))
     return 0
