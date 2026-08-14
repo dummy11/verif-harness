@@ -7,12 +7,12 @@
 项目 AGENTS.md + 计划文档 + 已评审合约
                        |
                        v
-          verif-harness 模式分发入口
-             /          |          \
-          生成器       执行器       审计器
-             |           |           |
-         TB/文档/CI    日志/报告    findings/packet
-             \           |          /
+         verif-harness 模式分发入口
+          /        |          |          \
+       生成器    内置执行器   CLI adapter   审计器
+          |        |          |             |
+      TB/文档/CI 日志/报告  xverif evidence findings/packet
+          \        |          |            /
                   Human review
                        |
                  approved baseline
@@ -55,9 +55,33 @@ clock/reset 连接、tie-off、bind、adapter 和 virtual-interface 发布；`tb
 - `add-regression-runner`
 - `add-ci-hook`
 - `regression-triage`
+- `xverif`
 
 Regression 记录 argv、seed、隔离运行目录、日志和严格结果。CI 模式只生成
 可评审 fragment；triage 只输出候选分类，并保留同 seed 重跑证据。
+
+`xverif` 模式不重新实现 bit/debug/coverage/SVA 等确定性能力，而是把显式 JSON
+request 交给 CLI adapter。adapter 只允许权威 xverif checkout 的白名单 wrapper，
+固定环境与 timeout，并保存 native JSON/XOUT/text 和 Git/hash provenance。
+
+```text
+Codex Agent
+   |
+   v
+verif-harness Skill/framework
+   |  项目计划、stage policy、Human 决策边界
+   v
+xverif CLI adapter
+   |  schema、argv、环境 key、timeout、stdout/stderr、SHA-256
+   v
+BLANK2077/xverif tools/<selected-tool>
+   |  xbit / xdebug / xcov / xentry / xloc / xsva / xwaveform
+   v
+deterministic native evidence
+```
+
+该路径不会自动从 CLI 切换 MCP、从 local 切换 LSF、从 JSON 切换 XOUT，
+也不会把工具 `PASS` 提升为 Stage approval。
 
 ### 治理与闭合层
 
@@ -118,12 +142,13 @@ stage packet -> Human sign-off -> freeze manifest
 
 ```text
 SKILL.md                       模式分发与全局约束
-README.md                      28 模式快速目录
+README.md                      29 模式快速目录
 docs/                          用户指南、架构和故障处理
 <mode>/INSTRUCTIONS.md         前置条件、流程与权限边界
 <mode>/*.example.json          合约示例
 <mode>/scripts/                确定性生成器和审计器
 references/                    实现、回归和生命周期模式
+xverif/                        CLI request schema、example 和 adapter
 assets/                        Stage 0 治理资产
 tests/                         合约、拒绝覆盖和 false-green 测试
 ```

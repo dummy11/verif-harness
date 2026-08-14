@@ -10,10 +10,13 @@ Versioning.
 - Eight contract-driven lifecycle modes: simulator profiles, UVC completion,
   scoreboard completion, regression triage, coverage closure, assertion
   closure, change control, and freeze-baseline manifests.
-- A 28-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
+- A 29-mode skill catalog and end-to-end Stage 0-to-freeze workflow.
 - Unit tests for all new generators and evidence auditors.
-- A Chinese skill documentation set with a 28-mode README, detailed
+- A Chinese skill documentation set with a 29-mode README, detailed
   Stage 0-to-freeze user guide, architecture, and troubleshooting guide.
+- A 29th `xverif` mode with a schema-validated, fail-closed CLI adapter for the
+  `BLANK2077/xverif` tool suite, native JSON/XOUT/text evidence, and Git/hash
+  provenance.
 
 ## [0.1.0] - 2026-08-13
 

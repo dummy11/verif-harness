@@ -80,6 +80,31 @@ evidence 本身必须进入 required-evidence 哈希集合。不能伪造 metada
 的 EDA 环境执行，返回与 commit、seed、manifest、simulator version 绑定的日志和
 报告。无法归档时记录 evidence limitation，不能把缺失证据转为 PASS。
 
+## `xverif` adapter 报 `set XVERIF_HOME`
+
+设置 `XVERIF_HOME` 指向已批准的 `BLANK2077/xverif` checkout 根目录，或显式传
+`--xverif-root <root>`。该目录下必须存在 `tools/<selected-tool>`。不要把 PyPI
+同名包或任意 executable 当成该工具仓库。
+
+## xverif probe PASS，但执行失败
+
+Probe 只确认 wrapper 存在并记录 Git commit/hash，不启动真实依赖。根据 selected
+tool 检查 Python、Verdi/NPI、VDB/FSDB、license、LSF 和它要求的 environment
+keys。adapter 不会自动 fallback 到 MCP、其它 backend 或 fixture。
+
+## xverif 返回 `PROTOCOL_ERROR`
+
+检查 request 的 `output_format` 是否与 native 参数一致：使用 `json` 时 native
+command 必须真的输出 JSON；使用 `xout` 时第一条非空行必须是 `@...`；`xsva`
+等普通文本命令使用 `text`。不要从 XOUT 表格反解析 JSON，也不要让 adapter
+重编码 XOUT。
+
+## xverif native command exit 0，但业务结论仍不完整
+
+继续读取 JSON/XOUT 的 `ok/status/error/finding` 和 canonical completeness 字段，
+并核对 expected artifacts。adapter PASS 只说明调用合同满足，不证明 scan/
+analysis complete、coverage closed、assertion correct 或 regression passed。
+
 ## `oss-readiness` 为零 finding，仍不能公开
 
 零 finding 只说明自动规则没有发现问题，不证明权属、无保密信息或已获公开许可。

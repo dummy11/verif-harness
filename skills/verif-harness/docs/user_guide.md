@@ -3,7 +3,7 @@
 本文是 `verif-harness` 的完整操作手册，包含：
 
 - RTL 验证项目从 0 到 freeze 的推荐顺序；
-- 28 个模式各自的用途、输入、输出、用法和适用场景；
+- 29 个模式各自的用途、输入、输出、用法和适用场景；
 - 每个阶段必须由人工完成的决策；
 - 各模式的能力边界和不能据此得出的结论。
 
@@ -58,6 +58,11 @@ Stage 0：文档与治理基线
 `doctor` 在每个 stage 入口和每次 session 恢复时重复使用；
 `regression-triage` 在任何非全绿 regression 后使用；`change-control` 在任何
 approved/frozen baseline 发生变化时立即使用。
+
+`xverif` 不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派通道：需要做
+SystemVerilog bit 计算、设计/波形事实查询、coverage database 查询、entry 解码、
+日志位置恢复、SVA 解释或波形渲染时，由 `verif-harness` 先选择验证任务，再经
+CLI adapter 调用对应 xverif native tool。
 
 ## 3. 分阶段推荐顺序
 
@@ -719,6 +724,95 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 
 **边界**：regex match 不是 root-cause 结论；不改 test verdict、不创建 waiver、
 不修改源码。
+
+### 5.13 `xverif`
+
+**用途**：在不削弱 `verif-harness` stage/framework 治理的前提下，把一个已评审
+的底层确定性操作委派给 `BLANK2077/xverif` 工具族，并生成可追溯 evidence。
+
+**适用场景**：任一 Stage 需要以下事实或计算时：
+
+- `xbit`：SystemVerilog literal、signed/unsigned、slice、mask、表达式；
+- `xdebug`：daidir/FSDB 的 scope、driver/load、value、protocol、active driver；
+- `xcov`：VDB coverage summary、hole、scope、source evidence 和 export；
+- `xentry`：多拍 entry/descriptor/header 的 raw field 解码；
+- `xloc`：从 `L_XXXXXXXX` 恢复 UVM 日志源码位置；
+- `xsva`：SVA list/scan/lint/parse/explain；
+- `xwaveform`：从已导出 manifest 渲染波形 JPG/stats。
+
+**输入**：
+
+- 已批准的 xverif checkout root，权威 upstream 为
+  `git@github.com:BLANK2077/xverif.git`；
+- `xverif-request.json`：`tool`、evidence 分类用 `operation`、native `arguments`、
+  可选项目相对 `stdin_path`、working directory、环境变量名、timeout、
+  `json/xout/text`、接受退出码和 expected artifacts；
+- selected tool 的 upstream reference/action schema；
+- 项目 `AGENTS.md`、verification plan 和当前 stage 的证据要求。
+
+**用法**：先确认 selected wrapper 和上游身份：
+
+```bash
+python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
+  --xverif-root <xverif-root> --tool xbit \
+  --out /tmp/xverif-xbit-probe.json
+```
+
+复制并修改 `xverif/xverif-request.example.json`，然后运行：
+
+```bash
+python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
+  --project-root . --request xverif-request.json \
+  --xverif-root <xverif-root> \
+  --out-dir artifacts/xverif/xbit-conv-001
+```
+
+也可经开源项目根 CLI 进入同一 adapter：
+
+```bash
+python3 scripts/verif_harness.py xverif probe \
+  --xverif-root <xverif-root> --tool xbit
+```
+
+`xbit` JSON 示例 request 的核心字段为：
+
+```json
+{
+  "schema_version": 1,
+  "tool": "xbit",
+  "operation": "conv",
+  "arguments": ["conv", "8'shff", "--json"],
+  "stdin_path": null,
+  "working_directory": ".",
+  "environment_keys": [],
+  "timeout_seconds": 60,
+  "output_format": "json",
+  "acceptable_exit_codes": [0],
+  "expected_artifacts": []
+}
+```
+
+对于 xdebug/xcov/xentry 的 native JSON envelope，优先把请求写入项目内文件，
+在 `stdin_path` 指定该文件并让 native arguments 从 `-` 读取。adapter 只在结果中
+记录 stdin 的路径、大小和 SHA-256，不复制正文。
+
+**输出**：唯一新 evidence directory，其中包含：
+
+- `result.json`：adapter state、tool/operation、argv、cwd、允许的 environment key、
+  request/stdin hash、xverif Git commit/remote/dirty、wrapper hash、exit code、
+  native output format、parsed JSON（仅 JSON 模式）、artifact hashes 和 blockers；
+- `stdout.log`：native stdout 原样字节，XOUT 不反解析、不重排、不加 marker；
+- `stderr.log`：native stderr 原样字节；
+- 状态 `PASS/FAIL/TIMEOUT/TOOL_NOT_FOUND/PROTOCOL_ERROR/MISSING_ARTIFACT`。
+
+**人工参与**：选择正确的 native tool/action 和 CLI/MCP surface；评审 JSON schema、
+argument、环境、EDA/NPI/license/LSF 条件、output completeness、result semantics 与
+项目 stage evidence 的映射；决定失败后的下一动作，不允许自动 fallback。
+
+**边界**：xverif 是工具仓库而不是统一 executable；adapter 只允许七个 one-shot
+wrapper，不调用 MCP/loop/admin；不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
+JSON/XOUT、local/LSF、backend 或 data source；adapter `PASS` 不是 testcase PASS、
+coverage/assertion closure、waiver、Stage approval 或 freeze。
 
 ## 6. 治理、闭合与发布模式
 

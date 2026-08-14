@@ -1,6 +1,6 @@
 ---
 name: verif-harness
-description: Bootstrap, extend, audit, and govern harness-style RTL verification projects from Stage 0 through sign-off and public-release readiness. Use for UVM/harness scaffolding, test registration, coverage and assertion skeletons, reference-model adapters, deterministic regression, CI fragments, performance contracts, diagnostics, traceability, stage gates, structural sign-off, and open-source readiness audits. Never modify DUT RTL, approve Human Decisions, or declare confidential material safe to publish.
+description: Bootstrap, extend, audit, and govern harness-style RTL verification projects from Stage 0 through sign-off and public-release readiness. Use for UVM/harness scaffolding, test registration, coverage and assertion skeletons, reference-model adapters, deterministic regression, xverif CLI delegation, CI fragments, performance contracts, diagnostics, traceability, stage gates, structural sign-off, and open-source readiness audits. Never modify DUT RTL, approve Human Decisions, or declare confidential material safe to publish.
 ---
 
 # verif-harness
@@ -21,6 +21,7 @@ Support these explicit modes:
 - `add-env-layer`
 - `finalize-filelist-and-make`
 - `doctor`
+- `xverif`
 - `add-regression-runner`
 - `add-simulator-profile`
 - `add-testcase`
@@ -124,6 +125,16 @@ Read `doctor/INSTRUCTIONS.md`, then run `doctor/scripts/doctor.py` against the
 project root. This mode is read-only. Report errors, warnings, discovered
 stage state, legacy Claude artifacts, RTL dirtiness, and a recommended next
 mode. Do not repair findings unless the user asks.
+
+### `xverif`
+
+Read `xverif/INSTRUCTIONS.md`, the request schema, and
+`references/xverif-adapter-contract.md`. Route one reviewed operation to the
+allowlisted CLI wrapper under an approved `BLANK2077/xverif` checkout. Preserve
+native argv and JSON/XOUT/text semantics, capture tool Git identity and hashes,
+and fail closed on protocol, timeout, or artifact errors. Do not invent a
+single `xverif` executable, auto-switch surfaces/backends, or interpret adapter
+PASS as verification approval.
 
 ### `add-regression-runner`
 
@@ -268,7 +279,7 @@ Stage 2+ implementation and evidence contracts, read
 ## Resource map
 
 - `README.md`: 中文模式目录、快速用法和权限边界。
-- `docs/user_guide.md`: 中文 Stage 0→freeze 流程，以及 28 个模式的输入、
+- `docs/user_guide.md`: 中文 Stage 0→freeze 流程，以及 29 个模式的输入、
   输出、用法、用途、场景和人工检查点。
 - `docs/architecture.md`: 中文模式分层、数据流、证据状态和权限架构。
 - `docs/troubleshooting.md`: 中文常见故障、false-green 风险和恢复方法。
@@ -279,13 +290,16 @@ Stage 2+ implementation and evidence contracts, read
 - `references/lifecycle-patterns.md`: traceability and stage-gate rules.
 - `references/implementation-patterns.md`: explicit-contract rules for tests,
   coverage, assertions, reference models, CI, performance, and sign-off.
+- `references/xverif-adapter-contract.md`: xverif 工具族、request/result、
+  JSON/XOUT、provenance 和权限合同。
+- `xverif/`: request schema、example 和 deterministic CLI adapter。
 - `oss-readiness/`: public-release structure and sensitive-data audit.
 - `assets/`: Stage 0 governance assets and templates copied into projects.
 - Each write mode has one `INSTRUCTIONS.md`; read it completely before acting.
 
 ## Scope boundary
 
-The 28 modes cover Stage 0 and Stage 1 M1.1 scaffolding, additive Stage 2+
+The 29 modes cover Stage 0 and Stage 1 M1.1 scaffolding, additive Stage 2+
 control skeletons, simulator/UVC/scoreboard completion, deterministic
 regression and triage, coverage/assertion/change closure, structural audits,
 gate packets, and a hash-anchored freeze candidate. Meaningful stimulus and all

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "tool": "xbit",
+  "operation": "conv",
+  "arguments": [
+    "conv",
+    "8'shff",
+    "--json"
+  ],
+  "stdin_path": null,
+  "working_directory": ".",
+  "environment_keys": [],
+  "timeout_seconds": 60,
+  "output_format": "json",
+  "acceptable_exit_codes": [
+    0
+  ],
+  "expected_artifacts": []
+}

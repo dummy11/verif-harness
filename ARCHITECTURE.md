@@ -59,5 +59,30 @@ Filelists are explicit, project-root-relative, and reviewed as source code.
 - Bind modules attach non-invasive assertions.
 - The Codex skill generates structure from reviewed contracts.
 - Simulator wrappers translate the canonical filelist into tool commands.
+- The xverif CLI adapter translates one reviewed request into a native xverif
+  tool invocation and immutable evidence; it does not own verification policy.
+
+## Deterministic tool delegation
+
+```text
+Codex Agent
+   |
+   v
+verif-harness Skill/framework
+   |  stage policy, project semantics, Human boundaries
+   v
+validated CLI adapter
+   |  allowlisted argv, controlled environment, timeout, evidence hashes
+   v
+BLANK2077/xverif tools/<selected-tool>
+   |  xbit | xdebug | xcov | xentry | xloc | xsva | xwaveform
+   v
+native JSON / XOUT / text evidence
+```
+
+The adapter pins tool provenance with the checkout Git commit and wrapper
+SHA-256. It never invents a unified `xverif` executable, changes native action
+semantics, reverse-parses XOUT, or silently falls back between CLI/MCP,
+local/LSF, output formats, backends, or data sources.
 
 See [docs/harness_design.md](docs/harness_design.md) for implementation rules.

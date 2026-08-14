@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Harness"
-  short_description: "Build, audit, and freeze RTL verification workflows"
-  default_prompt: "Use $verif-harness to inspect this RTL verification project and recommend the next safe mode."
+  short_description: "Build and audit RTL verification with deterministic tools"
+  default_prompt: "Use $verif-harness to inspect this RTL verification project, select the next safe mode, and delegate deterministic fact queries through xverif when appropriate."

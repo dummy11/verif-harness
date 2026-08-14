@@ -51,7 +51,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 - Interface, SVA, bind, filelist, and smoke-test patterns.
 - A license-free `simple_fifo` example for Verilator.
 - Simulator-independent Python structure and public-release checks.
-- A bundled 28-mode Codex skill for Stage 0 through verification freeze.
+- A bundled 29-mode Codex skill for Stage 0 through verification freeze.
+- A fail-closed CLI adapter for deterministic tools from
+  `git@github.com:BLANK2077/xverif.git`.
 - GitHub CI, documentation deployment, and tagged-release automation.
 
 ## Requirements
@@ -88,6 +90,21 @@ python3 scripts/verif_harness.py init my_dut --output ./work
 The command creates additive, non-overwriting files under `interfaces/`,
 `sva/`, `bind/`, `tb/`, and `filelists/`. It does not parse or modify DUT RTL.
 Review and replace every TODO against the approved DUT specification.
+
+## Delegate to xverif
+
+`verif-harness` remains the planning and governance framework. Its CLI adapter
+can execute one reviewed operation from an approved xverif checkout while
+capturing argv, Git identity, wrapper and artifact hashes, and native output:
+
+```bash
+python3 scripts/verif_harness.py xverif probe \
+  --xverif-root /path/to/xverif --tool xbit
+```
+
+xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
+`xwaveform`), not a single `xverif` executable. See
+[docs/xverif_integration.md](docs/xverif_integration.md).
 
 ## Adding a new DUT
 

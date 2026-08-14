@@ -4,7 +4,7 @@
 Stage 0 文档基线、UVM/harness 实现、Golden 对拍、coverage/assertion、回归、
 CI、sign-off 和 verification freeze candidate。
 
-它包含 28 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
+它包含 29 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
 waiver、stage gate 和最终 freeze approval 始终在 Human 权限边界内。
 
 ## 基本使用
@@ -23,7 +23,7 @@ $verif-harness stage-gate-review 4
 - 不存在 `.harness-config.json`：从 `init` 开始。
 - 状态不明确时只报告冲突，不自动执行写模式。
 
-## 28 个模式
+## 29 个模式
 
 <!-- markdownlint-disable MD013 -->
 
@@ -37,6 +37,7 @@ $verif-harness stage-gate-review 4
 | `add-env-layer` | 生成 env、scoreboard/coverage shell、base test 和 `tb_top` | 建立最小 UVM 顶层 | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
+| `xverif` | 通过受控 CLI adapter 调用 xverif 确定性工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --xverif-root <root> --tool xbit` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | 生成 simulator command/capability profile | 增加一个评审后的 simulator 配置 | `$verif-harness add-simulator-profile` |
 | `add-testcase` | 生成 test/vseq 并加入 candidate list | 实现一个计划内场景 | `$verif-harness add-testcase` |
@@ -66,6 +67,24 @@ $verif-harness stage-gate-review 4
 - 模式分层和证据流：[docs/architecture.md](docs/architecture.md)
 - 常见失败与恢复方法：[docs/troubleshooting.md](docs/troubleshooting.md)
 - Codex 执行规则：[SKILL.md](SKILL.md)
+
+## xverif 集成
+
+```text
+Codex Agent
+   ↓
+verif-harness Skill / framework
+   ↓
+CLI adapter
+   ↓
+xverif tools/xbit|xdebug|xcov|xentry|xloc|xsva|xwaveform
+```
+
+`verif-harness` 决定验证阶段、任务语义和人工边界；adapter 只执行严格 JSON
+request 并归档 argv、Git commit、wrapper hash、stdout/stderr 与 artifact hash；
+xverif 执行底层确定性操作。权威上游是
+`git@github.com:BLANK2077/xverif.git`。xverif 是工具族，不假设存在名为
+`xverif` 的统一 executable。
 
 ## 权限边界
 

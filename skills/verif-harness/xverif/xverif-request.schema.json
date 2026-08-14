@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dummy11/verif-harness/schemas/xverif-request.schema.json",
+  "title": "verif-harness xverif request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "operation",
+    "arguments",
+    "stdin_path",
+    "working_directory",
+    "environment_keys",
+    "timeout_seconds",
+    "output_format",
+    "acceptable_exit_codes",
+    "expected_artifacts"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tool": {
+      "enum": ["xbit", "xcov", "xdebug", "xentry", "xloc", "xsva", "xwaveform"]
+    },
+    "operation": {"type": "string", "pattern": "^[a-z][a-z0-9._-]*$"},
+    "arguments": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "stdin_path": {"type": ["string", "null"], "minLength": 1},
+    "working_directory": {"type": "string", "minLength": 1},
+    "environment_keys": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+    },
+    "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+    "output_format": {"enum": ["json", "xout", "text"]},
+    "acceptable_exit_codes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 0, "maximum": 255}
+    },
+    "expected_artifacts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

@@ -18,6 +18,7 @@
 
 - Community-validated Questa and Xcelium wrappers.
 - Versioned simulator option profiles.
+- Schema-validated CLI delegation to deterministic xverif tools.
 
 ## v0.4 — regression integration
 

@@ -1,6 +1,6 @@
 # Codex skill modes
 
-The bundled `verif-harness` skill provides 28 explicit modes. Invoke one from a
+The bundled `verif-harness` skill provides 29 explicit modes. Invoke one from a
 verification project root, for example:
 
 ```text
@@ -22,6 +22,7 @@ DUT RTL root. Review and approval remain Human responsibilities.
 | `add-env-layer` | Generate env, scoreboard/coverage shells, tests, and thin `tb_top` | Assemble the first UVM environment | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | Generate compile-order filelists and a compile-only target | Close the M1.1 compile loop | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | Audit config, documents, stage state, legacy files, and RTL dirtiness | Resume or diagnose a project | `$verif-harness doctor` |
+| `xverif` | Delegate one reviewed request to an allowlisted xverif CLI tool and capture provenance | Need deterministic bit/debug/coverage/entry/log/SVA/waveform evidence | `$verif-harness xverif probe --xverif-root <root> --tool xbit` |
 | `add-regression-runner` | Add isolated seeded regression and strict result collection | Move from single tests to repeatable batches | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | Generate a normalized command/capability profile | Add a reviewed simulator configuration without claiming support | `$verif-harness add-simulator-profile` |
 | `add-testcase` | Add a test/vseq skeleton to a candidate list | Implement a planned scenario | `$verif-harness add-testcase` |
@@ -55,6 +56,7 @@ init
   -> add-simulator-profile / complete-uvc / complete-scoreboard
   -> add-testcase / add-coverage-skeleton / add-assertion-skeleton
   -> add-refmodel-bridge / add-regression-runner
+  -> xverif as needed for deterministic native evidence
   -> add-ci-hook / add-performance-gate
   -> regression-triage
   -> audit-traceability / coverage-closure / assertion-closure

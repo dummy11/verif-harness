@@ -52,7 +52,7 @@ def main() -> int:
         "add-ci-hook", "add-performance-gate", "regression-triage",
         "coverage-closure", "assertion-closure", "audit-traceability",
         "change-control", "stage-gate-review", "signoff-audit",
-        "freeze-baseline", "oss-readiness", "patterns",
+        "freeze-baseline", "oss-readiness", "xverif", "patterns",
     ]
     for mode in modes:
         if f"`{mode}" not in skill_text:
@@ -60,7 +60,7 @@ def main() -> int:
     for mode in (
         "add-simulator-profile", "complete-uvc", "complete-scoreboard",
         "regression-triage", "coverage-closure", "assertion-closure",
-        "change-control", "freeze-baseline",
+        "change-control", "freeze-baseline", "xverif",
     ):
         if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
             failures.append(f"mode lacks instructions: {mode}")

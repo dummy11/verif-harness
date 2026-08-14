@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -50,7 +52,21 @@ def main() -> int:
     init.add_argument("--templates", type=Path,
                       default=Path(__file__).resolve().parents[1] / "templates/dut")
     init.add_argument("--dry-run", action="store_true")
+    xverif = subparsers.add_parser(
+        "xverif", help="delegate a reviewed request through the deterministic xverif adapter"
+    )
+    xverif.add_argument("adapter_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.command == "xverif":
+        if not args.adapter_args:
+            parser.error("xverif requires adapter arguments; use 'xverif probe' or 'xverif run'")
+        adapter = (
+            Path(__file__).resolve().parents[1]
+            / "skills/verif-harness/xverif/scripts/xverif_adapter.py"
+        )
+        return subprocess.run(
+            [sys.executable, str(adapter), *args.adapter_args], check=False
+        ).returncode
     targets = generate(args.dut, args.output.resolve(), args.templates.resolve(), args.dry_run)
     print(json.dumps({"dry_run": args.dry_run, "files": [str(path) for path in targets]}, indent=2))
     return 0

@@ -7,6 +7,7 @@
 | Verilator | 5.x | Open example compile and run |
 | UVM | IEEE 1800.2-compatible | Commercial simulator integration |
 | VCS | User-validated | Full UVM integration target |
+| xverif | Approved Git commit | Deterministic bit/debug/coverage/SVA tool delegation |
 
 On Ubuntu, install the packaged Verilator with:
 
@@ -18,3 +19,8 @@ sudo apt-get install verilator
 Package versions vary by distribution. CI records `verilator --version` in
 every run. Contributors should include exact tool versions with bug reports.
 `./scripts/setup.sh --install-verilator` supports Homebrew and apt-based hosts.
+
+xverif integration uses an approved checkout of
+`git@github.com:BLANK2077/xverif.git`. The adapter records the selected wrapper
+SHA-256 and checkout commit for every run; it does not claim one moving branch
+or tag as universally supported.
