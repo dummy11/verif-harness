@@ -20,7 +20,9 @@ $verif-harness stage-gate-review 4
 未指定模式时：
 
 - 存在 `.harness-config.json`：执行只读 `doctor`。
-- 不存在 `.harness-config.json`：从 `init` 开始。
+- 不存在 `.harness-config.json` 且无 `.specify/`：从 `spec-kit bootstrap` 开始。
+- 已有 `.specify/`：由 reviewed Stage 0 task 在 `speckit.implement` 中自动调度
+  `init`；不要绕过 gate 直接开始。
 - 状态不明确时只报告冲突，不自动执行写模式。
 
 ## 31 个模式
@@ -29,7 +31,7 @@ $verif-harness stage-gate-review 4
 
 | 模式 | 用途 | 使用场景 | 示例 |
 | --- | --- | --- | --- |
-| `init` | 建立 Stage 0 文档、治理和目录骨架 | 新项目尚无 harness 配置 | `$verif-harness init` |
+| `init` | 建立 Stage 0 文档、治理和目录骨架 | Stage 0 task 已授权分发或 recovery 已批准 | `$verif-harness init` |
 | `add-interface` | 生成协议 interface 和 UVC 目录 | 接口规格已评审 | `$verif-harness add-interface` |
 | `add-shared-pkg` | 生成共享 typedef/enum 和打包 package | 多个 UVC 需要公共类型 | `$verif-harness add-shared-pkg` |
 | `add-uvc-skeleton [name]` | 生成 driver/monitor/sequencer/agent 骨架 | 建立一个新 UVC | `$verif-harness add-uvc-skeleton input` |
@@ -88,6 +90,12 @@ Spec Kit 管理 constitution、spec、plan、checklist、tasks、analyze、imple
 dispatch 和 converge；verif-harness 仍负责 Stage policy、能力选择、traceability
 和权限边界。新项目以 `specs/` 为唯一可编辑规格事实源；已批准项目作为不可变
 baseline 导入。Spec Kit workflow success 不是仿真证据或审批。
+
+reviewed task 必须声明 `$verif-harness` mode、owned outputs、evidence 和
+validation。execution gate 后，`speckit.implement` 自动分发每个 task mode 一次；
+正常路径不需要用户重复手动调用。缺少产物或 validation 失败时，task 保持
+incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声明的 mode，不只
+适用于 `init`；workflow control 和 Human authority 命令仍遵守各自独立边界。
 
 完整仓库中使用固定版本：
 

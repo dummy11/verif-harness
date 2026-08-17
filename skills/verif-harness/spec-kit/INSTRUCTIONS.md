@@ -18,7 +18,11 @@ Spec Kit owns the editable specification lifecycle.
   `verif-harness-rtl` preset. Refuse existing `.specify/`; never force-merge it.
 - `stage`: run the local `verif-stage-lifecycle.yml` for exactly one Stage 0-5
   objective. The workflow has document review gates and an execution gate but
-  does not approve a Stage.
+  does not approve a Stage. For a new Stage 0 project without
+  `.harness-config.json`, the reviewed task set must contain exactly one
+  `verif-harness mode: init` task. After execution authorization,
+  `speckit.implement` dispatches that mode; no separate successful-path manual
+  `init` call follows the workflow.
 - `status`: inspect one run or list all workflow run states.
 - `resume`: resume a paused run at its next review gate. A reviewer must inspect
   the named artifact before choosing a gate verdict; resuming does not approve
@@ -56,6 +60,14 @@ python3 scripts/verif_harness.py spec-kit resume \
 - A Spec Kit command, workflow, checklist, or gate reporting success is not
   compile, simulation, regression, coverage, assertion, performance, Stage,
   sign-off, freeze, or publication approval.
+- Treat dispatch as successful only when every reviewed task's owned output
+  paths exist and its validation command passes. In Stage 0, absence of
+  `.harness-config.json`, `AGENTS.md`, the harness assets, derived governance
+  views, review packet, or required scaffold is an incomplete `init` task.
+  Apply the same rule to every Stage and every named mode: missing generated
+  files, tool evidence, reports, or audit outputs leave that task incomplete.
+  Record the deviation and stop convergence; do not hide it with an untracked
+  duplicate manual invocation.
 - EDA runs, commit, push, tag, release, waivers, and approval require their own
   authority under the project rules.
 

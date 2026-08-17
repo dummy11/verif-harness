@@ -47,10 +47,12 @@ Support these explicit modes:
 
 With no mode, run `doctor` when `.harness-config.json` exists. If it does not
 exist, require a Spec Kit project and reviewed Stage 0 specification first:
-dispatch to `spec-kit bootstrap` when `.specify/` is absent, otherwise dispatch
-to `init`. After `doctor`, recommend the next mode but do not perform a write
-mode automatically. Stage state becomes ambiguous after the M1.1 scaffold and
-requires human judgment.
+dispatch to `spec-kit bootstrap` when `.specify/` is absent. When `.specify/`
+exists, inspect the Stage 0 run and task set: dispatch `init` only from the
+approved `speckit.implement` task; otherwise report the pending review gate or
+missing task instead of bypassing the workflow. After `doctor`, recommend the
+next mode but do not perform a write mode automatically. Stage state becomes
+ambiguous after the M1.1 scaffold and requires human judgment.
 
 If the requested state is partial or ambiguous, stop before writing and report
 the conflicting evidence.
@@ -88,7 +90,10 @@ specification exists. Read `stage0/INSTRUCTIONS.md` completely. Generate Stage
 0 operational governance views linked to the authoritative `specs/` artifacts,
 workflow assets, `AGENTS.md`, and the M1.1 directory scaffold. Stop for Human
 review; do not start TB implementation or create a competing requirements
-authority.
+authority. For a new project, Stage 0 `tasks.md` must name this mode explicitly;
+after the execution gate approves that task, `speckit.implement` dispatches it
+automatically. Do not require or perform a second manual `init` invocation after
+successful dispatch. Manual invocation is a recovery/import path only.
 
 ### `add-interface`
 
@@ -135,6 +140,12 @@ implementation-dispatch, and convergence documents. New projects use `specs/`
 as the sole editable specification authority; import approved legacy projects
 as immutable baselines. Spec Kit is agentic, not deterministic evidence, and
 its workflow gates are never Stage, sign-off, freeze, or publication approval.
+When an approved task names a verif-harness mode, `speckit.implement` owns the
+dispatch exactly once. This applies to every mode, including generators,
+adapters, audits, closure checks, and `init`. After dispatch, require every
+owned output path, evidence path, and validation command from the task contract;
+missing artifacts mean the task is incomplete, not that the user should
+silently invoke the same mode again.
 
 ### `doctor`
 
