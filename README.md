@@ -1,7 +1,9 @@
 # verif-harness
 
-**verif-harness is a reusable SystemVerilog/UVM DUT integration harness for
-ASIC block-level verification, with an optional Codex-assisted workflow.**
+**verif-harness is an agent-neutral RTL verification control plane and a
+reusable SystemVerilog/UVM DUT integration framework. Codex is its currently
+supported agent runtime; the deterministic core remains usable through CLI and
+CI workflows without an agent.**
 
 It keeps structural integration in one place: clocks and resets, protocol
 interfaces, DUT instantiation, tie-offs, adapters, assertions, bind targets,
@@ -43,6 +45,36 @@ skill that applies the same rules consistently.
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
+
+## Agent and runtime model
+
+verif-harness is not a standalone AI agent. It supplies the verification
+policy, staged workflow, mode contracts, generators, checks, and tool adapters
+that an agent or a Human operator executes. Codex is currently the only agent
+runtime with a complete, supported Skill integration.
+
+The agent-neutral core includes contracts, generators, validation scripts, CLI
+adapters, and CI workflows. These components can be invoked manually or by
+automation without Codex. Spec Kit artifacts are portable files, while the
+current reviewed-task-to-mode automatic dispatch is implemented by the Codex
+Skill. Another agent runtime can integrate through an adapter that preserves
+the same mode inputs, outputs, evidence, and Human approval boundaries, but no
+other runtime is claimed as supported until that adapter is implemented and
+validated.
+
+```text
+Human authority
+      |
+      v
+Codex Agent (currently supported runtime)
+      |
+      v
+verif-harness Skill / control plane
+      |
+      +--> Spec Kit specification and task workflow
+      +--> deterministic CLI, generators, checks, and CI
+      +--> xverif / WavePeek / simulators / EDA tools
+```
 
 ## Features
 
@@ -214,7 +246,7 @@ deps/                    Reviewed optional-dependency locks and schemas
 .deps/                   Git-ignored managed dependency checkouts
 ```
 
-## Codex skill
+## Supported agent runtime: Codex
 
 The reusable skill is under `skills/verif-harness/`. Install it into a Codex
 skill directory, then ask:
@@ -225,6 +257,10 @@ $verif-harness Integrate this DUT into a verification environment.
 
 The skill reads repository instructions and RTL ports, but preserves the rule
 that DUT RTL and Human approval decisions are outside agent authority.
+Codex is the current supported Agent runtime, not a dependency of the
+deterministic CLI and CI core. Integrations for other Agent runtimes must retain
+the same contracts and authority boundaries and are not yet supported by this
+repository.
 The bundled Chinese [skill README](skills/verif-harness/README.md) provides the
 quick-start catalog, while its
 [complete user guide](skills/verif-harness/docs/user_guide.md) documents every
