@@ -5,14 +5,16 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 install_verilator=false
 with_xverif=false
 with_wavepeek=false
+with_spec_kit=false
 
 for argument in "$@"; do
   case "$argument" in
     --install-verilator) install_verilator=true ;;
     --with-xverif) with_xverif=true ;;
     --with-wavepeek) with_wavepeek=true ;;
+    --with-spec-kit) with_spec_kit=true ;;
     *)
-      echo "usage: $0 [--install-verilator] [--with-xverif] [--with-wavepeek]" >&2
+      echo "usage: $0 [--install-verilator] [--with-xverif] [--with-wavepeek] [--with-spec-kit]" >&2
       exit 2
       ;;
   esac
@@ -44,6 +46,11 @@ if [[ "$with_wavepeek" == true ]]; then
   python3 "$project_root/scripts/check_wavepeek.py"
 fi
 
+if [[ "$with_spec_kit" == true ]]; then
+  python3 "$project_root/scripts/setup_spec_kit.py" --project-root "$project_root"
+  python3 "$project_root/scripts/check_spec_kit.py"
+fi
+
 if command -v verilator >/dev/null 2>&1; then
   verilator --version
   echo "Setup PASS: run ./scripts/run_example.sh"
@@ -58,4 +65,8 @@ fi
 
 if [[ "$with_wavepeek" != true ]]; then
   echo "Optional WavePeek setup: ./scripts/setup.sh --with-wavepeek"
+fi
+
+if [[ "$with_spec_kit" != true ]]; then
+  echo "Optional Spec Kit setup (requires Python 3.11+): ./scripts/setup.sh --with-spec-kit"
 fi

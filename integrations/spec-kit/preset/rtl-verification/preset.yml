@@ -1,0 +1,64 @@
+schema_version: "1.0"
+
+preset:
+  id: "verif-harness-rtl"
+  name: "verif-harness RTL Verification"
+  version: "0.1.0"
+  description: "Adds RTL verification governance, traceability, and execution boundaries to Spec Kit"
+  author: "verif-harness contributors"
+  repository: "https://github.com/dummy11/verif-harness"
+  license: "Apache-2.0"
+
+requires:
+  speckit_version: ">=0.16.4"
+
+provides:
+  templates:
+    - type: "template"
+      name: "constitution-template"
+      file: "templates/constitution-template.md"
+      description: "Append RTL verification governance principles"
+      replaces: "constitution-template"
+      strategy: "append"
+
+    - type: "template"
+      name: "spec-template"
+      file: "templates/spec-template.md"
+      description: "Append verification requirements and evidence contracts"
+      replaces: "spec-template"
+      strategy: "append"
+
+    - type: "template"
+      name: "plan-template"
+      file: "templates/plan-template.md"
+      description: "Append stage, mode, artifact, and evidence planning"
+      replaces: "plan-template"
+      strategy: "append"
+
+    - type: "template"
+      name: "tasks-template"
+      file: "templates/tasks-template.md"
+      description: "Append verification task traceability fields"
+      replaces: "tasks-template"
+      strategy: "append"
+
+    - type: "template"
+      name: "checklist-template"
+      file: "templates/checklist-template.md"
+      description: "Append RTL verification specification quality checks"
+      replaces: "checklist-template"
+      strategy: "append"
+
+    - type: "command"
+      name: "speckit.implement"
+      file: "commands/speckit.implement.md"
+      description: "Prepend verif-harness execution and approval guardrails"
+      replaces: "speckit.implement"
+      strategy: "prepend"
+
+tags:
+  - "rtl-verification"
+  - "systemverilog"
+  - "uvm"
+  - "traceability"
+  - "stage-gates"

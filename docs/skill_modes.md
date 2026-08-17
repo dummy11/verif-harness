@@ -1,6 +1,6 @@
 # Codex skill modes
 
-The bundled `verif-harness` skill provides 30 explicit modes. Invoke one from a
+The bundled `verif-harness` skill provides 31 explicit modes. Invoke one from a
 verification project root, for example:
 
 ```text
@@ -22,6 +22,7 @@ DUT RTL root. Review and approval remain Human responsibilities.
 | `add-env-layer` | Generate env, scoreboard/coverage shells, tests, and thin `tb_top` | Assemble the first UVM environment | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | Generate compile-order filelists and a compile-only target | Close the M1.1 compile loop | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | Audit config, documents, stage state, legacy files, and RTL dirtiness | Resume or diagnose a project | `$verif-harness doctor` |
+| `spec-kit` | Manage the single specification source below the verif-harness control plane | Bootstrap or advance a reviewed Stage specification workflow | `$verif-harness spec-kit stage` |
 | `xverif` | Delegate one reviewed request to the commit-pinned managed xverif CLI tool and capture provenance | Need deterministic bit/debug/coverage/entry/log/SVA/waveform evidence | `$verif-harness xverif probe --tool xbit` |
 | `wavepeek` | Delegate one bounded query to commit-pinned WavePeek and capture provenance | Need deterministic VCD/FST hierarchy, value, change, property, or transfer evidence | `$verif-harness wavepeek probe` |
 | `add-regression-runner` | Add isolated seeded regression and strict result collection | Move from single tests to repeatable batches | `$verif-harness add-regression-runner` |
@@ -50,7 +51,8 @@ DUT RTL root. Review and approval remain Human responsibilities.
 ## Recommended Stage 0-to-freeze sequence
 
 ```text
-init
+spec-kit bootstrap / Stage 0 specification workflow
+  -> init
   -> Human Stage 0 review
   -> add-interface / add-shared-pkg / add-uvc-skeleton
   -> add-harness-layer / add-env-layer / finalize-filelist-and-make
@@ -66,6 +68,13 @@ init
   -> freeze-baseline
   -> Human freeze approval and separately authorized tag/push
 ```
+
+At every Stage, the Spec Kit lifecycle creates and reviews the specification,
+plan, checklist, and tasks before verif-harness dispatches implementation modes;
+it then converges artifacts and evidence back to the specification. New
+projects keep `specs/` as the sole editable requirements authority. Spec Kit is
+agentic: its command and review-gate success is not simulation evidence or
+Human Stage approval.
 
 Run `doctor` whenever the current state is unclear. Use `oss-readiness` as a
 separate branch when preparing a public export; it does not authorize release.

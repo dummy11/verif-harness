@@ -4,7 +4,7 @@
 Stage 0 文档基线、UVM/harness 实现、Golden 对拍、coverage/assertion、回归、
 CI、sign-off 和 verification freeze candidate。
 
-它包含 30 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
+它包含 31 个模式。所有写模式默认只增不覆盖；DUT RTL、Human Decisions、
 waiver、stage gate 和最终 freeze approval 始终在 Human 权限边界内。
 
 ## 基本使用
@@ -23,7 +23,7 @@ $verif-harness stage-gate-review 4
 - 不存在 `.harness-config.json`：从 `init` 开始。
 - 状态不明确时只报告冲突，不自动执行写模式。
 
-## 30 个模式
+## 31 个模式
 
 <!-- markdownlint-disable MD013 -->
 
@@ -37,6 +37,7 @@ $verif-harness stage-gate-review 4
 | `add-env-layer` | 生成 env、scoreboard/coverage shell、base test 和 `tb_top` | 建立最小 UVM 顶层 | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
+| `spec-kit` | 在 verif-harness 顶层控制面下管理规格生命周期 | 建立或推进 Stage 规格驱动流程 | `$verif-harness spec-kit stage` |
 | `xverif` | 通过受控 CLI adapter 调用固定版本 xverif 工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
 | `wavepeek` | 通过受控 CLI adapter 调用固定版本 WavePeek | 对 VCD/FST 做有界、可复现的波形查询 | `$verif-harness wavepeek probe` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
@@ -68,6 +69,34 @@ $verif-harness stage-gate-review 4
 - 模式分层和证据流：[docs/architecture.md](docs/architecture.md)
 - 常见失败与恢复方法：[docs/troubleshooting.md](docs/troubleshooting.md)
 - Codex 执行规则：[SKILL.md](SKILL.md)
+
+## Spec Kit 集成
+
+```text
+verif-harness 顶层控制面
+   ↓
+Spec Kit 规格面
+   ↓
+verif-harness modes 执行能力面
+   ↓
+xverif / WavePeek / EDA 证据面
+   ↓
+Human 权限面
+```
+
+Spec Kit 管理 constitution、spec、plan、checklist、tasks、analyze、implement
+dispatch 和 converge；verif-harness 仍负责 Stage policy、能力选择、traceability
+和权限边界。新项目以 `specs/` 为唯一可编辑规格事实源；已批准项目作为不可变
+baseline 导入。Spec Kit workflow success 不是仿真证据或审批。
+
+完整仓库中使用固定版本：
+
+```bash
+./scripts/setup.sh --with-spec-kit
+python3 scripts/verif_harness.py spec-kit bootstrap --project-root <project>
+python3 scripts/verif_harness.py spec-kit stage \
+  --project-root <project> --stage 1 --objective "最小可运行环境"
+```
 
 ## xverif 集成
 

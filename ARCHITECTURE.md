@@ -8,6 +8,17 @@ intent, reference-model policy, or Human decisions.
 
 ## Ownership
 
+At project-lifecycle level, verif-harness is the control plane. The optional
+GitHub Spec Kit integration is the specification plane; existing verif-harness
+modes are the capability plane; xverif, WavePeek, and simulators are the
+evidence plane; Human reviewers are the authority plane. New projects keep one
+editable specification source under `specs/` and trace
+`REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`.
+
+Spec Kit is agentic and cannot turn workflow success into deterministic
+verification evidence or approval. Existing approved projects are imported as
+immutable baselines instead of rewriting their historical decisions.
+
 `tb_top` owns only top-level elaboration and test startup. The harness owns:
 
 - clock and reset generation;

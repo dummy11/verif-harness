@@ -40,6 +40,10 @@ jobs:
         run: |
           make setup-wavepeek
           make check-wavepeek
+      - name: Install and verify pinned GitHub Spec Kit dependency
+        run: |
+          make setup-spec-kit
+          make check-spec-kit
       - name: Run executable example
         run: make example
       - name: Build documentation

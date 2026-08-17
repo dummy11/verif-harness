@@ -94,6 +94,50 @@ checkout，或显式传 `--xverif-root <root>`。该目录下必须存在
 直接 `git pull`；依赖升级必须先评审新 commit/许可证/第三方边界并更新 lock，
 再用新 checkout 重跑 `make setup-xverif check-xverif`。
 
+## Spec Kit 安装提示需要 Python 3.11
+
+固定的 Spec Kit v0.16.4 明确要求 Python 3.11 或更新版本。系统 `python3` 较旧时，
+使用已批准的 3.11+ interpreter：
+
+```bash
+python3.11 scripts/setup_spec_kit.py
+python3.11 scripts/check_spec_kit.py
+```
+
+不要降低 lock 中的 `python_requires`，也不要让主项目运行时依赖 Spec Kit。它是
+可选规格子系统，core structure/test/example 在未安装时仍应工作。
+
+## managed Spec Kit 返回 `BLOCKED`
+
+先检查 `.deps/spec-kit` 与 `.deps/spec-kit-venv` 是否只存在一个、source checkout
+是否 dirty、origin/commit/LICENSE/pyproject hash 是否与 lock 一致。安装器不会覆盖
+或清理部分状态；把精确路径备份后移出 `.deps/`，再运行：
+
+```bash
+make setup-spec-kit
+make check-spec-kit
+```
+
+不要在 managed checkout 中开发，也不要用 `git pull` 更新；升级必须先审阅新
+release、完整 commit、license、Python requirement 和 lock hash。
+
+## Spec Kit 与 `sim/docs/` 内容冲突
+
+新项目以 `specs/` 为唯一可编辑 requirement source。`sim/docs/` 只保存治理、
+派生视图、证据索引和 review packet；发现冲突时停止执行，把差异记录为 open
+question 或 change request，并从已批准的 Spec Kit spec 重新生成视图。不要双向
+人工编辑，也不要把派生视图静默提升成权威。
+
+已批准的存量项目先把原文档登记为 immutable imported baseline。不要为了迁移
+重写审批日期、Human Decisions、证据或开发历史。
+
+## Spec Kit workflow gate 通过但 Stage 不能关闭
+
+这是预期行为。Spec Kit gate 只审阅文档或授权 reviewed tasks 的执行；它不证明
+compile、simulation、coverage、assertion、performance 或 regression，也不授予
+waiver、Stage approval、sign-off 或 freeze。继续收集 EDA evidence，运行对应的
+closure/audit mode，再由 `stage-gate-review` 生成 packet 交 Human 决策。
+
 ## xverif probe PASS，但执行失败
 
 Probe 只确认 wrapper 存在并记录 Git commit/hash，不启动真实依赖。根据 selected

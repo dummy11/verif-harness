@@ -2,6 +2,11 @@
 
 本仓库采用 OpenAI harness-style 的 AI 辅助开发流程。
 
+`verif-harness` 是最上层控制面。新项目的可编辑规格统一位于 Spec Kit
+`specs/`；`{{DOCS_ROOT}}` 保存治理、规格派生视图、证据索引和 review packet，
+不得成为第二个可编辑 requirements authority。追踪链使用
+`REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`。
+
 ## 仓库范围
 
 - `{{RTL_ROOT}}`：DUT 源码（`{{DUT_TOP_FILE}}` 为顶层，module 名

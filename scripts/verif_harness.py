@@ -21,6 +21,37 @@ FILES = {
     "dut.f.tmpl": "filelists/{dut}.f",
 }
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def managed_spec_kit() -> tuple[str, dict[str, object]]:
+    checked = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/setup_spec_kit.py"),
+            "--project-root",
+            str(ROOT),
+            "--check",
+            "--json",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if checked.returncode != 0:
+        sys.stdout.write(checked.stdout)
+        sys.stderr.write(checked.stderr)
+        raise SystemExit(checked.returncode)
+    payload = json.loads(checked.stdout)
+    return str(payload["python"]), payload
+
+
+def run_spec_kit(arguments: list[str], project_root: Path) -> int:
+    python, _ = managed_spec_kit()
+    command = [python, "-c", "from specify_cli import main; main()", *arguments]
+    return subprocess.run(command, cwd=project_root, check=False).returncode
+
 
 def generate(dut: str, output: Path, templates: Path, dry_run: bool) -> list[Path]:
     if not IDENTIFIER.fullmatch(dut):
@@ -60,6 +91,31 @@ def main() -> int:
         "wavepeek", help="delegate a reviewed request through the deterministic WavePeek adapter"
     )
     wavepeek.add_argument("adapter_args", nargs=argparse.REMAINDER)
+    spec_kit = subparsers.add_parser(
+        "spec-kit", help="manage specification workflows through pinned GitHub Spec Kit"
+    )
+    spec_subparsers = spec_kit.add_subparsers(dest="spec_command", required=True)
+    spec_subparsers.add_parser("probe", help="validate the managed Spec Kit dependency")
+    bootstrap = spec_subparsers.add_parser(
+        "bootstrap", help="initialize a new Codex Spec Kit project and install the RTL preset"
+    )
+    bootstrap.add_argument("--project-root", type=Path, default=Path.cwd())
+    stage = spec_subparsers.add_parser(
+        "stage", help="run the reviewed Spec Kit lifecycle for one verification stage"
+    )
+    stage.add_argument("--project-root", type=Path, default=Path.cwd())
+    stage.add_argument("--stage", choices=["0", "1", "2", "3", "4", "5"], required=True)
+    stage.add_argument("--objective", required=True)
+    resume = spec_subparsers.add_parser(
+        "resume", help="resume a paused Stage workflow at its next review gate"
+    )
+    resume.add_argument("run_id")
+    resume.add_argument("--project-root", type=Path, default=Path.cwd())
+    status = spec_subparsers.add_parser(
+        "status", help="show one or all Spec Kit workflow run states"
+    )
+    status.add_argument("run_id", nargs="?")
+    status.add_argument("--project-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     if args.command == "xverif":
         if not args.adapter_args:
@@ -79,6 +135,74 @@ def main() -> int:
             / "skills/verif-harness/wavepeek/scripts/wavepeek_adapter.py"
         )
         return subprocess.run([sys.executable, str(adapter), *args.adapter_args], check=False).returncode
+    if args.command == "spec-kit":
+        if args.spec_command == "probe":
+            _, payload = managed_spec_kit()
+            print(json.dumps(payload, indent=2, sort_keys=True))
+            return 0
+        project_root = args.project_root.resolve()
+        if not project_root.is_dir():
+            parser.error(f"Spec Kit project root is not a directory: {project_root}")
+        if args.spec_command == "bootstrap":
+            if (project_root / ".specify").exists():
+                parser.error(
+                    "refusing to overwrite an existing .specify project; review and add "
+                    "the verif-harness preset separately"
+                )
+            initialized = run_spec_kit(
+                [
+                    "init", "--here", "--integration", "codex",
+                    "--integration-options=--skills", "--script", "py",
+                ],
+                project_root,
+            )
+            if initialized != 0:
+                return initialized
+            return run_spec_kit(
+                [
+                    "preset", "add", "--dev",
+                    str(ROOT / "integrations/spec-kit/preset/rtl-verification"),
+                    "--priority", "5",
+                ],
+                project_root,
+            )
+        if not (project_root / ".specify").is_dir():
+            parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
+        if args.spec_command == "resume":
+            return run_spec_kit(["workflow", "resume", args.run_id], project_root)
+        if args.spec_command == "status":
+            arguments = ["workflow", "status"]
+            if args.run_id:
+                arguments.append(args.run_id)
+            return run_spec_kit(arguments, project_root)
+        python, _ = managed_spec_kit()
+        preset = subprocess.run(
+            [
+                python, "-c",
+                (
+                    "from pathlib import Path;"
+                    "from specify_cli.presets import PresetManager;"
+                    "raise SystemExit("
+                    "PresetManager(Path.cwd()).get_pack('verif-harness-rtl') is None)"
+                ),
+            ],
+            cwd=project_root, check=False,
+        )
+        if preset.returncode != 0:
+            parser.error(
+                "verif-harness-rtl preset is not installed; run 'spec-kit bootstrap' "
+                "for a new project or add the reviewed local preset explicitly"
+            )
+        return run_spec_kit(
+            [
+                "workflow", "run",
+                str(ROOT / "integrations/spec-kit/workflows/verif-stage-lifecycle.yml"),
+                "--input", f"stage={args.stage}",
+                "--input", f"objective={args.objective}",
+                "--input", "integration=codex",
+            ],
+            project_root,
+        )
     targets = generate(args.dut, args.output.resolve(), args.templates.resolve(), args.dry_run)
     print(json.dumps({"dry_run": args.dry_run, "files": [str(path) for path in targets]}, indent=2))
     return 0
