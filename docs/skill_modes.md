@@ -14,7 +14,7 @@ DUT RTL root. Review and approval remain Human responsibilities.
 
 | Mode | Purpose | Typical use | Example |
 | --- | --- | --- | --- |
-| `init` | Create Stage 0 governance documents and the M1.1 directory scaffold | A new project has no harness configuration | `$verif-harness init` |
+| `init` | Create Stage 0 governance documents and the M1.1 directory scaffold | An approved Stage 0 task is dispatched or recovery is authorized | `$verif-harness init` |
 | `add-interface` | Generate reviewed protocol interfaces and UVC landing directories | Interface semantics are approved | `$verif-harness add-interface` |
 | `add-shared-pkg` | Generate shared types and packing packages | Multiple UVCs need common transaction types | `$verif-harness add-shared-pkg` |
 | `add-uvc-skeleton [name]` | Generate layered UVC class skeletons | Start a new interface agent | `$verif-harness add-uvc-skeleton input` |
@@ -51,30 +51,26 @@ DUT RTL root. Review and approval remain Human responsibilities.
 ## Recommended Stage 0-to-freeze sequence
 
 ```text
-spec-kit bootstrap / Stage 0 specification workflow
-  -> init
+spec-kit bootstrap
+  -> Stage 0 specification / tasks / execution authorization
+  -> speckit.implement auto-dispatches reviewed modes, including init
   -> Human Stage 0 review
-  -> add-interface / add-shared-pkg / add-uvc-skeleton
-  -> add-harness-layer / add-env-layer / finalize-filelist-and-make
-  -> add-simulator-profile / complete-uvc / complete-scoreboard
-  -> add-testcase / add-coverage-skeleton / add-assertion-skeleton
-  -> add-refmodel-bridge / add-regression-runner
-  -> xverif as needed for deterministic native evidence
-  -> wavepeek as needed for bounded VCD/FST evidence
-  -> add-ci-hook / add-performance-gate
-  -> regression-triage
-  -> audit-traceability / coverage-closure / assertion-closure
-  -> change-control / stage-gate-review / signoff-audit
-  -> freeze-baseline
+  -> each Stage specification / tasks / execution authorization
+  -> speckit.implement auto-dispatches all reviewed generation/tool/audit modes
+  -> speckit.converge verifies owned outputs, evidence, and validation
+  -> separate stage-gate-review / signoff-audit / freeze authorization flow
   -> Human freeze approval and separately authorized tag/push
 ```
 
 At every Stage, the Spec Kit lifecycle creates and reviews the specification,
 plan, checklist, and tasks before verif-harness dispatches implementation modes;
-it then converges artifacts and evidence back to the specification. New
+`speckit.implement` automatically dispatches each approved task's named mode
+exactly once, so the successful path does not require duplicate manual calls.
+It then converges artifacts and evidence back to the specification. New
 projects keep `specs/` as the sole editable requirements authority. Spec Kit is
 agentic: its command and review-gate success is not simulation evidence or
-Human Stage approval.
+Human Stage approval. Workflow-control commands and Human authority boundaries
+remain separate from ordinary implementation-task dispatch.
 
 Run `doctor` whenever the current state is unclear. Use `oss-readiness` as a
 separate branch when preparing a public export; it does not authorize release.

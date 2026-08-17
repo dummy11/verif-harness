@@ -89,7 +89,7 @@ steps:
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create traceable Stage {{ inputs.stage }} tasks with REQ/VF/TC/COV/ASRT IDs, verif-harness modes, output paths, validation, evidence, and Human gates."
+      args: "Create traceable Stage {{ inputs.stage }} tasks with REQ/VF/TC/COV/ASRT IDs, verif-harness modes, output paths, validation, evidence, and Human gates. For a new Stage 0 project without .harness-config.json, include exactly one verif-harness init task with complete owned-output and validation postconditions."
 
   - id: analyze
     command: speckit.analyze
@@ -107,13 +107,13 @@ steps:
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "Execute only reviewed Stage {{ inputs.stage }} tasks through matching verif-harness modes and retain required evidence."
+      args: "Execute only reviewed Stage {{ inputs.stage }} tasks by automatically dispatching each matching verif-harness mode exactly once. Retain required evidence and verify every task-declared owned output and validation postcondition. Do not require duplicate manual mode calls; an approved Stage 0 init task follows the same rule."
 
   - id: converge
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     input:
-      args: "Reconcile implementation and evidence with the reviewed specification. Record deviations and change requests; do not grant approval."
+      args: "Reconcile implementation and evidence with the reviewed specification. Verify every task-owned output and evidence path exists and every approved validation command passed. Record missing artifacts or other deviations as incomplete tasks and change requests; do not hide them with an untracked duplicate manual mode call or grant approval."
 
   - id: review-convergence
     type: gate

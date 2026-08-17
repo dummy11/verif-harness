@@ -118,7 +118,11 @@ python3 scripts/verif_harness.py spec-kit probe
 
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
 control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
-xverif, WavePeek, and simulators produce bounded evidence; Human reviewers keep
+xverif, WavePeek, and simulators produce bounded evidence. After execution
+authorization, `speckit.implement` dispatches each reviewed task's named mode
+exactly once; convergence requires its owned outputs, evidence paths, and
+validation command, so successful workflows need no duplicate manual calls.
+Human reviewers keep
 semantic decisions, waivers, gates, sign-off, and freeze authority. See
 [integrations/spec-kit/README.md](integrations/spec-kit/README.md).
 

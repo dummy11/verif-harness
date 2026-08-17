@@ -38,6 +38,18 @@ REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 Spec Kit 是 agentic 规格框架，不是确定性验证工具。它的 command、checklist 和
 workflow gate 成功不能作为仿真证据或 Human approval。
 
+### Task 到 mode 的分发合同
+
+每个 reviewed task 都必须声明 `MODE -> ARTIFACT -> EVIDENCE`。execution gate
+批准 task set 后，`speckit.implement` 自动把每个 task 分发给对应
+`$verif-harness` mode 一次；`init`、结构生成、行为实现、xverif/WavePeek、审计和
+closure mode 没有例外。正常路径不要求用户在 workflow 外重复调用这些 mode。
+
+分发是 agentic，完成判定必须依赖 task postcondition：owned output 和 evidence
+路径存在、approved validation command 通过。任一条件缺失都进入 `converge` 的
+incomplete/deviation 路径。直接手动重跑只允许作为有记录的 recovery，不得覆盖或
+丢失前一次证据。
+
 ### Bootstrap 与结构层
 
 - `init`

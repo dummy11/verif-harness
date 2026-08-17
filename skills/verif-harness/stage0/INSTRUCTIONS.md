@@ -1,6 +1,12 @@
 # init — Stage 0 verification bootstrap
 
-**Mode**: `/verif-harness init` (or auto-dispatched when `.harness-config.json` is absent)
+**Mode**: `/verif-harness init`
+
+**Dispatch contract**: For a new Spec Kit project, Stage 0 `tasks.md` names this
+mode and its owned outputs explicitly. Once the execution gate approves that
+task, `speckit.implement` auto-dispatches this mode. Do not ask the user to invoke
+`init` again after a successful dispatch. Direct manual invocation is limited to
+an approved recovery path or an immutable legacy-baseline import.
 
 **Purpose**: Bootstrap the current project with harness-style verification discipline
 below the verif-harness control plane. For new projects, Spec Kit `specs/` is the
@@ -20,6 +26,9 @@ Before starting:
   the user whether to re-bootstrap (destructive) or exit.
 - For a new project, `.specify/` exists and the Stage 0 Spec Kit specification,
   plan, tasks, checklist, and analysis have passed their document review gates.
+- For a new project running inside the Stage workflow, the approved task names
+  `verif-harness mode: init`, declares the owned output paths listed below, and
+  provides the workflow check as its validation command.
 - For an already approved project, the existing documentation and approvals are
   explicitly classified as an immutable imported baseline. Do not rewrite dates,
   decisions, evidence, or provenance to imitate a historical Spec Kit workflow.
@@ -365,6 +374,12 @@ Cross-doc inconsistencies noted:
   - ...
 
 Workflow check: passed
+
+Task postcondition:
+  - Every owned output declared by the approved init task exists.
+  - The task validation command passed and its evidence path is recorded.
+  - If either check fails, report TASK INCOMPLETE and return control to
+    speckit.converge; do not request a duplicate manual init invocation.
 
 Next steps for the user:
   1. Review stage0_review_packet.md systematically (2-3 hours).

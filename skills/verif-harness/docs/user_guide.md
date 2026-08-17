@@ -31,11 +31,16 @@ $verif-harness add-uvc-skeleton data_in     # 为 data_in 生成 UVC class 骨�
 $verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
 ```
 
+这些语法也用于 workflow 外的诊断、recovery 和 legacy import。若当前 Spec Kit
+`tasks.md` 已声明某个 mode，execution gate 批准后应由 `speckit.implement` 自动
+调度；不要因为本文展示了直接调用语法，就在成功路径中再手动执行一次。
+
 未指定 mode 时：
 
 - 存在 `.harness-config.json`：默认执行只读 `doctor`；
 - 不存在 `.harness-config.json` 且不存在 `.specify/`：先进入
-  `spec-kit bootstrap`；已有 reviewed Stage 0 Spec Kit 工件后再进入 `init`；
+  `spec-kit bootstrap`；Stage 0 task set 评审并获得执行授权后，由
+  `speckit.implement` 自动调度 `init`，不在 workflow 外重复手动调用；
 - 项目状态冲突或 stage 不明确：停止写入并报告冲突。
 
 所有写模式默认只增不覆盖。Markdown 发生变化后，执行项目 `AGENTS.md`
@@ -111,6 +116,16 @@ checklist/tasks/analyze；获得执行授权后把 task 分发给对应 verif-ha
 完成后 converge 并记录 specification drift。Spec Kit review gate 只是文档或任务
 审阅点，真正的 Stage gate 仍由 `stage-gate-review` 生成 packet 后由 Human 批准。
 
+所有被 reviewed task 声明的 mode 都使用同一分发合同，不只 `init`：execution gate
+批准后，`speckit.implement` 自动调用对应 mode 一次，并检查 owned outputs、evidence
+paths 和 validation command。正常路径不要求用户再逐个手动调用；缺少产物时 task
+保持 incomplete，由 `converge` 记录 deviation。只有显式批准并留痕的 recovery、
+legacy import，或者不属于 task set 的 workflow control/Human boundary 命令才单独
+调用，例如 `bootstrap`、`status/resume`、`stage-gate-review` 和最终 freeze 授权流。
+如果某个 mode 还需要独立 EDA、commit、push、waiver 或其他权限，implement 必须
+停在该权限边界；获得授权后由同一 task 继续分发，而不是把正常执行责任转给用户
+手动重复调用。
+
 `xverif` 用于 VCS/VDB/FSDB/SVA/日志相关事实：`xbit` 计算 bit、slice、mask 和
 signedness，`xloc` 恢复日志位置，`xsva` 分析 assertion，`xcov` 查询 coverage
 database，`xdebug` 查询设计或 FSDB，`xentry` 解码结构化 entry，`xwaveform`
@@ -130,8 +145,10 @@ Verdi SDK 许可和本地隔离策略。
 doctor                                # Skill：只读检查初始项目状态
   -> spec-kit bootstrap               # Skill：初始化 Spec Kit Codex integration 与 RTL preset
   -> spec-kit stage --stage 0         # Skill：生成并审阅 Stage 0 spec/plan/tasks
-  -> init                             # Skill：生成 harness 治理资产及规格派生视图
-  -> audit-traceability               # Skill：审计计划与实现的结构追踪关系
+       -> speckit.implement            # Skill：自动调度以下已授权 task mode
+          -> init                      # Skill：生成 harness 治理资产及规格派生视图
+          -> audit-traceability        # Skill：审计计划与实现的结构追踪关系
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 0              # Skill：生成 Stage 0 Draft gate packet
   -> Human Stage 0 baseline approval
 ```
@@ -144,20 +161,21 @@ Provisional 和 open questions。Stage 0 不允许生成 TB 源码。
 ```text
 doctor                                # Skill：确认 Stage 1 入口状态
   -> spec-kit stage --stage 1         # Skill：审阅 Stage 1 spec/plan/tasks 并授权执行
-  -> add-interface                    # Skill：生成协议 interface 与 modport
-  -> add-shared-pkg                   # Skill：生成公共类型及 pack/unpack helper
-  -> add-uvc-skeleton                 # Skill：生成 driver/monitor/agent class 骨架
-  -> add-harness-layer                # Skill：生成 DUT/TB harness、SVA 与 bind 骨架
-  -> add-env-layer                    # Skill：生成 env、base test 与 thin tb_top
-  -> finalize-filelist-and-make       # Skill：固化编译顺序与 compile target
-  -> add-simulator-profile            # Skill：生成已评审的 simulator 配置
-  -> complete-uvc                     # Skill：实现显式 ready/valid UVC 合约
-  -> add-testcase                     # Skill：生成 candidate testcase 骨架
-  -> add-regression-runner            # Skill：生成隔离、可复现的 regression runner
-  -> xverif                           # Skill：按需查日志、位宽、SVA 或 FSDB
-  -> wavepeek                         # Skill：按需查询有限 VCD/FST 启动波形
-  -> audit-traceability               # Skill：审计 feature/test/plan 结构映射
-  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+          -> add-interface             # Skill：生成协议 interface 与 modport
+          -> add-shared-pkg            # Skill：生成公共类型及 pack/unpack helper
+          -> add-uvc-skeleton          # Skill：生成 driver/monitor/agent class 骨架
+          -> add-harness-layer         # Skill：生成 DUT/TB harness、SVA 与 bind 骨架
+          -> add-env-layer             # Skill：生成 env、base test 与 thin tb_top
+          -> finalize-filelist-and-make # Skill：固化编译顺序与 compile target
+          -> add-simulator-profile     # Skill：生成已评审的 simulator 配置
+          -> complete-uvc              # Skill：实现显式 ready/valid UVC 合约
+          -> add-testcase              # Skill：生成 candidate testcase 骨架
+          -> add-regression-runner     # Skill：生成隔离、可复现的 regression runner
+          -> xverif                    # Skill：按任务授权查日志、位宽、SVA 或 FSDB
+          -> wavepeek                  # Skill：按任务授权查询有限 VCD/FST 波形
+          -> audit-traceability        # Skill：审计 feature/test/plan 结构映射
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 1              # Skill：生成 Stage 1 Draft gate packet
   -> Human Stage 1 approval
 ```
@@ -175,14 +193,15 @@ latency、hang、残留数据和 X/Z 传播。信号、时窗、预期事件和�
 ```text
 doctor                                # Skill：确认 Stage 2 入口状态
   -> spec-kit stage --stage 2         # Skill：审阅 Stage 2 spec/plan/tasks 并授权执行
-  -> add-refmodel-bridge              # Skill：生成 Golden/Syscan/DPI 结构适配层
-  -> complete-scoreboard              # Skill：仅为明确 FIFO alignment 生成比较器
-  -> add-testcase                     # Skill：生成 Golden engagement/compare 测试
-  -> xverif                           # Skill：按需算 mask/slice、解 entry 或查 FSDB
-  -> wavepeek                         # Skill：按需查询 DUT/Golden 首个分歧时窗
-  -> regression-triage                # Skill：失败时归一化 signature 并核对重跑
-  -> audit-traceability               # Skill：审计 Golden/test/plan 结构映射
-  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+          -> add-refmodel-bridge       # Skill：生成 Golden/Syscan/DPI 结构适配层
+          -> complete-scoreboard       # Skill：仅为明确 FIFO alignment 生成比较器
+          -> add-testcase              # Skill：生成 Golden engagement/compare 测试
+          -> xverif                    # Skill：按任务授权算 mask/slice 或查 FSDB
+          -> wavepeek                  # Skill：按任务授权查询首个分歧时窗
+          -> regression-triage         # Skill：失败时归一化 signature 并核对重跑
+          -> audit-traceability        # Skill：审计 Golden/test/plan 结构映射
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 2              # Skill：生成 Stage 2 Draft gate packet
   -> Human Stage 2 approval
 ```
@@ -200,14 +219,15 @@ entry，并检查 FSDB 中 DUT/Golden 的第一个不同值。WavePeek 的
 ```text
 doctor                                # Skill：确认 Stage 3 入口状态
   -> spec-kit stage --stage 3         # Skill：审阅 Stage 3 spec/plan/tasks 并授权执行
-  -> add-coverage-skeleton            # Skill：从已评审合约生成 coverage model
-  -> add-assertion-skeleton           # Skill：从已评审 property 生成 SVA/bind
-  -> add-testcase                     # Skill：生成 coverage/assertion focused 测试
-  -> xverif                           # Skill：用 xsva/xcov 分析原生 SVA/VDB
-  -> wavepeek                         # Skill：查询 assertion 反例或 hole 场景
-  -> regression-triage                # Skill：失败时核对 signature 与 same-seed 重跑
-  -> audit-traceability               # Skill：审计 bin/assertion/test/plan 映射
-  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+          -> add-coverage-skeleton     # Skill：从已评审合约生成 coverage model
+          -> add-assertion-skeleton    # Skill：从已评审 property 生成 SVA/bind
+          -> add-testcase              # Skill：生成 coverage/assertion focused 测试
+          -> xverif                    # Skill：按任务授权分析原生 SVA/VDB
+          -> wavepeek                  # Skill：按任务授权查询反例或 hole 场景
+          -> regression-triage         # Skill：失败时核对 same-seed 重跑
+          -> audit-traceability        # Skill：审计 bin/assertion/test/plan 映射
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 3              # Skill：生成 Stage 3 Draft gate packet
   -> Human Stage 3 approval
 ```
@@ -224,15 +244,16 @@ bin 已命中。coverage denominator、property 意图、vacuity 和 waiver 仍�
 ```text
 doctor                                # Skill：确认 Stage 4 入口状态
   -> spec-kit stage --stage 4         # Skill：审阅 Stage 4 spec/plan/tasks 并授权执行
-  -> add-testcase                     # Skill：补随机、边界和稳定性 candidate 测试
-  -> add-regression-runner            # Skill：已有完整 runner 时只复用、不覆盖
-  -> add-ci-hook                      # Skill：生成待人工合并的 CI job fragment
-  -> xverif                           # Skill：查询失败日志/FSDB/VDB/SVA/entry
-  -> wavepeek                         # Skill：查询失败 seed 的有限 VCD/FST 时窗
-  -> regression-triage                # Skill：每次非全绿时分类候选 root cause
-  -> audit-traceability               # Skill：审计默认 regression 与计划映射
-  -> change-control                   # Skill：baseline 变化时审计 change request
-  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+          -> add-testcase              # Skill：补随机、边界和稳定性 candidate 测试
+          -> add-regression-runner     # Skill：已有完整 runner 时只复用、不覆盖
+          -> add-ci-hook               # Skill：生成待人工合并的 CI job fragment
+          -> xverif                    # Skill：按任务授权查询失败证据
+          -> wavepeek                  # Skill：按任务授权查询失败 seed 波形
+          -> regression-triage         # Skill：每次非全绿时分类候选 root cause
+          -> audit-traceability        # Skill：审计默认 regression 与计划映射
+          -> change-control            # Skill：baseline 变化时审计 change request
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 4              # Skill：生成 Stage 4 Draft gate packet
   -> Human Stage 4 approval
 ```
@@ -249,17 +270,18 @@ same-seed rerun 一起交给 `regression-triage`；root cause 分类和 testcase
 ```text
 doctor                                # Skill：确认 Stage 5 入口与剩余 blocker
   -> spec-kit stage --stage 5         # Skill：审阅 Stage 5 closure spec/plan/tasks
-  -> add-performance-gate             # Skill：按已评审公式/阈值检查性能合同
-  -> add-testcase                     # Skill：只补剩余 hole/corner/closure case
-  -> required deterministic regression rounds  # 项目动作：完成规定轮次回归
-  -> regression-triage                # Skill：持续审计失败直到全部关闭
-  -> xverif                           # Skill：生成 coverage/SVA/FSDB 补充证据
-  -> wavepeek                         # Skill：抽查剩余 hole/waiver/corner 波形
-  -> coverage-closure                 # Skill：审计 coverage evidence 完整性
-  -> assertion-closure                # Skill：审计 assertion attempt/vacuity/failure
-  -> audit-traceability               # Skill：执行最终结构追踪审计
-  -> change-control                   # Skill：确认 baseline 变更均有已审 CR
-  -> spec-kit converge                # Skill：由 Stage workflow 核对最终规格漂移与证据索引
+       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+          -> add-performance-gate      # Skill：按已评审公式/阈值检查性能合同
+          -> add-testcase              # Skill：只补剩余 hole/corner/closure case
+          -> required regression rounds # 项目动作：需独立 EDA 权限
+          -> regression-triage         # Skill：持续审计失败直到全部关闭
+          -> xverif                    # Skill：按任务授权生成补充证据
+          -> wavepeek                  # Skill：按任务授权抽查波形
+          -> coverage-closure          # Skill：审计 coverage evidence 完整性
+          -> assertion-closure         # Skill：审计 assertion evidence 完整性
+          -> audit-traceability        # Skill：执行最终结构追踪审计
+          -> change-control            # Skill：确认 baseline 变更均有已审 CR
+       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
   -> stage-gate-review 5              # Skill：生成 Stage 5 Draft gate packet
   -> Human Stage 5 approval
   -> signoff-audit 5                  # Skill：审计已记录 sign-off 元数据与证据
@@ -303,6 +325,10 @@ Stage 0 只允许安装、`probe` 和把工具证据要求写入计划，不使�
 文档 review gate 的 Stage 0 spec/plan/tasks/checklist；或已批准存量项目已登记为
 immutable imported baseline。
 
+新项目的正常路径中，Stage 0 `tasks.md` 必须声明一次 `verif-harness mode: init`；
+execution gate 批准后由 `speckit.implement` 自动调度。下方直接调用只用于有记录的
+recovery 或 legacy import，不是 workflow 成功后的重复步骤。
+
 **输入**：
 
 - 项目根目录及其中的 `.v/.sv` 文件；
@@ -316,7 +342,7 @@ immutable imported baseline。
 **用法**：
 
 ```text
-$verif-harness init  # 生成 Stage 0 治理/派生视图和 M1.1 空目录骨架
+$verif-harness init  # 仅 recovery/legacy 路径直接调用；正常路径由 implement 调度
 ```
 
 **输出**：
@@ -1086,6 +1112,20 @@ Stage 0 only: constitution -> review
   -> implement through verif-harness modes -> converge -> review
 ```
 
+`tasks.md` 中每个 task 必须声明 mode、input contract、owned output、evidence、
+validation 和 Human gate。execution gate 批准后，`speckit.implement` 自动调度每个
+task 对应的 mode 一次；用户不需要按照 task list 再手动逐个调用。该规则覆盖全部
+被 task 声明的生成、工具委派、回归、审计和 closure modes。
+
+dispatch 是 agentic，但完成判定不是“命令返回过”：只有 owned outputs/evidence
+paths 存在且 approved validation command 通过，task 才能进入 complete。
+`converge` 必须把缺失产物记录为 incomplete/deviation；恢复重试要关联原 task/run
+并保留旧 evidence，不能用未追踪的重复手动调用掩盖问题。
+
+`bootstrap`、`status/resume`、workflow review gate、独立 `stage-gate-review`、
+Human approval、sign-off/freeze 授权不属于普通 implementation task 自动分发，仍按
+各自权限边界执行。
+
 每个 review gate 都会暂停 workflow。先用 `status` 定位 run、当前 gate 和对应工件；
 完成该工件的实际 review 后再用 `resume` 继续。`resume` 只是恢复同一个 run，不能
 跳过 review，也不会把 gate verdict 提升成 Stage approval。
@@ -1100,7 +1140,8 @@ REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 
 **输出**：固定版本/commit probe；`.specify/` 和 Codex Spec Kit skills；`specs/`
 下的 constitution/spec/plan/tasks/checklist；workflow run state；映射到
-verif-harness modes 的任务；规格漂移和 unresolved questions。`sim/docs/` 只保存
+verif-harness modes 的任务；每个已分发 task 的 output/evidence/validation
+postcondition；规格漂移和 unresolved questions。`sim/docs/` 只保存
 治理、生成视图、证据索引和 review packet，不是第二个可编辑 requirement source。
 
 **不能得出的结论**：Spec Kit 命令成功、checklist 全勾选或 workflow review gate
