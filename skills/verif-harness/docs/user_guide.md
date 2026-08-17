@@ -3,33 +3,39 @@
 本文是 `verif-harness` 的完整操作手册，包含：
 
 - RTL 验证项目从 0 到 freeze 的推荐顺序；
-- 30 个模式各自的用途、输入、输出、用法和适用场景；
+- 31 个模式各自的用途、输入、输出、用法和适用场景；
 - 每个阶段必须由人工完成的决策；
 - 各模式的能力边界和不能据此得出的结论。
 
 项目自身的 `AGENTS.md`、roadmap、verification plan 和 architecture 优先于
 本文。调用任何写模式前，必须先读取项目规则；DUT RTL 始终只读。
 
+当前角色模型是：`verif-harness` 为最上层控制面，GitHub Spec Kit 为规格面，
+现有 Skill modes 为执行能力面，xverif/WavePeek/EDA 为证据面，Human 为权限面。
+新项目以 `specs/` 为唯一可编辑规格事实源，不再让 `specs/` 与 `sim/docs/`
+同时维护可编辑需求。
+
 ## 1. 基本调用方式
 
 在 RTL 验证项目根目录中调用：
 
 ```text
-$verif-harness <mode> [arguments]
+$verif-harness <mode> [arguments]  # 调用指定 verif-harness Skill mode
 ```
 
 例如：
 
 ```text
-$verif-harness doctor
-$verif-harness add-uvc-skeleton data_in
-$verif-harness stage-gate-review 4
+$verif-harness doctor                       # 只读检查项目状态并推荐下一步
+$verif-harness add-uvc-skeleton data_in     # 为 data_in 生成 UVC class 骨架
+$verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
 ```
 
 未指定 mode 时：
 
 - 存在 `.harness-config.json`：默认执行只读 `doctor`；
-- 不存在 `.harness-config.json`：进入 `init`；
+- 不存在 `.harness-config.json` 且不存在 `.specify/`：先进入
+  `spec-kit bootstrap`；已有 reviewed Stage 0 Spec Kit 工件后再进入 `init`；
 - 项目状态冲突或 stage 不明确：停止写入并报告冲突。
 
 所有写模式默认只增不覆盖。Markdown 发生变化后，执行项目 `AGENTS.md`
@@ -37,8 +43,45 @@ $verif-harness stage-gate-review 4
 
 ## 2. Stage 0→freeze 总流程
 
+### 2.1 四层职责
+
 ```text
-Stage 0：文档与治理基线
+verif-harness：Stage policy、能力选择、任务分发、traceability、权限护栏
+  -> Spec Kit：constitution、specify、clarify、plan、checklist、tasks、analyze、converge
+  -> modes/tools：生成 TB、运行审计、调用 xverif/WavePeek/EDA、保留 evidence
+  -> Human：规格语义、Human Decisions、waiver、gate、sign-off、freeze
+```
+
+Spec Kit 把“文档优先”变成可执行工作流，但它是 agentic framework，不是
+deterministic tool。`specify`、`checklist`、`workflow gate` 或 `implement` 成功
+都不能替代 compile、simulation、regression、coverage、assertion 或人工审批。
+
+规格层级不要按每条 shell command 建一个完整 spec，而应保持：
+
+```text
+项目 constitution
+  -> verification program spec（spec of specs）
+  -> Stage / feature spec
+  -> plan + tasks + evidence contracts
+```
+
+统一追踪链为：
+
+```text
+REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
+```
+
+已完成或已批准的存量项目不重写历史：把现有批准文档、日期、证据和 decision
+作为 immutable imported baseline 链接到 Spec Kit；后续变更才走新的 spec-driven
+流程。`sim/docs/` 可继续保存治理、生成视图、证据索引和 review packet，但不得
+成为第二个可编辑需求权威。
+
+### 2.2 全流程
+
+```text
+Spec Kit bootstrap：安装 Codex integration 与 RTL verification preset
+  -> Stage 0 workflow：建立 constitution 与 verification program specification
+  -> Stage 0：文档与治理基线
   -> Human 批准范围、规格来源和 Human Decisions
   -> Stage 1：可编译、可运行的最小 harness/UVM 环境
   -> Human Stage 1 gate
@@ -50,7 +93,7 @@ Stage 0：文档与治理基线
   -> Human Stage 4 gate
   -> Stage 5：coverage/assertion/performance/stability closure
   -> Human Stage 5 sign-off
-  -> freeze-baseline
+  -> freeze-baseline                  # Skill：生成 hash 锚定的 freeze candidate
   -> Human freeze approval
   -> 单独授权的 tag/push/release
 ```
@@ -59,22 +102,37 @@ Stage 0：文档与治理基线
 `regression-triage` 在任何非全绿 regression 后使用；`change-control` 在任何
 approved/frozen baseline 发生变化时立即使用。
 
-`xverif` 与 `wavepeek` 都不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派通道。
+`xverif` 与 WavePeek 都不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派
+通道。只在存在具体问题、明确输入和有限查询范围时调用；工具 `PASS` 只说明本次
+命令成功，不代表 testcase PASS、stage gate 通过或 verification closure。
 
-`xverif` 需要做
-SystemVerilog bit 计算、设计/波形事实查询、coverage database 查询、entry 解码、
-日志位置恢复、SVA 解释或波形渲染时，由 `verif-harness` 先选择验证任务，再经
-CLI adapter 调用对应 xverif native tool。
+`spec-kit` 在每个 Stage 的开始和实现后使用：开始时执行 specify/clarify/plan/
+checklist/tasks/analyze；获得执行授权后把 task 分发给对应 verif-harness mode；
+完成后 converge 并记录 specification drift。Spec Kit review gate 只是文档或任务
+审阅点，真正的 Stage gate 仍由 `stage-gate-review` 生成 packet 后由 Human 批准。
+
+`xverif` 用于 VCS/VDB/FSDB/SVA/日志相关事实：`xbit` 计算 bit、slice、mask 和
+signedness，`xloc` 恢复日志位置，`xsva` 分析 assertion，`xcov` 查询 coverage
+database，`xdebug` 查询设计或 FSDB，`xentry` 解码结构化 entry，`xwaveform`
+渲染已导出的波形 manifest。`verif-harness` 先选择验证任务，再经 CLI adapter
+调用对应 xverif native tool。
+
+WavePeek 用于有限范围的 VCD/FST 查询：检查层次和信号、读取指定时刻的值、查找
+变化、验证 property 或抽取协议传输。默认托管集成不读取 FSDB；只有 FSDB 时优先
+使用 `xverif xdebug`。如需启用 WavePeek FSDB extension，必须由人工明确批准
+Verdi SDK 许可和本地隔离策略。
 
 ## 3. 分阶段推荐顺序
 
 ### 3.1 Stage 0：文档基线
 
 ```text
-doctor
-  -> init
-  -> audit-traceability
-  -> stage-gate-review 0
+doctor                                # Skill：只读检查初始项目状态
+  -> spec-kit bootstrap               # Skill：初始化 Spec Kit Codex integration 与 RTL preset
+  -> spec-kit stage --stage 0         # Skill：生成并审阅 Stage 0 spec/plan/tasks
+  -> init                             # Skill：生成 harness 治理资产及规格派生视图
+  -> audit-traceability               # Skill：审计计划与实现的结构追踪关系
+  -> stage-gate-review 0              # Skill：生成 Stage 0 Draft gate packet
   -> Human Stage 0 baseline approval
 ```
 
@@ -84,106 +142,166 @@ Provisional 和 open questions。Stage 0 不允许生成 TB 源码。
 ### 3.2 Stage 1：最小可运行环境
 
 ```text
-doctor
-  -> add-interface
-  -> add-shared-pkg
-  -> add-uvc-skeleton
-  -> add-harness-layer
-  -> add-env-layer
-  -> finalize-filelist-and-make
-  -> add-simulator-profile
-  -> complete-uvc
-  -> add-testcase
-  -> add-regression-runner
-  -> audit-traceability
-  -> stage-gate-review 1
+doctor                                # Skill：确认 Stage 1 入口状态
+  -> spec-kit stage --stage 1         # Skill：审阅 Stage 1 spec/plan/tasks 并授权执行
+  -> add-interface                    # Skill：生成协议 interface 与 modport
+  -> add-shared-pkg                   # Skill：生成公共类型及 pack/unpack helper
+  -> add-uvc-skeleton                 # Skill：生成 driver/monitor/agent class 骨架
+  -> add-harness-layer                # Skill：生成 DUT/TB harness、SVA 与 bind 骨架
+  -> add-env-layer                    # Skill：生成 env、base test 与 thin tb_top
+  -> finalize-filelist-and-make       # Skill：固化编译顺序与 compile target
+  -> add-simulator-profile            # Skill：生成已评审的 simulator 配置
+  -> complete-uvc                     # Skill：实现显式 ready/valid UVC 合约
+  -> add-testcase                     # Skill：生成 candidate testcase 骨架
+  -> add-regression-runner            # Skill：生成隔离、可复现的 regression runner
+  -> xverif                           # Skill：按需查日志、位宽、SVA 或 FSDB
+  -> wavepeek                         # Skill：按需查询有限 VCD/FST 启动波形
+  -> audit-traceability               # Skill：审计 feature/test/plan 结构映射
+  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+  -> stage-gate-review 1              # Skill：生成 Stage 1 Draft gate packet
   -> Human Stage 1 approval
 ```
 
 人工提供并确认 clock/reset、协议、SRAM、timeout、DUT port 和 simulator
 语义；在真实 EDA 环境检查 compile、elaboration、waveform 和 sanity test。
+`xverif xloc/xbit/xsva/xdebug` 用于定位编译或运行日志、核对位宽/掩码、解释协议
+property，以及查询 scope、driver、X/Z 和 FSDB 值。WavePeek 的
+`info/scope/signal/change/property` 用于受限时窗内确认 clock/reset、首次握手、
+latency、hang、残留数据和 X/Z 传播。信号、时窗、预期事件和最终 sanity verdict
+仍由人工确认。
 
 ### 3.3 Stage 2：Reference model 与功能对拍
 
 ```text
-doctor
-  -> add-refmodel-bridge
-  -> complete-scoreboard          # 仅在项目确实使用 FIFO alignment 时
-  -> add-testcase
-  -> regression-triage            # 失败时
-  -> audit-traceability
-  -> stage-gate-review 2
+doctor                                # Skill：确认 Stage 2 入口状态
+  -> spec-kit stage --stage 2         # Skill：审阅 Stage 2 spec/plan/tasks 并授权执行
+  -> add-refmodel-bridge              # Skill：生成 Golden/Syscan/DPI 结构适配层
+  -> complete-scoreboard              # Skill：仅为明确 FIFO alignment 生成比较器
+  -> add-testcase                     # Skill：生成 Golden engagement/compare 测试
+  -> xverif                           # Skill：按需算 mask/slice、解 entry 或查 FSDB
+  -> wavepeek                         # Skill：按需查询 DUT/Golden 首个分歧时窗
+  -> regression-triage                # Skill：失败时归一化 signature 并核对重跑
+  -> audit-traceability               # Skill：审计 Golden/test/plan 结构映射
+  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+  -> stage-gate-review 2              # Skill：生成 Stage 2 Draft gate packet
   -> Human Stage 2 approval
 ```
 
 人工确认 numeric representation、mask、alignment、residual、unsupported
 configuration 和 Golden engagement。Port-level compare 或项目专用 wrapper
 不能由通用 FIFO scoreboard 替换。
+`xverif xbit/xentry/xdebug` 用于复算 mismatch 的 mask/slice/signedness、解码多拍
+entry，并检查 FSDB 中 DUT/Golden 的第一个不同值。WavePeek 的
+`value/change/extract` 用于从 VCD/FST 截取 mismatch 前后的握手和 payload 事实。
+两者都不能自行决定 numeric、alignment、mask 或 Golden 语义。
 
 ### 3.4 Stage 3：Coverage 与 Assertion
 
 ```text
-doctor
-  -> add-coverage-skeleton
-  -> add-assertion-skeleton
-  -> add-testcase
-  -> regression-triage            # 失败时
-  -> audit-traceability
-  -> stage-gate-review 3
+doctor                                # Skill：确认 Stage 3 入口状态
+  -> spec-kit stage --stage 3         # Skill：审阅 Stage 3 spec/plan/tasks 并授权执行
+  -> add-coverage-skeleton            # Skill：从已评审合约生成 coverage model
+  -> add-assertion-skeleton           # Skill：从已评审 property 生成 SVA/bind
+  -> add-testcase                     # Skill：生成 coverage/assertion focused 测试
+  -> xverif                           # Skill：用 xsva/xcov 分析原生 SVA/VDB
+  -> wavepeek                         # Skill：查询 assertion 反例或 hole 场景
+  -> regression-triage                # Skill：失败时核对 signature 与 same-seed 重跑
+  -> audit-traceability               # Skill：审计 bin/assertion/test/plan 映射
+  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+  -> stage-gate-review 3              # Skill：生成 Stage 3 Draft gate packet
   -> Human Stage 3 approval
 ```
 
 人工批准 coverage denominator、cross、property、sampling clock、reset disable、
 vacuity 处理和逐对象 unreachable waiver。
+`xverif xsva` 用于 list/scan/lint/parse/explain，`xverif xcov` 用于读取 VDB summary、
+hole、scope 和 source evidence，`xdebug` 可补充 FSDB 反例事实。WavePeek 用于在
+VCD/FST 中检查 assertion 触发窗口或 hole 对应场景是否发生；它不能证明 coverage
+bin 已命中。coverage denominator、property 意图、vacuity 和 waiver 仍需人工批准。
 
 ### 3.5 Stage 4：Regression 与 CI
 
 ```text
-doctor
-  -> add-testcase
-  -> add-regression-runner        # 已完整时复用
-  -> add-ci-hook
-  -> regression-triage            # 每次非全绿时
-  -> audit-traceability
-  -> change-control               # baseline 发生变化时
-  -> stage-gate-review 4
+doctor                                # Skill：确认 Stage 4 入口状态
+  -> spec-kit stage --stage 4         # Skill：审阅 Stage 4 spec/plan/tasks 并授权执行
+  -> add-testcase                     # Skill：补随机、边界和稳定性 candidate 测试
+  -> add-regression-runner            # Skill：已有完整 runner 时只复用、不覆盖
+  -> add-ci-hook                      # Skill：生成待人工合并的 CI job fragment
+  -> xverif                           # Skill：查询失败日志/FSDB/VDB/SVA/entry
+  -> wavepeek                         # Skill：查询失败 seed 的有限 VCD/FST 时窗
+  -> regression-triage                # Skill：每次非全绿时分类候选 root cause
+  -> audit-traceability               # Skill：审计默认 regression 与计划映射
+  -> change-control                   # Skill：baseline 变化时审计 change request
+  -> spec-kit converge                # Skill：由 Stage workflow 核对规格漂移与证据索引
+  -> stage-gate-review 4              # Skill：生成 Stage 4 Draft gate packet
   -> Human Stage 4 approval
 ```
 
 人工或获授权基础设施提供 simulator license、scheduler、secret 和 CI runner；
 test 从 candidate 晋级 default regression 必须有已评审的动态 PASS 证据。
+每个失败先保留 seed、命令、日志和原始数据库，再用 xverif 取得稳定的日志位置、
+FSDB/VDB/SVA/entry 事实，或用 WavePeek 在对应 VCD/FST 中查找首个分歧。查询结果随
+same-seed rerun 一起交给 `regression-triage`；root cause 分类和 testcase 晋级仍由
+人工评审。
 
 ### 3.6 Stage 5：闭合、签核与 freeze
 
 ```text
-doctor
-  -> add-performance-gate
-  -> add-testcase                 # 只补剩余 hole/corner/closure case
-  -> required deterministic regression rounds
-  -> regression-triage            # 直到所有失败关闭
-  -> coverage-closure
-  -> assertion-closure
-  -> audit-traceability
-  -> change-control
-  -> stage-gate-review 5
+doctor                                # Skill：确认 Stage 5 入口与剩余 blocker
+  -> spec-kit stage --stage 5         # Skill：审阅 Stage 5 closure spec/plan/tasks
+  -> add-performance-gate             # Skill：按已评审公式/阈值检查性能合同
+  -> add-testcase                     # Skill：只补剩余 hole/corner/closure case
+  -> required deterministic regression rounds  # 项目动作：完成规定轮次回归
+  -> regression-triage                # Skill：持续审计失败直到全部关闭
+  -> xverif                           # Skill：生成 coverage/SVA/FSDB 补充证据
+  -> wavepeek                         # Skill：抽查剩余 hole/waiver/corner 波形
+  -> coverage-closure                 # Skill：审计 coverage evidence 完整性
+  -> assertion-closure                # Skill：审计 assertion attempt/vacuity/failure
+  -> audit-traceability               # Skill：执行最终结构追踪审计
+  -> change-control                   # Skill：确认 baseline 变更均有已审 CR
+  -> spec-kit converge                # Skill：由 Stage workflow 核对最终规格漂移与证据索引
+  -> stage-gate-review 5              # Skill：生成 Stage 5 Draft gate packet
   -> Human Stage 5 approval
-  -> signoff-audit 5
-  -> freeze-baseline
+  -> signoff-audit 5                  # Skill：审计已记录 sign-off 元数据与证据
+  -> freeze-baseline                  # Skill：生成 SHA-256 freeze candidate
   -> Human freeze approval
   -> separately authorized tag/push
 ```
 
 `coverage-closure` 和 `assertion-closure` 的 JSON 只是 tool-neutral adapter，
 不能替代原始 coverage database、compile/elaboration report 和 assertion report。
+Stage 5 中，`xverif xcov/xsva/xdebug` 提供 VDB、SVA 和 FSDB 的原生补充证据；
+WavePeek 对代表性的 VCD/FST hole、waiver 或 corner window 做可重放抽查。两类工具
+证据必须映射回 verification plan、coverage/assertion plan 和 closure adapter，
+不能直接产生 waiver、Stage 5 approval 或 freeze verdict。
+
+### 3.7 xverif 与 WavePeek 选择规则
+
+| 当前输入或问题 | 首选通道 | 说明 |
+| --- | --- | --- |
+| VCS 日志、`L_XXXXXXXX` 位置 | `xverif xloc` | 恢复稳定源码位置并保留日志证据 |
+| bit/slice/mask/signedness | `xverif xbit` | 产生可复算的 SystemVerilog 数值结果 |
+| SVA source/property | `xverif xsva` | 用于 list、lint、parse 和 explain |
+| VDB coverage database | `xverif xcov` | 原生读取 summary、hole、scope 和 source evidence |
+| FSDB、driver/load/value | `xverif xdebug` | WavePeek 默认不启用专有 FSDB feature |
+| entry/descriptor/header | `xverif xentry` | 解码多拍结构化字段 |
+| 已导出的 waveform manifest | `xverif xwaveform` | 渲染图像或统计，不替代原始波形 |
+| VCD/FST 层次、值、变化、property | `wavepeek` | 适合明确 signal/scope/time 的有限查询 |
+| VCD/FST 协议传输抽取 | `wavepeek` | mapping 和协议语义必须先由人工确认 |
+
+Stage 0 只允许安装、`probe` 和把工具证据要求写入计划，不使用工具输出批准文档
+基线。Stage 1～5 的具体调用方法与输入输出分别见 §5.13 和 §5.14。
 
 ## 4. Bootstrap 与 Stage 1 结构模式
 
 ### 4.1 `init`
 
-**用途**：把一个只有 RTL 或尚未建立系统验证流程的项目 bootstrap 成
-harness-style 项目。
+**用途**：把已有 reviewed Spec Kit Stage 0 specification 的 RTL 项目 bootstrap
+成 harness-style 项目，并生成治理与规格派生视图。
 
-**适用场景**：项目根目录没有 `.harness-config.json`，准备建立 Stage 0。
+**适用场景**：项目根目录没有 `.harness-config.json`，但已有 `.specify/` 和通过
+文档 review gate 的 Stage 0 spec/plan/tasks/checklist；或已批准存量项目已登记为
+immutable imported baseline。
 
 **输入**：
 
@@ -192,12 +310,13 @@ harness-style 项目。
 - DUT top file/module；
 - 可选 design-doc root；
 - 可选 reference-model spec；
+- Spec Kit constitution、Stage 0 spec/plan/tasks/checklist/analyze 结果；
 - 通过 discovery 和 Human 回答形成的初始配置。
 
 **用法**：
 
 ```text
-$verif-harness init
+$verif-harness init  # 生成 Stage 0 治理/派生视图和 M1.1 空目录骨架
 ```
 
 **输出**：
@@ -206,14 +325,14 @@ $verif-harness init
 - `AGENTS.md`；
 - `.harness/` workflow assets；
 - `.codex/agents/` 辅助 agent 配置；
-- verification docs、governance docs 和 Stage 0 review packet；
+- 链接 `specs/` 的 verification/governance 派生视图和 Stage 0 review packet；
 - Stage 1 M1.1 空目录骨架与 `.gitkeep`。
 
 **人工参与**：确认所有 discovery 结果，评审整个 Stage 0 文档集，批准或修改
 Human Decisions/Provisional/open questions。
 
-**边界**：已有配置时不得重新覆盖；Stage 0 不生成 TB 代码；生成文档不是
-Stage 0 approval。
+**边界**：已有配置时不得重新覆盖；Stage 0 不生成 TB 代码；不得在 `sim/docs/`
+重新定义 requirement 或建立第二个可编辑规格权威；生成文档不是 Stage 0 approval。
 
 ### 4.2 `add-interface`
 
@@ -233,7 +352,7 @@ Stage 0 approval。
 **用法**：
 
 ```text
-$verif-harness add-interface
+$verif-harness add-interface  # 根据已评审 interface contract 生成接口
 ```
 
 **输出**：
@@ -263,7 +382,7 @@ $verif-harness add-interface
 **用法**：
 
 ```text
-$verif-harness add-shared-pkg
+$verif-harness add-shared-pkg  # 生成公共类型、参数及 pack/unpack helper
 ```
 
 **输出**：
@@ -293,8 +412,8 @@ $verif-harness add-shared-pkg
 **用法**：
 
 ```text
-$verif-harness add-uvc-skeleton
-$verif-harness add-uvc-skeleton data_in
+$verif-harness add-uvc-skeleton          # 为所有已定义接口生成 UVC 骨架
+$verif-harness add-uvc-skeleton data_in  # 仅为 data_in 生成 UVC 骨架
 ```
 
 **输出**：
@@ -326,7 +445,7 @@ probes、SVA 和 bind。
 **用法**：
 
 ```text
-$verif-harness add-harness-layer
+$verif-harness add-harness-layer  # 生成 DUT/TB harness、SVA 与 bind 骨架
 ```
 
 **输出**：
@@ -358,7 +477,7 @@ port spec 时停止。
 **用法**：
 
 ```text
-$verif-harness add-env-layer
+$verif-harness add-env-layer  # 生成 env、base test、packages 与 thin tb_top
 ```
 
 **输出**：
@@ -391,7 +510,7 @@ logic 或默认 `UVM_TESTNAME`。
 **用法**：
 
 ```text
-$verif-harness finalize-filelist-and-make
+$verif-harness finalize-filelist-and-make  # 固化 filelist、编译顺序和 Makefile
 ```
 
 **输出**：
@@ -420,12 +539,13 @@ target；compile error 不会被解释为通过。
 **用法**：
 
 ```text
-$verif-harness doctor
+$verif-harness doctor  # 只读检查健康度、阶段状态和下一安全动作
 ```
 
 底层命令可加 `--json`：
 
 ```bash
+# doctor Skill：输出机器可读的只读健康检查结果
 python3 <skill-dir>/doctor/scripts/doctor.py --project-root . --json
 ```
 
@@ -449,6 +569,7 @@ arrays、environment variable names、capabilities、evidence paths。支持
 **用法**：
 
 ```bash
+# add-simulator-profile Skill：从显式合约生成 simulator profile 与 Makefile fragment
 python3 <skill-dir>/add-simulator-profile/scripts/generate_profile.py \
   --spec simulator-profile.json \
   --profile-out sim/config/simulator-profile.json \
@@ -476,6 +597,7 @@ plan references。
 **用法**：
 
 ```bash
+# complete-uvc Skill：从显式 ready/valid 合约生成 driver 与 monitor
 python3 <skill-dir>/complete-uvc/scripts/generate_uvc.py \
   --spec uvc-contract.json --driver-out <driver.svh> \
   --monitor-out <monitor.svh>
@@ -502,6 +624,7 @@ clocking region、payload timing，并运行 protocol tests。
 **用法**：
 
 ```bash
+# complete-scoreboard Skill：从 FIFO compare 合约生成 scoreboard
 python3 <skill-dir>/complete-scoreboard/scripts/generate_scoreboard.py \
   --spec scoreboard-contract.json --out <scoreboard.svh>
 ```
@@ -526,6 +649,7 @@ mask/tolerance。
 **用法**：
 
 ```bash
+# add-testcase Skill：先 dry-run 预览 testcase/vseq/package 变更
 python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
   --project-root . --test-name <prefix>_<name>_test \
   --base-test <prefix>_base_test --base-vseq <prefix>_job_vseq_base \
@@ -535,7 +659,7 @@ python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
 Review 后去掉 `--dry-run`；只有明确的 focused list 才使用：
 
 ```text
---candidate-caselist <path>
+--candidate-caselist <path>  # add-testcase Skill：仅登记到指定 candidate list
 ```
 
 **输出**：test `.svh`、vseq `.svh`、package include；可选 candidate caselist 条目。
@@ -557,6 +681,7 @@ bin clauses、cross items 和 `plan_refs`。
 **用法**：
 
 ```bash
+# add-coverage-skeleton Skill：从已评审 bin/cross 合约生成 coverage class
 python3 <skill-dir>/add-coverage-skeleton/scripts/generate_coverage.py \
   --spec coverage-spec.json --out <collector-fragment.svh>
 ```
@@ -581,6 +706,7 @@ expressions、messages、plan refs 和可选 bind mapping。
 **用法**：
 
 ```bash
+# add-assertion-skeleton Skill：从已评审 property 合约生成 checker 与 bind
 python3 <skill-dir>/add-assertion-skeleton/scripts/generate_assertions.py \
   --spec assertion-spec.json --checker-out <checker.sv> \
   --bind-out <bind.sv>
@@ -606,6 +732,7 @@ guard、HDL ports 或 DPI signatures、disabled assignments 和 plan refs。
 **用法**：
 
 ```bash
+# add-refmodel-bridge Skill：生成 Syscan wrapper 或 DPI import package
 python3 <skill-dir>/add-refmodel-bridge/scripts/generate_bridge.py \
   --spec bridge-spec.json --out <bridge.sv>
 ```
@@ -636,9 +763,11 @@ result collector。
 **用法**：复制 mode scripts 和 Makefile fragment 后，例如：
 
 ```bash
+# add-regression-runner Skill：按 caselist/seed 启动隔离 regression
 python3 run_regression.py --caselist tests.caselist --runs-dir runs \
   --seed 123 --jobs 4 -- simulator +UVM_TESTNAME={test} +ntb_random_seed={seed}
 
+# add-regression-runner Skill：按严格结果合约汇总每个 testcase
 python3 collect_results.py --runs-dir runs --caselist tests.caselist \
   --result-prefix PROJECT_RESULT --require-golden
 ```
@@ -664,6 +793,7 @@ variables 和 artifact paths。
 **用法**：
 
 ```bash
+# add-ci-hook Skill：从显式 CI 合约生成待人工合并的 job fragment
 python3 <skill-dir>/add-ci-hook/scripts/generate_ci.py \
   --spec ci-spec.json --out <ci-fragment>
 ```
@@ -688,6 +818,7 @@ operands、`eq/ne/lt/le/gt/ge` predicates、completeness rules；一个或多个
 **用法**：
 
 ```bash
+# add-performance-gate Skill：按固定公式与阈值评估结构化性能记录
 python3 <skill-dir>/add-performance-gate/scripts/evaluate_performance.py \
   --contract performance-contract.json --log run-a.log --log run-b.log
 ```
@@ -714,6 +845,7 @@ candidate classification 的 `triage-rules.json`。
 **用法**：
 
 ```bash
+# regression-triage Skill：结合 primary/same-seed rerun 生成候选分类
 python3 <skill-dir>/regression-triage/scripts/triage_regression.py \
   --report runs/report.json --rerun-report rerun/report.json \
   --rules triage-rules.json --out runs/triage.json
@@ -756,6 +888,7 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 **用法**：在完整 verif-harness 仓库一次性安装并验证固定版本：
 
 ```bash
+# xverif Skill：安装并验证 commit-pinned managed dependency
 ./scripts/setup.sh --with-xverif
 # 或：make setup-xverif check-xverif
 ```
@@ -766,6 +899,7 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 然后确认 selected wrapper 和上游身份：
 
 ```bash
+# xverif Skill：确认指定 native wrapper 与上游身份
 python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
   --tool xbit \
   --out /tmp/xverif-xbit-probe.json
@@ -774,6 +908,7 @@ python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
 复制并修改 `xverif/xverif-request.example.json`，然后运行：
 
 ```bash
+# xverif Skill：执行已评审 request，并把证据写入全新目录
 python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
   --project-root . --request xverif-request.json \
   --out-dir artifacts/xverif/xbit-conv-001
@@ -782,7 +917,7 @@ python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
 也可经开源项目根 CLI 进入同一 adapter：
 
 ```bash
-python3 scripts/verif_harness.py xverif probe --tool xbit
+python3 scripts/verif_harness.py xverif probe --tool xbit  # 经项目根 CLI probe xbit
 ```
 
 adapter 按显式 `--xverif-root` → `XVERIF_HOME` → project/current/repository
@@ -853,9 +988,10 @@ hash/空 feature 集/四个平台官方 release archive SHA-256 的
 **用法**：先安装并执行真实 schema smoke：
 
 ```bash
+# wavepeek Skill：安装固定版本、验证 schema，并确认 adapter 可用
 ./scripts/setup.sh --with-wavepeek
 # 或：make setup-wavepeek check-wavepeek
-python3 scripts/verif_harness.py wavepeek probe
+python3 scripts/verif_harness.py wavepeek probe  # 只执行身份/schema smoke
 ```
 
 安装器只在 source 和 binary 都不存在时工作：clone exact tagged commit，校验
@@ -867,6 +1003,7 @@ origin/HEAD/clean/License/Cargo.lock，下载当前平台官方 VCD/FST release 
 复制 `wavepeek/wavepeek-request.example.json` 后执行：
 
 ```bash
+# wavepeek Skill：执行有限 VCD/FST request 并归档可重放证据
 python3 scripts/verif_harness.py wavepeek run \
   --project-root . --request wavepeek-request.json \
   --out-dir artifacts/wavepeek/query-001
@@ -892,6 +1029,86 @@ Apache-2.0 边界。需要 FSDB 时还必须确认 Verdi SDK 许可和本地隔�
 的 `fsdb` feature。adapter 不使用 shell、不转存 environment values、不自动
 扩大查询，也不把 PASS 解释为 RTL 正确、root cause 确认或 freeze 完成。
 
+### 5.15 `spec-kit`
+
+**用途**：在 `verif-harness` 顶层控制面下，用固定版本 GitHub Spec Kit 管理
+constitution、program/stage specification、clarification、plan、checklist、tasks、
+analysis、implementation dispatch 和 convergence。它解决“每个 Stage 的执行任务
+从哪份已评审规格产生、结果回写到哪条 requirement”的问题，不替代验证工具。
+
+**适用场景**：新 RTL 验证项目从零建立规格单一事实源；每个 Stage 进入实现前
+建立可审阅 spec/plan/tasks；实现后检查规格漂移；已有 approved 项目导入为不可变
+baseline 后管理新 change request。不要为每条 CLI command 单独建立完整 spec；
+使用 constitution → verification program → Stage/feature → task/evidence 的层级。
+
+**输入**：
+
+- 操作：`probe`、`bootstrap`、`stage`、`status` 或 `resume`；
+- 完整 verif-harness 仓库及 `deps/spec-kit.lock.json`；
+- Python 3.11 或更新版本；
+- `bootstrap` 的项目根目录；
+- `stage` 的 Stage `0`～`5` 和已评审 objective；
+- 项目 `AGENTS.md`、只读 RTL 边界、规格来源及已有 baseline；
+- Human Decisions、Provisional、open questions 和 evidence contracts。
+
+**用法**：
+
+```bash
+./scripts/setup.sh --with-spec-kit
+python3 scripts/verif_harness.py spec-kit probe
+python3 scripts/verif_harness.py spec-kit bootstrap --project-root <project>
+python3 scripts/verif_harness.py spec-kit stage \
+  --project-root <project> \
+  --stage 2 \
+  --objective "接入 reference model 并建立可追踪功能对拍"
+python3 scripts/verif_harness.py spec-kit status --project-root <project>
+python3 scripts/verif_harness.py spec-kit resume \
+  --project-root <project> <run-id>
+```
+
+对应 Codex 调用：
+
+```text
+$verif-harness spec-kit probe                                      # Skill：校验固定版本 Spec Kit
+$verif-harness spec-kit bootstrap --project-root <project>         # Skill：初始化 Codex Spec Kit 项目与 preset
+$verif-harness spec-kit stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
+$verif-harness spec-kit status [run-id]                            # Skill：查看 Spec Kit workflow 状态
+$verif-harness spec-kit resume <run-id>                            # Skill：review 后恢复 paused workflow
+```
+
+`bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的
+`verif-stage-lifecycle.yml`，顺序为：
+
+```text
+Stage 0 only: constitution -> review
+  -> specify -> review -> clarify -> review -> plan -> review
+  -> checklist -> tasks -> analyze -> authorize execution
+  -> implement through verif-harness modes -> converge -> review
+```
+
+每个 review gate 都会暂停 workflow。先用 `status` 定位 run、当前 gate 和对应工件；
+完成该工件的实际 review 后再用 `resume` 继续。`resume` 只是恢复同一个 run，不能
+跳过 review，也不会把 gate verdict 提升成 Stage approval。
+
+preset 会把以下字段追加到标准 Spec Kit 工件：DUT 只读边界、规格权威、
+REQ/VF/TC/COV/ASRT ID、verif-harness mode、owned artifact、validation、evidence、
+Human gate。推荐追踪链是：
+
+```text
+REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
+```
+
+**输出**：固定版本/commit probe；`.specify/` 和 Codex Spec Kit skills；`specs/`
+下的 constitution/spec/plan/tasks/checklist；workflow run state；映射到
+verif-harness modes 的任务；规格漂移和 unresolved questions。`sim/docs/` 只保存
+治理、生成视图、证据索引和 review packet，不是第二个可编辑 requirement source。
+
+**不能得出的结论**：Spec Kit 命令成功、checklist 全勾选或 workflow review gate
+通过，不能证明 compile/elaboration/simulation/regression/coverage/assertion/
+performance PASS，也不能批准 Human Decision、waiver、Stage gate、sign-off、freeze、
+commit、push 或公开发布。上游源码固定不等于 Python 传递依赖完全 artifact-pinned；
+高保证或离线环境仍需维护者生成并审阅 wheel/hash lock。
+
 ## 6. 治理、闭合与发布模式
 
 ### 6.1 `audit-traceability`
@@ -905,6 +1122,7 @@ Apache-2.0 边界。需要 FSDB 时还必须确认 Verdi SDK 许可和本地隔�
 **用法**：
 
 ```bash
+# audit-traceability Skill：审计 feature/test/manifest/plan 的结构映射
 python3 <skill-dir>/audit-traceability/scripts/audit_traceability.py \
   --project-root . [--manifest <path>] [--json] [--out <path>] [--strict]
 ```
@@ -930,6 +1148,7 @@ traceability gap。
 **用法**：
 
 ```bash
+# coverage-closure Skill：审计 tool-neutral coverage evidence 与 totals
 python3 <skill-dir>/coverage-closure/scripts/audit_coverage_closure.py \
   --evidence coverage-evidence.json --json \
   --out artifacts/coverage-closure.json
@@ -957,6 +1176,7 @@ assertion 的 id、compiled、bound、attempts、passes、failures、vacuous、p
 **用法**：
 
 ```bash
+# assertion-closure Skill：审计 compile/bind/attempt/failure/vacuity 证据
 python3 <skill-dir>/assertion-closure/scripts/audit_assertion_closure.py \
   --evidence assertion-evidence.json --json \
   --out artifacts/assertion-closure.json
@@ -982,6 +1202,7 @@ project root。
 **用法**：
 
 ```bash
+# change-control Skill：审计 baseline 后的 CR 与 Git diff 覆盖
 python3 <skill-dir>/change-control/scripts/audit_change_control.py \
   --contract changes.json --project-root . --audit-git --json \
   --out artifacts/change-control.json
@@ -1008,6 +1229,7 @@ questions、CR、动态 evidence 和 artifact limitations。
 **用法**：
 
 ```bash
+# stage-gate-review Skill：生成保持所有决定未勾选的 Draft gate packet
 python3 <skill-dir>/stage-gate-review/scripts/build_stage_gate.py \
   --project-root . --completed-stage <N> \
   --out <docs-root>/stage<N>_gate_re_review.md
@@ -1035,6 +1257,7 @@ reviewer/date/Approval Decision。
 **用法**：
 
 ```bash
+# signoff-audit Skill：只读复核 sign-off packet、manifest 与批准记录
 python3 <skill-dir>/signoff-audit/scripts/audit_signoff.py \
   --project-root . --stage <N> [--packet <path>] [--manifest <path>] \
   [--json] [--out <path>] [--strict]
@@ -1065,6 +1288,7 @@ Human approval record。
 **用法**：
 
 ```bash
+# freeze-baseline Skill：在 clean commit 上生成 SHA-256 freeze candidate
 python3 <skill-dir>/freeze-baseline/scripts/build_freeze_manifest.py \
   --project-root . --contract freeze-contract.json \
   --out /tmp/freeze-candidate.json
@@ -1095,6 +1319,7 @@ checks、每个文件的 SHA-256/size，以及：
 **用法**：
 
 ```bash
+# oss-readiness Skill：扫描 public export、community files 与 Git history
 python3 <skill-dir>/oss-readiness/scripts/audit_oss_readiness.py \
   --project-root . --require-community --history
 ```
@@ -1118,8 +1343,8 @@ python3 <skill-dir>/oss-readiness/scripts/audit_oss_readiness.py \
 **用法**：
 
 ```text
-$verif-harness patterns regression
-$verif-harness patterns freeze
+$verif-harness patterns regression  # 查询 regression 设计与证据模式
+$verif-harness patterns freeze      # 查询 sign-off/freeze 治理模式
 ```
 
 **输出**：基于 `references/*.md` 的说明、约束和推荐做法。

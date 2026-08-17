@@ -1,0 +1,122 @@
+schema_version: "1.0"
+workflow:
+  id: "verif-stage-lifecycle"
+  name: "verif-harness Stage Lifecycle"
+  version: "0.1.0"
+  author: "verif-harness contributors"
+  description: "Specifies, reviews, executes, and converges one RTL verification stage"
+
+requires:
+  speckit_version: ">=0.16.4"
+  integrations:
+    any: ["codex"]
+
+inputs:
+  stage:
+    type: string
+    required: true
+    enum: ["0", "1", "2", "3", "4", "5"]
+    prompt: "Verification stage (0-5)"
+  objective:
+    type: string
+    required: true
+    prompt: "Reviewed objective for this verification stage"
+  integration:
+    type: string
+    default: "codex"
+    enum: ["codex"]
+
+steps:
+  - id: establish-constitution
+    type: if
+    condition: "{{ inputs.stage == '0' }}"
+    then:
+      - id: constitution
+        command: speckit.constitution
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "Establish the RTL verification constitution: verif-harness is the top-level control plane, specs/ is the sole editable specification authority, DUT RTL is read-only, tool evidence is not approval, and Human authority is preserved."
+
+      - id: review-constitution
+        type: gate
+        message: "Review the Stage 0 constitution and specification-authority model. This document review is not Stage 0 approval."
+        options: [approve, reject]
+        on_reject: abort
+
+  - id: specify
+    command: speckit.specify
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Stage {{ inputs.stage }} RTL verification: {{ inputs.objective }}. Apply the verif-harness RTL verification contract and preserve the specification hierarchy."
+
+  - id: review-spec
+    type: gate
+    message: "Review requirements, authority sources, acceptance evidence, Human Decisions, and open questions. This gate reviews the document; it is not Stage approval."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: clarify
+    command: speckit.clarify
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Resolve only answerable ambiguities. Record semantic or authority questions for Human review; do not silently assume."
+
+  - id: review-clarification
+    type: gate
+    message: "Review clarified assumptions and unresolved Human questions before planning."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: plan
+    command: speckit.plan
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Map each requirement to a verif-harness mode, owned artifact, validation, evidence contract, and Human gate for Stage {{ inputs.stage }}."
+
+  - id: review-plan
+    type: gate
+    message: "Review component ownership, stage scope, simulator/tool boundaries, evidence retention, and Human authority."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: checklist
+    command: speckit.checklist
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Create an RTL verification specification-quality checklist; do not create an implementation test list."
+
+  - id: tasks
+    command: speckit.tasks
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Create traceable Stage {{ inputs.stage }} tasks with REQ/VF/TC/COV/ASRT IDs, verif-harness modes, output paths, validation, evidence, and Human gates."
+
+  - id: analyze
+    command: speckit.analyze
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Check consistency, coverage, ambiguity, duplicated authority, and task traceability before execution."
+
+  - id: authorize-execution
+    type: gate
+    message: "Authorize execution of the reviewed task set. This does not authorize DUT RTL edits, EDA use, commits, pushes, waivers, Stage approval, or freeze."
+    options: [approve, reject]
+    on_reject: abort
+
+  - id: implement
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Execute only reviewed Stage {{ inputs.stage }} tasks through matching verif-harness modes and retain required evidence."
+
+  - id: converge
+    command: speckit.converge
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "Reconcile implementation and evidence with the reviewed specification. Record deviations and change requests; do not grant approval."
+
+  - id: review-convergence
+    type: gate
+    message: "Review specification drift and evidence completeness before the separate verif-harness Stage gate review."
+    options: [approve, reject]
+    on_reject: abort

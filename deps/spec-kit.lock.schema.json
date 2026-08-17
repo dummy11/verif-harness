@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dummy11/verif-harness/schemas/spec-kit.lock.schema.json",
+  "title": "verif-harness managed Spec Kit dependency lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "repository",
+    "commit",
+    "ref",
+    "version",
+    "license",
+    "license_file_sha256",
+    "pyproject_sha256",
+    "python_requires",
+    "package",
+    "executable",
+    "integration"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {"const": "spec-kit"},
+    "repository": {"const": "https://github.com/github/spec-kit.git"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "ref": {"const": "refs/tags/v0.16.4"},
+    "version": {"const": "0.16.4"},
+    "license": {"const": "MIT"},
+    "license_file_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pyproject_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "python_requires": {"const": ">=3.11"},
+    "package": {"const": "specify-cli"},
+    "executable": {"const": "specify"},
+    "integration": {"const": "codex"}
+  }
+}

@@ -2,9 +2,12 @@
 
 **Mode**: `/verif-harness init` (or auto-dispatched when `.harness-config.json` is absent)
 
-**Purpose**: Bootstrap the current project with harness-style verification discipline.
-Produces: `.harness-config.json` + `.harness/` + `.codex/agents/` + `AGENTS.md` + 11 Stage 0 docs
-+ Stage 0 review packet.
+**Purpose**: Bootstrap the current project with harness-style verification discipline
+below the verif-harness control plane. For new projects, Spec Kit `specs/` is the
+sole editable specification authority. This mode produces operational governance
+views and evidence/review structures; it does not create a second requirements source.
+Produces: `.harness-config.json` + `.harness/` + `.codex/agents/` + `AGENTS.md` +
+11 Stage 0 derived/governance docs + Stage 0 review packet.
 
 ## Pre-conditions
 
@@ -15,6 +18,11 @@ Before starting:
   `find . -maxdepth 4 -type f \( -name '*.v' -o -name '*.sv' \) | head`).
 - `.harness-config.json` does NOT already exist. If it does, stop and ask
   the user whether to re-bootstrap (destructive) or exit.
+- For a new project, `.specify/` exists and the Stage 0 Spec Kit specification,
+  plan, tasks, checklist, and analysis have passed their document review gates.
+- For an already approved project, the existing documentation and approvals are
+  explicitly classified as an immutable imported baseline. Do not rewrite dates,
+  decisions, evidence, or provenance to imitate a historical Spec Kit workflow.
 
 If pre-conditions fail, stop and report to the user. Do not proceed.
 
@@ -229,10 +237,11 @@ Conditional blocks:
 
 Write the rendered result to `AGENTS.md` at project root.
 
-### Step 6 — Generate Stage 0 docs
+### Step 6 — Generate Stage 0 operational views
 
-Read `<skill-dir>/assets/doc-conventions.md`. Follow it
-strictly. For each doc listed there, generate content that:
+Read the authoritative Spec Kit Stage 0 artifacts first, then read
+`<skill-dir>/assets/doc-conventions.md`. Follow it strictly. For each doc listed
+there, generate content that:
 
 1. Fits the doc's stated purpose.
 2. Cites RTL at `<file>:<line>` for every DUT-behavior claim.
@@ -246,6 +255,15 @@ strictly. For each doc listed there, generate content that:
 5. Ends with the Draft/Pending review block from `.harness/review-block.md`
    Template 1, with paths in `### Project-Level References` filled in to
    reflect this doc's related docs.
+6. Starts with a provenance note naming the authoritative Spec Kit spec and
+   stating that the file is an operational/governance view, not an independently
+   editable requirements source.
+7. Preserves `REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`
+   identifiers and links. Do not create a second ID or requirement definition.
+
+When a required operational detail is absent from the authoritative spec, add
+an open question to Spec Kit and link it here. Do not silently define it only in
+the derived document.
 
 Docs to generate (order matters — later docs may cite earlier ones):
 

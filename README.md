@@ -51,7 +51,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 - Interface, SVA, bind, filelist, and smoke-test patterns.
 - A license-free `simple_fifo` example for Verilator.
 - Simulator-independent Python structure and public-release checks.
-- A bundled 30-mode Codex skill for Stage 0 through verification freeze.
+- A bundled 31-mode Codex skill for Stage 0 through verification freeze.
+- A pinned GitHub Spec Kit specification plane governed by the verif-harness
+  top-level control plane.
 - A fail-closed CLI adapter for deterministic tools from
   `https://github.com/BLANK2077/xverif.git`.
 - Commit-pinned WavePeek integration for bounded VCD/FST inspection.
@@ -105,6 +107,20 @@ This verifies the exact WavePeek source, Apache-2.0 License and Cargo.lock,
 then downloads the matching official VCD/FST-only release asset by platform
 and verifies its pinned SHA-256 below Git-ignored `.deps/`. FSDB support is not
 enabled, and installing WavePeek does not require a Rust toolchain.
+
+Enable the optional, release-pinned GitHub Spec Kit dependency with Python
+3.11 or newer:
+
+```bash
+./scripts/setup.sh --with-spec-kit
+python3 scripts/verif_harness.py spec-kit probe
+```
+
+verif-harness remains the top-level policy, Stage, dispatch, and traceability
+control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
+xverif, WavePeek, and simulators produce bounded evidence; Human reviewers keep
+semantic decisions, waivers, gates, sign-off, and freeze authority. See
+[integrations/spec-kit/README.md](integrations/spec-kit/README.md).
 
 ## Generate a DUT integration skeleton
 

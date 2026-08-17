@@ -53,6 +53,15 @@ class GeneratorTest(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
 
+    def test_exposes_bounded_spec_kit_operations(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(GENERATOR), "spec-kit", "--help"],
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for operation in ("probe", "bootstrap", "stage", "status", "resume"):
+            self.assertIn(operation, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

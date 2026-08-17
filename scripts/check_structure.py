@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_DIRS = [
     "deps", "docs", "examples/simple_fifo", "scripts", "templates/dut", "tests",
-    "skills/verif-harness", ".github/workflows", ".github/ISSUE_TEMPLATE",
+    "skills/verif-harness", "integrations/spec-kit", ".github/workflows",
+    ".github/ISSUE_TEMPLATE",
 ]
 
 
@@ -24,7 +25,9 @@ def main() -> int:
         "deps/xverif.lock.schema.json", "scripts/setup_xverif.py",
         "scripts/check_xverif.py", "deps/wavepeek.lock.json",
         "deps/wavepeek.lock.schema.json", "scripts/setup_wavepeek.py",
-        "scripts/check_wavepeek.py",
+        "scripts/check_wavepeek.py", "deps/spec-kit.lock.json",
+        "deps/spec-kit.lock.schema.json", "scripts/setup_spec_kit.py",
+        "scripts/check_spec_kit.py",
     ):
         if not (ROOT / name).is_file():
             failures.append(f"missing managed-dependency file: {name}")
@@ -57,6 +60,19 @@ def main() -> int:
             failures.append("WavePeek lock tag differs from the reviewed release")
         if lock.get("cargo_features") != []:
             failures.append("WavePeek default lock must not enable FSDB or other features")
+    spec_kit_lock_path = ROOT / "deps/spec-kit.lock.json"
+    if spec_kit_lock_path.is_file():
+        lock = json.loads(spec_kit_lock_path.read_text(encoding="utf-8"))
+        if lock.get("repository") != "https://github.com/github/spec-kit.git":
+            failures.append("Spec Kit lock repository is not the reviewed upstream")
+        if lock.get("commit") != "d1f50fcbe684a4222059c4ba7f2d7eabcca87402":
+            failures.append("Spec Kit lock commit is not the reviewed object ID")
+        if lock.get("version") != "0.16.4" or lock.get("license") != "MIT":
+            failures.append("Spec Kit lock version or license differs from review")
+        if lock.get("ref") != "refs/tags/v0.16.4":
+            failures.append("Spec Kit lock tag differs from the reviewed release")
+        if lock.get("python_requires") != ">=3.11":
+            failures.append("Spec Kit lock must require Python 3.11 or newer")
     config_path = ROOT / "examples/simple_fifo/config/example.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     filelist_path = ROOT / config["filelist"]
@@ -90,7 +106,8 @@ def main() -> int:
         "add-ci-hook", "add-performance-gate", "regression-triage",
         "coverage-closure", "assertion-closure", "audit-traceability",
         "change-control", "stage-gate-review", "signoff-audit",
-        "freeze-baseline", "oss-readiness", "xverif", "wavepeek", "patterns",
+        "freeze-baseline", "oss-readiness", "spec-kit", "xverif", "wavepeek",
+        "patterns",
     ]
     for mode in modes:
         if f"`{mode}" not in skill_text:
@@ -98,7 +115,7 @@ def main() -> int:
     for mode in (
         "add-simulator-profile", "complete-uvc", "complete-scoreboard",
         "regression-triage", "coverage-closure", "assertion-closure",
-        "change-control", "freeze-baseline", "xverif", "wavepeek",
+        "change-control", "freeze-baseline", "spec-kit", "xverif", "wavepeek",
     ):
         if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
             failures.append(f"mode lacks instructions: {mode}")

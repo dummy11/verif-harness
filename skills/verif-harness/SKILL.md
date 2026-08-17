@@ -1,6 +1,6 @@
 ---
 name: verif-harness
-description: Bootstrap, extend, audit, and govern harness-style RTL verification projects from Stage 0 through sign-off and public-release readiness. Use for UVM/harness scaffolding, test registration, coverage and assertion skeletons, reference-model adapters, deterministic regression, xverif CLI delegation, WavePeek waveform inspection, CI fragments, performance contracts, diagnostics, traceability, stage gates, structural sign-off, and open-source readiness audits. Never modify DUT RTL, approve Human Decisions, or declare confidential material safe to publish.
+description: Govern spec-driven harness-style RTL verification projects from Stage 0 through sign-off and public-release readiness. Use for GitHub Spec Kit specification workflows, UVM/harness scaffolding, test registration, coverage and assertion skeletons, reference-model adapters, deterministic regression, xverif CLI delegation, WavePeek waveform inspection, CI fragments, performance contracts, diagnostics, traceability, stage gates, structural sign-off, and open-source readiness audits. Never modify DUT RTL, approve Human Decisions, or declare confidential material safe to publish.
 ---
 
 # verif-harness
@@ -21,6 +21,7 @@ Support these explicit modes:
 - `add-env-layer`
 - `finalize-filelist-and-make`
 - `doctor`
+- `spec-kit`
 - `xverif`
 - `wavepeek`
 - `add-regression-runner`
@@ -45,9 +46,11 @@ Support these explicit modes:
 - `patterns [topic]`
 
 With no mode, run `doctor` when `.harness-config.json` exists. If it does not
-exist, dispatch to `init`. After `doctor`, recommend the next mode but do not
-perform a write mode automatically. Stage state becomes ambiguous after the
-M1.1 scaffold and requires human judgment.
+exist, require a Spec Kit project and reviewed Stage 0 specification first:
+dispatch to `spec-kit bootstrap` when `.specify/` is absent, otherwise dispatch
+to `init`. After `doctor`, recommend the next mode but do not perform a write
+mode automatically. Stage state becomes ambiguous after the M1.1 scaffold and
+requires human judgment.
 
 If the requested state is partial or ambiguous, stop before writing and report
 the conflicting evidence.
@@ -80,10 +83,12 @@ Apply these rules in every mode:
 
 ### `init`
 
-Use only when `.harness-config.json` is absent. Read
-`stage0/INSTRUCTIONS.md` completely. Generate the Stage 0 documentation,
+Use only when `.harness-config.json` is absent and a reviewed Spec Kit Stage 0
+specification exists. Read `stage0/INSTRUCTIONS.md` completely. Generate Stage
+0 operational governance views linked to the authoritative `specs/` artifacts,
 workflow assets, `AGENTS.md`, and the M1.1 directory scaffold. Stop for Human
-review; do not start TB implementation.
+review; do not start TB implementation or create a competing requirements
+authority.
 
 ### `add-interface`
 
@@ -119,6 +124,17 @@ Read `finalize-filelist-and-make/INSTRUCTIONS.md`. Generate canonical
 filelists and the M1.1 compile-only Makefile target.
 
 ## Lifecycle modes
+
+### `spec-kit`
+
+Read `spec-kit/INSTRUCTIONS.md` and the complete repository's
+`integrations/spec-kit/README.md`. Keep verif-harness as the top-level control
+plane and use the commit-pinned GitHub Spec Kit dependency for constitution,
+specification, clarification, planning, checklist, task, analysis,
+implementation-dispatch, and convergence documents. New projects use `specs/`
+as the sole editable specification authority; import approved legacy projects
+as immutable baselines. Spec Kit is agentic, not deterministic evidence, and
+its workflow gates are never Stage, sign-off, freeze, or publication approval.
 
 ### `doctor`
 
@@ -294,7 +310,7 @@ Stage 2+ implementation and evidence contracts, read
 ## Resource map
 
 - `README.md`: 中文模式目录、快速用法和权限边界。
-- `docs/user_guide.md`: 中文 Stage 0→freeze 流程，以及 30 个模式的输入、
+- `docs/user_guide.md`: 中文 Stage 0→freeze 流程，以及 31 个模式的输入、
   输出、用法、用途、场景和人工检查点。
 - `docs/architecture.md`: 中文模式分层、数据流、证据状态和权限架构。
 - `docs/troubleshooting.md`: 中文常见故障、false-green 风险和恢复方法。
@@ -315,13 +331,18 @@ Stage 2+ implementation and evidence contracts, read
   managed dependency identity, installation, and validation.
 - Repository `deps/wavepeek.lock.json` and `scripts/setup_wavepeek.py`: optional
   managed WavePeek source/release identity, installation, and validation.
+- `spec-kit/`: Spec Kit 规格事实源、Stage workflow 和权限边界。
+- Repository `deps/spec-kit.lock.json`, `scripts/setup_spec_kit.py`, and
+  `integrations/spec-kit/`: optional managed specification subsystem, RTL
+  preset, workflow, and bundle authoring assets.
 - `oss-readiness/`: public-release structure and sensitive-data audit.
 - `assets/`: Stage 0 governance assets and templates copied into projects.
 - Each write mode has one `INSTRUCTIONS.md`; read it completely before acting.
 
 ## Scope boundary
 
-The 30 modes cover Stage 0 and Stage 1 M1.1 scaffolding, additive Stage 2+
+The 31 modes cover specification lifecycle, Stage 0 and Stage 1 M1.1
+scaffolding, additive Stage 2+
 control skeletons, simulator/UVC/scoreboard completion, deterministic
 regression and triage, coverage/assertion/change closure, structural audits,
 gate packets, and a hash-anchored freeze candidate. Meaningful stimulus and all

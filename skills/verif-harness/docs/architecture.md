@@ -1,26 +1,42 @@
 # Skill 架构
 
-`verif-harness` 把项目语义、结构生成、动态证据和人工权限分开处理。
-生成器只接受已评审的显式合约；审计器只读取仓库或 EDA 工具导出的证据。
+`verif-harness` 是最上层控制面，把规格、执行能力、动态证据和人工权限分开处理。
+Spec Kit 管理规格生命周期；生成器只接受已评审的显式合约；审计器只读取仓库
+或 EDA 工具导出的证据。
 
 ```text
-项目 AGENTS.md + 计划文档 + 已评审合约
-                       |
-                       v
-         verif-harness 模式分发入口
-          /        |          |          \
-       生成器    内置执行器   CLI adapter   审计器
-          |        |          |             |
-      TB/文档/CI 日志/报告  xverif evidence findings/packet
-          \        |          |            /
-                  Human review
-                       |
-                 approved baseline
-                       |
-                  freeze manifest
+verif-harness 顶层控制面（policy / stage / dispatch / traceability）
+             |                 |                    |
+             v                 v                    v
+      Spec Kit 规格面     verif-harness 模式     Human 权限面
+ constitution/spec/plan   生成器/执行器/审计器   决策/waiver/gate
+ checklist/tasks/analyze        |
+             \                 v
+              \        xverif/WavePeek/EDA 证据面
+               \               |
+                +-------- traceability --------+
 ```
 
 ## 模式分层
+
+### 规格与顶层编排层
+
+- `spec-kit`
+
+verif-harness 决定 Stage、策略、能力分发和追踪规则；Spec Kit 负责
+constitution、program/stage spec、clarify、plan、checklist、tasks、analyze、
+implement-dispatch 与 converge。新项目以 `specs/` 为唯一可编辑规格事实源；其他
+文档树只保存治理、生成视图、证据索引和 review packet。已批准的存量项目以不可变
+baseline 导入，不重写历史审批。
+
+规范追踪链为：
+
+```text
+REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
+```
+
+Spec Kit 是 agentic 规格框架，不是确定性验证工具。它的 command、checklist 和
+workflow gate 成功不能作为仿真证据或 Human approval。
 
 ### Bootstrap 与结构层
 
@@ -173,7 +189,7 @@ stage packet -> Human sign-off -> freeze manifest
 
 ```text
 SKILL.md                       模式分发与全局约束
-README.md                      30 模式快速目录
+README.md                      31 模式快速目录
 docs/                          用户指南、架构和故障处理
 <mode>/INSTRUCTIONS.md         前置条件、流程与权限边界
 <mode>/*.example.json          合约示例
@@ -181,6 +197,7 @@ docs/                          用户指南、架构和故障处理
 references/                    实现、回归和生命周期模式
 xverif/                        CLI request schema、example 和 adapter
 wavepeek/                      波形 request schema、example 和 adapter
+spec-kit/                      Spec Kit 顶层编排、规格事实源和权限边界
 assets/                        Stage 0 治理资产
 tests/                         合约、拒绝覆盖和 false-green 测试
 ```
