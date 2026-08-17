@@ -3,6 +3,7 @@
 本文是 `verif-harness` 的完整操作手册，包含：
 
 - RTL 验证项目从 0 到 freeze 的推荐顺序；
+- Spec Kit 两条入口命令与 `$verif-harness init` 的关系；
 - 31 个模式各自的用途、输入、输出、用法和适用场景；
 - 每个阶段必须由人工完成的决策；
 - 各模式的能力边界和不能据此得出的结论。
@@ -136,6 +137,229 @@ WavePeek 用于有限范围的 VCD/FST 查询：检查层次和信号、读取�
 变化、验证 property 或抽取协议传输。默认托管集成不读取 FSDB；只有 FSDB 时优先
 使用 `xverif xdebug`。如需启用 WavePeek FSDB extension，必须由人工明确批准
 Verdi SDK 许可和本地隔离策略。
+
+## 专题：三条入口指令的关系
+
+新项目最容易混淆的三条指令是：
+
+```text
+spec-kit bootstrap
+spec-kit stage --stage 0
+$verif-harness init
+```
+
+它们不是三个并列的项目初始化命令，而是规格基础设施、Stage 0 规格工作流和工程
+落地三个连续层次：
+
+```text
+bootstrap：安装规格系统
+    -> stage --stage 0：定义、澄清、规划并审阅 Stage 0
+        -> speckit.implement：自动分发已授权 task
+            -> $verif-harness init：把已审规格落成验证工程治理层
+```
+
+### 三条指令的职责对照
+
+| 指令 | 解决的问题 | 主要输入 | 主要输出 |
+| --- | --- | --- | --- |
+| `spec-kit bootstrap` | 项目用什么规格工具、模板和 workflow | 现有项目根目录 | `.specify/`、Codex Spec Kit skills、`verif-harness-rtl` preset |
+| `spec-kit stage --stage 0` | 项目要验证什么、依据什么、怎样规划和验收 | Stage 0 objective、规格来源、只读 RTL 边界 | constitution、spec、plan、tasks、checklist、workflow run |
+| `$verif-harness init` | 怎样把 reviewed Stage 0 task 落成可工作的验证工程 | reviewed specs、DUT/目录元数据、task contract | `.harness-config.json`、`AGENTS.md`、`.harness/`、派生治理视图、review packet、M1.1 scaffold |
+
+一句话概括：`bootstrap` 建工具，`stage 0` 定规格，`init` 按规格建工程。
+
+### 1. `spec-kit bootstrap`：安装规格基础设施
+
+完整命令：
+
+```bash
+python3 scripts/verif_harness.py spec-kit bootstrap \
+  --project-root /path/to/project
+```
+
+显式业务输入只有项目根目录；Codex integration、Python script mode、固定版本
+Spec Kit、`verif-harness-rtl` preset 和 preset priority 由 verif-harness 提供。
+目标目录必须存在且可写，并且不能已有 `.specify/`。
+
+它内部依次执行：
+
+```text
+specify init --here --integration codex --integration-options=--skills --script py
+  -> specify preset add --dev <rtl-verification-preset> --priority 5
+```
+
+主要文件输出：
+
+```text
+<project>/
+├── .specify/
+│   ├── integration.json
+│   ├── memory/
+│   ├── scripts/
+│   ├── templates/
+│   ├── workflows/
+│   └── presets/verif-harness-rtl/
+└── .agents/skills/speckit-*/
+```
+
+`bootstrap` 不接收 DUT top、Stage objective、testcase、coverage、assertion 或
+simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.json`、TB、
+仿真证据或 Stage approval。它是一次性的基础设施安装；已有 `.specify/` 时会拒绝
+覆盖，不能用强制重跑代替迁移评审。
+
+### 2. `spec-kit stage --stage 0`：运行 Stage 0 规格生命周期
+
+完整命令必须包含 reviewed objective：
+
+```bash
+python3 scripts/verif_harness.py spec-kit stage \
+  --project-root /path/to/project \
+  --stage 0 \
+  --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
+```
+
+它要求项目已经完成 `bootstrap` 并安装 `verif-harness-rtl` preset。Stage 0 比
+Stage 1～5 多 constitution 建立步骤，完整顺序是：
+
+```text
+constitution -> review
+  -> specify -> review
+  -> clarify -> review
+  -> plan -> review
+  -> checklist -> tasks -> analyze
+  -> authorize execution
+  -> implement through reviewed verif-harness modes
+  -> converge -> review
+```
+
+每个 review gate 都让 run 进入 paused 状态。先检查工件，再恢复同一个 run：
+
+```bash
+python3 scripts/verif_harness.py spec-kit status \
+  --project-root /path/to/project
+
+python3 scripts/verif_harness.py spec-kit resume \
+  --project-root /path/to/project <run-id>
+```
+
+主要规格输出位于：
+
+```text
+.specify/memory/constitution.md
+specs/<stage0-feature>/spec.md
+specs/<stage0-feature>/plan.md
+specs/<stage0-feature>/tasks.md
+specs/<stage0-feature>/checklists/
+```
+
+这些文件定义 requirement、Verification Feature、Human Decision、open question、
+task、mode、artifact、evidence 和 gate。review gate 只审阅文档或授权 task set，
+不是 Stage 0 approval。
+
+### 3. `$verif-harness init`：执行已授权的 Stage 0 工程落地 task
+
+`$verif-harness init` 是 Codex Skill mode，不是前两条 Python CLI 的同义命令。
+它读取 reviewed Spec Kit Stage 0 工件和只读 RTL，生成：
+
+```text
+.harness-config.json
+.harness/
+.codex/agents/
+AGENTS.md
+<verif-root>/docs/                   # specs/ 的派生治理视图，不是第二规格源
+<verif-root>/docs/stage0_review_packet.md
+<verif-root>/testbench/...           # M1.1 空目录 scaffold，不含 TB 实现
+<verif-root>/filelist/
+<verif-root>/regress/
+```
+
+Stage 0 不允许借 `init` 生成 driver、monitor、scoreboard、testcase 或其他 TB 源码，
+更不能修改 DUT RTL。
+
+新项目的 `tasks.md` 必须包含且只包含一个对应的 init task，例如：
+
+```text
+Task ID: TASK-S0-INIT
+REQ / VF IDs: REQ-S0-BOOT / VF-S0-BOOT
+Stage: 0
+verif-harness mode: init
+Input contract: reviewed Stage 0 spec/plan/tasks/checklist/analyze + RTL metadata
+Owned output paths: .harness-config.json, AGENTS.md, .harness/, derived docs, scaffold
+Validation command: project Markdown/workflow check
+Expected evidence: generated-file inventory + validation log
+Human gate: Stage 0 execution authorization and later Stage 0 approval
+```
+
+execution gate 批准这个 task 后，`speckit.implement` 应自动调度
+`$verif-harness init` 一次。因此正常流程是：
+
+```text
+tasks.md 声明 init
+  -> Human 授权 task set
+  -> speckit.implement 自动调用 init
+  -> 检查 owned outputs/evidence/validation
+  -> speckit.converge
+```
+
+不是：
+
+```text
+speckit.implement 已执行 init
+  -> 用户再次手动调用 init                  # 错误：重复执行
+```
+
+### 自动分发与完成判定
+
+“自动调用”是 agentic dispatch，但“完成”必须由 task postcondition 判定。仅当以下
+条件同时满足，init task 才能标记 complete：
+
+- task 声明的全部 owned output 已存在；
+- evidence path 已记录且可读取；
+- approved validation command 返回成功；
+- 没有越过 DUT RTL、EDA、commit/push、waiver 或 Human approval 边界。
+
+如果 `speckit.implement` 退出成功但 `.harness-config.json`、`AGENTS.md`、治理视图、
+review packet 或 scaffold 缺失，结论必须是 `TASK INCOMPLETE`。`converge` 应记录
+dispatch deviation；不能用 workflow 外未追踪的手动 `init` 掩盖问题。
+
+经过评审的 recovery 可以重试同一个 task，但必须保存原 run ID、task ID、已有
+产物和日志，并记录重试原因。直接 `$verif-harness init` 只用于这种 recovery 或
+immutable legacy-baseline import。
+
+同一规则适用于所有被 `tasks.md` 声明的 verif-harness modes：
+
+```text
+TASK -> reviewed MODE -> speckit.implement 自动分发一次
+     -> ARTIFACT/EVIDENCE/VALIDATION postcondition -> converge
+```
+
+`bootstrap`、`status/resume`、review gate、独立 `stage-gate-review`、Human approval、
+sign-off 和 freeze authority 不属于普通 implementation-task 自动分发，仍按各自的
+workflow 或 Human 权限边界执行。
+
+### 三种包含 `init` 的名字不要混用
+
+| 名称 | 实际用途 | 是否是 Stage 0 工程落地 |
+| --- | --- | --- |
+| bootstrap 内部的 `specify init` | 创建 `.specify/` 和 Codex Spec Kit integration | 否 |
+| `$verif-harness init` | 生成 Stage 0 harness 治理层、派生视图和目录 scaffold | 是 |
+| `python3 scripts/verif_harness.py init <dut>` | 生成简单、additive DUT integration 示例模板 | 否 |
+
+最后一条 Python CLI 会在 `interfaces/`、`sva/`、`bind/`、`tb/` 和 `filelists/`
+生成模板文件；它不能替代 `$verif-harness init`，也不应在 Stage 0 绕过 reviewed
+task contract 使用。
+
+### 人工参与发生在哪里
+
+- `bootstrap`：通常不需要项目语义决策，但已有 `.specify/` 时必须人工决定迁移，
+  不能覆盖。
+- `stage --stage 0`：Human 审阅 constitution、spec、clarification、plan、task set
+  和 execution authorization。
+- `init`：如果 reviewed spec 没有提供项目名、RTL root、DUT top、verification root、
+  design docs 或 reference-model path，Human 需要补充这些输入；这是 task 执行中的
+  输入确认，不是要求用户重新调用命令。
+- workflow 完成后：另行运行 `stage-gate-review 0` 生成 Draft packet，由 Human
+  决定 Stage 0 是否批准。
 
 ## 3. 分阶段推荐顺序
 
