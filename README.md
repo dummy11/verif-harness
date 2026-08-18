@@ -116,6 +116,66 @@ Expected result with Verilator installed:
 SIMPLE_FIFO_SMOKE PASS
 ```
 
+## Install in the current working directory
+
+Choose the procedure that matches the current directory. Do not clone into `.`
+unless it is empty.
+
+### Empty directory: make it the verif-harness checkout
+
+```bash
+git clone https://github.com/dummy11/verif-harness.git .
+./scripts/setup.sh
+```
+
+Install all optional, commit-pinned integrations when Python 3.11 or newer is
+available:
+
+```bash
+./scripts/setup.sh --with-spec-kit --with-xverif --with-wavepeek
+```
+
+The managed dependencies stay under the Git-ignored `.deps/` directory. They
+remain separate upstream projects and are not vendored into verif-harness.
+
+### Existing RTL project: install verif-harness project-locally
+
+From the existing project root, add verif-harness as a submodule so the project
+records the exact framework commit:
+
+```bash
+git submodule add https://github.com/dummy11/verif-harness.git \
+  .tools/verif-harness
+mkdir -p .agents/skills
+ln -s ../../.tools/verif-harness/skills/verif-harness \
+  .agents/skills/verif-harness
+./.tools/verif-harness/scripts/setup.sh \
+  --with-spec-kit --with-xverif --with-wavepeek
+```
+
+Review and commit both `.gitmodules` and the recorded submodule SHA. The
+relative symbolic link exposes the complete Skill from
+`.agents/skills/verif-harness` without duplicating it. If symbolic links are
+not available, copy the complete `skills/verif-harness/` directory instead and
+record how copies are synchronized during upgrades.
+
+Validate project-local discovery and start with a read-only audit:
+
+```bash
+test -f .agents/skills/verif-harness/SKILL.md
+```
+
+```text
+$verif-harness doctor
+```
+
+Codex normally detects Skill changes automatically; restart Codex if the Skill
+does not appear. Codex scans `.agents/skills` from the current working
+directory up to the repository root, as documented in the
+[official OpenAI Skill documentation](https://developers.openai.com/codex/skills#where-codex-loads-local-skills).
+The deterministic scripts and CLI adapters can still be invoked directly from
+`.tools/verif-harness/` without Codex.
+
 Enable the optional commit-pinned xverif dependency with one additional flag:
 
 ```bash
@@ -248,8 +308,9 @@ deps/                    Reviewed optional-dependency locks and schemas
 
 ## Supported agent runtime: Codex
 
-The reusable skill is under `skills/verif-harness/`. Install it into a Codex
-skill directory, then ask:
+The reusable Skill is under `skills/verif-harness/`. Follow
+[Install in the current working directory](#install-in-the-current-working-directory)
+to expose it at the project-local `.agents/skills/verif-harness` path, then ask:
 
 ```text
 $verif-harness Integrate this DUT into a verification environment.
@@ -270,8 +331,123 @@ usage, and recommended lifecycle position.
 
 ## Documentation
 
-Start at [docs/index.md](docs/index.md). The MkDocs configuration can build the
-same content as a documentation site.
+Start at the [documentation home](docs/index.md). The MkDocs configuration
+builds the published `docs/` content as a documentation site. The catalog below
+links every maintained Markdown document in the repository except this README.
+
+### Architecture, integration, and operation
+
+| Document | Contents |
+| --- | --- |
+| [Canonical architecture](ARCHITECTURE.md) | Ownership boundaries, compile order, lifecycle planes, and public project structure. |
+| [Architecture summary](docs/architecture.md) | Short introduction to harness ownership and the read-only DUT boundary. |
+| [Harness design](docs/harness_design.md) | Thin-top rule and structural versus behavioral responsibilities. |
+| [DUT integration](docs/dut_integration.md) | Required DUT inputs, additive generation, review checklist, and smoke validation. |
+| [Interface guidelines](docs/interface_guidelines.md) | Interface declaration, modport, naming, sampling, and layering rules. |
+| [Bind and SVA](docs/bind_and_sva.md) | Assertion identity, clocks, reset semantics, bind order, engagement, and closure evidence. |
+| [UVM integration](docs/uvm_integration.md) | Virtual interfaces, UVM component layering, config publication, and full-simulator boundary. |
+| [Compile flow](docs/compile_flow.md) | Canonical dependency order and repository-relative filelist expectations. |
+| [Simulator support](docs/simulator_support.md) | Tested public scope and commercial/community simulator status. |
+| [Tool versions](docs/tool_versions.md) | Supported tool baselines and installation guidance. |
+| [Coding style](docs/coding_style.md) | SystemVerilog, Python, shell, and documentation conventions. |
+| [Troubleshooting](docs/troubleshooting.md) | Setup, dependency, simulator, example, and public-audit recovery. |
+| [Roadmap](docs/roadmap.md) | Planned framework releases and capability evolution. |
+| [Public release checklist](docs/public_release_checklist.md) | Human-reviewed security, licensing, reproducibility, and release requirements. |
+
+### Skill, lifecycle, tools, and examples
+
+| Document | Contents |
+| --- | --- |
+| [Skill mode catalog](docs/skill_modes.md) | All 31 public modes, purposes, lifecycle positions, and example invocations. |
+| [Chinese Skill quick start](skills/verif-harness/README.md) | 中文模式目录、快速用法和权限边界。 |
+| [Chinese complete user guide](skills/verif-harness/docs/user_guide.md) | 中文 Stage 0→freeze 流程及每个模式的输入、输出、用法、场景和人工检查点。 |
+| [Chinese Skill architecture](skills/verif-harness/docs/architecture.md) | 中文控制面、规格面、能力面、证据面和人工权限模型。 |
+| [Chinese Skill troubleshooting](skills/verif-harness/docs/troubleshooting.md) | 中文 false-green 风险、常见故障和恢复方式。 |
+| [Spec Kit integration](integrations/spec-kit/README.md) | Spec authority, bootstrap/stage/resume/status commands, task dispatch, convergence, and Human gates. |
+| [Spec Kit bundle](integrations/spec-kit/bundle/README.md) | Local RTL bundle composition and pre-catalog publication boundary. |
+| [xverif integration](docs/xverif_integration.md) | Managed dependency, adapter contract, provenance, evidence, and ownership split. |
+| [WavePeek integration](docs/wavepeek_integration.md) | Managed VCD/FST CLI, bounded query contract, provenance, and FSDB boundary. |
+| [simple_fifo example](examples/simple_fifo/README.md) | License-free executable harness example and expected smoke result. |
+
+### Project governance and community
+
+| Document | Contents |
+| --- | --- |
+| [Repository Agent instructions](AGENTS.md) | Public-data restrictions, architecture rules, optional-dependency boundaries, and required checks. |
+| [Contributing](CONTRIBUTING.md) | Contribution workflow, validation, dependency-upgrade rules, and PR expectations. |
+| [Governance](GOVERNANCE.md) | Maintainer authority and decisions requiring explicit review. |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | Expected community behavior and enforcement process. |
+| [Security policy](SECURITY.md) | Supported versions and private vulnerability/disclosure reporting. |
+| [Support](SUPPORT.md) | Supported public channels and out-of-scope commercial EDA support. |
+| [Changelog](CHANGELOG.md) | Released and unreleased user-visible changes. |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Spec Kit, xverif, WavePeek, toolchain, license, and ownership notices. |
+| [Apache-2.0 License](LICENSE) | Project copyright and redistribution terms. |
+| [Pull request template](.github/pull_request_template.md) | Required change summary, validation, security, and review-boundary checklist. |
+
+### Skill implementation contracts
+
+The [top-level Skill contract](skills/verif-harness/SKILL.md) defines dispatch,
+global invariants, resources, and the complete authority boundary. Each mode
+with specialized behavior has its own mandatory implementation contract:
+
+| Mode contract | Contents |
+| --- | --- |
+| [`init`](skills/verif-harness/stage0/INSTRUCTIONS.md) | Stage 0 governance bootstrap and M1.1 scaffold. |
+| [`add-interface`](skills/verif-harness/add-interface/INSTRUCTIONS.md) | Protocol interface and UVC landing-directory generation. |
+| [`add-shared-pkg`](skills/verif-harness/add-shared-pkg/INSTRUCTIONS.md) | Shared typedef, enum, and pack/unpack packages. |
+| [`add-uvc-skeleton`](skills/verif-harness/add-uvc-skeleton/INSTRUCTIONS.md) | Layered UVC class skeletons. |
+| [`add-harness-layer`](skills/verif-harness/add-harness-layer/INSTRUCTIONS.md) | DUT/TB harness and SVA structural stubs. |
+| [`add-env-layer`](skills/verif-harness/add-env-layer/INSTRUCTIONS.md) | Environment, scoreboard, coverage, base test, and top skeletons. |
+| [`finalize-filelist-and-make`](skills/verif-harness/finalize-filelist-and-make/INSTRUCTIONS.md) | Canonical filelists and compile-only target. |
+| [`doctor`](skills/verif-harness/doctor/INSTRUCTIONS.md) | Read-only project health audit. |
+| [`spec-kit`](skills/verif-harness/spec-kit/INSTRUCTIONS.md) | Specification workflow, task dispatch, convergence, and authority rules. |
+| [`xverif`](skills/verif-harness/xverif/INSTRUCTIONS.md) | Allowlisted deterministic xverif request execution. |
+| [`wavepeek`](skills/verif-harness/wavepeek/INSTRUCTIONS.md) | Bounded deterministic waveform query execution. |
+| [`add-regression-runner`](skills/verif-harness/add-regression-runner/INSTRUCTIONS.md) | Isolated regression launch, collection, and same-seed rerun. |
+| [`add-simulator-profile`](skills/verif-harness/add-simulator-profile/INSTRUCTIONS.md) | Reviewed simulator profile generation. |
+| [`add-testcase`](skills/verif-harness/add-testcase/INSTRUCTIONS.md) | Additive test/vseq skeleton and candidate registration. |
+| [`add-coverage-skeleton`](skills/verif-harness/add-coverage-skeleton/INSTRUCTIONS.md) | Explicit-contract coverpoints, bins, and crosses. |
+| [`add-assertion-skeleton`](skills/verif-harness/add-assertion-skeleton/INSTRUCTIONS.md) | Explicit-contract SVA checker and optional bind. |
+| [`add-refmodel-bridge`](skills/verif-harness/add-refmodel-bridge/INSTRUCTIONS.md) | Structural Syscan or DPI-C reference-model bridge. |
+| [`complete-uvc`](skills/verif-harness/complete-uvc/INSTRUCTIONS.md) | Reviewed ready/valid driver and monitor behavior. |
+| [`complete-scoreboard`](skills/verif-harness/complete-scoreboard/INSTRUCTIONS.md) | FIFO alignment and explicit comparison policies. |
+| [`add-ci-hook`](skills/verif-harness/add-ci-hook/INSTRUCTIONS.md) | GitLab CI or Jenkins fragment generation. |
+| [`add-performance-gate`](skills/verif-harness/add-performance-gate/INSTRUCTIONS.md) | Deterministic performance-contract evaluation. |
+| [`regression-triage`](skills/verif-harness/regression-triage/INSTRUCTIONS.md) | Signature grouping and same-seed failure evidence. |
+| [`coverage-closure`](skills/verif-harness/coverage-closure/INSTRUCTIONS.md) | Coverage-plan, hit, exclusion, waiver, and database audit. |
+| [`assertion-closure`](skills/verif-harness/assertion-closure/INSTRUCTIONS.md) | Compile, bind, attempt, failure, vacuity, and waiver audit. |
+| [`audit-traceability`](skills/verif-harness/audit-traceability/INSTRUCTIONS.md) | Manifest, test, plan-ID, and feature traceability audit. |
+| [`change-control`](skills/verif-harness/change-control/INSTRUCTIONS.md) | Post-baseline change-request evidence audit. |
+| [`stage-gate-review`](skills/verif-harness/stage-gate-review/INSTRUCTIONS.md) | Draft Stage gate packet construction. |
+| [`signoff-audit`](skills/verif-harness/signoff-audit/INSTRUCTIONS.md) | Sign-off packet, manifest, approval metadata, and RTL-scope audit. |
+| [`freeze-baseline`](skills/verif-harness/freeze-baseline/INSTRUCTIONS.md) | Clean-commit, hash-anchored freeze candidate manifest. |
+| [`oss-readiness`](skills/verif-harness/oss-readiness/INSTRUCTIONS.md) | Public structure, reproducibility, and sensitive-data audit. |
+
+### Skill reference and template documents
+
+| Document | Contents |
+| --- | --- |
+| [Stage 1 patterns](skills/verif-harness/references/stage1-patterns.md) | Compile order, layering, bind, packaging, and M1.1 conventions. |
+| [Implementation patterns](skills/verif-harness/references/implementation-patterns.md) | Explicit contracts for Stage 2+ generation and evidence. |
+| [Regression patterns](skills/verif-harness/references/regression-patterns.md) | Result records, seeds, isolation, reruns, and evidence rules. |
+| [Lifecycle patterns](skills/verif-harness/references/lifecycle-patterns.md) | Traceability, change control, gates, sign-off, and freeze rules. |
+| [xverif adapter contract](skills/verif-harness/references/xverif-adapter-contract.md) | Request/result schema, native outputs, provenance, and fail-closed behavior. |
+| [WavePeek adapter contract](skills/verif-harness/references/wavepeek-adapter-contract.md) | JSON/JSONL integrity, provenance, bounded paths, and authority boundary. |
+| [Document conventions](skills/verif-harness/assets/doc-conventions.md) | Lifecycle headings and review-block conventions for generated documents. |
+| [Review block](skills/verif-harness/assets/review-block.md) | Reusable Human review metadata template. |
+| [Stage gate re-review template](skills/verif-harness/assets/stage_gate_re_review_template.md) | Provisional-decision and open-question re-review structure. |
+| [Stage review packet template](skills/verif-harness/assets/stage_review_packet_template.md) | Stage deliverable, evidence, finding, and approval packet structure. |
+
+### Spec Kit command and authoring templates
+
+| Document | Contents |
+| --- | --- |
+| [`speckit.implement` command](integrations/spec-kit/preset/rtl-verification/commands/speckit.implement.md) | Reviewed task dispatch and convergence command contract. |
+| [Constitution template](integrations/spec-kit/preset/rtl-verification/templates/constitution-template.md) | Verification governance and immutable authority principles. |
+| [Specification template](integrations/spec-kit/preset/rtl-verification/templates/spec-template.md) | Stage-scoped requirements, decisions, risks, and evidence expectations. |
+| [Plan template](integrations/spec-kit/preset/rtl-verification/templates/plan-template.md) | Technical context, design structure, and validation planning. |
+| [Tasks template](integrations/spec-kit/preset/rtl-verification/templates/tasks-template.md) | Mode-owned tasks, outputs, validation commands, and evidence paths. |
+| [Checklist template](integrations/spec-kit/preset/rtl-verification/templates/checklist-template.md) | Requirement-quality checks before implementation dispatch. |
 
 ## Contributing
 
