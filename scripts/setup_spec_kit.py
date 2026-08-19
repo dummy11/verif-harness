@@ -18,11 +18,12 @@ from typing import Any
 LOCK_KEYS = {
     "schema_version", "name", "repository", "commit", "ref", "version",
     "license", "license_file_sha256", "pyproject_sha256", "python_requires",
-    "package", "executable", "integration",
+    "package", "executable",
 }
 COMMIT = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+SUPPORTED_INTEGRATIONS = ("codex", "kimi")
 REVIEWED_IDENTITY = {
     "repository": "https://github.com/github/spec-kit.git",
     "commit": "d1f50fcbe684a4222059c4ba7f2d7eabcca87402",
@@ -38,7 +39,6 @@ REVIEWED_IDENTITY = {
     "python_requires": ">=3.11",
     "package": "specify-cli",
     "executable": "specify",
-    "integration": "codex",
 }
 
 
@@ -77,7 +77,7 @@ def load_lock(root: Path) -> dict[str, Any]:
         fail(f"cannot read Spec Kit lock: {exc}")
     if not isinstance(value, dict) or set(value) != LOCK_KEYS:
         fail(f"Spec Kit lock keys must be exactly {sorted(LOCK_KEYS)}")
-    if value["schema_version"] != 1 or value["name"] != "spec-kit":
+    if value["schema_version"] != 2 or value["name"] != "spec-kit":
         fail("unsupported Spec Kit lock identity or schema")
     if not isinstance(value["commit"], str) or not COMMIT.fullmatch(value["commit"]):
         fail("Spec Kit commit must be a lowercase 40-character object ID")
@@ -85,8 +85,8 @@ def load_lock(root: Path) -> dict[str, Any]:
         fail("Spec Kit version must be semantic x.y.z")
     if value["ref"] != f"refs/tags/v{value['version']}":
         fail("Spec Kit ref must match the locked version tag")
-    if value["license"] != "MIT" or value["integration"] != "codex":
-        fail("Spec Kit lock must retain the reviewed MIT/Codex identity")
+    if value["license"] != "MIT":
+        fail("Spec Kit lock must retain the reviewed MIT identity")
     if value["python_requires"] != ">=3.11":
         fail("Spec Kit lock must require Python 3.11 or newer")
     for key in ("license_file_sha256", "pyproject_sha256"):
@@ -143,6 +143,21 @@ def validate_runtime(environment: Path, lock: dict[str, Any]) -> tuple[list[str]
     observed = (checked.stdout + checked.stderr).strip()
     if checked.returncode != 0 or lock["version"] not in observed:
         return [f"Spec Kit version probe mismatch: {observed}"], observed
+    integrations = run(
+        [
+            str(python), "-c",
+            (
+                "from specify_cli.integrations import get_integration;"
+                "c=get_integration('codex');k=get_integration('kimi');"
+                "assert c is not None and c.config['folder']=='.agents/';"
+                "assert k is not None and k.config['folder']=='.kimi-code/';"
+                "assert k.registrar_config['dir']=='.kimi-code/skills'"
+            ),
+        ],
+        timeout=30,
+    )
+    if integrations.returncode != 0:
+        return ["Spec Kit Codex/Kimi integration contract is unavailable"], observed
     return [], observed
 
 
@@ -245,7 +260,7 @@ def main() -> int:
         "repository": lock["repository"],
         "commit": lock["commit"],
         "version": observed,
-        "integration": lock["integration"],
+        "supported_integrations": list(SUPPORTED_INTEGRATIONS),
         "blockers": blockers,
         "notice": (
             "Spec Kit is an optional agentic specification subsystem; its command "

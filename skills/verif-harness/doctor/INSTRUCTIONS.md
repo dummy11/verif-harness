@@ -18,7 +18,10 @@ Run this mode before choosing a write mode or when project state is unclear.
    ```
 
 3. If machine-readable output is useful, add `--json`.
-4. Report every ERROR and WARNING. Do not silently repair findings.
+4. Report every ERROR and WARNING plus the active Agent runtime when managed by
+   Spec Kit. A CLI-only/legacy project without `.specify/` remains valid; an
+   existing `.specify/` with missing, corrupt, or unsupported integration state
+   is an ERROR.
 5. Recommend the next explicit mode printed by the tool. Ask before invoking a
    write mode.
 

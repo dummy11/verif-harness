@@ -8,7 +8,7 @@ approval boundaries. The adapter validates and executes one request. xverif
 performs the selected deterministic operation.
 
 ```text
-Codex Agent
+Codex or Kimi Code Agent
   -> verif-harness Skill/framework
      -> CLI adapter
         -> BLANK2077/xverif tools/<selected-tool>

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "spec-kit",
   "repository": "https://github.com/github/spec-kit.git",
   "commit": "d1f50fcbe684a4222059c4ba7f2d7eabcca87402",
@@ -10,6 +10,5 @@
   "pyproject_sha256": "dfbc208b1907c4c3a6273e90ddce99c40b3ede58a0dad5a843b2134d33ba91cf",
   "python_requires": ">=3.11",
   "package": "specify-cli",
-  "executable": "specify",
-  "integration": "codex"
+  "executable": "specify"
 }

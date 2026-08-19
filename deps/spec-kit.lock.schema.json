@@ -16,11 +16,10 @@
     "pyproject_sha256",
     "python_requires",
     "package",
-    "executable",
-    "integration"
+    "executable"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "name": {"const": "spec-kit"},
     "repository": {"const": "https://github.com/github/spec-kit.git"},
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
@@ -37,7 +36,6 @@
     },
     "python_requires": {"const": ">=3.11"},
     "package": {"const": "specify-cli"},
-    "executable": {"const": "specify"},
-    "integration": {"const": "codex"}
+    "executable": {"const": "specify"}
   }
 }

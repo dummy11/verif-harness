@@ -1,6 +1,7 @@
 # verif-harness 使用指南
 
-`verif-harness` 是面向 RTL module-level verification 的 Codex skill，覆盖
+`verif-harness` 是面向 RTL module-level verification 的 Agent Skill，支持
+Codex 与 Kimi Code，覆盖
 Stage 0 文档基线、UVM/harness 实现、Golden 对拍、coverage/assertion、回归、
 CI、sign-off 和 verification freeze candidate。
 
@@ -16,6 +17,9 @@ $verif-harness doctor
 $verif-harness add-testcase
 $verif-harness stage-gate-review 4
 ```
+
+上面是 Codex 语法；Kimi Code 使用 `/skill:verif-harness <mode>`。两者调用
+同一份模式合同，不因 Kimi Code 内选择 K3 或其他模型而改变规格与证据语义。
 
 未指定模式时：
 
@@ -70,7 +74,7 @@ $verif-harness stage-gate-review 4
 - 完整 0→freeze 操作顺序：[docs/user_guide.md](docs/user_guide.md)
 - 模式分层和证据流：[docs/architecture.md](docs/architecture.md)
 - 常见失败与恢复方法：[docs/troubleshooting.md](docs/troubleshooting.md)
-- Codex 执行规则：[SKILL.md](SKILL.md)
+- Agent 执行规则：[SKILL.md](SKILL.md)
 
 ## Spec Kit 集成
 
@@ -91,8 +95,10 @@ dispatch 和 converge；verif-harness 仍负责 Stage policy、能力选择、tr
 和权限边界。新项目以 `specs/` 为唯一可编辑规格事实源；已批准项目作为不可变
 baseline 导入。Spec Kit workflow success 不是仿真证据或审批。
 
-reviewed task 必须声明 `$verif-harness` mode、owned outputs、evidence 和
-validation。execution gate 后，`speckit.implement` 自动分发每个 task mode 一次；
+reviewed task 必须声明 verif-harness mode、owned outputs、evidence 和
+validation。Codex 以 `$verif-harness` 调用，Kimi Code 以
+`/skill:verif-harness` 调用。execution gate 后，`speckit.implement` 自动分发
+每个 task mode 一次；
 正常路径不需要用户重复手动调用。缺少产物或 validation 失败时，task 保持
 incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声明的 mode，不只
 适用于 `init`；workflow control 和 Human authority 命令仍遵守各自独立边界。
@@ -101,7 +107,8 @@ incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声
 
 ```bash
 ./scripts/setup.sh --with-spec-kit
-python3 scripts/verif_harness.py spec-kit bootstrap --project-root <project>
+python3 scripts/verif_harness.py spec-kit bootstrap \
+  --project-root <project> --integration <auto|codex|kimi>
 python3 scripts/verif_harness.py spec-kit stage \
   --project-root <project> --stage 1 --objective "最小可运行环境"
 ```
@@ -109,7 +116,7 @@ python3 scripts/verif_harness.py spec-kit stage \
 ## xverif 集成
 
 ```text
-Codex Agent
+Codex / Kimi Code Agent
    ↓
 verif-harness Skill / framework
    ↓
@@ -144,7 +151,7 @@ verif-harness source archive 或 release。
 ## WavePeek 集成
 
 ```text
-Codex Agent
+Codex / Kimi Code Agent
    ↓
 verif-harness Skill / framework
    ↓

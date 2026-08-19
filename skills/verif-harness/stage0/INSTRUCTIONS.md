@@ -12,8 +12,10 @@ an approved recovery path or an immutable legacy-baseline import.
 below the verif-harness control plane. For new projects, Spec Kit `specs/` is the
 sole editable specification authority. This mode produces operational governance
 views and evidence/review structures; it does not create a second requirements source.
-Produces: `.harness-config.json` + `.harness/` + `.codex/agents/` + `AGENTS.md` +
-11 Stage 0 derived/governance docs + Stage 0 review packet.
+Produces: `.harness-config.json` + `.harness/` + `AGENTS.md` + 11 Stage 0
+derived/governance docs + Stage 0 review packet. Codex projects also receive
+the optional `.codex/agents/` helper configurations; Kimi Code projects do not
+receive Codex-only TOML assets.
 
 ## Pre-conditions
 
@@ -26,6 +28,9 @@ Before starting:
   the user whether to re-bootstrap (destructive) or exit.
 - For a new project, `.specify/` exists and the Stage 0 Spec Kit specification,
   plan, tasks, checklist, and analysis have passed their document review gates.
+- `.specify/integration.json` records `codex` or `kimi` as the active runtime.
+  Missing, corrupt, unsupported, or ambiguous runtime state is a blocking open
+  question; do not infer it from the model name.
 - For a new project running inside the Stage workflow, the approved task names
   `verif-harness mode: init`, declares the owned output paths listed below, and
   provides the workflow check as its validation command.
@@ -47,6 +52,10 @@ Step 2's questions. Do NOT hardcode any project-specific defaults.
 ```bash
 # Project name default
 basename "$PWD"
+
+# Active Agent runtime (authoritative after Spec Kit bootstrap)
+python3 <verif-harness-root>/scripts/verif_harness.py runtime status \
+  --project-root .
 
 # Candidate RTL roots (dirs containing .v/.sv, sorted by file count desc)
 find . -maxdepth 3 -type d \( -name rtl -o -name hdl -o -name design -o -name src \) 2>/dev/null
@@ -127,7 +136,7 @@ Write to `.harness-config.json` at project root. Then validate against
 Copy files from the skill's `assets/` directory into the project:
 
 ```bash
-mkdir -p .harness .codex/agents
+mkdir -p .harness
 
 cp <skill-dir>/assets/check_ai_workflow.py \
    .harness/check_ai_workflow.py
@@ -146,13 +155,20 @@ cp <skill-dir>/assets/doc-conventions.md \
 cp <skill-dir>/assets/stage_gate_re_review_template.md \
    .harness/stage_gate_re_review_template.md
 
-cp <skill-dir>/assets/codex-agents/*.toml \
-   .codex/agents/
+```
+
+If the active runtime is `codex`, also install the optional Codex-only helper
+agents:
+
+```bash
+mkdir -p .codex/agents
+cp <skill-dir>/assets/codex-agents/*.toml .codex/agents/
 ```
 
 If an agent TOML already exists, compare it and preserve the project version.
-Do not overwrite or generate `.codex/config.toml`; repository policy and user
-configuration may already define sandbox, model, MCP, or hook behavior.
+Do not install these TOML files for Kimi Code and do not invent a Kimi mapping
+for them. Do not overwrite or generate `.codex/config.toml`; repository policy
+and user configuration may already define sandbox, model, MCP, or hook behavior.
 
 Note: `stage_review_packet_template.md` is NOT copied to `.harness/` —
 it stays in the skill as a reference. The project's actual
@@ -355,6 +371,7 @@ Installed:
   .harness/doc-conventions.md
   .harness/batch_upgrade_stage.py
   .codex/agents/{verification-planner,coverage-auditor,rtl-spec-diff}.toml
+    # Codex runtime only; omit this line for Kimi Code
   AGENTS.md
 
 Docs generated (all in Draft / Pending status):

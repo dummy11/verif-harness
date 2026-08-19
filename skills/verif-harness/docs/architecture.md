@@ -94,7 +94,7 @@ request 交给 CLI adapter。adapter 只允许权威 xverif checkout 的白名�
 固定环境与 timeout，并保存 native JSON/XOUT/text 和 Git/hash provenance。
 
 ```text
-Codex Agent
+Codex / Kimi Code Agent
    |
    v
 verif-harness Skill/framework

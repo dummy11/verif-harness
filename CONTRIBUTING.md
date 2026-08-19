@@ -31,7 +31,7 @@ changes that affect packaging or public content.
 ## Pull requests
 
 Explain the problem, architecture impact, validation performed, and whether
-the change touches templates, simulator behavior, or the bundled Codex skill.
+the change touches templates, simulator behavior, or the bundled Agent Skill.
 All Human decisions and semantic assumptions must remain explicit.
 
 By contributing, you agree that your contribution is licensed under the

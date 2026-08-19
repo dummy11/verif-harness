@@ -13,7 +13,8 @@ nav:
   - Bind and SVA: bind_and_sva.md
   - Compile flow: compile_flow.md
   - Simulator support: simulator_support.md
-  - Codex skill modes: skill_modes.md
+  - Agent Skill modes: skill_modes.md
+  - Runtime and model switching: runtime_switching.md
   - xverif integration: xverif_integration.md
   - WavePeek integration: wavepeek_integration.md
   - Tool versions: tool_versions.md

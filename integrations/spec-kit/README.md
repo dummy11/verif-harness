@@ -41,20 +41,31 @@ python3 scripts/verif_harness.py spec-kit resume \
   --project-root /path/to/project <run-id>
 ```
 
-`bootstrap` 初始化 Codex integration，并安装本目录的本地 RTL verification
-preset。它拒绝覆盖已有 `.specify/`。已有 Spec Kit 项目应由人工审阅后单独添加
-preset，避免覆盖已有 constitution 或命令层。
+`bootstrap --integration auto|codex|kimi` 解析 Codex 或 Kimi Code runtime，
+初始化对应 integration，并安装本目录的本地 RTL verification preset。`auto`
+只在项目中存在唯一 runtime marker 时成功；歧义或没有 marker 时要求显式选择。
+Spec Kit 生成的 `.specify/integration.json` 是 runtime 唯一事实源。bootstrap
+拒绝覆盖已有 `.specify/`；已有项目应通过受管 runtime switch 或人工审阅后单独
+添加 preset，避免覆盖已有 constitution 或命令层。
 
 工作流位于 `workflows/verif-stage-lifecycle.yml`，只包含 Spec Kit command、
 Stage 0 constitution conditional 和 review gate，不包含 shell step。preset 位于
 `preset/rtl-verification/`，将
 verif-harness 治理约束追加到标准模板，并在 implement 命令前加入执行护栏。
 
-每个 task 必须声明一个 `$verif-harness` mode、owned outputs、evidence 和 validation
-command。execution gate 批准 task set 后，`speckit.implement` 自动把每个 task
-分发给对应 mode 一次；正常路径不再要求用户逐个手动重复调用。Stage 0 的 `init`
-与 Stage 1～5 的生成、工具、审计和 closure modes 都遵循同一规则。只有明确记录的
-失败恢复或 legacy import 才允许直接手动调用。
+每个 task 必须声明一个 verif-harness mode、owned outputs、evidence 和 validation
+command。Codex 使用 `$verif-harness`，Kimi Code 使用
+`/skill:verif-harness`；二者分发同一个 mode 合同。execution gate 批准 task set
+后，`speckit.implement` 自动把每个 task 分发给对应 mode 一次；正常路径不再要求
+用户逐个手动重复调用。Stage 0 的 `init` 与 Stage 1～5 的生成、工具、审计和
+closure modes 都遵循同一规则。只有明确记录的失败恢复或 legacy import 才允许
+直接手动调用。
+
+切换 Agent 内部模型不改变 integration。Codex 与 Kimi Code 之间的 runtime
+切换必须在稳定 review gate 执行：先检查 workflow status，再运行
+`python3 scripts/verif_harness.py runtime switch --project-root <project> --to
+<codex|kimi>`。该 wrapper 不会自动传 `--force`，并在切换后重新验证
+`.specify/integration.json`。完整流程见 `docs/runtime_switching.md`。
 
 一次 dispatch 只有在 task 声明的输出和证据路径全部存在、validation command
 通过后才算完成。缺少任何产物时，`converge` 必须把它记录为 incomplete task 或

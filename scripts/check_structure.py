@@ -63,6 +63,8 @@ def main() -> int:
     spec_kit_lock_path = ROOT / "deps/spec-kit.lock.json"
     if spec_kit_lock_path.is_file():
         lock = json.loads(spec_kit_lock_path.read_text(encoding="utf-8"))
+        if lock.get("schema_version") != 2 or "integration" in lock:
+            failures.append("Spec Kit lock must separate dependency identity from runtime")
         if lock.get("repository") != "https://github.com/github/spec-kit.git":
             failures.append("Spec Kit lock repository is not the reviewed upstream")
         if lock.get("commit") != "d1f50fcbe684a4222059c4ba7f2d7eabcca87402":

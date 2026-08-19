@@ -3,7 +3,7 @@
 本文是 `verif-harness` 的完整操作手册，包含：
 
 - RTL 验证项目从 0 到 freeze 的推荐顺序；
-- Spec Kit 两条入口命令与 `$verif-harness init` 的关系；
+- Spec Kit 两条入口命令与 runtime-native `verif-harness init` 的关系；
 - 31 个模式各自的用途、输入、输出、用法和适用场景；
 - 每个阶段必须由人工完成的决策；
 - 各模式的能力边界和不能据此得出的结论。
@@ -23,6 +23,14 @@
 ```text
 $verif-harness <mode> [arguments]  # 调用指定 verif-harness Skill mode
 ```
+
+这是 Codex 调用语法。Kimi Code 使用：
+
+```text
+/skill:verif-harness <mode> [arguments]
+```
+
+两种 runtime 使用同一组 31 个模式、输入输出合同和 Human 权限边界。
 
 例如：
 
@@ -85,7 +93,7 @@ REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 ### 2.2 全流程
 
 ```text
-Spec Kit bootstrap：安装 Codex integration 与 RTL verification preset
+Spec Kit bootstrap：解析 Codex/Kimi Code runtime 并安装 RTL verification preset
   -> Stage 0 workflow：建立 constitution 与 verification program specification
   -> Stage 0：文档与治理基线
   -> Human 批准范围、规格来源和 Human Decisions
@@ -138,6 +146,60 @@ WavePeek 用于有限范围的 VCD/FST 查询：检查层次和信号、读取�
 使用 `xverif xdebug`。如需启用 WavePeek FSDB extension，必须由人工明确批准
 Verdi SDK 许可和本地隔离策略。
 
+## 专题：Agent runtime 与模型切换
+
+Spec Kit 的 `.specify/integration.json` 是项目 runtime 唯一事实源；不要在
+`.harness-config.json` 里复制一份 runtime 配置。Codex 的 integration key 是
+`codex`，Kimi Code 是 `kimi`。
+
+新项目先把同一份 verif-harness Skill 放到 runtime-native 目录，再 bootstrap：
+
+```bash
+python3 scripts/verif_harness.py spec-kit bootstrap \
+  --project-root /path/to/project --integration <auto|codex|kimi>
+python3 scripts/verif_harness.py runtime status \
+  --project-root /path/to/project
+```
+
+`auto` 只接受唯一证据：`.agents/` 或 `.codex/` 表示 Codex，`.kimi-code/`
+表示 Kimi Code；同时存在或全部不存在时必须显式选择。bootstrap 完成后以
+`.specify/integration.json` 为准，不再根据目录猜测。
+
+### 同一 runtime 内更换模型
+
+例如在 Kimi Code 中切换到 K3，只改变 Agent 的模型选择，不改变 `kimi`
+integration。推荐流程：
+
+1. 在 Spec Kit review gate 暂停，确认没有 command step 正在执行；
+2. 记录 run ID 并运行 `spec-kit status`；
+3. 按 Agent runtime 官方方法选择新模型；
+4. 运行 `runtime status` 和 runtime-native `verif-harness doctor`；
+5. 恢复原 workflow，不重建已批准 spec/task，不重复执行完成的 mode，不重写
+   evidence 或 approval。
+
+reviewed/frozen baseline 后如新模型产生仓库差异，必须进入 `change-control`。
+换模型本身既不是 waiver，也不是验证证据。
+
+### Codex 与 Kimi Code 之间切换 runtime
+
+先在目标目录安装 verif-harness Skill，再在稳定 review gate 执行：
+
+```bash
+python3 scripts/verif_harness.py spec-kit status --project-root <project>
+python3 scripts/verif_harness.py runtime status --project-root <project>
+python3 scripts/verif_harness.py runtime switch \
+  --project-root <project> --to <codex|kimi>
+python3 scripts/verif_harness.py runtime status --project-root <project>
+```
+
+wrapper 委派固定版本 Spec Kit 的 `integration switch`，并在返回后验证
+`.specify/integration.json`。它不会自动使用 `--force`。如果 Spec Kit 发现人工
+修改过的 managed Skill 文件，保留修改并停止，由 Human review 差异；不要手工
+删除 runtime 目录或编辑 integration JSON 绕过保护。
+
+切换完成后，用新 runtime 的原生语法运行 `doctor`，检查并恢复原 workflow。
+完整英文操作说明见顶层 `docs/runtime_switching.md`。
+
 ## 专题：三条入口指令的关系
 
 新项目最容易混淆的三条指令是：
@@ -162,7 +224,7 @@ bootstrap：安装规格系统
 
 | 指令 | 解决的问题 | 主要输入 | 主要输出 |
 | --- | --- | --- | --- |
-| `spec-kit bootstrap` | 项目用什么规格工具、模板和 workflow | 现有项目根目录 | `.specify/`、Codex Spec Kit skills、`verif-harness-rtl` preset |
+| `spec-kit bootstrap` | 项目用什么 runtime、规格工具、模板和 workflow | 现有项目根目录、runtime 选择 | `.specify/`、runtime-native Spec Kit skills、`verif-harness-rtl` preset |
 | `spec-kit stage --stage 0` | 项目要验证什么、依据什么、怎样规划和验收 | Stage 0 objective、规格来源、只读 RTL 边界 | constitution、spec、plan、tasks、checklist、workflow run |
 | `$verif-harness init` | 怎样把 reviewed Stage 0 task 落成可工作的验证工程 | reviewed specs、DUT/目录元数据、task contract | `.harness-config.json`、`AGENTS.md`、`.harness/`、派生治理视图、review packet、M1.1 scaffold |
 
@@ -174,17 +236,18 @@ bootstrap：安装规格系统
 
 ```bash
 python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root /path/to/project
+  --project-root /path/to/project \
+  --integration <auto|codex|kimi>
 ```
 
-显式业务输入只有项目根目录；Codex integration、Python script mode、固定版本
-Spec Kit、`verif-harness-rtl` preset 和 preset priority 由 verif-harness 提供。
+显式业务输入是项目根目录和 runtime；Python script mode、固定版本 Spec Kit、
+`verif-harness-rtl` preset 和 preset priority 由 verif-harness 提供。
 目标目录必须存在且可写，并且不能已有 `.specify/`。
 
 它内部依次执行：
 
 ```text
-specify init --here --integration codex --integration-options=--skills --script py
+specify init --here --integration <codex|kimi> --integration-options=--skills --script py
   -> specify preset add --dev <rtl-verification-preset> --priority 5
 ```
 
@@ -199,7 +262,7 @@ specify init --here --integration codex --integration-options=--skills --script 
 │   ├── templates/
 │   ├── workflows/
 │   └── presets/verif-harness-rtl/
-└── .agents/skills/speckit-*/
+└── <.agents|.kimi-code>/skills/speckit-*/
 ```
 
 `bootstrap` 不接收 DUT top、Stage objective、testcase、coverage、assertion 或
@@ -258,13 +321,14 @@ task、mode、artifact、evidence 和 gate。review gate 只审阅文档或授�
 
 ### 3. `$verif-harness init`：执行已授权的 Stage 0 工程落地 task
 
-`$verif-harness init` 是 Codex Skill mode，不是前两条 Python CLI 的同义命令。
+runtime-native `verif-harness init` 是 Agent Skill mode，不是前两条 Python CLI
+的同义命令。
 它读取 reviewed Spec Kit Stage 0 工件和只读 RTL，生成：
 
 ```text
 .harness-config.json
 .harness/
-.codex/agents/
+.codex/agents/                         # 仅 Codex 的可选辅助 agents
 AGENTS.md
 <verif-root>/docs/                   # specs/ 的派生治理视图，不是第二规格源
 <verif-root>/docs/stage0_review_packet.md
@@ -341,7 +405,7 @@ workflow 或 Human 权限边界执行。
 
 | 名称 | 实际用途 | 是否是 Stage 0 工程落地 |
 | --- | --- | --- |
-| bootstrap 内部的 `specify init` | 创建 `.specify/` 和 Codex Spec Kit integration | 否 |
+| bootstrap 内部的 `specify init` | 创建 `.specify/` 和所选 Spec Kit integration | 否 |
 | `$verif-harness init` | 生成 Stage 0 harness 治理层、派生视图和目录 scaffold | 是 |
 | `python3 scripts/verif_harness.py init <dut>` | 生成简单、additive DUT integration 示例模板 | 否 |
 
@@ -367,7 +431,7 @@ task contract 使用。
 
 ```text
 doctor                                # Skill：只读检查初始项目状态
-  -> spec-kit bootstrap               # Skill：初始化 Spec Kit Codex integration 与 RTL preset
+  -> spec-kit bootstrap               # Skill：初始化 Codex/Kimi integration 与 RTL preset
   -> spec-kit stage --stage 0         # Skill：生成并审阅 Stage 0 spec/plan/tasks
        -> speckit.implement            # Skill：自动调度以下已授权 task mode
           -> init                      # Skill：生成 harness 治理资产及规格派生视图
@@ -574,7 +638,7 @@ $verif-harness init  # 仅 recovery/legacy 路径直接调用；正常路径由 
 - `.harness-config.json`；
 - `AGENTS.md`；
 - `.harness/` workflow assets；
-- `.codex/agents/` 辅助 agent 配置；
+- `.codex/agents/` 辅助 agent 配置（仅 Codex；Kimi Code 不生成这些 TOML）；
 - 链接 `specs/` 的 verification/governance 派生视图和 Stage 0 review packet；
 - Stage 1 M1.1 空目录骨架与 `.gitkeep`。
 
@@ -1306,7 +1370,8 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 ```bash
 ./scripts/setup.sh --with-spec-kit
 python3 scripts/verif_harness.py spec-kit probe
-python3 scripts/verif_harness.py spec-kit bootstrap --project-root <project>
+python3 scripts/verif_harness.py spec-kit bootstrap \
+  --project-root <project> --integration <auto|codex|kimi>
 python3 scripts/verif_harness.py spec-kit stage \
   --project-root <project> \
   --stage 2 \
@@ -1316,11 +1381,12 @@ python3 scripts/verif_harness.py spec-kit resume \
   --project-root <project> <run-id>
 ```
 
-对应 Codex 调用：
+对应 Codex 调用如下；Kimi Code 将每行开头的 `$verif-harness` 替换为
+`/skill:verif-harness`：
 
 ```text
 $verif-harness spec-kit probe                                      # Skill：校验固定版本 Spec Kit
-$verif-harness spec-kit bootstrap --project-root <project>         # Skill：初始化 Codex Spec Kit 项目与 preset
+$verif-harness spec-kit bootstrap --project-root <project>         # Skill：初始化所选 Spec Kit runtime 与 preset
 $verif-harness spec-kit stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
 $verif-harness spec-kit status [run-id]                            # Skill：查看 Spec Kit workflow 状态
 $verif-harness spec-kit resume <run-id>                            # Skill：review 后恢复 paused workflow
@@ -1362,7 +1428,7 @@ Human gate。推荐追踪链是：
 REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 ```
 
-**输出**：固定版本/commit probe；`.specify/` 和 Codex Spec Kit skills；`specs/`
+**输出**：固定版本/commit probe；`.specify/` 和 runtime-native Spec Kit skills；`specs/`
 下的 constitution/spec/plan/tasks/checklist；workflow run state；映射到
 verif-harness modes 的任务；每个已分发 task 的 output/evidence/validation
 postcondition；规格漂移和 unresolved questions。`sim/docs/` 只保存

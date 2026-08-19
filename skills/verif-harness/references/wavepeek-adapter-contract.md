@@ -3,7 +3,7 @@
 The adapter is an execution and evidence boundary:
 
 ```text
-Codex Agent -> verif-harness Skill -> WavePeek adapter -> pinned WavePeek CLI
+Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WavePeek CLI
 ```
 
 The managed source checkout is `.deps/wavepeek`; the compiled executable is

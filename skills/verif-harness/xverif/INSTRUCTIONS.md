@@ -17,7 +17,7 @@ not one executable named `xverif`.
 ## Layering
 
 ```text
-Codex Agent
+Codex / Kimi Code Agent
   -> verif-harness Skill/framework: intent, stage policy, Human boundaries
      -> xverif CLI adapter: validated argv, environment, timeout, evidence
         -> xverif tools/{xbit,xentry,xloc,xsva,xcov,xdebug,xwaveform}

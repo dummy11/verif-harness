@@ -5,7 +5,7 @@
 - Harness architecture and DUT integration templates.
 - Interface, clock/reset, bind/SVA, filelist, and smoke patterns.
 - Verilator FIFO example and public CI.
-- Reusable Codex skill.
+- Reusable Codex/Kimi Code Agent Skill.
 
 ## v0.2 — generator maturity
 

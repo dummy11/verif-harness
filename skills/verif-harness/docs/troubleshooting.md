@@ -107,6 +107,28 @@ python3.11 scripts/check_spec_kit.py
 不要降低 lock 中的 `python_requires`，也不要让主项目运行时依赖 Spec Kit。它是
 可选规格子系统，core structure/test/example 在未安装时仍应工作。
 
+## Agent runtime 无法解析
+
+`runtime status` 只接受 Codex (`codex`) 或 Kimi Code (`kimi`)。优先检查
+`.specify/integration.json`；它是已 bootstrap 项目的唯一事实源。新项目使用
+`spec-kit bootstrap --integration codex|kimi` 明确选择，或在只存在一个
+`.agents/.codex/.kimi-code` marker 时使用 `--integration auto`。同时存在多个
+marker 或没有 marker 时，工具会 fail closed，不按当前模型名称猜测。
+
+## 切换模型或 Agent runtime
+
+同一 runtime 内切换模型（例如 Kimi Code 切到 K3）不修改 integration、spec、task
+或 evidence。按 runtime 官方方式选模型，运行 runtime-native `doctor`，然后恢复
+原 workflow。Codex 与 Kimi Code 之间切换应在 review gate 暂停时执行：
+
+```bash
+python3 scripts/verif_harness.py runtime switch \
+  --project-root <project> --to <codex|kimi>
+```
+
+不要手工编辑 `.specify/integration.json`，也不要自动传 `--force`；managed Skill
+文件有人工修改时，先 review 差异。完整步骤见顶层 `docs/runtime_switching.md`。
+
 ## managed Spec Kit 返回 `BLOCKED`
 
 先检查 `.deps/spec-kit` 与 `.deps/spec-kit-venv` 是否只存在一个、source checkout

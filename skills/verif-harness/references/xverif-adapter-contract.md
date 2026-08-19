@@ -18,7 +18,7 @@
 调用链必须保持：
 
 ```text
-Codex Agent
+Codex / Kimi Code Agent
   -> verif-harness Skill/framework：选择阶段动作、解释项目语义、守住审批边界
      -> CLI adapter：验证请求、执行 argv、固定环境、超时、归档证据
         -> xverif tools/<tool>：执行底层 deterministic operation

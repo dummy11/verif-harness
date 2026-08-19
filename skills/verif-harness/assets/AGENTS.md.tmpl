@@ -14,7 +14,10 @@
 - `{{VERIF_ROOT}}`：验证工作根目录，所有验证代码、文档、脚本都放这里。
 - `.harness/`：harness 骨架（检查脚本、review-block 参考）。
 - `.harness-config.json`：本项目 harness 配置，脚本从这里读路径与参数。
-- `.codex/`：Codex 项目配置与自定义 agents。
+- `.specify/integration.json`：Agent runtime 唯一事实源，只允许受支持的
+  `codex` 或 `kimi`。
+- `.agents/`、`.codex/`、`.kimi-code/`：按当前 runtime 使用的 Skill 与 Agent
+  配置目录；不要跨 runtime 复制模型配置或凭据。
 
 ## 必读上下文
 

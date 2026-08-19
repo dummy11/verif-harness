@@ -6,7 +6,7 @@ contract, provenance capture, and fail-closed execution; WavePeek owns VCD/FST
 parsing and queries.
 
 ```text
-Codex Agent -> verif-harness Skill -> WavePeek adapter -> pinned WavePeek CLI
+Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WavePeek CLI
 ```
 
 ## Managed setup

@@ -1,11 +1,14 @@
-# Codex skill modes
+# Agent Skill modes
 
-The bundled `verif-harness` skill provides 31 explicit modes. Invoke one from a
-verification project root, for example:
+The bundled `verif-harness` Skill provides 31 explicit modes. Invoke one from a
+verification project root with the runtime-native syntax, for example:
 
 ```text
 $verif-harness doctor
 ```
+
+Kimi Code uses `/skill:verif-harness doctor`. The `$verif-harness` notation in
+the catalog below is the Codex spelling of the same runtime-neutral mode.
 
 Write modes read repository instructions and refuse to modify the configured
 DUT RTL root. Review and approval remain Human responsibilities.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate an additive DUT integration skeleton from public templates."""
+"""Run verif-harness generators and managed integrations."""
 
 from __future__ import annotations
 
@@ -22,6 +22,108 @@ FILES = {
 }
 
 ROOT = Path(__file__).resolve().parents[1]
+SUPPORTED_RUNTIMES = ("codex", "kimi")
+RUNTIME_PROFILES = {
+    "codex": {
+        "markers": (".agents", ".codex"),
+        "skill_dir": ".agents/skills",
+        "invocation": "$verif-harness",
+    },
+    "kimi": {
+        "markers": (".kimi-code",),
+        "skill_dir": ".kimi-code/skills",
+        "invocation": "/skill:verif-harness",
+    },
+}
+INTEGRATION_STATE = Path(".specify/integration.json")
+
+
+class RuntimeSelectionError(ValueError):
+    """Raised when the project runtime cannot be resolved safely."""
+
+
+def read_runtime_state(project_root: Path) -> dict[str, object] | None:
+    """Read the Spec Kit integration state without inventing fallback state."""
+    path = project_root / INTEGRATION_STATE
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeSelectionError(f"cannot read {INTEGRATION_STATE}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise RuntimeSelectionError(f"{INTEGRATION_STATE} must contain a JSON object")
+    schema = value.get("integration_state_schema", 1)
+    if not isinstance(schema, int) or isinstance(schema, bool) or schema > 1:
+        raise RuntimeSelectionError(
+            f"unsupported {INTEGRATION_STATE} schema: {schema!r}"
+        )
+    runtime = value.get("default_integration") or value.get("integration")
+    if runtime not in SUPPORTED_RUNTIMES:
+        raise RuntimeSelectionError(
+            f"active Spec Kit integration must be one of {SUPPORTED_RUNTIMES}, got {runtime!r}"
+        )
+    installed = value.get("installed_integrations", [runtime])
+    if not isinstance(installed, list) or not all(
+        isinstance(item, str) for item in installed
+    ):
+        raise RuntimeSelectionError(
+            f"{INTEGRATION_STATE} installed_integrations must be a string array"
+        )
+    return {
+        "runtime": runtime,
+        "installed_integrations": installed,
+        "source": str(INTEGRATION_STATE),
+    }
+
+
+def resolve_runtime(project_root: Path, requested: str = "auto") -> dict[str, object]:
+    """Resolve an explicit, recorded, or uniquely detected Agent runtime."""
+    if requested in SUPPORTED_RUNTIMES:
+        return {
+            "runtime": requested,
+            "installed_integrations": [],
+            "source": "command-line",
+        }
+    if requested != "auto":
+        raise RuntimeSelectionError(
+            f"runtime must be auto or one of {SUPPORTED_RUNTIMES}, got {requested!r}"
+        )
+    recorded = read_runtime_state(project_root)
+    if recorded is not None:
+        return recorded
+    detected = [
+        runtime
+        for runtime, profile in RUNTIME_PROFILES.items()
+        if any((project_root / marker).exists() for marker in profile["markers"])
+    ]
+    if len(detected) == 1:
+        return {
+            "runtime": detected[0],
+            "installed_integrations": [],
+            "source": "project-markers",
+        }
+    if detected:
+        raise RuntimeSelectionError(
+            "multiple Agent runtime markers found; pass --integration codex or kimi"
+        )
+    raise RuntimeSelectionError(
+        "no Agent runtime marker found; pass --integration codex or kimi"
+    )
+
+
+def runtime_payload(project_root: Path, requested: str = "auto") -> dict[str, object]:
+    resolved = resolve_runtime(project_root, requested)
+    runtime = str(resolved["runtime"])
+    skill_path = project_root / str(RUNTIME_PROFILES[runtime]["skill_dir"]) / "verif-harness"
+    return {
+        **resolved,
+        "project_root": str(project_root),
+        "skill_dir": RUNTIME_PROFILES[runtime]["skill_dir"],
+        "skill_path": str(skill_path),
+        "skill_present": (skill_path / "SKILL.md").is_file(),
+        "invocation": RUNTIME_PROFILES[runtime]["invocation"],
+    }
 
 
 def managed_spec_kit() -> tuple[str, dict[str, object]]:
@@ -97,9 +199,17 @@ def main() -> int:
     spec_subparsers = spec_kit.add_subparsers(dest="spec_command", required=True)
     spec_subparsers.add_parser("probe", help="validate the managed Spec Kit dependency")
     bootstrap = spec_subparsers.add_parser(
-        "bootstrap", help="initialize a new Codex Spec Kit project and install the RTL preset"
+        "bootstrap", help="initialize Spec Kit for a detected or selected Agent runtime"
     )
     bootstrap.add_argument("--project-root", type=Path, default=Path.cwd())
+    bootstrap.add_argument(
+        "--integration", choices=("auto", *SUPPORTED_RUNTIMES), default="auto",
+        help="Agent runtime; auto requires exactly one project marker",
+    )
+    bootstrap.add_argument(
+        "--ignore-agent-tools", action="store_true",
+        help="skip Agent CLI discovery for CI/scaffold validation",
+    )
     stage = spec_subparsers.add_parser(
         "stage", help="run the reviewed Spec Kit lifecycle for one verification stage"
     )
@@ -116,6 +226,19 @@ def main() -> int:
     )
     status.add_argument("run_id", nargs="?")
     status.add_argument("--project-root", type=Path, default=Path.cwd())
+    runtime = subparsers.add_parser(
+        "runtime", help="inspect or switch the project Agent runtime"
+    )
+    runtime_subparsers = runtime.add_subparsers(dest="runtime_command", required=True)
+    runtime_status = runtime_subparsers.add_parser(
+        "status", help="show the resolved runtime and native Skill invocation"
+    )
+    runtime_status.add_argument("--project-root", type=Path, default=Path.cwd())
+    runtime_switch = runtime_subparsers.add_parser(
+        "switch", help="switch the active Spec Kit integration"
+    )
+    runtime_switch.add_argument("--project-root", type=Path, default=Path.cwd())
+    runtime_switch.add_argument("--to", choices=SUPPORTED_RUNTIMES, required=True)
     args = parser.parse_args()
     if args.command == "xverif":
         if not args.adapter_args:
@@ -135,6 +258,35 @@ def main() -> int:
             / "skills/verif-harness/wavepeek/scripts/wavepeek_adapter.py"
         )
         return subprocess.run([sys.executable, str(adapter), *args.adapter_args], check=False).returncode
+    if args.command == "runtime":
+        project_root = args.project_root.resolve()
+        if not project_root.is_dir():
+            parser.error(f"project root is not a directory: {project_root}")
+        try:
+            if args.runtime_command == "status":
+                print(json.dumps(runtime_payload(project_root), indent=2, sort_keys=True))
+                return 0
+            if not (project_root / ".specify").is_dir():
+                parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
+            current = read_runtime_state(project_root)
+            if current is None:
+                parser.error(f"Spec Kit runtime state missing: {INTEGRATION_STATE}")
+            if current["runtime"] != args.to:
+                switched = run_spec_kit(
+                    ["integration", "switch", args.to, "--script", "py"],
+                    project_root,
+                )
+                if switched != 0:
+                    return switched
+            observed = runtime_payload(project_root)
+            if observed["runtime"] != args.to:
+                parser.error(
+                    f"runtime switch did not activate {args.to}: {observed['runtime']}"
+                )
+            print(json.dumps(observed, indent=2, sort_keys=True))
+            return 0
+        except RuntimeSelectionError as exc:
+            parser.error(str(exc))
     if args.command == "spec-kit":
         if args.spec_command == "probe":
             _, payload = managed_spec_kit()
@@ -149,16 +301,20 @@ def main() -> int:
                     "refusing to overwrite an existing .specify project; review and add "
                     "the verif-harness preset separately"
                 )
-            initialized = run_spec_kit(
-                [
-                    "init", "--here", "--integration", "codex",
-                    "--integration-options=--skills", "--script", "py",
-                ],
-                project_root,
-            )
+            try:
+                runtime = str(resolve_runtime(project_root, args.integration)["runtime"])
+            except RuntimeSelectionError as exc:
+                parser.error(str(exc))
+            init_arguments = [
+                "init", "--here", "--integration", runtime,
+                "--integration-options=--skills", "--script", "py",
+            ]
+            if args.ignore_agent_tools:
+                init_arguments.append("--ignore-agent-tools")
+            initialized = run_spec_kit(init_arguments, project_root)
             if initialized != 0:
                 return initialized
-            return run_spec_kit(
+            installed = run_spec_kit(
                 [
                     "preset", "add", "--dev",
                     str(ROOT / "integrations/spec-kit/preset/rtl-verification"),
@@ -166,8 +322,24 @@ def main() -> int:
                 ],
                 project_root,
             )
+            if installed != 0:
+                return installed
+            try:
+                observed = runtime_payload(project_root)
+            except RuntimeSelectionError as exc:
+                parser.error(str(exc))
+            if observed["runtime"] != runtime:
+                parser.error(
+                    f"Spec Kit recorded {observed['runtime']} after {runtime} bootstrap"
+                )
+            print(json.dumps(observed, indent=2, sort_keys=True))
+            return 0
         if not (project_root / ".specify").is_dir():
             parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
+        try:
+            runtime = str(resolve_runtime(project_root)["runtime"])
+        except RuntimeSelectionError as exc:
+            parser.error(str(exc))
         if args.spec_command == "resume":
             return run_spec_kit(["workflow", "resume", args.run_id], project_root)
         if args.spec_command == "status":
@@ -199,7 +371,7 @@ def main() -> int:
                 str(ROOT / "integrations/spec-kit/workflows/verif-stage-lifecycle.yml"),
                 "--input", f"stage={args.stage}",
                 "--input", f"objective={args.objective}",
-                "--input", "integration=codex",
+                "--input", f"integration={runtime}",
             ],
             project_root,
         )

@@ -55,7 +55,42 @@ class Audit:
         if claude.is_file() and agents.is_file():
             self.add("WARNING", "LEGACY_CLAUDE_MD", "CLAUDE.md remains beside AGENTS.md; verify AGENTS.md is authoritative.")
         if (self.root / ".claude").exists():
-            self.add("WARNING", "LEGACY_CLAUDE_DIR", ".claude/ remains; review Codex migration status.")
+            self.add(
+                "WARNING", "LEGACY_CLAUDE_DIR",
+                ".claude/ remains; review Agent runtime migration status.",
+            )
+
+    def check_agent_runtime(self) -> None:
+        specify = self.root / ".specify"
+        state_path = specify / "integration.json"
+        if not specify.exists():
+            self.add(
+                "INFO", "RUNTIME_UNMANAGED",
+                "No Spec Kit project; Agent runtime state is not managed.",
+            )
+            return
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            self.add(
+                "ERROR", "RUNTIME_STATE_MISSING",
+                ".specify/integration.json is missing.",
+            )
+            return
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self.add("ERROR", "RUNTIME_STATE_INVALID", f"Cannot read runtime state: {exc}")
+            return
+        if not isinstance(state, dict):
+            self.add("ERROR", "RUNTIME_STATE_INVALID", "Runtime state must be a JSON object.")
+            return
+        runtime = state.get("default_integration") or state.get("integration")
+        if runtime not in ("codex", "kimi"):
+            self.add(
+                "ERROR", "RUNTIME_UNSUPPORTED",
+                f"Active Spec Kit integration is unsupported: {runtime!r}.",
+            )
+            return
+        self.add("INFO", "RUNTIME_ACTIVE", f"Active Agent runtime: {runtime}.")
 
     def check_paths(self) -> tuple[Path | None, Path | None]:
         rtl_cfg = self.config.get("rtl", {})
@@ -188,6 +223,7 @@ class Audit:
         if not self.load_config():
             return
         self.check_instruction_migration()
+        self.check_agent_runtime()
         rtl_root, verif_root = self.check_paths()
         self.check_docs()
         self.check_workflow_tool()

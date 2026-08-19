@@ -16,6 +16,8 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertEqual(lock["ref"], "refs/tags/v0.16.4")
         self.assertEqual(lock["commit"], "d1f50fcbe684a4222059c4ba7f2d7eabcca87402")
         self.assertEqual(lock["python_requires"], ">=3.11")
+        self.assertEqual(lock["schema_version"], 2)
+        self.assertNotIn("integration", lock)
 
     def test_workflow_has_full_agentic_cycle_without_shell(self) -> None:
         workflow = (
@@ -31,6 +33,8 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("authorize-execution", workflow)
         self.assertIn("inputs.stage == '0'", workflow)
         self.assertIn("review-convergence", workflow)
+        self.assertIn('any: ["codex", "kimi"]', workflow)
+        self.assertIn('enum: ["codex", "kimi"]', workflow)
 
     def test_preset_carries_authority_and_traceability_guards(self) -> None:
         preset = INTEGRATION / "preset/rtl-verification"

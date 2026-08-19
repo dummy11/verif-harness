@@ -14,8 +14,10 @@ Spec Kit owns the editable specification lifecycle.
 ## Supported operations
 
 - `probe`: validate the pinned Spec Kit source and managed Python environment.
-- `bootstrap`: initialize a new Codex Spec Kit project, then add the local
-  `verif-harness-rtl` preset. Refuse existing `.specify/`; never force-merge it.
+- `bootstrap`: resolve `auto|codex|kimi`, initialize the matching Spec Kit
+  integration, then add the local `verif-harness-rtl` preset. Treat
+  `.specify/integration.json` as the runtime source of truth. Refuse existing
+  `.specify/`; never force-merge it.
 - `stage`: run the local `verif-stage-lifecycle.yml` for exactly one Stage 0-5
   objective. The workflow has document review gates and an execution gate but
   does not approve a Stage. For a new Stage 0 project without
@@ -38,6 +40,9 @@ python3 scripts/verif_harness.py spec-kit stage \
 python3 scripts/verif_harness.py spec-kit status --project-root <project>
 python3 scripts/verif_harness.py spec-kit resume \
   --project-root <project> <run-id>
+python3 scripts/verif_harness.py runtime status --project-root <project>
+python3 scripts/verif_harness.py runtime switch \
+  --project-root <project> --to <codex|kimi>
 ```
 
 ## Source-of-truth policy
@@ -70,6 +75,12 @@ python3 scripts/verif_harness.py spec-kit resume \
   duplicate manual invocation.
 - EDA runs, commit, push, tag, release, waivers, and approval require their own
   authority under the project rules.
+- Model selection remains owned by the active Agent runtime. Changing a model
+  within Codex or Kimi Code does not rewrite integration state, specifications,
+  tasks, evidence, or approvals. Switch runtimes only at a stable review gate;
+  never force replacement of modified managed Skill files automatically.
+- `--ignore-agent-tools` is reserved for CI/scaffold validation. Do not use it
+  in a normal Agent-driven project bootstrap to hide a missing runtime.
 
 ## Output
 

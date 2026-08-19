@@ -16,7 +16,7 @@ test -> env -> agent -> driver/monitor -> virtual interface -> harness -> DUT
 ```
 
 Keep sequencer, driver, monitor, agent, environment, scoreboard, coverage, and
-reference-model responsibilities separate. The bundled Codex skill can create
+reference-model responsibilities separate. The bundled Agent Skill can create
 these skeletons, but project semantics still require Human review.
 
 ## Commercial boundary

@@ -68,7 +68,7 @@ Filelists are explicit, project-root-relative, and reviewed as source code.
 - Interfaces define stable protocol boundaries.
 - Harness adapters isolate DUT-specific reshaping and tie-offs.
 - Bind modules attach non-invasive assertions.
-- The Codex skill generates structure from reviewed contracts.
+- The Codex/Kimi Code Skill generates structure from reviewed contracts.
 - Simulator wrappers translate the canonical filelist into tool commands.
 - The xverif CLI adapter translates one reviewed request into a native xverif
   tool invocation and immutable evidence; it does not own verification policy.
@@ -76,7 +76,7 @@ Filelists are explicit, project-root-relative, and reviewed as source code.
 ## Deterministic tool delegation
 
 ```text
-Codex Agent
+Codex or Kimi Code Agent
    |
    v
 verif-harness Skill/framework

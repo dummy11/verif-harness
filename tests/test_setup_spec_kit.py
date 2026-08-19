@@ -41,6 +41,7 @@ class SetupSpecKitTest(unittest.TestCase):
         payload = json.loads(checked.stdout)
         self.assertEqual(payload["state"], "BLOCKED")
         self.assertIn("managed Spec Kit install missing", payload["blockers"][0])
+        self.assertEqual(payload["supported_integrations"], ["codex", "kimi"])
         self.assertFalse((self.project / ".deps").exists())
 
     def test_existing_partial_state_is_preserved(self) -> None:
@@ -65,6 +66,15 @@ class SetupSpecKitTest(unittest.TestCase):
         checked = self.run_setup("--check")
         self.assertEqual(checked.returncode, 1)
         self.assertIn("ref must match", checked.stderr)
+
+    def test_lock_rejects_runtime_identity(self) -> None:
+        path = self.project / "deps/spec-kit.lock.json"
+        lock = json.loads(path.read_text(encoding="utf-8"))
+        lock["integration"] = "codex"
+        path.write_text(json.dumps(lock), encoding="utf-8")
+        checked = self.run_setup("--check")
+        self.assertEqual(checked.returncode, 1)
+        self.assertIn("lock keys must be exactly", checked.stderr)
 
 
 if __name__ == "__main__":

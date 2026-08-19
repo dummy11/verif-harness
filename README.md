@@ -1,9 +1,9 @@
 # verif-harness
 
 **verif-harness is an agent-neutral RTL verification control plane and a
-reusable SystemVerilog/UVM DUT integration framework. Codex is its currently
-supported agent runtime; the deterministic core remains usable through CLI and
-CI workflows without an agent.**
+reusable SystemVerilog/UVM DUT integration framework. Codex and Kimi Code are
+its supported agent runtimes; the deterministic core remains usable through
+CLI and CI workflows without an agent.**
 
 It keeps structural integration in one place: clocks and resets, protocol
 interfaces, DUT instantiation, tie-offs, adapters, assertions, bind targets,
@@ -15,8 +15,8 @@ boundary; DUT RTL stays read-only.
 Verification projects often scatter DUT wiring across `tb_top`, tests,
 packages, and simulator scripts. That makes compile order fragile and creates
 hidden dependencies. verif-harness defines a narrow, reviewable integration
-layer and provides templates, checks, an executable FIFO example, and a Codex
-skill that applies the same rules consistently.
+layer and provides templates, checks, an executable FIFO example, and an Agent
+Skill that applies the same rules consistently.
 
 ## Architecture
 
@@ -50,23 +50,23 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
 
 verif-harness is not a standalone AI agent. It supplies the verification
 policy, staged workflow, mode contracts, generators, checks, and tool adapters
-that an agent or a Human operator executes. Codex is currently the only agent
-runtime with a complete, supported Skill integration.
+that an agent or a Human operator executes. Codex and Kimi Code use the same
+Skill and verification contracts through runtime-specific invocation syntax.
 
 The agent-neutral core includes contracts, generators, validation scripts, CLI
 adapters, and CI workflows. These components can be invoked manually or by
-automation without Codex. Spec Kit artifacts are portable files, while the
-current reviewed-task-to-mode automatic dispatch is implemented by the Codex
-Skill. Another agent runtime can integrate through an adapter that preserves
-the same mode inputs, outputs, evidence, and Human approval boundaries, but no
-other runtime is claimed as supported until that adapter is implemented and
-validated.
+automation without an Agent. Spec Kit artifacts are portable files, while the
+current reviewed-task-to-mode automatic dispatch is implemented by the
+verif-harness Skill. Another agent runtime can integrate through an adapter
+that preserves the same mode inputs, outputs, evidence, and Human approval
+boundaries, but no other runtime is claimed as supported until that adapter is
+implemented and validated.
 
 ```text
 Human authority
       |
       v
-Codex Agent (currently supported runtime)
+Codex or Kimi Code Agent
       |
       v
 verif-harness Skill / control plane
@@ -83,7 +83,7 @@ verif-harness Skill / control plane
 - Interface, SVA, bind, filelist, and smoke-test patterns.
 - A license-free `simple_fifo` example for Verilator.
 - Simulator-independent Python structure and public-release checks.
-- A bundled 31-mode Codex skill for Stage 0 through verification freeze.
+- A bundled 31-mode Agent Skill for Stage 0 through verification freeze.
 - A pinned GitHub Spec Kit specification plane governed by the verif-harness
   top-level control plane.
 - A fail-closed CLI adapter for deterministic tools from
@@ -174,7 +174,19 @@ does not appear. Codex scans `.agents/skills` from the current working
 directory up to the repository root, as documented in the
 [official OpenAI Skill documentation](https://developers.openai.com/codex/skills#where-codex-loads-local-skills).
 The deterministic scripts and CLI adapters can still be invoked directly from
-`.tools/verif-harness/` without Codex.
+`.tools/verif-harness/` without either Agent runtime.
+
+For Kimi Code, expose the same Skill at its native path instead:
+
+```bash
+mkdir -p .kimi-code/skills
+ln -s ../../.tools/verif-harness/skills/verif-harness \
+  .kimi-code/skills/verif-harness
+test -f .kimi-code/skills/verif-harness/SKILL.md
+```
+
+Kimi Code invokes it as `/skill:verif-harness`; model selection, including
+K3, remains Kimi Code configuration rather than verif-harness project state.
 
 Enable the optional commit-pinned xverif dependency with one additional flag:
 
@@ -206,6 +218,8 @@ Enable the optional, release-pinned GitHub Spec Kit dependency with Python
 ```bash
 ./scripts/setup.sh --with-spec-kit
 python3 scripts/verif_harness.py spec-kit probe
+python3 scripts/verif_harness.py spec-kit bootstrap \
+  --project-root /path/to/project --integration codex
 ```
 
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
@@ -298,7 +312,7 @@ docs/                    Design and integration documentation
 examples/simple_fifo/    License-free executable example
 filelists/               Shared simulator option guidance
 scripts/                 Generator, checks, and runner wrappers
-skills/verif-harness/    Reusable Codex skill
+skills/verif-harness/    Reusable Codex/Kimi Code Skill
 templates/dut/           Standalone DUT integration templates
 tests/                   Python and structural tests
 .github/                 CI, Pages, release, issue, and PR automation
@@ -306,22 +320,29 @@ deps/                    Reviewed optional-dependency locks and schemas
 .deps/                   Git-ignored managed dependency checkouts
 ```
 
-## Supported agent runtime: Codex
+## Supported agent runtimes
 
 The reusable Skill is under `skills/verif-harness/`. Follow
 [Install in the current working directory](#install-in-the-current-working-directory)
-to expose it at the project-local `.agents/skills/verif-harness` path, then ask:
+to expose it at the runtime-native project path.
+
+Codex:
 
 ```text
 $verif-harness Integrate this DUT into a verification environment.
 ```
 
-The skill reads repository instructions and RTL ports, but preserves the rule
-that DUT RTL and Human approval decisions are outside agent authority.
-Codex is the current supported Agent runtime, not a dependency of the
-deterministic CLI and CI core. Integrations for other Agent runtimes must retain
-the same contracts and authority boundaries and are not yet supported by this
-repository.
+Kimi Code:
+
+```text
+/skill:verif-harness Integrate this DUT into a verification environment.
+```
+
+The Skill reads repository instructions and RTL ports, but preserves the rule
+that DUT RTL and Human approval decisions are outside agent authority. Codex
+and Kimi Code are supported Agent runtimes, not dependencies of the
+deterministic CLI and CI core. Integrations for additional Agent runtimes must
+retain the same contracts and authority boundaries.
 The bundled Chinese [skill README](skills/verif-harness/README.md) provides the
 quick-start catalog, while its
 [complete user guide](skills/verif-harness/docs/user_guide.md) documents every
@@ -349,6 +370,7 @@ links every maintained Markdown document in the repository except this README.
 | [Compile flow](docs/compile_flow.md) | Canonical dependency order and repository-relative filelist expectations. |
 | [Simulator support](docs/simulator_support.md) | Tested public scope and commercial/community simulator status. |
 | [Tool versions](docs/tool_versions.md) | Supported tool baselines and installation guidance. |
+| [Agent runtime and model switching](docs/runtime_switching.md) | Bootstrap detection, Codex/Kimi Code selection, K3 model changes, and runtime migration. |
 | [Coding style](docs/coding_style.md) | SystemVerilog, Python, shell, and documentation conventions. |
 | [Troubleshooting](docs/troubleshooting.md) | Setup, dependency, simulator, example, and public-audit recovery. |
 | [Roadmap](docs/roadmap.md) | Planned framework releases and capability evolution. |

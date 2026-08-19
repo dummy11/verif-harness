@@ -8,7 +8,8 @@ strategy: prepend
 Before implementing any task:
 
 1. Treat verif-harness as the top-level control plane and dispatch the reviewed
-   task to the matching `$verif-harness` mode.
+   task to the matching runtime-native Skill mode: `$verif-harness` on Codex or
+   `/skill:verif-harness` on Kimi Code.
 2. Read the repository `AGENTS.md`, `.harness-config.json`, stage documents,
    architecture, coding rules, and affected plans before writing.
 3. Never modify DUT RTL or bypass verif-harness component ownership.
@@ -18,7 +19,7 @@ Before implementing any task:
 6. Stop at unresolved specification semantics and Human authority boundaries.
 7. Never convert generated output, tool PASS, or a review gate interaction into
    Human approval, waiver, sign-off, freeze, publication, commit, or push.
-8. Dispatch every approved task to its named `$verif-harness` mode exactly once.
+8. Dispatch every approved task to its named verif-harness mode exactly once.
    Do not require the user to repeat a mode manually after successful dispatch.
 9. After dispatching a mode, verify every task-declared owned output and evidence
    path and run its approved validation command. Missing output or failed

@@ -7,6 +7,10 @@ Versioning.
 
 ### Added
 
+- Codex/Kimi Code runtime abstraction backed by Spec Kit integration state,
+  deterministic bootstrap detection, runtime status/switch commands, dual
+  workflow dispatch, and documented model/runtime switching procedures.
+
 - A 31st `spec-kit` mode, pinned GitHub Spec Kit v0.16.4 dependency, RTL
   verification preset, Stage 0-to-5 workflow, specification authority model,
   and control/capability/evidence/Human boundary documentation.

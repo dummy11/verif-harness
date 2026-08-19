@@ -1,7 +1,7 @@
 # verif-harness documentation
 
 verif-harness is a reusable SystemVerilog/UVM DUT integration harness with an
-optional Codex-assisted workflow.
+optional Codex- or Kimi Code-assisted workflow.
 
 ## Start here
 
@@ -9,7 +9,8 @@ optional Codex-assisted workflow.
 - [DUT integration](dut_integration.md)
 - [Compile flow](compile_flow.md)
 - [Simulator support](simulator_support.md)
-- [Codex skill modes](skill_modes.md)
+- [Agent Skill modes](skill_modes.md)
+- [Agent runtime and model switching](runtime_switching.md)
 - [xverif integration](xverif_integration.md)
 - [WavePeek integration](wavepeek_integration.md)
 - [Troubleshooting](troubleshooting.md)

@@ -9,7 +9,7 @@ workflow:
 requires:
   speckit_version: ">=0.16.4"
   integrations:
-    any: ["codex"]
+    any: ["codex", "kimi"]
 
 inputs:
   stage:
@@ -23,8 +23,8 @@ inputs:
     prompt: "Reviewed objective for this verification stage"
   integration:
     type: string
-    default: "codex"
-    enum: ["codex"]
+    required: true
+    enum: ["codex", "kimi"]
 
 steps:
   - id: establish-constitution
