@@ -188,7 +188,9 @@ test -f .kimi-code/skills/verif-harness/SKILL.md
 Kimi Code invokes it as `/skill:verif-harness`; model selection, including
 K3, remains Kimi Code configuration rather than verif-harness project state.
 
-Enable the optional commit-pinned xverif dependency with one additional flag:
+Enable the optional commit-pinned xverif dependency with one additional flag.
+The checkout includes deterministic CLI wrappers and the reviewed `xverif_mcp`
+source/launcher:
 
 ```bash
 ./scripts/setup.sh --with-xverif
@@ -196,8 +198,9 @@ Enable the optional commit-pinned xverif dependency with one additional flag:
 
 This installs source from the reviewed upstream into the Git-ignored
 `.deps/xverif` directory and verifies its repository, exact commit, clean
-state, MIT License hash, wrappers, and a real `xbit` adapter smoke. Core
-verif-harness workflows remain usable without xverif.
+state, MIT License hash, wrappers, MCP package layout, `tools/xverif-mcp`, and a
+real `xbit` adapter smoke. Core verif-harness workflows remain usable without
+xverif.
 
 Enable the optional commit-pinned WavePeek dependency independently or with
 the xverif flag:
@@ -259,6 +262,21 @@ xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
 The pinned checkout is an optional dependency, not vendored verif-harness
 source; attribution and proprietary-EDA boundaries are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The same checkout provides an optional FastMCP server. Install its source,
+install `mcp[cli]` in the Codex/Kimi Python environment, and create a non-secret
+profile:
+
+```bash
+python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 -m pip install "mcp[cli]"
+python3 scripts/verif_harness.py xverif mcp configure \
+  --project-root . --runtime codex --backend direct
+python3 scripts/verif_harness.py xverif mcp status --project-root .
+```
+
+Use `--runtime kimi` for Kimi Code. Runtime registration remains host-managed;
+after registering the stdio server, call `xverif_ping` and then `xverif_tools`.
 
 ## Inspect a waveform with WavePeek
 
@@ -387,7 +405,7 @@ links every maintained Markdown document in the repository except this README.
 | [Chinese Skill troubleshooting](skills/verif-harness/docs/troubleshooting.md) | 中文 false-green 风险、常见故障和恢复方式。 |
 | [Spec Kit integration](integrations/spec-kit/README.md) | Spec authority, bootstrap/stage/resume/status commands, task dispatch, convergence, and Human gates. |
 | [Spec Kit bundle](integrations/spec-kit/bundle/README.md) | Local RTL bundle composition and pre-catalog publication boundary. |
-| [xverif integration](docs/xverif_integration.md) | Managed dependency, adapter contract, provenance, evidence, and ownership split. |
+| [xverif integration](docs/xverif_integration.md) | Managed CLI/MCP dependency, install/configure/use contract, provenance, evidence, and ownership split. |
 | [WavePeek integration](docs/wavepeek_integration.md) | Managed VCD/FST CLI, bounded query contract, provenance, and FSDB boundary. |
 | [simple_fifo example](examples/simple_fifo/README.md) | License-free executable harness example and expected smoke result. |
 
@@ -423,7 +441,7 @@ with specialized behavior has its own mandatory implementation contract:
 | [`finalize-filelist-and-make`](skills/verif-harness/finalize-filelist-and-make/INSTRUCTIONS.md) | Canonical filelists and compile-only target. |
 | [`doctor`](skills/verif-harness/doctor/INSTRUCTIONS.md) | Read-only project health audit. |
 | [`spec-kit`](skills/verif-harness/spec-kit/INSTRUCTIONS.md) | Specification workflow, task dispatch, convergence, and authority rules. |
-| [`xverif`](skills/verif-harness/xverif/INSTRUCTIONS.md) | Allowlisted deterministic xverif request execution. |
+| [`xverif`](skills/verif-harness/xverif/INSTRUCTIONS.md) | Allowlisted deterministic xverif CLI plus MCP source/profile lifecycle. |
 | [`wavepeek`](skills/verif-harness/wavepeek/INSTRUCTIONS.md) | Bounded deterministic waveform query execution. |
 | [`add-regression-runner`](skills/verif-harness/add-regression-runner/INSTRUCTIONS.md) | Isolated regression launch, collection, and same-seed rerun. |
 | [`add-simulator-profile`](skills/verif-harness/add-simulator-profile/INSTRUCTIONS.md) | Reviewed simulator profile generation. |

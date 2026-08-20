@@ -20,8 +20,8 @@
 ```text
 Codex / Kimi Code Agent
   -> verif-harness Skill/framework：选择阶段动作、解释项目语义、守住审批边界
-     -> CLI adapter：验证请求、执行 argv、固定环境、超时、归档证据
-        -> xverif tools/<tool>：执行底层 deterministic operation
+     -> CLI adapter 或 MCP runtime：验证 surface、固定环境、超时、归档证据
+        -> xverif tools/<tool> / xverif_mcp：执行底层 deterministic operation
 ```
 
 `xverif` 的 native action/schema/reference 是工具参数的 source of truth；
@@ -31,13 +31,14 @@ source of truth。两者不能互相替代。
 ## 托管依赖合同
 
 完整 verif-harness 仓库通过 `deps/xverif.lock.json` 固定 repository、完整 Git
-commit、MIT License hash 和 wrapper inventory。`scripts/setup_xverif.py` 只在目标
+commit、MIT License hash、wrapper inventory 和 `xverif_mcp` package/launcher。
+`scripts/setup_xverif.py` 只在目标
 不存在时执行 temporary clone、detached checkout、完整校验和 atomic publish：
 
 ```text
 deps/xverif.lock.json
   -> .deps/.xverif.install-<pid>
-  -> validate origin/HEAD/clean/LICENSE/tools
+  -> validate origin/HEAD/clean/LICENSE/tools/xverif_mcp
   -> os.replace
   -> .deps/xverif
 ```
@@ -110,6 +111,18 @@ Probe `PASS` 只代表 wrapper 存在且可执行。它不会运行真实 NPI/ED
 所有非 `PASS` 状态返回非零。`PASS` 仍必须继续读取 native response 中的
 `ok/status/error/finding` 与完整性字段；process `0` 不能覆盖业务失败。
 
+## MCP surface
+
+锁定 checkout 中的 MCP entrypoint 是 `xverif_mcp.server:main`，launcher 是
+`tools/xverif-mcp`，transport 只允许 stdio。`mcp[cli]` 是 Agent Python 环境的
+单独运行时依赖，不 vendored 到 verif-harness。项目 profile 只记录 source commit、
+backend 和 environment key 名称；Codex/Kimi host 负责注册具体 server。
+
+真实 MCP probe 必须调用 `xverif_ping`，然后调用 `xverif_tools` 获取 catalog。对
+xdebug/xcov，遵循 `session_open -> query -> session_close`，禁止猜 action、自动
+重试、切换 direct/LSF 或把 `isError=false` 当作业务成功。MCP server response、tool
+schema hash 和 native completeness 必须进入 evidence manifest。
+
 ## Surface 与输出边界
 
 - xdebug/xcov/xentry 需要结构化字段时，通过其 native JSON envelope 和 `--json`
@@ -125,5 +138,5 @@ Probe `PASS` 只代表 wrapper 存在且可执行。它不会运行真实 NPI/ED
 - environment 只保存 key，不输出 value；argv 出现 secret-like material 时拒绝；
 - xdebug/xcov 的真实 EDA/NPI 动作在项目规定的获授权环境执行；
 - Git commit 和 wrapper hash 证明工具身份，不证明结果语义正确；
-- CI fake xverif 只验证 adapter，真实兼容性必须由 approved upstream checkout 的
-  focused native operation 证明。
+- CI fake xverif 只验证 CLI adapter；MCP 兼容性必须由 approved upstream
+  checkout 的 runtime `xverif_ping` 和 focused native operation 证明。

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "xverif",
   "repository": "https://github.com/BLANK2077/xverif.git",
   "commit": "ebec1bab852a971d06a45b2556d09c3d6488c21d",
@@ -13,5 +13,14 @@
     "xcov",
     "xdebug",
     "xwaveform"
-  ]
+  ],
+  "mcp": {
+    "source_root": "xverif_mcp",
+    "python_source_root": "xverif_mcp/src",
+    "package": "xverif_mcp",
+    "entrypoint": "xverif_mcp.server:main",
+    "launcher": "tools/xverif-mcp",
+    "requires_python": ">=3.11",
+    "dependency": "mcp[cli]"
+  }
 }

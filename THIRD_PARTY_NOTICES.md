@@ -45,6 +45,11 @@ license applies only to material the xverif project is entitled to license; it
 does not license Synopsys software, NPI/FSDB interfaces, vendor headers,
 libraries, manuals, databases, or other proprietary dependencies.
 
+The optional `xverif_mcp` package is part of the same pinned xverif checkout and
+is not vendored into this repository. Its Python runtime dependency
+`mcp[cli]` is installed and licensed separately by the deployment environment;
+verif-harness does not pin, redistribute, or claim ownership of that dependency.
+
 ```text
 MIT License
 

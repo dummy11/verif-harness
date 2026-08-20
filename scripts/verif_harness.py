@@ -242,7 +242,15 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "xverif":
         if not args.adapter_args:
-            parser.error("xverif requires adapter arguments; use 'xverif probe' or 'xverif run'")
+            parser.error("xverif requires adapter arguments; use 'xverif probe', 'xverif run', or 'xverif mcp ...'")
+        if args.adapter_args[0] == "mcp":
+            adapter = (
+                Path(__file__).resolve().parents[1]
+                / "skills/verif-harness/xverif/scripts/xverif_mcp.py"
+            )
+            return subprocess.run(
+                [sys.executable, str(adapter), *args.adapter_args[1:]], check=False
+            ).returncode
         adapter = (
             Path(__file__).resolve().parents[1]
             / "skills/verif-harness/xverif/scripts/xverif_adapter.py"

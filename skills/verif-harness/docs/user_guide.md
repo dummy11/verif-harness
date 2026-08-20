@@ -1192,7 +1192,8 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 
 - 完整仓库的 `deps/xverif.lock.json`，固定
   `https://github.com/BLANK2077/xverif.git`、完整 commit、MIT License hash
-  和七个 wrapper；独立 Skill 部署则提供等价的已批准 checkout root；
+  、七个 wrapper、`xverif_mcp` package 和 `tools/xverif-mcp` launcher；独立
+  Skill 部署则提供等价的已批准 checkout root；
 - `xverif-request.json`：`tool`、evidence 分类用 `operation`、native `arguments`、
   可选项目相对 `stdin_path`、working directory、环境变量名、timeout、
   `json/xout/text`、接受退出码和 expected artifacts；
@@ -1233,6 +1234,39 @@ python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
 ```bash
 python3 scripts/verif_harness.py xverif probe --tool xbit  # 经项目根 CLI probe xbit
 ```
+
+#### xverif MCP 安装、配置和使用
+
+锁定 checkout 中包含 `xverif_mcp` FastMCP server。MCP 是独立 surface，不把 MCP
+参数包装进 CLI request：
+
+```bash
+python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 -m pip install "mcp[cli]"  # 在 Codex/Kimi 使用的 Python 3.11+ 环境
+python3 scripts/verif_harness.py xverif mcp configure \
+  --project-root . --runtime codex --backend direct
+python3 scripts/verif_harness.py xverif mcp status --project-root .
+```
+
+Kimi Code 使用 `--runtime kimi`。`configure` 生成
+`.harness/mcp/xverif.json`，只包含 source commit、transport、backend 和环境变量
+名称；它不会写入 Codex/Kimi 私有 MCP 配置、secret、license 值或绝对路径。需要
+由当前 runtime 按其原生方式注册 stdio server，server launcher 为
+`.deps/xverif/tools/xverif-mcp`。
+
+注册后按以下顺序使用：
+
+1. 调用 `xverif_ping`，确认 MCP server 的真实协议可用。
+2. 调用 `xverif_tools` 获取当前 tool/action catalog；不要猜 tool 或 action 名。
+3. xdebug/xcov 遵循 `session_open -> query -> session_close`，每个 session 单独
+   记录 name、backend、timeout 和 native completeness。
+4. 需要持久化时使用 MCP tool 的 `xverif_output_path`，并把生成文件加入项目 evidence
+   manifest；保留 response 原文和 server/tool schema hash。
+5. 读取 native `ok/status/error/finding/completeness` 后再形成诊断，不把 MCP
+   `isError=false` 或进程启动成功当作验证通过。
+
+`xverif mcp probe` 不伪造协议成功；它只提示必须由 Codex/Kimi 调用
+`xverif_ping`。真实 MCP 结果必须由 Agent runtime 或受控 MCP client 归档。
 
 adapter 按显式 `--xverif-root` → `XVERIF_HOME` → project/current/repository
 `.deps/xverif` 的固定顺序查找；正常托管使用无需传路径。
@@ -1275,7 +1309,7 @@ argument、环境、EDA/NPI/license/LSF 条件、output completeness、result se
 **边界**：xverif 是可选、单独许可和维护的工具仓库，而不是统一 executable；
 `.deps/xverif` 不进入 verif-harness Git/source archive/release；不得直接 pull 或
 vendor 上游源码。adapter 只允许七个 one-shot
-wrapper，不调用 MCP/loop/admin；不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
+wrapper；MCP 只走 pinned `xverif_mcp` server，不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
 JSON/XOUT、local/LSF、backend 或 data source；adapter `PASS` 不是 testcase PASS、
 coverage/assertion closure、waiver、Stage approval 或 freeze。
 

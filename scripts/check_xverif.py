@@ -28,6 +28,20 @@ def main() -> int:
         return checked.returncode
     dependency = json.loads(checked.stdout)
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    managed_root = ROOT / ".deps/xverif"
+    mcp = lock["mcp"]
+    for relative in (
+        mcp["source_root"],
+        mcp["python_source_root"],
+        f"{mcp['python_source_root']}/{mcp['package']}",
+    ):
+        if not (managed_root / relative).is_dir():
+            print(f"ERROR: managed xverif MCP source is missing: {relative}", file=sys.stderr)
+            return 1
+    launcher = managed_root / mcp["launcher"]
+    if not launcher.is_file():
+        print(f"ERROR: managed xverif MCP launcher is missing: {mcp['launcher']}", file=sys.stderr)
+        return 1
     with tempfile.TemporaryDirectory(prefix="verif-harness-xverif-") as temporary:
         evidence = Path(temporary) / "evidence"
         result = subprocess.run(
@@ -54,7 +68,7 @@ def main() -> int:
             return 1
     print(
         "Managed xverif PASS: "
-        f"{dependency['commit']} with real xbit adapter smoke"
+        f"{dependency['commit']} with real xbit adapter smoke and MCP source validation"
     )
     return 0
 

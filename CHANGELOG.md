@@ -7,6 +7,11 @@ Versioning.
 
 ### Added
 
+- Pinned xverif MCP source/launcher validation and `xverif mcp` install,
+  configure, status, and fail-closed runtime-probe commands, with Codex/Kimi
+  installation and usage documentation that keeps host credentials outside the
+  repository.
+
 - Codex/Kimi Code runtime abstraction backed by Spec Kit integration state,
   deterministic bootstrap detection, runtime status/switch commands, dual
   workflow dispatch, and documented model/runtime switching procedures.

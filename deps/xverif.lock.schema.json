@@ -11,10 +11,11 @@
     "commit",
     "license",
     "license_file_sha256",
-    "tools"
+    "tools",
+    "mcp"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "name": {"const": "xverif"},
     "repository": {
       "const": "https://github.com/BLANK2077/xverif.git"
@@ -32,6 +33,28 @@
       "uniqueItems": true,
       "items": {
         "enum": ["xbit", "xcov", "xdebug", "xentry", "xloc", "xsva", "xwaveform"]
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_root",
+        "python_source_root",
+        "package",
+        "entrypoint",
+        "launcher",
+        "requires_python",
+        "dependency"
+      ],
+      "properties": {
+        "source_root": {"const": "xverif_mcp"},
+        "python_source_root": {"const": "xverif_mcp/src"},
+        "package": {"const": "xverif_mcp"},
+        "entrypoint": {"const": "xverif_mcp.server:main"},
+        "launcher": {"const": "tools/xverif-mcp"},
+        "requires_python": {"const": ">=3.11"},
+        "dependency": {"const": "mcp[cli]"}
       }
     }
   }

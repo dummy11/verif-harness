@@ -42,21 +42,36 @@ class SetupXverifTest(unittest.TestCase):
                 "#!/usr/bin/env sh\nprintf '%s\\n' fixture\n", encoding="utf-8"
             )
             wrapper.chmod(0o755)
+        mcp_package = self.upstream / "xverif_mcp/src/xverif_mcp"
+        mcp_package.mkdir(parents=True)
+        (mcp_package / "__init__.py").write_text("", encoding="utf-8")
+        launcher = tools / "xverif-mcp"
+        launcher.write_text("#!/usr/bin/env sh\nprintf '%s\\n' fixture-mcp\n", encoding="utf-8")
+        launcher.chmod(0o755)
         license_text = "MIT License\n\nfixture\n"
         (self.upstream / "LICENSE").write_text(license_text, encoding="utf-8")
-        self.assertEqual(git(self.upstream, "add", "LICENSE", "tools").returncode, 0)
+        self.assertEqual(git(self.upstream, "add", "LICENSE", "tools", "xverif_mcp").returncode, 0)
         self.assertEqual(git(self.upstream, "commit", "-m", "fixture").returncode, 0)
         self.commit = git(self.upstream, "rev-parse", "HEAD").stdout.strip()
         self.project = self.root / "project"
         (self.project / "deps").mkdir(parents=True)
         lock = {
-            "schema_version": 1,
+            "schema_version": 2,
             "name": "xverif",
             "repository": str(self.upstream),
             "commit": self.commit,
             "license": "MIT",
             "license_file_sha256": hashlib.sha256(license_text.encode()).hexdigest(),
             "tools": managed_tools,
+            "mcp": {
+                "source_root": "xverif_mcp",
+                "python_source_root": "xverif_mcp/src",
+                "package": "xverif_mcp",
+                "entrypoint": "xverif_mcp.server:main",
+                "launcher": "tools/xverif-mcp",
+                "requires_python": ">=3.11",
+                "dependency": "mcp[cli]",
+            },
         }
         (self.project / "deps/xverif.lock.json").write_text(
             json.dumps(lock), encoding="utf-8"

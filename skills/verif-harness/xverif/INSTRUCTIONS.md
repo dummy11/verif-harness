@@ -1,7 +1,8 @@
-# xverif — deterministic CLI adapter
+# xverif — deterministic CLI and MCP adapters
 
 Use this mode when `verif-harness` has selected a concrete deterministic
-operation provided by the xverif tool suite. The authoritative upstream is
+operation provided by the xverif tool suite or its pinned MCP server. The
+authoritative upstream is
 `https://github.com/BLANK2077/xverif.git`. xverif is a repository of tool wrappers,
 not one executable named `xverif`.
 
@@ -19,12 +20,46 @@ not one executable named `xverif`.
 ```text
 Codex / Kimi Code Agent
   -> verif-harness Skill/framework: intent, stage policy, Human boundaries
-     -> xverif CLI adapter: validated argv, environment, timeout, evidence
+     -> xverif CLI/MCP adapter: validated request, runtime, timeout, evidence
         -> xverif tools/{xbit,xentry,xloc,xsva,xcov,xdebug,xwaveform}
 ```
 
 The adapter never replaces project semantics or Human review. It only executes
-one explicit request and records deterministic evidence.
+one explicit request and records deterministic evidence. MCP installation and
+configuration are separate from MCP operation execution.
+
+## MCP lifecycle
+
+The pinned xverif checkout includes `xverif_mcp` and the `tools/xverif-mcp`
+launcher. Install its source with:
+
+```bash
+python3 scripts/verif_harness.py xverif mcp install --project-root .
+```
+
+Configure a non-secret project profile for the active Agent runtime:
+
+```bash
+python3 scripts/verif_harness.py xverif mcp configure \
+  --project-root . --runtime codex --backend direct
+```
+
+`configure` writes `.harness/mcp/xverif.json`. It does not edit Codex/Kimi
+private settings, store credentials, or invent a runtime-specific config file.
+Register the profile's stdio server in the active runtime using its documented
+MCP configuration mechanism, then install the separately managed `mcp[cli]`
+Python dependency in that runtime environment.
+
+Check the source/profile contract:
+
+```bash
+python3 scripts/verif_harness.py xverif mcp status --project-root .
+```
+
+Probe the actual protocol from Codex or Kimi by calling the server's
+`xverif_ping` tool. The CLI `mcp probe` command is intentionally fail-closed and
+only reports that a runtime probe is required; static checks cannot prove that
+the Agent host registered the server.
 
 ## Procedure
 
@@ -64,10 +99,13 @@ one explicit request and records deterministic evidence.
 ## Boundaries
 
 - Allow only `xbit`, `xentry`, `xloc`, `xsva`, `xcov`, `xdebug`, and
-  `xwaveform`; MCP/loop/admin wrappers are outside this one-shot CLI mode.
+  `xwaveform` for CLI requests; MCP tool names come from the pinned upstream
+  FastMCP schema and must be probed before use.
 - Run with argv tokens and `shell=False`; do not accept a shell command string.
 - Never auto-switch CLI/MCP, XOUT/JSON, local/LSF, backend, data source, or test
   level after failure.
+- Never treat a configured profile or source install as MCP availability; the
+  runtime must successfully call `xverif_ping`.
 - Preserve XOUT bytes exactly. Do not reverse-parse, reorder, re-encode, or add
   transport markers.
 - Do not log environment values. License, scheduler, EDA, NPI, VDB, FSDB, and

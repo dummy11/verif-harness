@@ -9,7 +9,9 @@ Automation prepares evidence; a Human owner makes the publication decision.
 - [ ] Review all source, templates, documentation, tests, and examples.
 - [ ] Run `make release-check` on a host with Verilator 5.x.
 - [ ] Run `make setup-xverif check-xverif` and verify the locked commit,
-      license hash, wrappers, and real xbit smoke.
+      license hash, wrappers, `xverif_mcp` package/launcher, and real xbit
+      smoke. If MCP is enabled for the release, retain a runtime `xverif_ping`
+      probe with server/tool identity evidence.
 - [ ] Confirm `.deps/` and all xverif/vendor build artifacts are absent from
       the release archive; review `THIRD_PARTY_NOTICES.md`.
 - [ ] Run `make setup-wavepeek check-wavepeek`; verify the locked source,

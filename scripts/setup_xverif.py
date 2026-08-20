@@ -16,7 +16,7 @@ from typing import Any
 
 LOCK_KEYS = {
     "schema_version", "name", "repository", "commit", "license",
-    "license_file_sha256", "tools",
+    "license_file_sha256", "tools", "mcp",
 }
 COMMIT = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -24,6 +24,10 @@ TOOL = re.compile(r"x[a-z0-9-]+")
 MANAGED_TOOLS = (
     "xbit", "xentry", "xloc", "xsva", "xcov", "xdebug", "xwaveform",
 )
+MCP_KEYS = {
+    "source_root", "python_source_root", "package", "entrypoint", "launcher",
+    "requires_python", "dependency",
+}
 
 
 def fail(message: str) -> None:
@@ -59,7 +63,7 @@ def load_lock(root: Path) -> dict[str, Any]:
         fail(f"cannot read xverif lock: {exc}")
     if not isinstance(value, dict) or set(value) != LOCK_KEYS:
         fail(f"xverif lock keys must be exactly {sorted(LOCK_KEYS)}")
-    if value["schema_version"] != 1 or value["name"] != "xverif":
+    if value["schema_version"] != 2 or value["name"] != "xverif":
         fail("unsupported xverif lock identity or schema")
     if not isinstance(value["repository"], str) or not value["repository"]:
         fail("xverif repository must be a non-empty string")
@@ -80,6 +84,17 @@ def load_lock(root: Path) -> dict[str, Any]:
         fail("xverif tools contains duplicates")
     if tuple(tools) != MANAGED_TOOLS:
         fail(f"xverif tools must match the reviewed order {MANAGED_TOOLS}")
+    mcp = value["mcp"]
+    if not isinstance(mcp, dict) or set(mcp) != MCP_KEYS:
+        fail(f"xverif mcp keys must be exactly {sorted(MCP_KEYS)}")
+    if mcp["source_root"] != "xverif_mcp" or mcp["python_source_root"] != "xverif_mcp/src":
+        fail("xverif MCP source roots differ from the reviewed package layout")
+    if mcp["package"] != "xverif_mcp" or mcp["entrypoint"] != "xverif_mcp.server:main":
+        fail("xverif MCP package identity differs from the reviewed entrypoint")
+    if mcp["launcher"] != "tools/xverif-mcp" or mcp["dependency"] != "mcp[cli]":
+        fail("xverif MCP launcher or dependency differs from the reviewed contract")
+    if mcp["requires_python"] != ">=3.11":
+        fail("xverif MCP requires Python 3.11 or newer")
     return value
 
 
@@ -112,6 +127,17 @@ def validate_install(destination: Path, lock: dict[str, Any]) -> list[str]:
         wrapper = destination / "tools" / tool
         if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
             blockers.append(f"required wrapper missing or not executable: tools/{tool}")
+    mcp = lock["mcp"]
+    for relative in (
+        mcp["source_root"],
+        mcp["python_source_root"],
+        f"{mcp['python_source_root']}/{mcp['package']}",
+    ):
+        if not (destination / relative).is_dir():
+            blockers.append(f"required MCP source directory missing: {relative}")
+    launcher = destination / mcp["launcher"]
+    if not launcher.is_file() or not os.access(launcher, os.X_OK):
+        blockers.append(f"required MCP launcher missing or not executable: {mcp['launcher']}")
     return blockers
 
 
@@ -136,7 +162,7 @@ def install(destination: Path, lock: dict[str, Any]) -> None:
         sparse = git("sparse-checkout", "init", "--cone", cwd=temporary)
         if sparse.returncode != 0:
             fail(f"xverif sparse-checkout init failed: {sparse.stderr.strip()}")
-        sparse_paths = ["tools", *lock["tools"]]
+        sparse_paths = ["tools", *lock["tools"], lock["mcp"]["source_root"]]
         sparse_set = git("sparse-checkout", "set", *sparse_paths, cwd=temporary)
         if sparse_set.returncode != 0:
             fail(f"xverif sparse-checkout set failed: {sparse_set.stderr.strip()}")
@@ -178,6 +204,7 @@ def main() -> int:
         "repository": lock["repository"],
         "commit": lock["commit"],
         "tools": lock["tools"],
+        "mcp": lock["mcp"],
         "blockers": blockers,
         "notice": "xverif remains an optional, separately licensed source dependency.",
     }

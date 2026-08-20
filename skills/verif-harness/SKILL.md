@@ -159,13 +159,16 @@ mode. Do not repair findings unless the user asks.
 Read `xverif/INSTRUCTIONS.md`, the request schema, and
 `references/xverif-adapter-contract.md`. Route one reviewed operation to the
 allowlisted CLI wrapper under the commit-pinned managed `BLANK2077/xverif`
-checkout. When operating in the verif-harness repository, use
+checkout. The same pinned checkout includes the optional `xverif_mcp` server;
+use `xverif mcp install|configure|status|probe` for its explicit source/profile
+lifecycle. When operating in the verif-harness repository, use
 `scripts/setup_xverif.py` and `deps/xverif.lock.json`; do not clone a moving
 branch, vendor upstream source, or silently update an existing checkout. Preserve
 native argv and JSON/XOUT/text semantics, capture tool Git identity and hashes,
-and fail closed on protocol, timeout, or artifact errors. Do not invent a
-single `xverif` executable, auto-switch surfaces/backends, or interpret adapter
-PASS as verification approval.
+and fail closed on protocol, timeout, or artifact errors. MCP runtime
+registration remains host-managed and must not write credentials to the
+repository. Do not invent a single `xverif` executable, auto-switch
+surfaces/backends, or interpret adapter PASS as verification approval.
 
 ### `wavepeek`
 

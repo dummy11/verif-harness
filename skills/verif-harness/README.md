@@ -44,7 +44,7 @@ $verif-harness stage-gate-review 4
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
 | `spec-kit` | 在 verif-harness 顶层控制面下管理规格生命周期 | 建立或推进 Stage 规格驱动流程 | `$verif-harness spec-kit stage` |
-| `xverif` | 通过受控 CLI adapter 调用固定版本 xverif 工具族 | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
+| `xverif` | 通过受控 CLI adapter 或 MCP profile 调用固定版本 xverif | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
 | `wavepeek` | 通过受控 CLI adapter 调用固定版本 WavePeek | 对 VCD/FST 做有界、可复现的波形查询 | `$verif-harness wavepeek probe` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | 生成 simulator command/capability profile | 增加一个评审后的 simulator 配置 | `$verif-harness add-simulator-profile` |
@@ -120,14 +120,14 @@ Codex / Kimi Code Agent
    ↓
 verif-harness Skill / framework
    ↓
-CLI adapter
+CLI adapter or MCP runtime profile
    ↓
-xverif tools/xbit|xdebug|xcov|xentry|xloc|xsva|xwaveform
+xverif tools/* or xverif_mcp
 ```
 
 `verif-harness` 决定验证阶段、任务语义和人工边界；adapter 只执行严格 JSON
 request 并归档 argv、Git commit、wrapper hash、stdout/stderr 与 artifact hash；
-xverif 执行底层确定性操作。权威上游是
+xverif CLI 和 xverif_mcp 执行底层确定性操作。权威上游是
 `https://github.com/BLANK2077/xverif.git`。xverif 是工具族，不假设存在名为
 `xverif` 的统一 executable。
 
@@ -139,11 +139,26 @@ xverif 执行底层确定性操作。权威上游是
 
 安装器读取 `deps/xverif.lock.json`，把独立 checkout 原子安装到 Git 忽略的
 `.deps/xverif`，并校验 origin、完整 commit、clean 状态、MIT License hash、
-七个 wrapper 和真实 `xbit` smoke。之后可省略 `--xverif-root`：
+七个 wrapper、MCP package layout、`tools/xverif-mcp` launcher 和真实 `xbit`
+smoke。之后可省略 `--xverif-root`：
 
 ```bash
 python3 scripts/verif_harness.py xverif probe --tool xbit
 ```
+
+MCP source/profile 生命周期：
+
+```bash
+python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 -m pip install "mcp[cli]"
+python3 scripts/verif_harness.py xverif mcp configure \
+  --project-root . --runtime codex --backend direct
+python3 scripts/verif_harness.py xverif mcp status --project-root .
+```
+
+`configure` 只写 `.harness/mcp/xverif.json`，不修改 Codex/Kimi 私有配置。
+Runtime 注册后，先调用 `xverif_ping` 和 `xverif_tools`；source install 或静态
+profile 不能证明 MCP 已可用。
 
 xverif 仍是可选、单独许可、单独维护的底层工具；checkout 不进入
 verif-harness source archive 或 release。

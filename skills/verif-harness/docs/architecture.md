@@ -89,9 +89,9 @@ clock/reset 连接、tie-off、bind、adapter 和 virtual-interface 发布；`tb
 Regression 记录 argv、seed、隔离运行目录、日志和严格结果。CI 模式只生成
 可评审 fragment；triage 只输出候选分类，并保留同 seed 重跑证据。
 
-`xverif` 模式不重新实现 bit/debug/coverage/SVA 等确定性能力，而是把显式 JSON
-request 交给 CLI adapter。adapter 只允许权威 xverif checkout 的白名单 wrapper，
-固定环境与 timeout，并保存 native JSON/XOUT/text 和 Git/hash provenance。
+`xverif` 模式不重新实现 bit/debug/coverage/SVA 等确定性能力。CLI surface 把显式
+JSON request 交给 adapter；MCP surface 使用同一锁定 checkout 中的 `xverif_mcp`
+server。两条 surface 显式选择，不能互相 fallback。
 
 ```text
 Codex / Kimi Code Agent
@@ -100,10 +100,10 @@ Codex / Kimi Code Agent
 verif-harness Skill/framework
    |  项目计划、stage policy、Human 决策边界
    v
-xverif CLI adapter
-   |  schema、argv、环境 key、timeout、stdout/stderr、SHA-256
+xverif CLI adapter 或 MCP runtime profile
+   |  schema、环境 key、timeout、response/artifact SHA-256
    v
-BLANK2077/xverif tools/<selected-tool>
+BLANK2077/xverif tools/<selected-tool> / xverif_mcp
    |  xbit / xdebug / xcov / xentry / xloc / xsva / xwaveform
    v
 deterministic native evidence
@@ -115,9 +115,9 @@ deterministic native evidence
 deps/xverif.lock.json
   -> scripts/setup_xverif.py
   -> temporary clone + exact detached commit
-  -> origin/commit/clean/license/wrapper validation
+  -> origin/commit/clean/license/wrapper/MCP package validation
   -> atomic publish .deps/xverif
-  -> CLI adapter discovery
+  -> CLI adapter / MCP launcher discovery
 ```
 
 `.deps/xverif` 被 Git 忽略，不属于 verif-harness 源码或 release；xverif 的源码
@@ -125,7 +125,8 @@ deps/xverif.lock.json
 `XVERIF_HOME` 只用于受控开发/部署 override，不允许失败后自动切换。
 
 该路径不会自动从 CLI 切换 MCP、从 local 切换 LSF、从 JSON 切换 XOUT，
-也不会把工具 `PASS` 提升为 Stage approval。
+也不会把工具 `PASS` 提升为 Stage approval。MCP runtime registration 属于
+Codex/Kimi host；项目只保存 `.harness/mcp/xverif.json` 非敏感 profile。
 
 WavePeek 使用平行但独立的 managed 路径：
 
@@ -207,7 +208,7 @@ docs/                          用户指南、架构和故障处理
 <mode>/*.example.json          合约示例
 <mode>/scripts/                确定性生成器和审计器
 references/                    实现、回归和生命周期模式
-xverif/                        CLI request schema、example 和 adapter
+xverif/                        CLI/MCP request、profile 和 adapter
 wavepeek/                      波形 request schema、example 和 adapter
 spec-kit/                      Spec Kit 顶层编排、规格事实源和权限边界
 assets/                        Stage 0 治理资产

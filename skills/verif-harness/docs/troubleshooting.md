@@ -178,6 +178,35 @@ Probe 只确认 wrapper 存在并记录 Git commit/hash，不启动真实依赖�
 tool 检查 Python、Verdi/NPI、VDB/FSDB、license、LSF 和它要求的 environment
 keys。adapter 不会自动 fallback 到 MCP、其它 backend 或 fixture。
 
+## xverif MCP 返回 `MCP_SDK_MISSING`
+
+`xverif mcp install` 只安装锁定 checkout 中的 `xverif_mcp` source 和
+`tools/xverif-mcp` launcher，不会把 Python `mcp[cli]` 传递依赖偷偷安装到当前
+环境。请在 Codex/Kimi 实际使用的 Python 3.11+ 环境安装该依赖，再运行：
+
+```bash
+python3 scripts/verif_harness.py xverif mcp status --project-root .
+```
+
+不要把 `.mcp.json`、token、license 值或本机绝对路径提交到项目仓库。
+
+## xverif MCP 已配置但 `xverif_ping` 失败
+
+先确认 runtime 注册的是 `.deps/xverif/tools/xverif-mcp`，且 profile 的
+`XVERIF_HOME`/`PYTHONPATH`/`VERDI_HOME`/`PATH` 等环境变量在 MCP 子进程中显式可见。
+MCP server 不保证继承外层 shell 环境；direct 与 LSF 不能自动互换。先读取
+server 的原始错误，再分别检查 Python、Verdi/NPI、license、VDB/FSDB 或 LSF。
+`mcp status` 的 `READY_FOR_RUNTIME_REGISTRATION` 只表示 source/profile/SDK 合同
+通过，不表示 Agent host 已完成注册。
+
+## xverif MCP session 卡住或超时
+
+xdebug/xcov 使用独立 stdio-loop session。确认每次操作遵循
+`session_open -> query -> session_close`，不要复用错误 backend 的 session_id，
+也不要自动重试或自动切换 direct/LSF。检查 MCP 子进程显式传入的
+`XVERIF_MCP_STARTUP_TIMEOUT_SEC`、`XVERIF_MCP_REQUEST_TIMEOUT_SEC`、
+`XDEBUG_SESSION_START_TIMEOUT_SEC` 和 `XDEBUG_SESSION_IDLE_TIMEOUT_SEC`。
+
 ## xverif 返回 `PROTOCOL_ERROR`
 
 检查 request 的 `output_format` 是否与 native 参数一致：使用 `json` 时 native

@@ -28,6 +28,7 @@ def main() -> int:
         "scripts/check_wavepeek.py", "deps/spec-kit.lock.json",
         "deps/spec-kit.lock.schema.json", "scripts/setup_spec_kit.py",
         "scripts/check_spec_kit.py",
+        "skills/verif-harness/xverif/scripts/xverif_mcp.py",
     ):
         if not (ROOT / name).is_file():
             failures.append(f"missing managed-dependency file: {name}")
@@ -43,10 +44,17 @@ def main() -> int:
             failures.append("xverif lock commit is not a full lowercase object ID")
         if lock.get("license") != "MIT":
             failures.append("xverif lock license is not MIT")
+        if lock.get("schema_version") != 2:
+            failures.append("xverif lock must use schema version 2 for MCP support")
         if lock.get("tools") != [
             "xbit", "xentry", "xloc", "xsva", "xcov", "xdebug", "xwaveform",
         ]:
             failures.append("xverif lock tools do not match the reviewed wrapper set")
+        mcp = lock.get("mcp", {})
+        if mcp.get("launcher") != "tools/xverif-mcp":
+            failures.append("xverif lock must pin the reviewed MCP launcher")
+        if mcp.get("package") != "xverif_mcp":
+            failures.append("xverif lock must pin the reviewed MCP package")
     wavepeek_lock_path = ROOT / "deps/wavepeek.lock.json"
     if wavepeek_lock_path.is_file():
         lock = json.loads(wavepeek_lock_path.read_text(encoding="utf-8"))
