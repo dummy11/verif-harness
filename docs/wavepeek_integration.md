@@ -31,12 +31,23 @@ proprietary Verdi SDK and is outside public CI and the managed default.
 
 ## Adapter use
 
+Normal Agent CLI usage goes through the shortened Skill namespace:
+
+```text
+$verif-harness waveform probe
+```
+
+For CI or shell automation, the underlying wrapper remains available:
+
 ```bash
 python3 scripts/verif_harness.py wavepeek probe
 python3 scripts/verif_harness.py wavepeek run \
   --project-root . --request wavepeek-request.json \
   --out-dir artifacts/wavepeek/query-001
 ```
+
+In Codex or Kimi Code, use `$verif-harness waveform ...` for the reviewed
+waveform operation; the Skill delegates to the same bounded adapter.
 
 Start from `skills/verif-harness/wavepeek/wavepeek-request.example.json`. The
 request fixes the operation, native argv, working directory, explicitly

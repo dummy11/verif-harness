@@ -35,12 +35,12 @@ runtime-native Skill inside the Agent CLI:
 
 ```text
 # Codex
-$verif-harness spec-kit probe
-$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness probe
+$verif-harness bootstrap --project-root . --integration codex
 
 # Kimi Code
-/skill:verif-harness spec-kit probe
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness probe
+/skill:verif-harness bootstrap --project-root . --integration kimi
 ```
 
 The repository Python wrapper remains available for CI, automation, or hosts

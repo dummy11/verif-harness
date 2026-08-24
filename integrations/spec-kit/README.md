@@ -20,26 +20,32 @@ Spec Kit 被固定到 `deps/spec-kit.lock.json` 中的 release tag、完整 comm
 哈希，并安装到 Git 忽略的 `.deps/`：
 
 ```bash
-./scripts/setup.sh --with-spec-kit
+./scripts/setup.sh --no-agent
 make check-spec-kit
 ```
 
-上游要求 Python 3.11 或更新版本。安装器固定上游源码，但 Python 的传递依赖由
+上游要求 Python 3.11 或更新版本。顶层 setup 会安装全部受管集成；安装器固定上游源码，
+但 Python 的传递依赖由
 锁定版本的 `pyproject.toml` 解析；需要完全离线或供应链可复现时，维护者还应在
 受控环境生成并审阅 wheel/hash lock。
 
 ## 项目初始化与 Stage 工作流
 
-```bash
-python3 scripts/verif_harness.py spec-kit bootstrap --project-root /path/to/project
-python3 scripts/verif_harness.py spec-kit stage \
-  --project-root /path/to/project \
-  --stage 1 \
-  --objective "建立可编译、可运行的最小验证环境"
-python3 scripts/verif_harness.py spec-kit status --project-root /path/to/project
-python3 scripts/verif_harness.py spec-kit resume \
-  --project-root /path/to/project <run-id>
+```text
+# Codex
+$verif-harness bootstrap --project-root . --integration codex
+$verif-harness stage --project-root . --stage 1 --objective "建立可编译、可运行的最小验证环境"
+$verif-harness workflow-status --project-root .
+$verif-harness workflow-resume --project-root . <run-id>
+
+# Kimi Code
+/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness stage --project-root . --stage 1 --objective "建立可编译、可运行的最小验证环境"
+/skill:verif-harness workflow-status --project-root .
+/skill:verif-harness workflow-resume --project-root . <run-id>
 ```
+
+`python3 scripts/verif_harness.py spec-kit ...` 仅用于 CI、脚本自动化和高级诊断。
 
 `bootstrap --integration auto|codex|kimi` 解析 Codex 或 Kimi Code runtime，
 初始化对应 integration，并安装本目录的本地 RTL verification preset。`auto`

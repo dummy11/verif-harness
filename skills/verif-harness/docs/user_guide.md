@@ -48,7 +48,7 @@ $verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
 
 - 存在 `.harness-config.json`：默认执行只读 `doctor`；
 - 不存在 `.harness-config.json` 且不存在 `.specify/`：先进入
-  `spec-kit bootstrap`；Stage 0 task set 评审并获得执行授权后，由
+  `bootstrap`（内部：`spec-kit bootstrap`）；Stage 0 task set 评审并获得执行授权后，由
   `speckit.implement` 自动调度 `init`，不在 workflow 外重复手动调用；
 - 项目状态冲突或 stage 不明确：停止写入并报告冲突。
 
@@ -179,7 +179,7 @@ python3 scripts/verif_harness.py runtime status --project-root .
 integration。推荐流程：
 
 1. 在 Spec Kit review gate 暂停，确认没有 command step 正在执行；
-2. 记录 run ID 并运行 `spec-kit status`；
+2. 记录 run ID 并运行 `workflow-status`；
 3. 按 Agent runtime 官方方法选择新模型；
 4. 运行 `runtime status` 和 runtime-native `verif-harness doctor`；
 5. 恢复原 workflow，不重建已批准 spec/task，不重复执行完成的 mode，不重写
@@ -192,8 +192,8 @@ reviewed/frozen baseline 后如新模型产生仓库差异，必须进入 `chang
 
 先在目标目录安装 verif-harness Skill，再在稳定 review gate 执行：
 
-```bash
-python3 scripts/verif_harness.py spec-kit status --project-root <project>
+```text
+$verif-harness workflow-status --project-root <project>
 python3 scripts/verif_harness.py runtime status --project-root <project>
 python3 scripts/verif_harness.py runtime switch \
   --project-root <project> --to <codex|kimi>
@@ -213,8 +213,8 @@ wrapper 委派固定版本 Spec Kit 的 `integration switch`，并在返回后�
 新项目最容易混淆的三条指令是：
 
 ```text
-spec-kit bootstrap
-spec-kit stage --stage 0
+$verif-harness bootstrap
+$verif-harness stage --stage 0
 $verif-harness init
 ```
 
@@ -232,13 +232,13 @@ bootstrap：安装规格系统
 
 | 指令 | 解决的问题 | 主要输入 | 主要输出 |
 | --- | --- | --- | --- |
-| `spec-kit bootstrap` | 项目用什么 runtime、规格工具、模板和 workflow | 现有项目根目录、runtime 选择 | `.specify/`、runtime-native Spec Kit skills、`verif-harness-rtl` preset |
-| `spec-kit stage --stage 0` | 项目要验证什么、依据什么、怎样规划和验收 | Stage 0 objective、规格来源、只读 RTL 边界 | constitution、spec、plan、tasks、checklist、workflow run |
+| `bootstrap` | 项目用什么 runtime、规格工具、模板和 workflow | 现有项目根目录、runtime 选择 | `.specify/`、runtime-native Spec Kit skills、`verif-harness-rtl` preset |
+| `stage --stage 0` | 项目要验证什么、依据什么、怎样规划和验收 | Stage 0 objective、规格来源、只读 RTL 边界 | constitution、spec、plan、tasks、checklist、workflow run |
 | `$verif-harness init` | 怎样把 reviewed Stage 0 task 落成可工作的验证工程 | reviewed specs、DUT/目录元数据、task contract | `.harness-config.json`、`AGENTS.md`、`.harness/`、派生治理视图、review packet、M1.1 scaffold |
 
 一句话概括：`bootstrap` 建工具，`stage 0` 定规格，`init` 按规格建工程。
 
-### 1. `spec-kit bootstrap`：安装规格基础设施
+### 1. `bootstrap`：安装规格基础设施（内部路由到 `spec-kit bootstrap`）
 
 进入 Codex/Kimi CLI 后，使用 runtime-native Skill 调用；不要退出 CLI 再手动执行
 Python wrapper：
@@ -284,7 +284,7 @@ simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.jso
 仿真证据或 Stage approval。它是一次性的基础设施安装；已有 `.specify/` 时会拒绝
 覆盖，不能用强制重跑代替迁移评审。
 
-### 2. `spec-kit stage --stage 0`：运行 Stage 0 规格生命周期
+### 2. `stage --stage 0`：运行 Stage 0 规格生命周期（内部路由到 `spec-kit stage`）
 
 进入 CLI 后调用 Skill，且必须包含 reviewed objective：
 
@@ -314,12 +314,14 @@ constitution -> review
 
 每个 review gate 都让 run 进入 paused 状态。先检查工件，再恢复同一个 run：
 
-```bash
-python3 scripts/verif_harness.py spec-kit status \
-  --project-root /path/to/project
+```text
+# Codex
+$verif-harness workflow-status --project-root .
+$verif-harness workflow-resume --project-root . <run-id>
 
-python3 scripts/verif_harness.py spec-kit resume \
-  --project-root /path/to/project <run-id>
+# Kimi Code
+/skill:verif-harness workflow-status --project-root .
+/skill:verif-harness workflow-resume --project-root . <run-id>
 ```
 
 主要规格输出位于：
@@ -1248,8 +1250,8 @@ python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
 
 也可经开源项目根 CLI 进入同一 adapter：
 
-```bash
-python3 scripts/verif_harness.py xverif probe --tool xbit  # 经项目根 CLI probe xbit
+```text
+$verif-harness evidence probe --tool xbit  # 经 Skill 调用 xverif probe
 ```
 
 #### xverif MCP 安装、配置和使用
@@ -1355,7 +1357,10 @@ hash/空 feature 集/四个平台官方 release archive SHA-256 的
 # wavepeek Skill：安装固定版本、验证 schema，并确认 adapter 可用
 ./scripts/setup.sh --no-agent
 # 或：make setup-wavepeek check-wavepeek
-python3 scripts/verif_harness.py wavepeek probe  # 只执行身份/schema smoke
+```
+
+```text
+$verif-harness waveform probe  # 只执行身份/schema smoke
 ```
 
 安装器只在 source 和 binary 都不存在时工作：clone exact tagged commit，校验
@@ -1444,11 +1449,11 @@ $verif-harness workflow-resume --project-root . <run-id>
 自动化入口。
 
 ```text
-$verif-harness spec-kit probe                                      # Skill：校验固定版本 Spec Kit
-$verif-harness spec-kit bootstrap --project-root <project>         # Skill：初始化所选 Spec Kit runtime 与 preset
-$verif-harness spec-kit stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
-$verif-harness spec-kit status [run-id]                            # Skill：查看 Spec Kit workflow 状态
-$verif-harness spec-kit resume <run-id>                            # Skill：review 后恢复 paused workflow
+$verif-harness probe                                      # Skill：校验固定版本规格工具
+$verif-harness bootstrap --project-root <project>         # Skill：初始化规格 runtime 与 preset
+$verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
+$verif-harness workflow-status [run-id]                   # Skill：查看 workflow 状态
+$verif-harness workflow-resume <run-id>                   # Skill：review 后恢复 paused workflow
 ```
 
 `bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的

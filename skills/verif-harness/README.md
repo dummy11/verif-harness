@@ -62,9 +62,9 @@ $verif-harness waveform probe             # 内部：wavepeek probe
 | `add-env-layer` | 生成 env、scoreboard/coverage shell、base test 和 `tb_top` | 建立最小 UVM 顶层 | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | 生成规范 filelist 和 compile-only target | 闭合首次编译 | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | 只读检查配置、阶段、文档和 RTL dirtiness | 接手、恢复或诊断项目 | `$verif-harness doctor` |
-| `spec-kit` | 在 verif-harness 顶层控制面下管理规格生命周期 | 建立或推进 Stage 规格驱动流程 | `$verif-harness spec-kit stage` |
-| `xverif` | 通过受控 CLI adapter 或 MCP profile 调用固定版本 xverif | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness xverif probe --tool xbit` |
-| `wavepeek` | 通过受控 CLI adapter 调用固定版本 WavePeek | 对 VCD/FST 做有界、可复现的波形查询 | `$verif-harness wavepeek probe` |
+| `spec-kit` | 在 verif-harness 顶层控制面下管理规格生命周期 | 建立或推进 Stage 规格驱动流程 | `$verif-harness bootstrap` |
+| `xverif` | 通过受控 CLI adapter 或 MCP profile 调用固定版本 xverif | bit/debug/coverage/SVA/日志等事实查询 | `$verif-harness evidence probe --tool xbit` |
+| `wavepeek` | 通过受控 CLI adapter 调用固定版本 WavePeek | 对 VCD/FST 做有界、可复现的波形查询 | `$verif-harness waveform probe` |
 | `add-regression-runner` | 添加隔离回归、seed、结果收集和失败重跑 | 从单测扩展到批量回归 | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | 生成 simulator command/capability profile | 增加一个评审后的 simulator 配置 | `$verif-harness add-simulator-profile` |
 | `add-testcase` | 生成 test/vseq 并加入 candidate list | 实现一个计划内场景 | `$verif-harness add-testcase` |
@@ -138,14 +138,14 @@ Codex 中调用 `$verif-harness <mode>`，Kimi Code 中调用
 
 ```text
 # Codex
-$verif-harness spec-kit probe
-$verif-harness spec-kit bootstrap --project-root . --integration codex
-$verif-harness spec-kit stage --project-root . --stage 1 --objective "最小可运行环境"
+$verif-harness probe
+$verif-harness bootstrap --project-root . --integration codex
+$verif-harness stage --project-root . --stage 1 --objective "最小可运行环境"
 
 # Kimi Code
-/skill:verif-harness spec-kit probe
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
-/skill:verif-harness spec-kit stage --project-root . --stage 1 --objective "最小可运行环境"
+/skill:verif-harness probe
+/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness stage --project-root . --stage 1 --objective "最小可运行环境"
 ```
 
 `python3 scripts/verif_harness.py ...` 仅作为 CI、脚本自动化或没有 Agent CLI 时的
@@ -180,8 +180,8 @@ xverif CLI 和 xverif_mcp 执行底层确定性操作。权威上游是
 七个 wrapper、MCP package layout、`tools/xverif-mcp` launcher 和真实 `xbit`
 smoke。之后可省略 `--xverif-root`：
 
-```bash
-python3 scripts/verif_harness.py xverif probe --tool xbit
+```text
+$verif-harness evidence probe --tool xbit
 ```
 
 MCP source/profile 生命周期：
@@ -217,7 +217,10 @@ kleverhq/wavepeek
 
 ```bash
 ./scripts/setup.sh --runtime codex
-python3 scripts/verif_harness.py wavepeek probe
+```
+
+```text
+$verif-harness waveform probe
 ```
 
 源码位于 `.deps/wavepeek`，编译后的 CLI 位于

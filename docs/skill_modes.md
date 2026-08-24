@@ -25,9 +25,9 @@ DUT RTL root. Review and approval remain Human responsibilities.
 | `add-env-layer` | Generate env, scoreboard/coverage shells, tests, and thin `tb_top` | Assemble the first UVM environment | `$verif-harness add-env-layer` |
 | `finalize-filelist-and-make` | Generate compile-order filelists and a compile-only target | Close the M1.1 compile loop | `$verif-harness finalize-filelist-and-make` |
 | `doctor` | Audit config, documents, stage state, legacy files, and RTL dirtiness | Resume or diagnose a project | `$verif-harness doctor` |
-| `spec-kit` | Manage the single specification source below the verif-harness control plane | Bootstrap or advance a reviewed Stage specification workflow | `$verif-harness spec-kit stage` |
-| `xverif` | Delegate one reviewed request to the commit-pinned managed xverif CLI or manage its MCP source/profile lifecycle | Need deterministic bit/debug/coverage/entry/log/SVA/waveform evidence or Codex/Kimi MCP access | `$verif-harness xverif probe --tool xbit` |
-| `wavepeek` | Delegate one bounded query to commit-pinned WavePeek and capture provenance | Need deterministic VCD/FST hierarchy, value, change, property, or transfer evidence | `$verif-harness wavepeek probe` |
+| `spec-kit` | Manage the single specification source below the verif-harness control plane | Bootstrap or advance a reviewed Stage specification workflow | `$verif-harness bootstrap` |
+| `xverif` | Delegate one reviewed request to the commit-pinned managed xverif CLI or manage its MCP source/profile lifecycle | Need deterministic bit/debug/coverage/entry/log/SVA/waveform evidence or Codex/Kimi MCP access | `$verif-harness evidence probe --tool xbit` |
+| `wavepeek` | Delegate one bounded query to commit-pinned WavePeek and capture provenance | Need deterministic VCD/FST hierarchy, value, change, property, or transfer evidence | `$verif-harness waveform probe` |
 | `add-regression-runner` | Add isolated seeded regression and strict result collection | Move from single tests to repeatable batches | `$verif-harness add-regression-runner` |
 | `add-simulator-profile` | Generate a normalized command/capability profile | Add a reviewed simulator configuration without claiming support | `$verif-harness add-simulator-profile` |
 | `add-testcase` | Add a test/vseq skeleton to a candidate list | Implement a planned scenario | `$verif-harness add-testcase` |

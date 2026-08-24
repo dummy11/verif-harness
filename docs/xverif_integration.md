@@ -130,9 +130,16 @@ direct/LSF 或把 MCP response 直接当作 closure。
 
 ## Probe
 
+Normal Agent CLI usage goes through the shortened Skill namespace:
+
+```text
+$verif-harness evidence probe --tool xbit
+```
+
+For CI or shell automation, the underlying wrapper remains available:
+
 ```bash
-python3 scripts/verif_harness.py xverif probe \
-  --tool xbit
+python3 scripts/verif_harness.py xverif probe --tool xbit
 ```
 
 Probe checks only that `tools/xbit` exists and is executable. It records the
@@ -150,6 +157,10 @@ python3 scripts/verif_harness.py xverif run \
   --request xverif-request.json \
   --out-dir artifacts/xverif/xbit-conv-001
 ```
+
+This lower-level form is intended for CI/automation. In Codex or Kimi Code,
+delegate the reviewed request with `$verif-harness evidence ...` and let the
+Skill preserve the same adapter contract and evidence paths.
 
 The output directory must not exist. It receives `result.json`, `stdout.log`,
 and `stderr.log`. The result contains request and stdin hashes, exact argv,
