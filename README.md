@@ -101,38 +101,6 @@ verif-harness Skill / control plane
 Commercial simulator licenses, scheduler configuration, and private wrappers
 are intentionally not included.
 
-## Quick start
-
-```bash
-git clone https://github.com/dummy11/verif-harness.git
-cd verif-harness
-./scripts/setup.sh --runtime codex
-```
-
-选择 Kimi Code 时使用：
-
-```bash
-./scripts/setup.sh --runtime kimi
-```
-
-`setup.sh` 会安装全部默认依赖（Spec Kit、xverif CLI、xverif MCP 和
-WavePeek），创建当前 runtime 的 Skill 入口，然后直接启动对应的 Agent CLI。
-进入 Codex 后调用 `$verif-harness`；进入 Kimi Code 后调用
-`/skill:verif-harness`。
-
-如果只需要安装并运行开源 smoke example，不启动 Agent：
-
-```bash
-./scripts/setup.sh --no-agent
-./scripts/run_example.sh
-```
-
-Expected result with Verilator installed:
-
-```text
-SIMPLE_FIFO_SMOKE PASS
-```
-
 ## Install in the current working directory
 
 ```bash
