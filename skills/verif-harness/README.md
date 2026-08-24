@@ -107,10 +107,6 @@ incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声
 
 ```bash
 ./scripts/setup.sh --runtime codex
-python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root . --integration codex
-python3 scripts/verif_harness.py spec-kit stage \
-  --project-root . --stage 1 --objective "最小可运行环境"
 ```
 
 `setup.sh --runtime codex|kimi` 默认安装 Spec Kit、xverif CLI/MCP、`mcp[cli]`
@@ -118,6 +114,23 @@ python3 scripts/verif_harness.py spec-kit stage \
 Codex 中调用 `$verif-harness <mode>`，Kimi Code 中调用
 `/skill:verif-harness <mode>`。自动化或只做依赖安装时使用
 `./scripts/setup.sh --no-agent`。
+
+进入 CLI 后，正常入口是 Skill 调用：
+
+```text
+# Codex
+$verif-harness spec-kit probe
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness spec-kit stage --project-root . --stage 1 --objective "最小可运行环境"
+
+# Kimi Code
+/skill:verif-harness spec-kit probe
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness spec-kit stage --project-root . --stage 1 --objective "最小可运行环境"
+```
+
+`python3 scripts/verif_harness.py ...` 仅作为 CI、脚本自动化或没有 Agent CLI 时的
+底层 wrapper 入口，不是 setup 后的默认交互方式。
 
 ## xverif 集成
 

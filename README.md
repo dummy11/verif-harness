@@ -158,16 +158,21 @@ Kimi Code 使用：
 默认 setup 不覆盖已有的受管 checkout；如果检测到 dirty、错误 commit 或错误
 license，会 fail closed。只安装依赖而不启动 Agent 时使用 `--no-agent`。
 
-安装完成并进入 Agent CLI 后，第一次项目操作通常是：
+安装完成后，setup 已经进入所选 Agent CLI。不要退出 CLI 回到 shell 执行下面的
+Python wrapper；在 CLI 内调用对应的 Skill：
 
-```bash
-python3 scripts/verif_harness.py spec-kit probe
-python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root . --integration codex
+```text
+# Codex CLI
+$verif-harness spec-kit probe
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+
+# Kimi Code CLI
+/skill:verif-harness spec-kit probe
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
 ```
 
-Kimi Code 把 `codex` 改为 `kimi`。如果 setup 已经直接启动 Agent，应在 Agent
-CLI 内调用对应 Skill，而不是退出 CLI 再手动执行这些命令。
+Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
+入口。
 
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
 control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;

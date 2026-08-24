@@ -30,7 +30,21 @@ Spec Kit owns the editable specification lifecycle.
   the named artifact before choosing a gate verdict; resuming does not approve
   the Stage.
 
-Use the repository CLI:
+When operating through Codex or Kimi Code, invoke this mode through the
+runtime-native Skill inside the Agent CLI:
+
+```text
+# Codex
+$verif-harness spec-kit probe
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+
+# Kimi Code
+/skill:verif-harness spec-kit probe
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+```
+
+The repository Python wrapper remains available for CI, automation, or hosts
+without an Agent CLI:
 
 ```bash
 python3 scripts/verif_harness.py spec-kit probe

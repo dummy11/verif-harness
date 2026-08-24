@@ -152,13 +152,21 @@ Spec Kit 的 `.specify/integration.json` 是项目 runtime 唯一事实源；不
 `.harness-config.json` 里复制一份 runtime 配置。Codex 的 integration key 是
 `codex`，Kimi Code 是 `kimi`。
 
-新项目先把同一份 verif-harness Skill 放到 runtime-native 目录，再 bootstrap：
+新项目由 `setup.sh --runtime codex|kimi` 创建 runtime-native Skill 入口并启动
+Agent CLI；进入 CLI 后再调用 bootstrap：
+
+```text
+# Codex
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+
+# Kimi Code
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+```
+
+runtime 状态检查仍可通过底层 wrapper 执行：
 
 ```bash
-python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root /path/to/project --integration <auto|codex|kimi>
-python3 scripts/verif_harness.py runtime status \
-  --project-root /path/to/project
+python3 scripts/verif_harness.py runtime status --project-root .
 ```
 
 `auto` 只接受唯一证据：`.agents/` 或 `.codex/` 表示 Codex，`.kimi-code/`
@@ -232,13 +240,19 @@ bootstrap：安装规格系统
 
 ### 1. `spec-kit bootstrap`：安装规格基础设施
 
-完整命令：
+进入 Codex/Kimi CLI 后，使用 runtime-native Skill 调用；不要退出 CLI 再手动执行
+Python wrapper：
 
-```bash
-python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root /path/to/project \
-  --integration <auto|codex|kimi>
+```text
+# Codex
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+
+# Kimi Code
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
 ```
+
+`python3 scripts/verif_harness.py spec-kit bootstrap ...` 仅保留给 CI、脚本自动化
+或无 Agent CLI 的底层入口。
 
 显式业务输入是项目根目录和 runtime；Python script mode、固定版本 Spec Kit、
 `verif-harness-rtl` preset 和 preset priority 由 verif-harness 提供。
@@ -272,12 +286,15 @@ simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.jso
 
 ### 2. `spec-kit stage --stage 0`：运行 Stage 0 规格生命周期
 
-完整命令必须包含 reviewed objective：
+进入 CLI 后调用 Skill，且必须包含 reviewed objective：
 
-```bash
-python3 scripts/verif_harness.py spec-kit stage \
-  --project-root /path/to/project \
-  --stage 0 \
+```text
+# Codex
+$verif-harness spec-kit stage --project-root . --stage 0 \
+  --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
+
+# Kimi Code
+/skill:verif-harness spec-kit stage --project-root . --stage 0 \
   --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
 ```
 
@@ -1402,20 +1419,29 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 
 ```bash
 ./scripts/setup.sh --no-agent
-python3 scripts/verif_harness.py spec-kit probe
-python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root <project> --integration <auto|codex|kimi>
-python3 scripts/verif_harness.py spec-kit stage \
-  --project-root <project> \
-  --stage 2 \
-  --objective "接入 reference model 并建立可追踪功能对拍"
-python3 scripts/verif_harness.py spec-kit status --project-root <project>
-python3 scripts/verif_harness.py spec-kit resume \
-  --project-root <project> <run-id>
 ```
 
-对应 Codex 调用如下；Kimi Code 将每行开头的 `$verif-harness` 替换为
-`/skill:verif-harness`：
+`--no-agent` 仅用于不启动 CLI 的自动化安装。正常 setup 使用
+`--runtime codex|kimi` 后，进入对应 CLI 调用 Skill：
+
+```text
+# Codex
+$verif-harness spec-kit probe
+$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness spec-kit stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+$verif-harness spec-kit status --project-root .
+$verif-harness spec-kit resume --project-root . <run-id>
+
+# Kimi Code
+/skill:verif-harness spec-kit probe
+/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness spec-kit stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+/skill:verif-harness spec-kit status --project-root .
+/skill:verif-harness spec-kit resume --project-root . <run-id>
+```
+
+如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
+自动化入口。
 
 ```text
 $verif-harness spec-kit probe                                      # Skill：校验固定版本 Spec Kit
