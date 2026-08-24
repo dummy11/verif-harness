@@ -178,6 +178,13 @@ $verif-harness bootstrap --project-root . --integration codex
 Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
 入口。
 
+安装完成后，请直接阅读并按用户指南操作：
+
+[verif-harness 用户指南](skills/verif-harness/docs/user_guide.md)
+
+该指南覆盖从 Stage 0 初始化、规格评审、验证工程生成到回归、签核和 freeze 的
+完整流程。普通用户不需要直接调用 Spec Kit、xverif 或 WavePeek 的底层命令。
+
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
 control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
 xverif, WavePeek, and simulators produce bounded evidence. After execution
@@ -187,79 +194,6 @@ validation command, so successful workflows need no duplicate manual calls.
 Human reviewers keep
 semantic decisions, waivers, gates, sign-off, and freeze authority. See
 [integrations/spec-kit/README.md](integrations/spec-kit/README.md).
-
-## Generate a DUT integration skeleton
-
-```bash
-python3 scripts/verif_harness.py init my_dut --output ./work
-```
-
-The command creates additive, non-overwriting files under `interfaces/`,
-`sva/`, `bind/`, `tb/`, and `filelists/`. It does not parse or modify DUT RTL.
-Review and replace every TODO against the approved DUT specification.
-
-## Delegate to xverif
-
-`verif-harness` remains the planning and governance framework. Its CLI adapter
-can execute one reviewed operation from the managed xverif checkout while
-capturing argv, Git identity, wrapper and artifact hashes, and native output:
-
-```bash
-python3 scripts/verif_harness.py xverif probe \
-  --tool xbit
-```
-
-xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
-`xwaveform`), not a single `xverif` executable. See
-[docs/xverif_integration.md](docs/xverif_integration.md).
-The pinned checkout is a managed dependency, not vendored verif-harness
-source; attribution and proprietary-EDA boundaries are recorded in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-The same checkout provides the managed FastMCP server. The default setup already
-installs its source and `mcp[cli]`; create a non-secret profile:
-
-```bash
-python3 scripts/verif_harness.py xverif mcp install --project-root .
-python3 scripts/verif_harness.py xverif mcp configure \
-  --project-root . --runtime codex --backend direct
-python3 scripts/verif_harness.py xverif mcp status --project-root .
-```
-
-Use `--runtime kimi` for Kimi Code. Runtime registration remains host-managed;
-after registering the stdio server, call `xverif_ping` and then `xverif_tools`.
-
-## Inspect a waveform with WavePeek
-
-WavePeek is a separate deterministic CLI for bounded VCD/FST queries. After
-managed setup, probe it or execute a reviewed request:
-
-```bash
-python3 scripts/verif_harness.py wavepeek probe
-python3 scripts/verif_harness.py wavepeek run \
-  --project-root . \
-  --request skills/verif-harness/wavepeek/wavepeek-request.example.json \
-  --out-dir artifacts/wavepeek/schema-smoke
-```
-
-The adapter captures Git and binary identity plus stdout/stderr hashes. Its
-PASS is execution evidence, not a waveform interpretation or sign-off. See
-[docs/wavepeek_integration.md](docs/wavepeek_integration.md).
-
-## Adding a new DUT
-
-1. Generate or create `tb/harness/<dut>_tb_harness.sv`.
-2. Instantiate protocol interfaces in the harness.
-3. Instantiate the DUT and preserve its original port order.
-4. Connect clock/reset and document tie-offs.
-5. Add checker and bind targets.
-6. Publish virtual interfaces through `uvm_config_db` when UVM is enabled.
-7. Add an explicit compile-order filelist.
-8. Keep `<dut>_tb_top.sv` thin.
-9. Add and run a deterministic smoke test.
-
-See [docs/dut_integration.md](docs/dut_integration.md) for the complete review
-checklist.
 
 ## Simulator support
 
