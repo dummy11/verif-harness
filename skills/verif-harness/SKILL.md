@@ -159,7 +159,7 @@ mode. Do not repair findings unless the user asks.
 Read `xverif/INSTRUCTIONS.md`, the request schema, and
 `references/xverif-adapter-contract.md`. Route one reviewed operation to the
 allowlisted CLI wrapper under the commit-pinned managed `BLANK2077/xverif`
-checkout. The same pinned checkout includes the optional `xverif_mcp` server;
+checkout. The same pinned checkout includes the managed `xverif_mcp` server;
 use `xverif mcp install|configure|status|probe` for its explicit source/profile
 lifecycle. When operating in the verif-harness repository, use
 `scripts/setup_xverif.py` and `deps/xverif.lock.json`; do not clone a moving
@@ -341,10 +341,10 @@ Stage 2+ implementation and evidence contracts, read
 - `references/wavepeek-adapter-contract.md`: WavePeek request/result、JSONL
   完整性、provenance 与权限边界。
 - `wavepeek/`: request schema、example 和 deterministic waveform CLI adapter。
-- Repository `deps/xverif.lock.json` and `scripts/setup_xverif.py`: optional
-  managed dependency identity, installation, and validation.
-- Repository `deps/wavepeek.lock.json` and `scripts/setup_wavepeek.py`: optional
-  managed WavePeek source/release identity, installation, and validation.
+- Repository `deps/xverif.lock.json` and `scripts/setup_xverif.py`: managed
+  dependency identity, installation, and validation.
+- Repository `deps/wavepeek.lock.json` and `scripts/setup_wavepeek.py`: managed
+  WavePeek source/release identity, installation, and validation.
 - `spec-kit/`: Spec Kit 规格事实源、Stage workflow 和权限边界。
 - Repository `deps/spec-kit.lock.json`, `scripts/setup_spec_kit.py`, and
   `integrations/spec-kit/`: optional managed specification subsystem, RTL

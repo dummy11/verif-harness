@@ -47,8 +47,9 @@ python3 scripts/verif_harness.py xverif mcp configure \
 `configure` writes `.harness/mcp/xverif.json`. It does not edit Codex/Kimi
 private settings, store credentials, or invent a runtime-specific config file.
 Register the profile's stdio server in the active runtime using its documented
-MCP configuration mechanism, then install the separately managed `mcp[cli]`
-Python dependency in that runtime environment.
+MCP configuration mechanism. The default repository setup installs the
+separately managed `mcp[cli]` Python dependency; if `--no-agent` setup used a
+different Python environment, install it there before registration.
 
 Check the source/profile contract:
 
@@ -64,7 +65,7 @@ the Agent host registered the server.
 ## Procedure
 
 1. In a complete verif-harness checkout, run
-   `./scripts/setup.sh --with-xverif`. This reads `deps/xverif.lock.json`,
+   `./scripts/setup.sh --no-agent`. This reads `deps/xverif.lock.json`,
    installs the exact detached commit under `.deps/xverif`, and validates
    origin, clean state, MIT License hash, and wrappers. In a standalone Skill
    installation, identify an equivalent approved checkout and set

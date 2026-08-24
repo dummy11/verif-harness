@@ -136,11 +136,11 @@ def resolve_install(project_root: Path, root_arg: Path | None, binary_arg: Path 
     roots = [root_arg] if root_arg else ([Path(os.environ["WAVEPEEK_HOME"])] if "WAVEPEEK_HOME" in os.environ else [project_root / ".deps/wavepeek", Path.cwd() / ".deps/wavepeek", Path(__file__).resolve().parents[4] / ".deps/wavepeek"])
     root = next((item.expanduser().resolve() for item in roots if item is not None and item.expanduser().resolve().is_dir()), None)
     if root is None:
-        fail("WavePeek source root not found; run scripts/setup.sh --with-wavepeek, set WAVEPEEK_HOME, or pass --wavepeek-root")
+        fail("WavePeek source root not found; run scripts/setup.sh --no-agent, set WAVEPEEK_HOME, or pass --wavepeek-root")
     binaries = [binary_arg] if binary_arg else ([Path(os.environ["WAVEPEEK_BIN"])] if "WAVEPEEK_BIN" in os.environ else [root.parent / "wavepeek-bin/wavepeek"])
     binary = next((item.expanduser().resolve() for item in binaries if item is not None and item.expanduser().resolve().is_file()), None)
     if binary is None:
-        fail("WavePeek executable not found; run scripts/setup.sh --with-wavepeek, set WAVEPEEK_BIN, or pass --wavepeek-binary")
+        fail("WavePeek executable not found; run scripts/setup.sh --no-agent, set WAVEPEEK_BIN, or pass --wavepeek-binary")
     return root, binary
 
 

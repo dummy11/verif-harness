@@ -22,15 +22,15 @@ Code and is not written into `.harness-config.json` or Spec Kit specifications.
 
 ## Bootstrap a new project
 
-Install the verif-harness Skill at exactly one runtime-native project path,
-then bootstrap with automatic detection:
+Run setup from the cloned verif-harness checkout. It installs all managed
+dependencies, creates the selected runtime-native Skill link, and immediately
+starts the selected Agent CLI:
 
 ```bash
-python3 .tools/verif-harness/scripts/verif_harness.py spec-kit bootstrap \
-  --project-root . --integration auto
+./scripts/setup.sh --runtime codex
 ```
 
-`auto` resolves in this order:
+When `--runtime auto` is used, setup resolves the CLI in this order:
 
 1. an existing `.specify/integration.json` record;
 2. exactly one project marker: `.agents/` or `.codex/` for Codex, or
@@ -40,24 +40,24 @@ python3 .tools/verif-harness/scripts/verif_harness.py spec-kit bootstrap \
 For an empty project without a runtime marker, choose explicitly:
 
 ```bash
-python3 .tools/verif-harness/scripts/verif_harness.py spec-kit bootstrap \
-  --project-root . --integration kimi
+./scripts/setup.sh --runtime kimi
 ```
 
-Bootstrap passes the resolved integration to Spec Kit, installs the local RTL
-verification preset, and verifies that `.specify/integration.json` records the
-same runtime. It refuses an existing `.specify/` project rather than replacing
-its specifications or integration state.
+After the CLI starts, invoke `$verif-harness` in Codex or
+`/skill:verif-harness` in Kimi Code. The first project command is normally
+`spec-kit bootstrap`; it installs the local RTL verification preset and records
+the selected runtime in `.specify/integration.json`. It refuses an existing
+`.specify/` project rather than replacing its specifications or integration
+state.
 
-`--ignore-agent-tools` exists only for CI and scaffold validation on hosts that
-do not install either Agent CLI. Normal bootstrap must omit it so a missing
-Codex or Kimi Code executable is reported before project initialization.
+For dependency-only automation, use `./scripts/setup.sh --no-agent`; this skips
+the final CLI launch but still installs and verifies Spec Kit, xverif CLI/MCP,
+`mcp[cli]`, and WavePeek.
 
 Inspect the result without changing the project:
 
 ```bash
-python3 .tools/verif-harness/scripts/verif_harness.py runtime status \
-  --project-root .
+python3 scripts/verif_harness.py runtime status --project-root .
 ```
 
 ## Change the model within one runtime
@@ -82,18 +82,14 @@ or approve verification evidence by itself.
 
 ## Switch between Codex and Kimi Code
 
-First install the same verif-harness Skill at the target runtime path. Then
-switch only from a stable review gate with no command step running:
+Use setup once for the target runtime, then switch only from a stable review
+gate with no command step running:
 
 ```bash
-python3 .tools/verif-harness/scripts/verif_harness.py spec-kit status \
-  --project-root .
-python3 .tools/verif-harness/scripts/verif_harness.py runtime status \
-  --project-root .
-python3 .tools/verif-harness/scripts/verif_harness.py runtime switch \
-  --project-root . --to kimi
-python3 .tools/verif-harness/scripts/verif_harness.py runtime status \
-  --project-root .
+python3 scripts/verif_harness.py spec-kit status --project-root .
+python3 scripts/verif_harness.py runtime status --project-root .
+python3 scripts/verif_harness.py runtime switch --project-root . --to kimi
+python3 scripts/verif_harness.py runtime status --project-root .
 ```
 
 The switch delegates to the pinned Spec Kit `integration switch` command. Spec

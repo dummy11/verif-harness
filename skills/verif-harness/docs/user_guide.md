@@ -1204,7 +1204,7 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 
 ```bash
 # xverif Skill：安装并验证 commit-pinned managed dependency
-./scripts/setup.sh --with-xverif
+./scripts/setup.sh --no-agent
 # 或：make setup-xverif check-xverif
 ```
 
@@ -1242,7 +1242,6 @@ python3 scripts/verif_harness.py xverif probe --tool xbit  # 经项目根 CLI pr
 
 ```bash
 python3 scripts/verif_harness.py xverif mcp install --project-root .
-python3 -m pip install "mcp[cli]"  # 在 Codex/Kimi 使用的 Python 3.11+ 环境
 python3 scripts/verif_harness.py xverif mcp configure \
   --project-root . --runtime codex --backend direct
 python3 scripts/verif_harness.py xverif mcp status --project-root .
@@ -1337,7 +1336,7 @@ hash/空 feature 集/四个平台官方 release archive SHA-256 的
 
 ```bash
 # wavepeek Skill：安装固定版本、验证 schema，并确认 adapter 可用
-./scripts/setup.sh --with-wavepeek
+./scripts/setup.sh --no-agent
 # 或：make setup-wavepeek check-wavepeek
 python3 scripts/verif_harness.py wavepeek probe  # 只执行身份/schema smoke
 ```
@@ -1402,7 +1401,7 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 **用法**：
 
 ```bash
-./scripts/setup.sh --with-spec-kit
+./scripts/setup.sh --no-agent
 python3 scripts/verif_harness.py spec-kit probe
 python3 scripts/verif_harness.py spec-kit bootstrap \
   --project-root <project> --integration <auto|codex|kimi>

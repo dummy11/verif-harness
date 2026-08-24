@@ -169,7 +169,7 @@ def status(args: argparse.Namespace) -> int:
     payload["state"] = "READY_FOR_RUNTIME_REGISTRATION" if sdk_available else "MCP_SDK_MISSING"
     if not sdk_available:
         payload["blockers"] = [
-            "install the separately managed Python dependency mcp[cli] in the runtime environment"
+            "install the separately managed Python dependency mcp[cli] in the runtime environment (setup.sh installs it by default)"
         ]
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if sdk_available else 1
@@ -189,7 +189,7 @@ def install(args: argparse.Namespace) -> int:
         return result.returncode
     print(json.dumps({
         "state": "INSTALLED_SOURCE",
-        "notice": "xverif_mcp source and launcher are installed; mcp[cli] remains a separately managed Python dependency.",
+        "notice": "xverif_mcp source and launcher are installed; setup.sh installs the separately managed mcp[cli] dependency by default.",
     }, indent=2, sort_keys=True))
     return 0
 

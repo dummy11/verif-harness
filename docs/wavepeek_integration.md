@@ -1,6 +1,6 @@
 # WavePeek integration
 
-WavePeek is an optional, separately owned deterministic CLI for bounded RTL
+WavePeek is a separately owned deterministic CLI for bounded RTL
 waveform inspection. verif-harness supplies lifecycle policy, a closed request
 contract, provenance capture, and fail-closed execution; WavePeek owns VCD/FST
 parsing and queries.
@@ -12,7 +12,7 @@ Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WaveP
 ## Managed setup
 
 ```bash
-./scripts/setup.sh --with-wavepeek
+./scripts/setup.sh --runtime codex   # or --runtime kimi
 # or
 make setup-wavepeek check-wavepeek
 ```

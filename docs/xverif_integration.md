@@ -18,7 +18,7 @@ The authoritative upstream is `https://github.com/BLANK2077/xverif.git`. It expo
 a family of wrappers under `tools/`; there is no assumed executable named
 `xverif`.
 
-xverif is integrated as an optional managed source dependency. Its source,
+xverif is integrated as a managed source dependency. Its source,
 history, license, releases, and issue tracking remain owned by the upstream
 project; verif-harness stores only a reviewed lock and installs the checkout
 under the Git-ignored `.deps/` directory.
@@ -26,7 +26,7 @@ under the Git-ignored `.deps/` directory.
 ## Install the pinned dependency
 
 ```bash
-./scripts/setup.sh --with-xverif
+./scripts/setup.sh --runtime codex   # or --runtime kimi
 ```
 
 Equivalent focused commands are:
@@ -67,13 +67,8 @@ administration, and test orchestration are not part of the CLI request contract.
 python3 scripts/verif_harness.py xverif mcp install --project-root .
 ```
 
-这一步只安装并验证 source、launcher 和 commit，不会自动安装 Python 的
-`mcp[cli]` 传递依赖。请在 Codex/Kimi 使用的 Python 3.11+ 环境中按部署策略安装
-该依赖，例如：
-
-```bash
-python3 -m pip install "mcp[cli]"
-```
+setup 会同时安装并验证 source、launcher 和 commit，并在当前 Python 3.11+
+环境安装 `mcp[cli]` 传递依赖。
 
 为当前 Agent runtime 生成项目级、无凭据 profile：
 

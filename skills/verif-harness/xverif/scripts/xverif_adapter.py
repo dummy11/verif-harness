@@ -347,7 +347,7 @@ def xverif_root_argument(value: Path | None, project_root: Path | None = None) -
             return candidate
     searched = ", ".join(str(candidate) for candidate in unique)
     fail(
-        "xverif root not found; run scripts/setup.sh --with-xverif, set "
+        "xverif root not found; run scripts/setup.sh --no-agent, set "
         f"XVERIF_HOME, or pass --xverif-root (searched: {searched})"
     )
 

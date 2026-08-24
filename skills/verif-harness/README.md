@@ -106,12 +106,18 @@ incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声
 完整仓库中使用固定版本：
 
 ```bash
-./scripts/setup.sh --with-spec-kit
+./scripts/setup.sh --runtime codex
 python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root <project> --integration <auto|codex|kimi>
+  --project-root . --integration codex
 python3 scripts/verif_harness.py spec-kit stage \
-  --project-root <project> --stage 1 --objective "最小可运行环境"
+  --project-root . --stage 1 --objective "最小可运行环境"
 ```
+
+`setup.sh --runtime codex|kimi` 默认安装 Spec Kit、xverif CLI/MCP、`mcp[cli]`
+和 WavePeek，然后创建 runtime-native Skill 入口并直接启动对应 Agent CLI。
+Codex 中调用 `$verif-harness <mode>`，Kimi Code 中调用
+`/skill:verif-harness <mode>`。自动化或只做依赖安装时使用
+`./scripts/setup.sh --no-agent`。
 
 ## xverif 集成
 
@@ -134,7 +140,7 @@ xverif CLI 和 xverif_mcp 执行底层确定性操作。权威上游是
 在完整 `verif-harness` 仓库中，一次性安装固定版本：
 
 ```bash
-./scripts/setup.sh --with-xverif
+./scripts/setup.sh --runtime codex
 ```
 
 安装器读取 `deps/xverif.lock.json`，把独立 checkout 原子安装到 Git 忽略的
@@ -150,7 +156,6 @@ MCP source/profile 生命周期：
 
 ```bash
 python3 scripts/verif_harness.py xverif mcp install --project-root .
-python3 -m pip install "mcp[cli]"
 python3 scripts/verif_harness.py xverif mcp configure \
   --project-root . --runtime codex --backend direct
 python3 scripts/verif_harness.py xverif mcp status --project-root .
@@ -179,7 +184,7 @@ kleverhq/wavepeek
 版本：
 
 ```bash
-./scripts/setup.sh --with-wavepeek
+./scripts/setup.sh --runtime codex
 python3 scripts/verif_harness.py wavepeek probe
 ```
 

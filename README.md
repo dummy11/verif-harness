@@ -93,7 +93,7 @@ verif-harness Skill / control plane
 
 ## Requirements
 
-- Python 3.9 or newer.
+- Python 3.11 or newer (the default setup installs Spec Kit and xverif MCP).
 - GNU Make.
 - Verilator 5.x for the open-source example.
 - A UVM-capable commercial simulator for full UVM regressions.
@@ -106,7 +106,24 @@ are intentionally not included.
 ```bash
 git clone https://github.com/dummy11/verif-harness.git
 cd verif-harness
-./scripts/setup.sh
+./scripts/setup.sh --runtime codex
+```
+
+选择 Kimi Code 时使用：
+
+```bash
+./scripts/setup.sh --runtime kimi
+```
+
+`setup.sh` 会安装全部默认依赖（Spec Kit、xverif CLI、xverif MCP 和
+WavePeek），创建当前 runtime 的 Skill 入口，然后直接启动对应的 Agent CLI。
+进入 Codex 后调用 `$verif-harness`；进入 Kimi Code 后调用
+`/skill:verif-harness`。
+
+如果只需要安装并运行开源 smoke example，不启动 Agent：
+
+```bash
+./scripts/setup.sh --no-agent
 ./scripts/run_example.sh
 ```
 
@@ -118,112 +135,39 @@ SIMPLE_FIFO_SMOKE PASS
 
 ## Install in the current working directory
 
-Choose the procedure that matches the current directory. Do not clone into `.`
-unless it is empty.
-
-### Empty directory: make it the verif-harness checkout
-
 ```bash
 git clone https://github.com/dummy11/verif-harness.git .
-./scripts/setup.sh
+./scripts/setup.sh --runtime codex
 ```
 
-Install all optional, commit-pinned integrations when Python 3.11 or newer is
-available:
+Kimi Code 使用：
 
 ```bash
-./scripts/setup.sh --with-spec-kit --with-xverif --with-wavepeek
+./scripts/setup.sh --runtime kimi
 ```
 
-The managed dependencies stay under the Git-ignored `.deps/` directory. They
-remain separate upstream projects and are not vendored into verif-harness.
+`setup.sh` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
+`.deps/` 下，仍然属于独立的上游项目，不会被 vendored 进 verif-harness。
+安装包括：
 
-### Existing RTL project: install verif-harness project-locally
+- Spec Kit 规格工作流；
+- xverif CLI 和 `xverif_mcp` 源码/launcher；
+- Python `mcp[cli]` SDK；
+- VCD/FST-only WavePeek binary。
 
-From the existing project root, add verif-harness as a submodule so the project
-records the exact framework commit:
+默认 setup 不覆盖已有的受管 checkout；如果检测到 dirty、错误 commit 或错误
+license，会 fail closed。只安装依赖而不启动 Agent 时使用 `--no-agent`。
+
+安装完成并进入 Agent CLI 后，第一次项目操作通常是：
 
 ```bash
-git submodule add https://github.com/dummy11/verif-harness.git \
-  .tools/verif-harness
-mkdir -p .agents/skills
-ln -s ../../.tools/verif-harness/skills/verif-harness \
-  .agents/skills/verif-harness
-./.tools/verif-harness/scripts/setup.sh \
-  --with-spec-kit --with-xverif --with-wavepeek
-```
-
-Review and commit both `.gitmodules` and the recorded submodule SHA. The
-relative symbolic link exposes the complete Skill from
-`.agents/skills/verif-harness` without duplicating it. If symbolic links are
-not available, copy the complete `skills/verif-harness/` directory instead and
-record how copies are synchronized during upgrades.
-
-Validate project-local discovery and start with a read-only audit:
-
-```bash
-test -f .agents/skills/verif-harness/SKILL.md
-```
-
-```text
-$verif-harness doctor
-```
-
-Codex normally detects Skill changes automatically; restart Codex if the Skill
-does not appear. Codex scans `.agents/skills` from the current working
-directory up to the repository root, as documented in the
-[official OpenAI Skill documentation](https://developers.openai.com/codex/skills#where-codex-loads-local-skills).
-The deterministic scripts and CLI adapters can still be invoked directly from
-`.tools/verif-harness/` without either Agent runtime.
-
-For Kimi Code, expose the same Skill at its native path instead:
-
-```bash
-mkdir -p .kimi-code/skills
-ln -s ../../.tools/verif-harness/skills/verif-harness \
-  .kimi-code/skills/verif-harness
-test -f .kimi-code/skills/verif-harness/SKILL.md
-```
-
-Kimi Code invokes it as `/skill:verif-harness`; model selection, including
-K3, remains Kimi Code configuration rather than verif-harness project state.
-
-Enable the optional commit-pinned xverif dependency with one additional flag.
-The checkout includes deterministic CLI wrappers and the reviewed `xverif_mcp`
-source/launcher:
-
-```bash
-./scripts/setup.sh --with-xverif
-```
-
-This installs source from the reviewed upstream into the Git-ignored
-`.deps/xverif` directory and verifies its repository, exact commit, clean
-state, MIT License hash, wrappers, MCP package layout, `tools/xverif-mcp`, and a
-real `xbit` adapter smoke. Core verif-harness workflows remain usable without
-xverif.
-
-Enable the optional commit-pinned WavePeek dependency independently or with
-the xverif flag:
-
-```bash
-./scripts/setup.sh --with-wavepeek
-./scripts/setup.sh --with-xverif --with-wavepeek
-```
-
-This verifies the exact WavePeek source, Apache-2.0 License and Cargo.lock,
-then downloads the matching official VCD/FST-only release asset by platform
-and verifies its pinned SHA-256 below Git-ignored `.deps/`. FSDB support is not
-enabled, and installing WavePeek does not require a Rust toolchain.
-
-Enable the optional, release-pinned GitHub Spec Kit dependency with Python
-3.11 or newer:
-
-```bash
-./scripts/setup.sh --with-spec-kit
 python3 scripts/verif_harness.py spec-kit probe
 python3 scripts/verif_harness.py spec-kit bootstrap \
-  --project-root /path/to/project --integration codex
+  --project-root . --integration codex
 ```
+
+Kimi Code 把 `codex` 改为 `kimi`。如果 setup 已经直接启动 Agent，应在 Agent
+CLI 内调用对应 Skill，而不是退出 CLI 再手动执行这些命令。
 
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
 control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
@@ -259,17 +203,15 @@ python3 scripts/verif_harness.py xverif probe \
 xverif is a tool suite (`xbit`, `xdebug`, `xcov`, `xentry`, `xloc`, `xsva`, and
 `xwaveform`), not a single `xverif` executable. See
 [docs/xverif_integration.md](docs/xverif_integration.md).
-The pinned checkout is an optional dependency, not vendored verif-harness
+The pinned checkout is a managed dependency, not vendored verif-harness
 source; attribution and proprietary-EDA boundaries are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The same checkout provides an optional FastMCP server. Install its source,
-install `mcp[cli]` in the Codex/Kimi Python environment, and create a non-secret
-profile:
+The same checkout provides the managed FastMCP server. The default setup already
+installs its source and `mcp[cli]`; create a non-secret profile:
 
 ```bash
 python3 scripts/verif_harness.py xverif mcp install --project-root .
-python3 -m pip install "mcp[cli]"
 python3 scripts/verif_harness.py xverif mcp configure \
   --project-root . --runtime codex --backend direct
 python3 scripts/verif_harness.py xverif mcp status --project-root .
