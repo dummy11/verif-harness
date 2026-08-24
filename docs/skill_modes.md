@@ -77,3 +77,16 @@ remain separate from ordinary implementation-task dispatch.
 
 Run `doctor` whenever the current state is unclear. Use `oss-readiness` as a
 separate branch when preparing a public export; it does not authorize release.
+
+For the normal user surface, the tool namespaces can be shortened:
+
+```text
+$verif-harness probe                         # spec-kit probe
+$verif-harness bootstrap                     # spec-kit bootstrap
+$verif-harness stage --stage 0 --objective "..."  # spec-kit stage
+$verif-harness evidence probe --tool xbit     # xverif probe
+$verif-harness waveform probe                # wavepeek probe
+```
+
+The explicit `spec-kit`, `xverif`, and `wavepeek` forms remain available for
+advanced diagnostics and preserve exactly the same contracts.

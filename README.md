@@ -163,13 +163,17 @@ Python wrapper；在 CLI 内调用对应的 Skill：
 
 ```text
 # Codex CLI
-$verif-harness spec-kit probe
-$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness probe
+$verif-harness bootstrap --project-root . --integration codex
 
 # Kimi Code CLI
-/skill:verif-harness spec-kit probe
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness probe
+/skill:verif-harness bootstrap --project-root . --integration kimi
 ```
+
+这些是短命令别名：`probe/bootstrap/stage` 内部路由到 Spec Kit，`evidence`
+路由到 xverif，`waveform` 路由到 WavePeek。显式的 `spec-kit`、`xverif` 和
+`wavepeek` 形式仍保留给高级诊断。
 
 Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
 入口。

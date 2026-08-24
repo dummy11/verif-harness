@@ -45,6 +45,21 @@ Support these explicit modes:
 - `oss-readiness`
 - `patterns [topic]`
 
+Short user-facing aliases are also supported:
+
+- `probe` → internal `spec-kit probe`
+- `bootstrap` → internal `spec-kit bootstrap`
+- `stage <...>` → internal `spec-kit stage <...>`
+- `workflow-status [run-id]` → internal `spec-kit status [run-id]`
+- `workflow-resume <run-id>` → internal `spec-kit resume <run-id>`
+- `evidence <...>` → internal `xverif <...>`
+- `waveform <...>` → internal `wavepeek <...>`
+
+The explicit `spec-kit`, `xverif`, and `wavepeek` forms remain advanced/debug
+interfaces. Alias routing must preserve the same review gates, evidence paths,
+provenance, and Human approval boundaries; it must not silently change tools or
+backends.
+
 With no mode, run `doctor` when `.harness-config.json` exists. If it does not
 exist, require a Spec Kit project and reviewed Stage 0 specification first:
 dispatch to `spec-kit bootstrap` when `.specify/` is absent. When `.specify/`

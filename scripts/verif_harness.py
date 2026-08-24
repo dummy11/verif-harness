@@ -23,6 +23,15 @@ FILES = {
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_RUNTIMES = ("codex", "kimi")
+COMMAND_ALIASES = {
+    "probe": ("spec-kit", "probe"),
+    "bootstrap": ("spec-kit", "bootstrap"),
+    "stage": ("spec-kit", "stage"),
+    "workflow-status": ("spec-kit", "status"),
+    "workflow-resume": ("spec-kit", "resume"),
+    "evidence": ("xverif",),
+    "waveform": ("wavepeek",),
+}
 RUNTIME_PROFILES = {
     "codex": {
         "markers": (".agents", ".codex"),
@@ -239,7 +248,10 @@ def main() -> int:
     )
     runtime_switch.add_argument("--project-root", type=Path, default=Path.cwd())
     runtime_switch.add_argument("--to", choices=SUPPORTED_RUNTIMES, required=True)
-    args = parser.parse_args()
+    raw_arguments = sys.argv[1:]
+    if raw_arguments and raw_arguments[0] in COMMAND_ALIASES:
+        raw_arguments = [*COMMAND_ALIASES[raw_arguments[0]], *raw_arguments[1:]]
+    args = parser.parse_args(raw_arguments)
     if args.command == "xverif":
         if not args.adapter_args:
             parser.error("xverif requires adapter arguments; use 'xverif probe', 'xverif run', or 'xverif mcp ...'")

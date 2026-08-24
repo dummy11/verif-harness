@@ -14,12 +14,31 @@ waiver、stage gate 和最终 freeze approval 始终在 Human 权限边界内。
 
 ```text
 $verif-harness doctor
+$verif-harness probe
+$verif-harness bootstrap
+$verif-harness stage --stage 0 --objective "建立 Stage 0 规格基线"
+$verif-harness evidence probe --tool xbit
+$verif-harness waveform probe
 $verif-harness add-testcase
 $verif-harness stage-gate-review 4
 ```
 
 上面是 Codex 语法；Kimi Code 使用 `/skill:verif-harness <mode>`。两者调用
 同一份模式合同，不因 Kimi Code 内选择 K3 或其他模型而改变规格与证据语义。
+
+对 Spec Kit 工作流，推荐使用短命令，不必记住实现域名：
+
+```text
+$verif-harness bootstrap          # 内部：spec-kit bootstrap
+$verif-harness probe              # 内部：spec-kit probe
+$verif-harness stage --stage 0   # 内部：spec-kit stage
+$verif-harness workflow-status    # 内部：spec-kit status
+$verif-harness workflow-resume <run-id>  # 内部：spec-kit resume
+$verif-harness evidence probe --tool xbit  # 内部：xverif probe
+$verif-harness waveform probe             # 内部：wavepeek probe
+```
+
+显式 `spec-kit` 形式仍保留给高级诊断和底层调试。
 
 未指定模式时：
 

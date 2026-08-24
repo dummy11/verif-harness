@@ -157,10 +157,10 @@ Agent CLI；进入 CLI 后再调用 bootstrap：
 
 ```text
 # Codex
-$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness bootstrap --project-root . --integration codex
 
 # Kimi Code
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap --project-root . --integration kimi
 ```
 
 runtime 状态检查仍可通过底层 wrapper 执行：
@@ -245,10 +245,10 @@ Python wrapper：
 
 ```text
 # Codex
-$verif-harness spec-kit bootstrap --project-root . --integration codex
+$verif-harness bootstrap --project-root . --integration codex
 
 # Kimi Code
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap --project-root . --integration kimi
 ```
 
 `python3 scripts/verif_harness.py spec-kit bootstrap ...` 仅保留给 CI、脚本自动化
@@ -290,11 +290,11 @@ simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.jso
 
 ```text
 # Codex
-$verif-harness spec-kit stage --project-root . --stage 0 \
+$verif-harness stage --project-root . --stage 0 \
   --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
 
 # Kimi Code
-/skill:verif-harness spec-kit stage --project-root . --stage 0 \
+/skill:verif-harness stage --project-root . --stage 0 \
   --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
 ```
 
@@ -1426,18 +1426,18 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 
 ```text
 # Codex
-$verif-harness spec-kit probe
-$verif-harness spec-kit bootstrap --project-root . --integration codex
-$verif-harness spec-kit stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-$verif-harness spec-kit status --project-root .
-$verif-harness spec-kit resume --project-root . <run-id>
+$verif-harness probe
+$verif-harness bootstrap --project-root . --integration codex
+$verif-harness stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+$verif-harness workflow-status --project-root .
+$verif-harness workflow-resume --project-root . <run-id>
 
 # Kimi Code
-/skill:verif-harness spec-kit probe
-/skill:verif-harness spec-kit bootstrap --project-root . --integration kimi
-/skill:verif-harness spec-kit stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-/skill:verif-harness spec-kit status --project-root .
-/skill:verif-harness spec-kit resume --project-root . <run-id>
+/skill:verif-harness probe
+/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+/skill:verif-harness workflow-status --project-root .
+/skill:verif-harness workflow-resume --project-root . <run-id>
 ```
 
 如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
