@@ -55,6 +55,23 @@ def main() -> int:
         if result.returncode != 0:
             print(result.stdout, end="")
             print(result.stderr, end="", file=sys.stderr)
+            result_path = evidence / "result.json"
+            if result_path.is_file():
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+                print(
+                    f"ERROR: xbit adapter smoke state is {payload['state']}",
+                    file=sys.stderr,
+                )
+                for blocker in payload.get("blockers", []):
+                    print(f"ERROR: {blocker}", file=sys.stderr)
+                stderr_path = evidence / "stderr.log"
+                if stderr_path.is_file():
+                    native_stderr = stderr_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).strip()
+                    if native_stderr:
+                        print("xbit stderr:", file=sys.stderr)
+                        print(native_stderr, file=sys.stderr)
             return result.returncode
         payload = json.loads((evidence / "result.json").read_text(encoding="utf-8"))
         if payload["state"] != "PASS":

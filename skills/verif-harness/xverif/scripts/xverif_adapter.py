@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -187,6 +188,7 @@ def controlled_environment(keys: list[str], xverif_root: Path) -> dict[str, str]
         "PATH": os.environ.get("PATH", ""),
         "LANG": "C",
         "LC_ALL": "C",
+        "PYTHON": sys.executable,
         "PYTHONHASHSEED": "0",
         "XVERIF_HOME": str(xverif_root),
     }

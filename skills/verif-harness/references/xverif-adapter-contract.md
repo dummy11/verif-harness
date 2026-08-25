@@ -90,7 +90,8 @@ Probe `PASS` 只代表 wrapper 存在且可执行。它不会运行真实 NPI/ED
 1. 严格验证 request exact keys 与值域；
 2. project、working directory、stdin 和 artifact 路径不得逃逸项目根；
 3. argv 使用 `shell=False`；
-4. 环境从最小基线开始，只加入列出的变量名，并固定 `XVERIF_HOME`；
+4. 环境从最小基线开始，固定 `XVERIF_HOME`，并将 `PYTHON` 固定为启动 adapter
+   的同一个解释器；只额外加入 request 列出的变量名；
 5. stdout/stderr 原样写入单独文件；
 6. JSON 必须可解析；XOUT 第一条非空行必须以 `@` 开始且正文不重写；text 只归档；
 7. expected artifact 必须存在，并记录 size 与 SHA-256；

@@ -150,6 +150,22 @@ class XverifAdapterTest(unittest.TestCase):
         self.assertEqual(len(payload["artifacts"][0]["sha256"]), 64)
         self.assertEqual(payload["environment_keys"], [])
 
+    def test_wrapper_uses_the_adapter_python_interpreter(self) -> None:
+        self.tool.write_text(
+            "#!/bin/sh\n"
+            "exec \"$PYTHON\" -c 'import json,sys; "
+            "print(json.dumps({\"python\": sys.executable}))'\n",
+            encoding="utf-8",
+        )
+        self.tool.chmod(0o755)
+        result, payload = self.run_adapter(request("doctor"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert payload is not None
+        self.assertEqual(
+            Path(payload["parsed_stdout"]["python"]).resolve(),
+            Path(sys.executable).resolve(),
+        )
+
     def test_xout_is_preserved_without_parsing(self) -> None:
         result, payload = self.run_adapter(
             request("xout", output_format="xout"), out_name="xout-evidence"

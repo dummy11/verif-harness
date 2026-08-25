@@ -93,6 +93,9 @@ the Agent host registered the server.
      --out-dir artifacts/xverif/<unique-run-id>
    ```
 
+   The adapter fixes `PYTHON` to its own interpreter so upstream wrappers do
+   not silently fall back to a different system Python from `PATH`.
+
 6. Review `result.json`, `stdout.log`, `stderr.log`, the xverif Git commit,
    wrapper hash, completeness fields in native output, and all expected
    artifact hashes. Never infer PASS from process exit alone.
