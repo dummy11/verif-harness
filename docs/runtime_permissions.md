@@ -91,8 +91,8 @@ Keep the package checkout and RTL project separate, then choose the target and
 runtime explicitly:
 
 ```bash
-./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
-./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --project-root /path/to/rtl-project
+./scripts/setup --runtime kimi --project-root /path/to/rtl-project
 ```
 
 The selected runtime determines both the project configuration and launch

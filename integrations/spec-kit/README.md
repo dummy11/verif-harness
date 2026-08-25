@@ -21,7 +21,7 @@ Spec Kit 被固定到 `deps/spec-kit.lock.json` 中的 release tag、完整 comm
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup.sh --no-agent
+./scripts/setup --no-agent
 make check-spec-kit
 ```
 

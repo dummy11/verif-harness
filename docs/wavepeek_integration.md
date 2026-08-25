@@ -13,8 +13,8 @@ Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WaveP
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
-# or: ./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --project-root /path/to/rtl-project
+# or: ./scripts/setup --runtime kimi --project-root /path/to/rtl-project
 # or
 make setup-wavepeek check-wavepeek
 ```

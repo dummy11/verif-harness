@@ -1,0 +1,33 @@
+#!/bin/sh
+# Shell-neutral setup entry point. Keep shell detection here, before any
+# Bash-specific script is parsed by the caller's interactive shell.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+shell_name=${SHELL##*/}
+
+case "$shell_name" in
+  csh|tcsh)
+    if command -v csh >/dev/null 2>&1; then
+      exec csh "$script_dir/setup.csh" "$@"
+    fi
+    echo "ERROR: current shell is $shell_name, but csh is not available." >&2
+    exit 2
+    ;;
+  bash|sh|dash|ksh|zsh)
+    if command -v bash >/dev/null 2>&1; then
+      exec bash "$script_dir/setup.sh" "$@"
+    fi
+    echo "ERROR: verif-harness setup requires bash for its implementation." >&2
+    exit 2
+    ;;
+  *)
+    # SHELL may be unset or point to a wrapper. Prefer the required Bash
+    # implementation rather than guessing csh syntax from an arbitrary name.
+    if command -v bash >/dev/null 2>&1; then
+      exec bash "$script_dir/setup.sh" "$@"
+    fi
+    echo "ERROR: unable to select a supported shell; install bash." >&2
+    exit 2
+    ;;
+esac

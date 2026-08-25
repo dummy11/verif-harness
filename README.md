@@ -106,16 +106,16 @@ are intentionally not included.
 ```bash
 git clone https://github.com/dummy11/verif-harness.git ~/tools/verif-harness
 cd ~/tools/verif-harness
-./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --project-root /path/to/rtl-project
 ```
 
 Kimi Code 使用：
 
 ```bash
-./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime kimi --project-root /path/to/rtl-project
 ```
 
-`setup.sh` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
+`setup` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
 verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，不会被 vendored
 进 RTL 工程。runtime 配置和 Skill 链接安装到 `--project-root` 指定的工程：
 `--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
@@ -133,8 +133,18 @@ dirty、错误 commit、错误 license 或冲突的 Skill 路径，会 fail clos
 依赖而不启动 Agent 时使用 `--no-agent`；若还要配置目标工程，应同时显式传入
 `--runtime codex|kimi --project-root <path>`。
 
-安装完成后，setup 已经进入所选 Agent CLI。不要退出 CLI 回到 shell 执行下面的
-Python wrapper；在 CLI 内调用对应的 Skill：
+默认安装完成后，setup 会直接进入所选 Agent CLI。若使用了 `--no-agent`，或之后
+需要重新进入已经配置好的工程，先切换到目标 RTL 工程目录，再启动对应 CLI：
+
+```bash
+cd /path/to/rtl-project
+codex                  # Codex runtime
+# 或
+kimi --yolo            # Kimi Code runtime
+```
+
+进入 CLI 后，不要回到 shell 执行下面的 Python wrapper；在 CLI 内调用对应的
+Skill：
 
 ```text
 # Codex CLI

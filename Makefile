@@ -1,7 +1,7 @@
 .PHONY: setup setup-xverif check-xverif setup-wavepeek check-wavepeek setup-spec-kit check-spec-kit test structure format sanitize example check release-check docs
 
 setup:
-	./scripts/setup.sh
+	./scripts/setup
 
 setup-xverif:
 	python3 scripts/setup_xverif.py

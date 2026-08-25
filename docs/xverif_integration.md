@@ -27,8 +27,8 @@ under the Git-ignored `.deps/` directory.
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
-# or: ./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --project-root /path/to/rtl-project
+# or: ./scripts/setup --runtime kimi --project-root /path/to/rtl-project
 ```
 
 The package checkout owns the managed `.deps/xverif` source and launcher. The

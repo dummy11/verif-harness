@@ -153,9 +153,16 @@ Spec Kit 的 `.specify/integration.json` 是项目 runtime 唯一事实源；不
 `codex`，Kimi Code 是 `kimi`。
 
 verif-harness 安装目录与 RTL 项目目录应分离。新项目由安装目录中的
-`setup.sh --runtime codex|kimi --project-root <project>` 在目标工程创建
+`setup --runtime codex|kimi --project-root <project>` 在目标工程创建
 runtime-native Skill 入口，并以目标工程为工作目录启动 Agent CLI；进入 CLI 后再
 调用 bootstrap：
+
+如果 setup 使用了 `--no-agent`，则在 setup 完成后手动进入目标工程并启动 runtime：
+
+```bash
+cd /path/to/rtl-project
+codex                  # 或：kimi --yolo
+```
 
 ```text
 # Codex
@@ -1226,7 +1233,7 @@ primary/rerun log、seed consistency、blockers 和整体 state。
 ```bash
 # xverif Skill：安装并验证 commit-pinned managed dependency
 cd /path/to/verif-harness
-./scripts/setup.sh --no-agent
+./scripts/setup --no-agent
 # 或：make setup-xverif check-xverif
 ```
 
@@ -1359,7 +1366,7 @@ hash/空 feature 集/四个平台官方 release archive SHA-256 的
 ```bash
 # wavepeek Skill：安装固定版本、验证 schema，并确认 adapter 可用
 cd /path/to/verif-harness
-./scripts/setup.sh --no-agent
+./scripts/setup --no-agent
 # 或：make setup-wavepeek check-wavepeek
 ```
 
@@ -1428,7 +1435,7 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup.sh --no-agent
+./scripts/setup --no-agent
 ```
 
 `--no-agent` 仅用于不启动 CLI 的自动化安装。正常 setup 使用

@@ -30,7 +30,7 @@ belong to the target project. Setup starts the selected Agent CLI with the
 target project as its working directory:
 
 ```bash
-./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --project-root /path/to/rtl-project
 ```
 
 When `--runtime auto` is used, setup selects the only installed Agent CLI. If
@@ -42,7 +42,7 @@ rewrite that file implicitly.
 For an empty project without a runtime marker, choose explicitly:
 
 ```bash
-./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime kimi --project-root /path/to/rtl-project
 ```
 
 After the CLI starts, invoke `$verif-harness` in Codex or
@@ -52,7 +52,21 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 `.specify/` project rather than replacing its specifications or integration
 state.
 
-For dependency-only automation, use `./scripts/setup.sh --no-agent`; this skips
+If setup was run with `--no-agent`, start the configured runtime manually from
+the target project:
+
+```bash
+cd /path/to/rtl-project
+codex                  # Codex
+# or
+kimi --yolo            # Kimi Code
+```
+
+Then invoke the runtime-native Skill inside that CLI. Starting the CLI from the
+verif-harness package directory would make `.` refer to the package checkout,
+not the RTL project.
+
+For dependency-only automation, use `./scripts/setup --no-agent`; this skips
 the final CLI launch and target runtime configuration but still installs and
 verifies Spec Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek. To configure a
 target without launching an Agent, also pass explicit `--runtime codex|kimi`

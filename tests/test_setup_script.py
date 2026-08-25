@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "scripts/setup.sh"
+DISPATCHER = ROOT / "scripts/setup"
 
 
 class SetupScriptTest(unittest.TestCase):
@@ -22,6 +23,17 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn("--project-root PATH", result.stderr)
         self.assertIn("--runtime codex|kimi", result.stderr)
         self.assertIn("--no-agent", result.stderr)
+
+    def test_shell_neutral_dispatcher_detects_shell_family(self) -> None:
+        source = DISPATCHER.read_text(encoding="utf-8")
+        self.assertIn("csh|tcsh", source)
+        self.assertIn('exec csh "$script_dir/setup.csh"', source)
+        self.assertIn('exec bash "$script_dir/setup.sh"', source)
+
+    def test_csh_entrypoint_delegates_without_csh_parsing_bash(self) -> None:
+        source = (ROOT / "scripts/setup.csh").read_text(encoding="utf-8")
+        self.assertIn("#!/bin/csh -f", source)
+        self.assertIn('exec "$bash_path" "$script_dir/setup.sh"', source)
 
     def test_missing_project_root_fails_before_installation(self) -> None:
         result = self.run_setup("--project-root", "/path/that/does/not/exist")
