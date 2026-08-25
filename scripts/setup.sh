@@ -3,6 +3,7 @@ set -euo pipefail
 
 package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workspace_root="$package_root"
+python_cmd="${VERIF_HARNESS_PYTHON:-python3}"
 install_verilator=false
 runtime=auto
 launch_agent=true
@@ -51,6 +52,13 @@ if [[ ! -d "$workspace_root" ]]; then
   exit 2
 fi
 workspace_root="$(cd "$workspace_root" && pwd)"
+if [[ ! -x "$python_cmd" ]]; then
+  if ! command -v "$python_cmd" >/dev/null 2>&1; then
+    echo "ERROR: configured Python executable is not available: $python_cmd" >&2
+    exit 2
+  fi
+  python_cmd="$(command -v "$python_cmd")"
+fi
 
 if [[ "$runtime" != "auto" && "$runtime" != "codex" && "$runtime" != "kimi" ]]; then
   echo "ERROR: runtime must be codex or kimi." >&2
@@ -72,24 +80,25 @@ if [[ "$install_verilator" == true ]] && ! command -v verilator >/dev/null 2>&1;
   fi
 fi
 
-python3 --version
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {
+echo "Using Python: $python_cmd"
+"$python_cmd" --version
+"$python_cmd" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {
   echo "ERROR: default setup requires Python 3.11 or newer for Spec Kit and xverif MCP." >&2
   exit 2
 }
 make --version | head -n 1
-python3 "$package_root/scripts/check_structure.py"
+"$python_cmd" "$package_root/scripts/check_structure.py"
 
-python3 "$package_root/scripts/setup_xverif.py" --project-root "$package_root"
-python3 "$package_root/scripts/check_xverif.py"
-python3 -m pip install --disable-pip-version-check "mcp[cli]"
-python3 -c 'import mcp'
+"$python_cmd" "$package_root/scripts/setup_xverif.py" --project-root "$package_root"
+"$python_cmd" "$package_root/scripts/check_xverif.py"
+"$python_cmd" -m pip install --disable-pip-version-check "mcp[cli]"
+"$python_cmd" -c 'import mcp'
 
-python3 "$package_root/scripts/setup_wavepeek.py" --project-root "$package_root"
-python3 "$package_root/scripts/check_wavepeek.py"
+"$python_cmd" "$package_root/scripts/setup_wavepeek.py" --project-root "$package_root"
+"$python_cmd" "$package_root/scripts/check_wavepeek.py"
 
-python3 "$package_root/scripts/setup_spec_kit.py" --project-root "$package_root"
-python3 "$package_root/scripts/check_spec_kit.py"
+"$python_cmd" "$package_root/scripts/setup_spec_kit.py" --project-root "$package_root"
+"$python_cmd" "$package_root/scripts/check_spec_kit.py"
 
 if command -v verilator >/dev/null 2>&1; then
   verilator --version

@@ -33,7 +33,14 @@ class SetupScriptTest(unittest.TestCase):
     def test_csh_entrypoint_delegates_without_csh_parsing_bash(self) -> None:
         source = (ROOT / "scripts/setup.csh").read_text(encoding="utf-8")
         self.assertIn("#!/bin/csh -f", source)
+        self.assertIn('setenv VERIF_HARNESS_PYTHON "$python_path"', source)
         self.assertIn('exec "$bash_path" "$script_dir/setup.sh"', source)
+
+    def test_setup_uses_shell_selected_python(self) -> None:
+        source = SETUP.read_text(encoding="utf-8")
+        self.assertIn('python_cmd="${VERIF_HARNESS_PYTHON:-python3}"', source)
+        self.assertIn('"$python_cmd" -m pip', source)
+        self.assertNotIn('python3 "$package_root/scripts/setup_xverif.py"', source)
 
     def test_missing_workspace_root_fails_before_installation(self) -> None:
         result = self.run_setup("--workspace-root", "/path/that/does/not/exist")
