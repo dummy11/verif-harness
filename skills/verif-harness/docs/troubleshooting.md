@@ -231,10 +231,11 @@ exact path，再运行 `make setup-wavepeek check-wavepeek`。首次安装需要
 GitHub tag 和官方 release archive，不需要 Rust 或 crates.io。Linux 主机先检查
 glibc；低于 2.34 时还会从 lock 固定的 GNU source 构建
 `.deps/glibc-2.34`。该条件路径要求 GCC 6.2+、GNU Make 4.0+、binutils
-assembler/linker 2.25+、GNU texinfo 4.7+、GNU awk 3.1.2+、Bison 2.7+、
-GNU sed 3.02+ 和 Python 3.4+；managed CPython 满足最后一项。缺少或版本过旧、
-private loader/hash 漂移或版本 probe 失败均为 `BLOCKED`；禁止通过全局
-`LD_LIBRARY_PATH` 绕过。
+assembler/linker 2.25+、GNU awk 3.1.2+、Bison 2.7+、GNU sed 3.02+ 和
+Python 3.4+；managed CPython 满足最后一项。`makeinfo` 4.7+ 仅用于 glibc 文档，
+在版本清单中作为 optional 显示，缺失不会阻断 WavePeek 私有 runtime。必需项缺失
+或版本过旧、private loader/hash 漂移或版本 probe 失败均为 `BLOCKED`；禁止通过
+全局 `LD_LIBRARY_PATH` 绕过。
 
 ## WavePeek 返回 `PROTOCOL_ERROR`
 

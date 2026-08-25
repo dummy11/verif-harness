@@ -49,6 +49,8 @@ class RuntimeVersionsTest(unittest.TestCase):
         self.assertEqual(versions["private_glibc_binutils"], ">=2.25")
         self.assertEqual(versions["private_glibc_texinfo"], ">=4.7")
         self.assertEqual(versions["verilator"], "5.x")
+        source = CHECK.read_text(encoding="utf-8")
+        self.assertIn('"glibc documentation texinfo", "optional"', source)
 
     def test_launcher_uses_managed_python(self) -> None:
         source = LAUNCHER.read_text(encoding="utf-8")

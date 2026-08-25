@@ -72,7 +72,7 @@ class SetupManagedTest(unittest.TestCase):
         )
         self.assertEqual(
             lock["host_contract"]["conditional_private_glibc_build_commands"],
-            ["as", "bison", "gcc", "gawk", "ld", "make", "makeinfo", "sed"],
+            ["as", "bison", "gcc", "gawk", "ld", "make", "sed"],
         )
 
     def test_managed_python_launcher_never_falls_back_to_host_python(self) -> None:

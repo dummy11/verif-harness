@@ -41,7 +41,6 @@ PRIVATE_GLIBC_BUILD_REQUIREMENTS = {
     "gawk": "3.1.2",
     "ld": "2.25",
     "make": "4.0",
-    "makeinfo": "4.7",
     "sed": "3.02",
 }
 PLATFORMS = {

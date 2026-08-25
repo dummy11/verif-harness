@@ -31,11 +31,13 @@ locked GitHub source tag and official release archive is required initially.
 On Linux, setup reports the detected host glibc version. If it is older than
 2.34, setup also downloads the hash-pinned GNU glibc 2.34 source and builds it
 under `.deps/glibc-2.34`. The conditional build chain requires GCC 6.2+,
-GNU Make 4.0+, binutils assembler/linker 2.25+, GNU texinfo 4.7+,
-GNU awk 3.1.2+, Bison 2.7+, GNU sed 3.02+, and Python 3.4+; the managed Python
-satisfies the last requirement. A missing or old prerequisite, a drifted
-private runtime, or a failed loader probe is `BLOCKED`; do not work around it
-with a global `LD_LIBRARY_PATH`.
+GNU Make 4.0+, binutils assembler/linker 2.25+, GNU awk 3.1.2+, Bison 2.7+,
+GNU sed 3.02+, and Python 3.4+; the managed Python satisfies the last
+requirement. `makeinfo` 4.7+ is documentation-only and remains an optional
+diagnostic, so its absence does not block the WavePeek private runtime. A
+missing or old required prerequisite, a drifted private runtime, or a failed
+loader probe is `BLOCKED`; do not work around it with a global
+`LD_LIBRARY_PATH`.
 
 ## WavePeek cannot open FSDB
 

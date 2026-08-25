@@ -299,9 +299,13 @@ def host_rows(runtime_lock: dict[str, Any], wavepeek: dict[str, Any]) -> list[Ve
             command_probe("glibc build binutils", conditional_category, versions["private_glibc_binutils"], [("ld", ["--version"])], minimum="2.25"),
             command_probe("glibc build gawk", conditional_category, versions["private_glibc_gawk"], [("gawk", ["--version"])], minimum="3.1.2"),
             command_probe("glibc build bison", conditional_category, versions["private_glibc_bison"], [("bison", ["--version"])], minimum="2.7"),
-            command_probe("glibc build texinfo", conditional_category, versions["private_glibc_texinfo"], [("makeinfo", ["--version"])], minimum="4.7"),
             command_probe("glibc build GNU sed", conditional_category, versions["private_glibc_sed"], [("sed", ["--version"])], minimum="3.02"),
         ])
+        rows.append(command_probe(
+            "glibc documentation texinfo", "optional",
+            versions["private_glibc_texinfo"] + " (documentation only)",
+            [("makeinfo", ["--version"])], minimum="4.7",
+        ))
         if wavepeek.get("private_glibc_required"):
             python_version = ".".join(str(part) for part in sys.version_info[:3])
             rows.append(VersionRow(

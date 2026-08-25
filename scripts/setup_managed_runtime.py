@@ -90,7 +90,7 @@ def load_lock(root: Path) -> dict[str, Any]:
         "download_commands": ["curl", "wget"],
         "sha256_commands": ["sha256sum", "shasum"],
         "conditional_private_glibc_build_commands": [
-            "as", "bison", "gcc", "gawk", "ld", "make", "makeinfo", "sed",
+            "as", "bison", "gcc", "gawk", "ld", "make", "sed",
         ],
         "version_requirements": {
             "bash": ">=3.2",

@@ -41,11 +41,13 @@ The remaining bootstrap host contract is standard POSIX file utilities, Bash,
 Git, tar, an HTTPS downloader (`curl` or `wget`), a SHA-256 implementation
 (`sha256sum` or `shasum`), the supported kernel/CPU architecture, and
 writable/executable `.deps` storage.
-GCC 6.2+, GNU Make 4.0+, binutils assembler/linker 2.25+, GNU texinfo 4.7+,
-GNU awk 3.1.2+, Bison 2.7+, GNU sed 3.02+, and Python 3.4+ are conditional
-requirements only when a Linux host older than glibc 2.34 must build the
-private WavePeek runtime. The Python requirement is satisfied by managed
-CPython. EDA tools, licenses, and scheduler integration remain host-provided
+GCC 6.2+, GNU Make 4.0+, binutils assembler/linker 2.25+, GNU awk 3.1.2+,
+Bison 2.7+, GNU sed 3.02+, and Python 3.4+ are conditional requirements only
+when a Linux host older than glibc 2.34 must build the private WavePeek
+runtime. The Python requirement is satisfied by managed CPython. GNU texinfo
+4.7+ is reported as optional because `makeinfo` is only needed to translate
+and install glibc documentation, which the WavePeek private runtime does not
+use. EDA tools, licenses, and scheduler integration remain host-provided
 boundaries.
 
 The reviewed package lock was generated with uv 0.12.5:
