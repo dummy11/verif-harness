@@ -217,7 +217,12 @@ if [[ "$launch_agent" != true ]]; then
   echo "Start later with: (cd \"$workspace_root\" && codex) or (cd \"$workspace_root\" && kimi)"
   exit 0
 fi
-echo "Starting $runtime CLI in workspace $workspace_root now."
-echo "Inside the Agent CLI, invoke: $invocation"
+if [[ ! -d "$workspace_root" ]]; then
+  echo "ERROR: workspace disappeared before Agent launch: $workspace_root" >&2
+  exit 2
+fi
+echo "Changing directory to workspace: $workspace_root"
 cd "$workspace_root"
+echo "Starting $runtime CLI here: $(pwd)"
+echo "Inside the Agent CLI, invoke: $invocation"
 exec "$agent_cli" "${agent_args[@]}"

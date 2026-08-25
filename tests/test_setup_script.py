@@ -73,6 +73,9 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('.agents/skills', source)
         self.assertIn('.kimi-code/skills', source)
         self.assertIn('cd "$workspace_root"', source)
+        self.assertIn('Starting $runtime CLI here: $(pwd)', source)
+        self.assertIn('exec "$agent_cli" "${agent_args[@]}"', source)
+        self.assertIn('workspace disappeared before Agent launch', source)
 
 
 if __name__ == "__main__":
