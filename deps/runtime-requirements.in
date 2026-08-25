@@ -1,0 +1,3 @@
+# Direct Python runtime dependencies. Regenerate runtime-requirements.lock with
+# the reviewed resolver workflow documented in docs/tool_versions.md.
+mcp[cli]==1.29.1

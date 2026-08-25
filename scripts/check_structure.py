@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -28,6 +29,11 @@ def main() -> int:
         "scripts/check_wavepeek.py", "deps/spec-kit.lock.json",
         "deps/spec-kit.lock.schema.json", "scripts/setup_spec_kit.py",
         "scripts/check_spec_kit.py",
+        "deps/runtime.lock.json", "deps/runtime.lock.schema.json",
+        "deps/runtime-requirements.in", "deps/runtime-requirements.lock",
+        "scripts/setup_managed.sh", "scripts/setup_managed_runtime.py",
+        "scripts/managed-python", "scripts/runtime-versions",
+        "scripts/check_runtime_versions.py",
         "skills/verif-harness/xverif/scripts/xverif_mcp.py",
     ):
         if not (ROOT / name).is_file():
@@ -68,6 +74,25 @@ def main() -> int:
             failures.append("WavePeek lock tag differs from the reviewed release")
         if lock.get("cargo_features") != []:
             failures.append("WavePeek default lock must not enable FSDB or other features")
+        private_glibc = lock.get("private_glibc", {})
+        if lock.get("schema_version") != 2:
+            failures.append("WavePeek lock must use schema version 2 for private glibc")
+        if private_glibc.get("version") != "2.34":
+            failures.append("WavePeek private glibc must remain pinned to 2.34")
+        if private_glibc.get("license") != "LGPL-2.1-or-later":
+            failures.append("WavePeek private glibc license identity differs from review")
+        if private_glibc.get("source_sha256") != (
+            "44d26a1fe20b8853a48f470ead01e4279e869ac149b195dda4e44a195d981ab2"
+        ):
+            failures.append("WavePeek private glibc source hash differs from review")
+        if private_glibc.get("license_file_sha256") != (
+            "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+        ):
+            failures.append("WavePeek private glibc license hash differs from review")
+        if private_glibc.get("licenses_file_sha256") != (
+            "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc"
+        ):
+            failures.append("WavePeek private glibc LICENSES hash differs from review")
     spec_kit_lock_path = ROOT / "deps/spec-kit.lock.json"
     if spec_kit_lock_path.is_file():
         lock = json.loads(spec_kit_lock_path.read_text(encoding="utf-8"))
@@ -83,6 +108,42 @@ def main() -> int:
             failures.append("Spec Kit lock tag differs from the reviewed release")
         if lock.get("python_requires") != ">=3.11":
             failures.append("Spec Kit lock must require Python 3.11 or newer")
+    runtime_lock_path = ROOT / "deps/runtime.lock.json"
+    if runtime_lock_path.is_file():
+        lock = json.loads(runtime_lock_path.read_text(encoding="utf-8"))
+        if lock.get("schema_version") != 1 or lock.get("name") != "verif-harness-managed-runtime":
+            failures.append("managed runtime lock identity or schema differs from review")
+        python = lock.get("python", {})
+        if python.get("version") != "3.12.11" or python.get("release") != "20251007":
+            failures.append("managed CPython version or distribution release differs from review")
+        assets = python.get("assets", {})
+        expected_platforms = {
+            "aarch64-apple-darwin", "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu",
+        }
+        if set(assets) != expected_platforms:
+            failures.append("managed CPython assets do not cover the reviewed platforms")
+        expected_versions = {
+            "bash": ">=3.2", "git": ">=2.25",
+            "private_glibc_binutils": ">=2.25",
+            "private_glibc_bison": ">=2.7",
+            "private_glibc_gawk": ">=3.1.2",
+            "private_glibc_gcc": ">=6.2",
+            "private_glibc_make": ">=4.0",
+            "private_glibc_python": ">=3.4",
+            "private_glibc_sed": ">=3.02",
+            "private_glibc_texinfo": ">=4.7",
+            "verilator": "5.x",
+        }
+        if lock.get("host_contract", {}).get("version_requirements") != expected_versions:
+            failures.append("managed host version requirements differ from review")
+        requirements = ROOT / lock.get("python_packages", {}).get("requirements", "missing")
+        if requirements.is_file():
+            observed = hashlib.sha256(requirements.read_bytes()).hexdigest()
+            if observed != lock.get("python_packages", {}).get("requirements_sha256"):
+                failures.append("managed Python requirements hash differs from runtime lock")
+        else:
+            failures.append("managed Python requirements lock is missing")
     config_path = ROOT / "examples/simple_fifo/config/example.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     filelist_path = ROOT / config["filelist"]

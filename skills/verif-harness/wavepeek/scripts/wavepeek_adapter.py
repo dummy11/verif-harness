@@ -25,6 +25,8 @@ ENV_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 ALLOWED_PLACEHOLDERS = {"project_root", "output_dir", "request_path", "wavepeek_root", "wavepeek_binary"}
 SECRET_VALUE = re.compile(r"(?i)(?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*=|\d+@[^/\s]+")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+RUNTIME_DESCRIPTOR = "wavepeek-runtime.json"
 
 
 def fail(message: str) -> None:
@@ -144,12 +146,81 @@ def resolve_install(project_root: Path, root_arg: Path | None, binary_arg: Path 
     return root, binary
 
 
+def wavepeek_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
+    descriptor_path = binary.parent / RUNTIME_DESCRIPTOR
+    if not descriptor_path.is_file():
+        return [str(binary)], None
+    try:
+        value = json.loads(descriptor_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"cannot read WavePeek runtime descriptor: {exc}")
+    keys = {
+        "schema_version", "kind", "version", "root", "loader",
+        "loader_sha256", "library_dirs", "license", "license_file_sha256",
+        "licenses_file_sha256",
+    }
+    if not isinstance(value, dict) or set(value) != keys:
+        fail(f"WavePeek runtime descriptor keys must be exactly {sorted(keys)}")
+    version = value["version"]
+    library_dirs = value["library_dirs"]
+    if (
+        value["schema_version"] != 1
+        or value["kind"] != "private-glibc"
+        or version != "2.34"
+        or value["root"] != f"../glibc-{version}"
+        or value["license"] != "LGPL-2.1-or-later"
+        or not isinstance(value["loader"], str)
+        or not isinstance(value["loader_sha256"], str)
+        or not SHA256.fullmatch(value["loader_sha256"])
+        or value["license_file_sha256"]
+        != "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+        or value["licenses_file_sha256"]
+        != "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc"
+        or not isinstance(library_dirs, list)
+        or not library_dirs
+        or not all(isinstance(item, str) and item for item in library_dirs)
+    ):
+        fail("WavePeek runtime descriptor identity is invalid")
+    for raw_path in (value["loader"], *library_dirs):
+        path = Path(raw_path)
+        if path.is_absolute() or ".." in path.parts:
+            fail("WavePeek runtime descriptor contains an unsafe relative path")
+    root = (binary.parent / value["root"]).resolve()
+    expected_root = (binary.parent.parent / f"glibc-{version}").resolve()
+    if root != expected_root:
+        fail("WavePeek private glibc root differs from the managed location")
+    loader = (root / value["loader"]).resolve()
+    if (
+        root not in loader.parents
+        or not loader.is_file()
+        or not os.access(loader, os.X_OK)
+        or sha256_file(loader) != value["loader_sha256"]
+    ):
+        fail("WavePeek private glibc loader is missing or has drifted")
+    resolved_libraries = [(root / relative).resolve() for relative in library_dirs]
+    if any(root not in path.parents or not path.is_dir() for path in resolved_libraries):
+        fail("WavePeek private glibc library path is missing or unsafe")
+    runtime = {
+        "kind": value["kind"],
+        "version": version,
+        "loader": str(loader),
+        "loader_sha256": value["loader_sha256"],
+        "descriptor": str(descriptor_path),
+    }
+    return [
+        str(loader), "--library-path",
+        ":".join(str(path) for path in resolved_libraries), str(binary),
+    ], runtime
+
+
 def probe(root: Path, binary: Path) -> dict[str, Any]:
     executable = binary.is_file() and os.access(binary, os.X_OK)
     version = None
+    runtime = None
     if executable:
         try:
-            checked = subprocess.run([str(binary), "--version"], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            command, runtime = wavepeek_command(binary)
+            checked = subprocess.run([*command, "--version"], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
             version = checked.stdout.strip() if checked.returncode == 0 else None
         except (OSError, subprocess.TimeoutExpired):
             executable = False
@@ -158,6 +229,7 @@ def probe(root: Path, binary: Path) -> dict[str, Any]:
         "state": "PASS" if executable and version else "TOOL_NOT_FOUND",
         "wavepeek_root": str(root), "binary": str(binary) if binary.is_file() else None,
         "binary_sha256": sha256_file(binary) if binary.is_file() else None,
+        "runtime": runtime,
         "version": version, "git_commit": git_value(root, "rev-parse", "HEAD"),
         "git_remote": sanitized_remote(root),
         "git_dirty": git_dirty(root),
@@ -207,7 +279,8 @@ def run_request(project_root: Path, request_path: Path, output_dir: Path, root: 
     replacements = {"project_root": str(project_root), "output_dir": str(output_dir), "request_path": str(request_path), "wavepeek_root": str(root), "wavepeek_binary": str(binary)}
     arguments = [token.format(**replacements) for token in request["arguments"]]
     identity = probe(root, binary)
-    argv = [str(binary), *arguments]
+    command, _ = wavepeek_command(binary)
+    argv = [*command, *arguments]
     blockers: list[str] = []
     if identity["state"] != "PASS":
         stdout, stderr, exit_code, state = b"", b"", None, identity["state"]

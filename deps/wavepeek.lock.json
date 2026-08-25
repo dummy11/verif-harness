@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "wavepeek",
   "repository": "https://github.com/kleverhq/wavepeek.git",
   "commit": "8779507b06f6b77be49f0d934ea9339140a8df2a",
@@ -10,6 +10,20 @@
   "cargo_lock_sha256": "2b1a314a078520740f68ddf4d8d6bd8295e1f862181a75c6a1dbc871a4d6e40a",
   "binary": "wavepeek",
   "cargo_features": [],
+  "private_glibc": {
+    "minimum_host_version": "2.34",
+    "version": "2.34",
+    "source_url": "https://ftp.gnu.org/gnu/glibc/glibc-2.34.tar.xz",
+    "source_sha256": "44d26a1fe20b8853a48f470ead01e4279e869ac149b195dda4e44a195d981ab2",
+    "license": "LGPL-2.1-or-later",
+    "license_file": "COPYING.LIB",
+    "license_file_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+    "licenses_file": "LICENSES",
+    "licenses_file_sha256": "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc",
+    "configure_args": [
+      "--disable-werror"
+    ]
+  },
   "release_base_url": "https://github.com/kleverhq/wavepeek/releases/download/v2.2.3",
   "release_assets": {
     "aarch64-apple-darwin": {

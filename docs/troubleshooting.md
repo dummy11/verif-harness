@@ -1,5 +1,24 @@
 # Troubleshooting
 
+## Managed runtime is missing or blocked
+
+Start with `./scripts/runtime-versions --verbose` for the consolidated required,
+current, status, and resolved-path inventory. Use `--json` when attaching the
+result to CI evidence or a bug report.
+
+Run `./scripts/setup_managed.sh --check`. Normal setup downloads only the
+platform asset pinned by `deps/runtime.lock.json`, verifies its SHA-256, creates
+`.deps/runtime/venv`, and installs only packages accepted by the hash-locked
+requirements file. It does not use `python3`, pip aliases, conda, pyenv, or a
+shell-selected Python.
+
+If `.deps/runtime` is partial or its descriptor has drifted, setup fails closed
+and preserves it. Inspect or move that exact ignored directory aside manually;
+do not make setup delete an unknown runtime automatically. A host still needs
+standard POSIX file utilities, Bash, Git, tar, HTTPS/CA access, `curl` or
+`wget`, and `sha256sum` or `shasum`.
+On noexec filesystems, place the verif-harness checkout on executable storage.
+
 ## Managed WavePeek is missing or blocked
 
 From the verif-harness package checkout, run `./scripts/setup --no-agent` or `make setup-wavepeek
@@ -8,6 +27,15 @@ wrong-commit, wrong-license, wrong-Cargo.lock, or wrong-version state. It never
 updates an existing checkout. Preserve any user files, move the exact failed
 `.deps/wavepeek*` paths aside manually, then reinstall. Network access to the
 locked GitHub source tag and official release archive is required initially.
+
+On Linux, setup reports the detected host glibc version. If it is older than
+2.34, setup also downloads the hash-pinned GNU glibc 2.34 source and builds it
+under `.deps/glibc-2.34`. The conditional build chain requires GCC 6.2+,
+GNU Make 4.0+, binutils assembler/linker 2.25+, GNU texinfo 4.7+,
+GNU awk 3.1.2+, Bison 2.7+, GNU sed 3.02+, and Python 3.4+; the managed Python
+satisfies the last requirement. A missing or old prerequisite, a drifted
+private runtime, or a failed loader probe is `BLOCKED`; do not work around it
+with a global `LD_LIBRARY_PATH`.
 
 ## WavePeek cannot open FSDB
 

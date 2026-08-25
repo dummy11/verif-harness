@@ -1,7 +1,16 @@
-.PHONY: setup setup-xverif check-xverif setup-wavepeek check-wavepeek setup-spec-kit check-spec-kit test structure format sanitize example check release-check docs
+.PHONY: setup setup-managed check-managed runtime-versions setup-xverif check-xverif setup-wavepeek check-wavepeek setup-spec-kit check-spec-kit test structure format sanitize example check release-check docs
 
 setup:
 	./scripts/setup
+
+setup-managed:
+	./scripts/setup_managed.sh
+
+check-managed:
+	./scripts/setup_managed.sh --check
+
+runtime-versions:
+	./scripts/runtime-versions
 
 setup-xverif:
 	python3 scripts/setup_xverif.py

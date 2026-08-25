@@ -1,5 +1,21 @@
 # Third-party notices
 
+## Managed CPython runtime
+
+verif-harness downloads a platform-specific CPython archive produced by
+[astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+into Git-ignored `.deps/runtime`. The exact distribution release, archive name,
+and SHA-256 are recorded in `deps/runtime.lock.json`; no runtime binary is
+included in verif-harness source archives or releases.
+
+python-build-standalone is separately licensed under MPL-2.0. CPython is
+separately licensed under the Python Software Foundation License, and bundled
+third-party components retain their respective notices and licenses. The
+hash-locked MCP Python packages are downloaded from their package indexes and
+retain their own ownership and licenses. Review those installed distributions
+before redistributing a populated `.deps/runtime`; verif-harness distributes
+only dependency identities and hashes.
+
 ## GitHub Spec Kit
 
 verif-harness can optionally install a release- and commit-pinned checkout of
@@ -33,6 +49,15 @@ Reader SDK; verif-harness does not download, redistribute, configure, or grant
 rights to that SDK. Never publish waveform data, Verdi files, vendor libraries,
 license configuration, or locally built WavePeek artifacts with this project.
 
+On Linux hosts whose system glibc is older than 2.34, setup can build the
+hash-pinned GNU C Library 2.34 source into Git-ignored `.deps/glibc-2.34` for
+WavePeek only. glibc remains separately owned and licensed under
+LGPL-2.1-or-later with the additional notices documented upstream; its reviewed
+`COPYING.LIB`/`LICENSES` hashes and official GNU source archive hash are recorded
+in `deps/wavepeek.lock.json`. The private runtime is
+not copied into verif-harness source archives or releases, never replaces the
+system libc, and is not exposed through a global `LD_LIBRARY_PATH`.
+
 ## xverif
 
 verif-harness can optionally download a commit-pinned source checkout of
@@ -47,8 +72,9 @@ libraries, manuals, databases, or other proprietary dependencies.
 
 The optional `xverif_mcp` package is part of the same pinned xverif checkout and
 is not vendored into this repository. Its Python runtime dependency
-`mcp[cli]` is installed and licensed separately by the deployment environment;
-verif-harness does not pin, redistribute, or claim ownership of that dependency.
+`mcp[cli]` and transitive packages are version- and artifact-hash-locked by the
+managed runtime, but remain separately owned and licensed; verif-harness does
+not vendor, redistribute, or claim ownership of those packages.
 
 ```text
 MIT License

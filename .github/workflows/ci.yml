@@ -32,18 +32,12 @@ jobs:
           verilator --version
       - name: Run structure, unit, and public-release checks
         run: make check
-      - name: Install and verify pinned xverif dependency
+      - name: Install and verify the managed runtime and pinned integrations
         run: |
-          make setup-xverif
-          make check-xverif
-      - name: Install and verify pinned WavePeek dependency
-        run: |
-          make setup-wavepeek
-          make check-wavepeek
-      - name: Install and verify pinned GitHub Spec Kit dependency
-        run: |
-          make setup-spec-kit
-          make check-spec-kit
+          ./scripts/setup --isolation managed --no-agent
+          make check-managed
+          ./scripts/managed-python -c \
+            'from mcp.server.fastmcp import FastMCP; import sys; print(sys.version)'
       - name: Run executable example
         run: make example
       - name: Build documentation

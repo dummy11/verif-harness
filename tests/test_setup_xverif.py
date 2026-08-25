@@ -70,7 +70,7 @@ class SetupXverifTest(unittest.TestCase):
                 "entrypoint": "xverif_mcp.server:main",
                 "launcher": "tools/xverif-mcp",
                 "requires_python": ">=3.11",
-                "dependency": "mcp[cli]",
+                "dependency": "mcp[cli]==1.29.1",
             },
         }
         (self.project / "deps/xverif.lock.json").write_text(

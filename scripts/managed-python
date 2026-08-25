@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+python_cmd="$("$package_root/scripts/setup_managed.sh" --project-root "$package_root" --check)"
+export VERIF_HARNESS_PYTHON="$python_cmd"
+export PYTHON="$python_cmd"
+export PATH="$(dirname "$python_cmd"):$PATH"
+exec "$python_cmd" "$@"

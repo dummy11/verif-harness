@@ -8,6 +8,10 @@ Automation prepares evidence; a Human owner makes the publication decision.
 - [ ] Review the Apache-2.0 license choice.
 - [ ] Review all source, templates, documentation, tests, and examples.
 - [ ] Run `make release-check` on a host with Verilator 5.x.
+- [ ] Run `./scripts/setup --isolation managed --no-agent` followed by
+      `make check-managed runtime-versions`; verify the version inventory,
+      CPython, MCP package-lock, and runtime descriptor identities before
+      checking integrations.
 - [ ] Run `make setup-xverif check-xverif` and verify the locked commit,
       license hash, wrappers, `xverif_mcp` package/launcher, and real xbit
       smoke. If MCP is enabled for the release, retain a runtime `xverif_ping`
@@ -19,7 +23,8 @@ Automation prepares evidence; a Human owner makes the publication decision.
 - [ ] Confirm WavePeek source, binary, Cargo target data, waveforms, and any
       FSDB/Verdi material are absent from the release archive.
 - [ ] Confirm the example prints `SIMPLE_FIFO_SMOKE PASS`.
-- [ ] Run `python3 scripts/check_public_release.py` after the final commit.
+- [ ] Run `./scripts/managed-python scripts/check_public_release.py` after the
+      final commit.
 - [ ] Review `git log --all`, all tags, author metadata, and remote URLs.
 - [ ] Enable GitHub secret scanning and private vulnerability reporting.
 - [ ] Require CI checks on the default branch.

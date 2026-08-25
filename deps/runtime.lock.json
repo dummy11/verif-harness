@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "name": "verif-harness-managed-runtime",
+  "python": {
+    "implementation": "cpython",
+    "version": "3.12.11",
+    "distribution": "astral-sh/python-build-standalone",
+    "release": "20251007",
+    "licenses": [
+      "MPL-2.0",
+      "PSF-2.0"
+    ],
+    "assets": {
+      "aarch64-apple-darwin": {
+        "archive": "cpython-3.12.11+20251007-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "407fa242942a7ba5d91899abc562fc9897f7a0376f8d2060285e8c0560323f19"
+      },
+      "x86_64-apple-darwin": {
+        "archive": "cpython-3.12.11+20251007-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "e0578395f02bb6ac61a0df0f9e280f0317bbb46d8bed66232b3aa9a1477256f8"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "archive": "cpython-3.12.11+20251007-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "05d9207e41c36fbc2d80a51d9bd5d574ed3eb1c620ead49e7fcd57cc2b64edfd"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "archive": "cpython-3.12.11+20251007-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "f98121eb1fb2b05a25c1f3d2fe7cf08c3a2468c350785df3d84c2516e7280d3f"
+      }
+    }
+  },
+  "python_packages": {
+    "requirements": "deps/runtime-requirements.lock",
+    "requirements_sha256": "c21f5752e8c0f5fe23152186d75c8becdf7278ffed322b52f884ef324478350d",
+    "mcp_requirement": "mcp[cli]==1.29.1",
+    "mcp_version": "1.29.1",
+    "resolver": "uv==0.12.5"
+  },
+  "host_contract": {
+    "required_commands": [
+      "awk",
+      "bash",
+      "cp",
+      "dirname",
+      "git",
+      "ln",
+      "mkdir",
+      "mv",
+      "readlink",
+      "rm",
+      "tar",
+      "uname"
+    ],
+    "download_commands": [
+      "curl",
+      "wget"
+    ],
+    "sha256_commands": [
+      "sha256sum",
+      "shasum"
+    ],
+    "conditional_private_glibc_build_commands": [
+      "as",
+      "bison",
+      "gcc",
+      "gawk",
+      "ld",
+      "make",
+      "makeinfo",
+      "sed"
+    ],
+    "version_requirements": {
+      "bash": ">=3.2",
+      "git": ">=2.25",
+      "private_glibc_binutils": ">=2.25",
+      "private_glibc_bison": ">=2.7",
+      "private_glibc_gawk": ">=3.1.2",
+      "private_glibc_gcc": ">=6.2",
+      "private_glibc_make": ">=4.0",
+      "private_glibc_python": ">=3.4",
+      "private_glibc_sed": ">=3.02",
+      "private_glibc_texinfo": ">=4.7",
+      "verilator": "5.x"
+    }
+  }
+}

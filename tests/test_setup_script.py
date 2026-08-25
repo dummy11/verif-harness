@@ -25,6 +25,7 @@ class SetupScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--workspace-root PATH", result.stderr)
         self.assertIn("--runtime codex|kimi", result.stderr)
+        self.assertIn("--isolation managed", result.stderr)
         self.assertIn("--no-agent", result.stderr)
 
     def test_shell_neutral_dispatcher_detects_shell_family(self) -> None:
@@ -36,12 +37,9 @@ class SetupScriptTest(unittest.TestCase):
     def test_csh_entrypoint_delegates_without_csh_parsing_bash(self) -> None:
         source = (ROOT / "scripts/setup.csh").read_text(encoding="utf-8")
         self.assertIn("#!/bin/csh", source)
-        self.assertIn("$?VERIF_HARNESS_PYTHON", source)
-        self.assertIn("python3.13 python3.12 python3.11", source)
-        self.assertIn("sys.version_info >= (3, 11)", source)
         self.assertIn("where -p", source)
-        self.assertIn('setenv VERIF_HARNESS_PYTHON "$python_path"', source)
         self.assertIn('exec "$bash_path" "$script_dir/setup.sh"', source)
+        self.assertNotIn("python3", source)
         self.assertNotRegex(source, r"(?m)^\s*echo .*>&2")
 
     @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
@@ -53,7 +51,7 @@ class SetupScriptTest(unittest.TestCase):
             result = subprocess.run(
                 [shutil.which("csh"), "-f", str(entrypoint)],
                 cwd=root,
-                env={**os.environ, "VERIF_HARNESS_PYTHON": str(Path("/bin/sh"))},
+                env=os.environ,
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -64,27 +62,19 @@ class SetupScriptTest(unittest.TestCase):
             self.assertFalse((root / "2").exists())
 
     @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
-    def test_csh_falls_back_to_a_versioned_python_command(self) -> None:
+    def test_csh_does_not_require_a_host_python(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             entrypoint = root / "setup.csh"
             shutil.copy2(ROOT / "scripts/setup.csh", entrypoint)
             setup = root / "setup.sh"
             setup.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$VERIF_HARNESS_PYTHON"\n',
+                '#!/bin/sh\nprintf "%s\\n" managed-bootstrap\n',
                 encoding="utf-8",
             )
             setup.chmod(0o755)
-            commands = root / "bin"
-            commands.mkdir()
-            versioned_python = commands / "python3.11"
-            versioned_python.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$0"\n', encoding="utf-8"
-            )
-            versioned_python.chmod(0o755)
             environment = os.environ.copy()
             environment.pop("VERIF_HARNESS_PYTHON", None)
-            environment["PATH"] = f"{commands}:/bin"
             result = subprocess.run(
                 [shutil.which("csh"), "-f", str(entrypoint)],
                 cwd=root,
@@ -95,57 +85,21 @@ class SetupScriptTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), str(versioned_python))
+            self.assertEqual(result.stdout.strip(), "managed-bootstrap")
             self.assertFalse((root / "2").exists())
 
-    @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
-    def test_csh_preserves_the_python3_selected_by_its_startup_alias(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            entrypoint = root / "setup.csh"
-            shutil.copy2(ROOT / "scripts/setup.csh", entrypoint)
-            setup = root / "setup.sh"
-            setup.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$VERIF_HARNESS_PYTHON"\n',
-                encoding="utf-8",
-            )
-            setup.chmod(0o755)
-            selected_python = root / "selected-python3"
-            selected_python.write_text(
-                '#!/bin/sh\nprintf "%s\\n" "$0"\n', encoding="utf-8"
-            )
-            selected_python.chmod(0o755)
-            home = root / "home"
-            home.mkdir()
-            (home / ".cshrc").write_text(
-                f"alias python3 {selected_python}\n", encoding="utf-8"
-            )
-            environment = os.environ.copy()
-            environment.pop("VERIF_HARNESS_PYTHON", None)
-            environment["HOME"] = str(home)
-            result = subprocess.run(
-                [shutil.which("csh"), str(entrypoint)],
-                cwd=root,
-                env=environment,
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), str(selected_python))
-            self.assertFalse((root / "2").exists())
-
-    def test_setup_uses_shell_selected_python(self) -> None:
+    def test_setup_uses_managed_python(self) -> None:
         source = SETUP.read_text(encoding="utf-8")
-        self.assertIn('python_cmd="${VERIF_HARNESS_PYTHON:-python3}"', source)
-        self.assertIn('"$python_cmd" -m pip', source)
+        self.assertIn('setup_managed.sh" --project-root', source)
+        self.assertIn('export VERIF_HARNESS_PYTHON="$python_cmd"', source)
+        self.assertIn('export PYTHON="$python_cmd"', source)
+        self.assertNotIn('VERIF_HARNESS_PYTHON:-python3', source)
+        self.assertNotIn('"$python_cmd" -m pip install', source)
         self.assertNotIn('python3 "$package_root/scripts/setup_xverif.py"', source)
 
-    def test_setup_does_not_trigger_pipefail_while_printing_make_version(self) -> None:
+    def test_setup_does_not_require_make_for_the_default_path(self) -> None:
         source = SETUP.read_text(encoding="utf-8")
-        self.assertIn("make --version | sed -n '1p'", source)
-        self.assertNotIn("make --version | head", source)
+        self.assertNotIn("make --version", source)
 
     def test_missing_workspace_root_fails_before_installation(self) -> None:
         result = self.run_setup("--workspace-root", "/path/that/does/not/exist")
@@ -156,6 +110,11 @@ class SetupScriptTest(unittest.TestCase):
         result = self.run_setup("--runtime", "unknown", "--no-agent")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runtime must be codex or kimi", result.stderr)
+
+    def test_unimplemented_isolation_fails_before_installation(self) -> None:
+        result = self.run_setup("--isolation", "apptainer", "--no-agent")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("isolation backend is not implemented", result.stderr)
 
     def test_legacy_optional_flags_are_removed(self) -> None:
         result = self.run_setup("--with-xverif", "--no-agent")
@@ -168,7 +127,11 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('setup_wavepeek.py" --project-root', source)
         self.assertIn('setup_spec_kit.py" --project-root', source)
         self.assertIn('--project-root "$package_root"', source)
-        self.assertIn('pip install --disable-pip-version-check "mcp[cli]"', source)
+        self.assertIn("-c 'import mcp'", source)
+        self.assertIn("from mcp.server.fastmcp import FastMCP", source)
+        self.assertIn("import xverif_mcp.server", source)
+        self.assertIn("check_runtime_versions.py", source)
+        self.assertIn("--require-agent", source)
         self.assertIn('exec "$agent_cli"', source)
         self.assertIn('agent_args+=(--yolo)', source)
         self.assertIn('.codex/config.toml', source)

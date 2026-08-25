@@ -91,7 +91,10 @@ def load_lock(root: Path) -> dict[str, Any]:
         fail("xverif MCP source roots differ from the reviewed package layout")
     if mcp["package"] != "xverif_mcp" or mcp["entrypoint"] != "xverif_mcp.server:main":
         fail("xverif MCP package identity differs from the reviewed entrypoint")
-    if mcp["launcher"] != "tools/xverif-mcp" or mcp["dependency"] != "mcp[cli]":
+    if (
+        mcp["launcher"] != "tools/xverif-mcp"
+        or mcp["dependency"] != "mcp[cli]==1.29.1"
+    ):
         fail("xverif MCP launcher or dependency differs from the reviewed contract")
     if mcp["requires_python"] != ">=3.11":
         fail("xverif MCP requires Python 3.11 or newer")

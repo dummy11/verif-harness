@@ -125,14 +125,18 @@ incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声
 完整仓库中使用固定版本：
 
 ```bash
-./scripts/setup.sh --runtime codex
+./scripts/setup.sh --isolation managed --runtime codex
 ```
 
-`setup.sh --runtime codex|kimi` 默认安装 Spec Kit、xverif CLI/MCP、`mcp[cli]`
+`setup.sh --isolation managed --runtime codex|kimi` 默认先安装固定归档哈希的
+CPython 和完整 artifact-hash lock 的 `mcp[cli]` 环境，再安装 Spec Kit、xverif CLI/MCP
 和 WavePeek，然后创建 runtime-native Skill 入口并直接启动对应 Agent CLI。
 Codex 中调用 `$verif-harness <mode>`，Kimi Code 中调用
 `/skill:verif-harness <mode>`。自动化或只做依赖安装时使用
 `./scripts/setup.sh --no-agent`。
+
+setup 在启动 Agent 前打印 required/current/status 版本清单；也可独立运行
+`./scripts/runtime-versions`，用 `--verbose` 显示路径或用 `--json` 供 CI 采集。
 
 进入 CLI 后，正常入口是 Skill 调用：
 
@@ -172,7 +176,7 @@ xverif CLI 和 xverif_mcp 执行底层确定性操作。权威上游是
 在完整 `verif-harness` 仓库中，一次性安装固定版本：
 
 ```bash
-./scripts/setup.sh --runtime codex
+./scripts/setup.sh --isolation managed --runtime codex
 ```
 
 安装器读取 `deps/xverif.lock.json`，把独立 checkout 原子安装到 Git 忽略的
@@ -216,7 +220,7 @@ kleverhq/wavepeek
 版本：
 
 ```bash
-./scripts/setup.sh --runtime codex
+./scripts/setup.sh --isolation managed --runtime codex
 ```
 
 ```text
@@ -225,7 +229,9 @@ $verif-harness waveform probe
 
 源码位于 `.deps/wavepeek`，编译后的 CLI 位于
 `.deps/wavepeek-bin/wavepeek`；两者都不进入 Git 或 release。默认不启用需要
-Verdi SDK 的 FSDB feature。adapter 只执行显式 request 并保存 provenance，
+Verdi SDK 的 FSDB feature。Linux host glibc 低于 2.34 时，setup 使用隔离在
+`.deps/glibc-2.34` 的固定 GNU runtime，仅通过 private loader 启动 WavePeek，
+不修改系统 libc 或全局 `LD_LIBRARY_PATH`。adapter 只执行显式 request 并保存 provenance，
 不能把命令 PASS 解释为验证签核。
 
 ## 权限边界

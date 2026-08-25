@@ -54,7 +54,7 @@
         "entrypoint": {"const": "xverif_mcp.server:main"},
         "launcher": {"const": "tools/xverif-mcp"},
         "requires_python": {"const": ">=3.11"},
-        "dependency": {"const": "mcp[cli]"}
+        "dependency": {"const": "mcp[cli]==1.29.1"}
       }
     }
   }

@@ -30,6 +30,9 @@ commands; do not guess them.
 - Default managed builds enable VCD/FST only. FSDB is source-only, requires a
   proprietary Verdi SDK, and is never enabled implicitly.
 - Never vendor WavePeek source or generated binaries into verif-harness.
+- On Linux, use the lock-pinned private glibc only when the host glibc is older
+  than 2.34. Invoke it as a WavePeek-only loader; never replace system libc or
+  export its library path globally.
 - Never bypass the commit, Cargo.lock, license hash, clean-tree, or version
   checks.
 - Never put waveform contents, secrets, or environment values into requests.

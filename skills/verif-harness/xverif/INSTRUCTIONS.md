@@ -48,8 +48,9 @@ python3 scripts/verif_harness.py xverif mcp configure \
 private settings, store credentials, or invent a runtime-specific config file.
 Register the profile's stdio server in the active runtime using its documented
 MCP configuration mechanism. The default repository setup installs the
-separately managed `mcp[cli]` Python dependency; if `--no-agent` setup used a
-different Python environment, install it there before registration.
+separately managed and artifact-hash-locked `mcp[cli]==1.29.1` Python
+dependency. Use `scripts/managed-python` for later shell checks; do not install
+an unreviewed MCP version into a host Python before registration.
 
 Check the source/profile contract:
 

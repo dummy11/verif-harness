@@ -70,17 +70,20 @@ administration, and test orchestration are not part of the CLI request contract.
 `tools/xverif-mcp` launcher。安装 source checkout：
 
 ```bash
-python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp install \
+/path/to/verif-harness/scripts/managed-python \
+  /path/to/verif-harness/scripts/verif_harness.py xverif mcp install \
   --project-root /path/to/verification-workspace
 ```
 
-setup 会同时安装并验证 source、launcher 和 commit，并在当前 Python 3.11+
-环境安装 `mcp[cli]` 传递依赖。
+setup 会同时安装并验证 source、launcher 和 commit，并在 managed CPython
+环境安装 artifact-hash-locked 的 `mcp[cli]==1.29.1` 传递依赖；2.x 不满足锁定
+xverif server 的 `mcp.server.fastmcp` API 合同。
 
 为当前 Agent runtime 生成项目级、无凭据 profile：
 
 ```bash
-python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp configure \
+/path/to/verif-harness/scripts/managed-python \
+  /path/to/verif-harness/scripts/verif_harness.py xverif mcp configure \
   --project-root /path/to/verification-workspace --runtime codex --backend direct
 ```
 

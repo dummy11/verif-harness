@@ -25,12 +25,18 @@ remain below the verification workspace.
 
 `deps/wavepeek.lock.json` fixes the HTTPS repository, tag, full commit,
 version, Apache-2.0 License hash, Cargo.lock hash, empty feature set, official
-release URL, and four platform archive SHA-256 values. The installer clones
+release URL, four platform archive SHA-256 values, and the GNU glibc 2.34
+source/license hashes used by the Linux compatibility path. The installer clones
 the exact tag into `.deps/wavepeek`, verifies the current platform's official
 VCD/FST release archive, and stores the executable at
 `.deps/wavepeek-bin/wavepeek`. Existing or inconsistent state is never
-overwritten. Both paths are excluded from source archives and releases. No
-Rust toolchain or crates.io access is required.
+overwritten. On Linux, setup checks the host glibc first. A host older than
+2.34 gets an isolated `.deps/glibc-2.34` built from the locked GNU source;
+only WavePeek is invoked through its loader and private library path. System
+glibc and global `LD_LIBRARY_PATH` remain unchanged. These paths are excluded
+from source archives and releases. No Rust toolchain or crates.io access is
+required; the private glibc path requires the normal C build prerequisites,
+including GCC and GNU Make.
 
 The default build intentionally omits `fsdb`. Upstream FSDB support requires a
 proprietary Verdi SDK and is outside public CI and the managed default.
@@ -62,8 +68,9 @@ forwarded environment-key names, timeout, output protocol, accepted exit
 codes, and expected artifacts. Obtain exact WavePeek flags from the pinned
 `help`, `docs`, and `schema` commands; do not infer signal or time semantics.
 
-The adapter invokes no shell. It records request, binary, stdout, stderr, and
-artifact hashes plus source Git identity. JSON must parse. JSONL must start
+The adapter invokes no shell. It records request, the real WavePeek binary,
+the optional private loader identity, stdout, stderr, and artifact hashes plus
+source Git identity. JSON must parse. JSONL must start
 with `begin`, end with `end`, and have contiguous sequence numbers. Timeout,
 unexpected exit, malformed output, or missing artifacts fails closed.
 

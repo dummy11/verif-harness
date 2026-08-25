@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -91,6 +92,38 @@ class WavepeekAdapterTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         assert payload is not None
         self.assertEqual(payload["state"], "TOOL_NOT_FOUND")
+
+    def test_private_glibc_descriptor_uses_loader_and_records_identity(self) -> None:
+        deps = self.root / ".deps"
+        binary = deps / "wavepeek-bin/wavepeek"
+        binary.parent.mkdir(parents=True)
+        binary.write_text(FAKE)
+        binary.chmod(0o755)
+        library = deps / "glibc-2.34/lib"
+        library.mkdir(parents=True)
+        loader = library / "ld-linux-x86-64.so.2"
+        loader.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = --library-path ]; then shift 2; fi\n"
+            "exec \"$@\"\n"
+        )
+        loader.chmod(0o755)
+        descriptor = {
+            "schema_version": 1, "kind": "private-glibc", "version": "2.34",
+            "root": "../glibc-2.34", "loader": "lib/ld-linux-x86-64.so.2",
+            "loader_sha256": hashlib.sha256(loader.read_bytes()).hexdigest(),
+            "library_dirs": ["lib"], "license": "LGPL-2.1-or-later",
+            "license_file_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+            "licenses_file_sha256": "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc",
+        }
+        (binary.parent / "wavepeek-runtime.json").write_text(json.dumps(descriptor))
+        self.binary = binary
+        result, payload = self.run_adapter(request())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert payload is not None
+        self.assertEqual(payload["tool_identity"]["runtime"]["version"], "2.34")
+        self.assertEqual(payload["argv"][0], str(loader.resolve()))
+        self.assertNotIn("LD_LIBRARY_PATH", payload["environment_keys"])
 
 
 if __name__ == "__main__":

@@ -115,8 +115,9 @@ Probe `PASS` 只代表 wrapper 存在且可执行。它不会运行真实 NPI/ED
 ## MCP surface
 
 锁定 checkout 中的 MCP entrypoint 是 `xverif_mcp.server:main`，launcher 是
-`tools/xverif-mcp`，transport 只允许 stdio。`mcp[cli]` 是 Agent Python 环境的
-单独运行时依赖，不 vendored 到 verif-harness。项目 profile 只记录 source commit、
+`tools/xverif-mcp`，transport 只允许 stdio。`mcp[cli]==1.29.1` 是 managed Agent
+Python 环境中 artifact-hash-locked 的单独运行时依赖，不 vendored 到
+verif-harness；2.x 不满足当前 server 的 FastMCP import 合同。项目 profile 只记录 source commit、
 backend 和 environment key 名称；Codex/Kimi host 负责注册具体 server。
 
 真实 MCP probe 必须调用 `xverif_ping`，然后调用 `xverif_tools` 获取 catalog。对

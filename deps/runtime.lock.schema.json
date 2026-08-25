@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dummy11/verif-harness/schemas/runtime.lock.schema.json",
+  "title": "verif-harness managed runtime lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "python", "python_packages", "host_contract"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "name": {"const": "verif-harness-managed-runtime"},
+    "python": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "version", "distribution", "release", "licenses", "assets"],
+      "properties": {
+        "implementation": {"const": "cpython"},
+        "version": {"const": "3.12.11"},
+        "distribution": {"const": "astral-sh/python-build-standalone"},
+        "release": {"const": "20251007"},
+        "licenses": {"const": ["MPL-2.0", "PSF-2.0"]},
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"],
+          "properties": {
+            "aarch64-apple-darwin": {"$ref": "#/$defs/asset"},
+            "x86_64-apple-darwin": {"$ref": "#/$defs/asset"},
+            "aarch64-unknown-linux-gnu": {"$ref": "#/$defs/asset"},
+            "x86_64-unknown-linux-gnu": {"$ref": "#/$defs/asset"}
+          }
+        }
+      }
+    },
+    "python_packages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "requirements_sha256", "mcp_requirement", "mcp_version", "resolver"],
+      "properties": {
+        "requirements": {"const": "deps/runtime-requirements.lock"},
+        "requirements_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "mcp_requirement": {"const": "mcp[cli]==1.29.1"},
+        "mcp_version": {"const": "1.29.1"},
+        "resolver": {"const": "uv==0.12.5"}
+      }
+    },
+    "host_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_commands", "download_commands", "sha256_commands", "conditional_private_glibc_build_commands", "version_requirements"],
+      "properties": {
+        "required_commands": {"const": ["awk", "bash", "cp", "dirname", "git", "ln", "mkdir", "mv", "readlink", "rm", "tar", "uname"]},
+        "download_commands": {"const": ["curl", "wget"]},
+        "sha256_commands": {"const": ["sha256sum", "shasum"]},
+        "conditional_private_glibc_build_commands": {"const": ["as", "bison", "gcc", "gawk", "ld", "make", "makeinfo", "sed"]},
+        "version_requirements": {
+          "const": {
+            "bash": ">=3.2",
+            "git": ">=2.25",
+            "private_glibc_binutils": ">=2.25",
+            "private_glibc_bison": ">=2.7",
+            "private_glibc_gawk": ">=3.1.2",
+            "private_glibc_gcc": ">=6.2",
+            "private_glibc_make": ">=4.0",
+            "private_glibc_python": ">=3.4",
+            "private_glibc_sed": ">=3.02",
+            "private_glibc_texinfo": ">=4.7",
+            "verilator": "5.x"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archive", "sha256"],
+      "properties": {
+        "archive": {"type": "string", "pattern": "^cpython-3\\.12\\.11\\+20251007-[a-z0-9_-]+-install_only_stripped\\.tar\\.gz$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

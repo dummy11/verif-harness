@@ -7,10 +7,10 @@
   "required": [
     "schema_version", "name", "repository", "commit", "ref", "version",
     "license", "license_file_sha256", "cargo_lock_sha256", "binary",
-    "cargo_features", "release_base_url", "release_assets"
+    "cargo_features", "private_glibc", "release_base_url", "release_assets"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "name": {"const": "wavepeek"},
     "repository": {"const": "https://github.com/kleverhq/wavepeek.git"},
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
@@ -21,6 +21,30 @@
     "cargo_lock_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "binary": {"const": "wavepeek"},
     "cargo_features": {"type": "array", "maxItems": 0},
+    "private_glibc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_host_version", "version", "source_url", "source_sha256",
+        "license", "license_file", "license_file_sha256", "licenses_file",
+        "licenses_file_sha256", "configure_args"
+      ],
+      "properties": {
+        "minimum_host_version": {"const": "2.34"},
+        "version": {"const": "2.34"},
+        "source_url": {"const": "https://ftp.gnu.org/gnu/glibc/glibc-2.34.tar.xz"},
+        "source_sha256": {"const": "44d26a1fe20b8853a48f470ead01e4279e869ac149b195dda4e44a195d981ab2"},
+        "license": {"const": "LGPL-2.1-or-later"},
+        "license_file": {"const": "COPYING.LIB"},
+        "license_file_sha256": {"const": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"},
+        "licenses_file": {"const": "LICENSES"},
+        "licenses_file_sha256": {"const": "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc"},
+        "configure_args": {
+          "type": "array", "prefixItems": [{"const": "--disable-werror"}],
+          "minItems": 1, "maxItems": 1
+        }
+      }
+    },
     "release_base_url": {"const": "https://github.com/kleverhq/wavepeek/releases/download/v2.2.3"},
     "release_assets": {
       "type": "object",

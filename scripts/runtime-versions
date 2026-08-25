@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "$package_root/scripts/managed-python" \
+  "$package_root/scripts/check_runtime_versions.py" \
+  --project-root "$package_root" "$@"

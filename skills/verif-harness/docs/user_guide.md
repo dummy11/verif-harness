@@ -1395,9 +1395,10 @@ python3 scripts/verif_harness.py wavepeek run \
 为 `json`。JSONL request 必须使用 native `--jsonl`。
 
 **输出**：安装器发布 Git-ignored `.deps/wavepeek` source 和
-`.deps/wavepeek-bin/wavepeek` executable；adapter 在全新 out-dir 生成
+`.deps/wavepeek-bin/wavepeek` executable；Linux host glibc 低于 2.34 时还会发布
+Git-ignored `.deps/glibc-2.34` 和 WavePeek-only runtime descriptor。adapter 在全新 out-dir 生成
 `result.json`、`stdout.log`、`stderr.log`，记录 source Git identity、binary/
-request/output/artifact hashes、argv、cwd、exit code、parsed JSON/JSONL 和
+request/output/artifact hashes、可选 private loader identity、argv、cwd、exit code、parsed JSON/JSONL 和
 blockers。timeout、非预期 exit、非法 JSON、残缺 JSONL、缺 artifact 都 fail
 closed。
 
@@ -1426,7 +1427,7 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 
 - 操作：`probe`、`bootstrap`、`stage`、`status` 或 `resume`；
 - 完整 verif-harness 仓库及 `deps/spec-kit.lock.json`；
-- Python 3.11 或更新版本；
+- 已通过 `./scripts/setup --isolation managed` 安装的固定 CPython 3.12.11；
 - `bootstrap` 的项目根目录；
 - `stage` 的 Stage `0`～`5` 和已评审 objective；
 - 项目 `AGENTS.md`、只读 RTL 边界、规格来源及已有 baseline；
@@ -1436,7 +1437,7 @@ baseline 后管理新 change request。不要为每条 CLI command 单独建立�
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup --no-agent
+./scripts/setup --isolation managed --no-agent
 ```
 
 `--no-agent` 仅用于不启动 CLI 的自动化安装。正常 setup 使用
@@ -1514,8 +1515,8 @@ postcondition；规格漂移和 unresolved questions。`sim/docs/` 只保存
 **不能得出的结论**：Spec Kit 命令成功、checklist 全勾选或 workflow review gate
 通过，不能证明 compile/elaboration/simulation/regression/coverage/assertion/
 performance PASS，也不能批准 Human Decision、waiver、Stage gate、sign-off、freeze、
-commit、push 或公开发布。上游源码固定不等于 Python 传递依赖完全 artifact-pinned；
-高保证或离线环境仍需维护者生成并审阅 wheel/hash lock。
+commit、push 或公开发布。managed runtime 的 MCP 传递依赖已经 artifact-hash-locked；
+Spec Kit 自身的 Python 传递依赖仍需在高保证或离线环境维护独立 wheel/hash lock。
 
 ## 6. 治理、闭合与发布模式
 

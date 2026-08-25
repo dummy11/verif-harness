@@ -3,13 +3,13 @@ set -euo pipefail
 
 package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workspace_root="$package_root"
-python_cmd="${VERIF_HARNESS_PYTHON:-python3}"
 install_verilator=false
 runtime=auto
+isolation=managed
 launch_agent=true
 
 usage() {
-  echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--no-agent]" >&2
+  echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--isolation managed] [--no-agent]" >&2
   echo "       workspace-root receives runtime/spec/workflow files; RTL is selected later in Stage 0." >&2
 }
 
@@ -34,6 +34,15 @@ while [[ $# -gt 0 ]]; do
       runtime="$1"
       ;;
     --runtime=*) runtime="${1#*=}" ;;
+    --isolation)
+      shift
+      if [[ $# -eq 0 ]]; then
+        usage
+        exit 2
+      fi
+      isolation="$1"
+      ;;
+    --isolation=*) isolation="${1#*=}" ;;
     --no-agent) launch_agent=false ;;
     --help|-h)
       usage
@@ -52,18 +61,25 @@ if [[ ! -d "$workspace_root" ]]; then
   exit 2
 fi
 workspace_root="$(cd "$workspace_root" && pwd)"
-if [[ ! -x "$python_cmd" ]]; then
-  if ! command -v "$python_cmd" >/dev/null 2>&1; then
-    echo "ERROR: configured Python executable is not available: $python_cmd" >&2
-    exit 2
-  fi
-  python_cmd="$(command -v "$python_cmd")"
-fi
 
 if [[ "$runtime" != "auto" && "$runtime" != "codex" && "$runtime" != "kimi" ]]; then
   echo "ERROR: runtime must be codex or kimi." >&2
   exit 2
 fi
+if [[ "$isolation" != "managed" ]]; then
+  echo "ERROR: isolation backend is not implemented: $isolation (available: managed)." >&2
+  exit 2
+fi
+
+python_cmd="$("$package_root/scripts/setup_managed.sh" --project-root "$package_root")"
+if [[ ! -x "$python_cmd" ]]; then
+  echo "ERROR: managed runtime did not return an executable Python: $python_cmd" >&2
+  exit 2
+fi
+managed_bin="$(dirname "$python_cmd")"
+export VERIF_HARNESS_PYTHON="$python_cmd"
+export PYTHON="$python_cmd"
+export PATH="$managed_bin:$PATH"
 
 agent_cli=""
 agent_args=()
@@ -82,22 +98,19 @@ fi
 
 echo "Using Python: $python_cmd"
 "$python_cmd" --version
-"$python_cmd" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' || {
-  echo "ERROR: default setup requires Python 3.11 or newer for Spec Kit and xverif MCP." >&2
-  exit 2
-}
-make --version | sed -n '1p'
+echo "Isolation backend: managed"
 "$python_cmd" "$package_root/scripts/check_structure.py"
 
 "$python_cmd" "$package_root/scripts/setup_xverif.py" --project-root "$package_root"
 "$python_cmd" "$package_root/scripts/check_xverif.py"
-"$python_cmd" -m pip install --disable-pip-version-check "mcp[cli]"
 "$python_cmd" -c 'import mcp'
+PYTHONPATH="$package_root/.deps/xverif/xverif_mcp/src:$package_root/.deps/xverif${PYTHONPATH:+:$PYTHONPATH}" \
+  "$python_cmd" -c 'from mcp.server.fastmcp import FastMCP; import xverif_mcp.server'
 
 "$python_cmd" "$package_root/scripts/setup_wavepeek.py" --project-root "$package_root"
 "$python_cmd" "$package_root/scripts/check_wavepeek.py"
 
-"$python_cmd" "$package_root/scripts/setup_spec_kit.py" --project-root "$package_root"
+"$python_cmd" "$package_root/scripts/setup_spec_kit.py" --project-root "$package_root" --python "$python_cmd"
 "$python_cmd" "$package_root/scripts/check_spec_kit.py"
 
 if command -v verilator >/dev/null 2>&1; then
@@ -107,6 +120,13 @@ else
   echo "Setup completed without Verilator."
   echo "Run ./scripts/setup.sh --install-verilator or install Verilator 5.x."
 fi
+
+version_args=(--project-root "$package_root" --runtime "$runtime")
+if [[ "$launch_agent" == true ]]; then
+  version_args+=(--require-agent)
+fi
+echo "Checking required and observed runtime/tool versions."
+"$python_cmd" "$package_root/scripts/check_runtime_versions.py" "${version_args[@]}"
 
 if [[ "$launch_agent" != true && "$runtime" == "auto" ]]; then
   echo "Setup PASS: managed dependencies are installed under $package_root/.deps."
@@ -214,7 +234,8 @@ echo "Setup PASS: Spec Kit, xverif CLI/MCP, and WavePeek are installed."
 if [[ "$launch_agent" != true ]]; then
   echo "Agent launch skipped (--no-agent)."
   echo "Workspace configured at: $workspace_root"
-  echo "Start later with: (cd \"$workspace_root\" && codex) or (cd \"$workspace_root\" && kimi)"
+  echo "Start later through managed setup so the Agent inherits its runtime:"
+  echo "  $package_root/scripts/setup --runtime $runtime --workspace-root $workspace_root"
   exit 0
 fi
 if [[ ! -d "$workspace_root" ]]; then

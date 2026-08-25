@@ -30,7 +30,8 @@ verification outputs belong to the workspace. Stage 0 later records the RTL
 root and DUT top file.
 
 ```bash
-./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
+./scripts/setup --isolation managed --runtime codex \
+  --workspace-root /path/to/verification-workspace
 ```
 
 When `--runtime auto` is used, setup selects the only installed Agent CLI. If
@@ -42,7 +43,8 @@ rewrite that file implicitly.
 For an empty workspace without a runtime marker, choose explicitly:
 
 ```bash
-./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
+./scripts/setup --isolation managed --runtime kimi \
+  --workspace-root /path/to/verification-workspace
 ```
 
 After the CLI starts, invoke `$verif-harness` in Codex or
@@ -52,14 +54,13 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 `.specify/` project rather than replacing its specifications or integration
 state.
 
-If setup was run with `--no-agent`, start the configured runtime manually from
-the workspace:
+If setup was run with `--no-agent`, start it later through setup again so the
+Agent and xverif wrappers inherit the managed Python environment:
 
 ```bash
-cd /path/to/verification-workspace
-codex                  # Codex
-# or
-kimi --yolo            # Kimi Code
+./scripts/setup --isolation managed --runtime codex \
+  --workspace-root /path/to/verification-workspace
+# or use --runtime kimi
 ```
 
 Then invoke the runtime-native Skill inside that CLI. Starting the CLI from the
@@ -71,6 +72,11 @@ the final CLI launch and workspace runtime configuration but still installs and
 verifies Spec Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek. To configure a
 target without launching an Agent, also pass explicit `--runtime codex|kimi`
 and `--workspace-root <path>`.
+
+`--isolation managed` is currently the only implemented dependency backend and
+the default. It exports the managed interpreter to xverif wrappers before the
+Agent starts. Apptainer, Docker, and Podman are not silently selected or used
+as fallbacks.
 
 Inspect the result without changing the project:
 

@@ -93,8 +93,11 @@ verif-harness Skill / control plane
 
 ## Requirements
 
-- Python 3.11 or newer (the default setup installs Spec Kit and xverif MCP).
-- GNU Make.
+- Standard POSIX userland, Bash, Git, tar, one HTTPS downloader (`curl` or
+  `wget`), and one SHA-256 command (`sha256sum` or `shasum`) for the managed
+  bootstrap.
+- GNU Make 3.81+ for contributor targets; default setup does not require it
+  unless an old Linux host must build the private WavePeek glibc.
 - Verilator 5.x for the open-source example.
 - A UVM-capable commercial simulator for full UVM regressions.
 
@@ -107,13 +110,15 @@ are intentionally not included.
 git clone https://github.com/dummy11/verif-harness.git ~/tools/verif-harness
 mkdir -p ~/workspaces/my-dut-verification
 cd ~/tools/verif-harness
-./scripts/setup --runtime codex --workspace-root ~/workspaces/my-dut-verification
+./scripts/setup --isolation managed --runtime codex \
+  --workspace-root ~/workspaces/my-dut-verification
 ```
 
 Kimi Code 使用：
 
 ```bash
-./scripts/setup --runtime kimi --workspace-root ~/workspaces/my-dut-verification
+./scripts/setup --isolation managed --runtime kimi \
+  --workspace-root ~/workspaces/my-dut-verification
 ```
 
 `setup` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
@@ -125,10 +130,28 @@ verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，�
 `~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
 安装包括：
 
+- 固定版本、固定平台归档哈希的 managed CPython 及 hash-locked MCP 环境；
 - Spec Kit 规格工作流；
 - xverif CLI 和 `xverif_mcp` 源码/launcher；
 - Python `mcp[cli]` SDK；
-- VCD/FST-only WavePeek binary。
+- VCD/FST-only WavePeek binary；旧 Linux glibc 主机使用隔离的私有 glibc 2.34。
+
+`managed` 是当前唯一实现的 isolation backend，也是默认值。它不读取宿主
+`python3`、`pip` 或 Python alias；运行时位于 `.deps/runtime/`。Apptainer、Docker
+和 Podman 名称预留给后续显式后端，当前传入这些值会 fail closed，不会静默降级。
+
+每次 setup 在启动 Agent 前都会打印依赖版本清单，包括锁定版本、当前实际版本、
+状态和来源路径。也可以随时单独运行：
+
+```bash
+./scripts/runtime-versions           # 人类可读表格
+./scripts/runtime-versions --verbose # 同时显示解析到的路径
+./scripts/runtime-versions --json    # CI/自动化输入
+```
+
+必需依赖不满足时命令返回非零；条件依赖仅在对应路径启用时成为 blocker，
+例如旧 Linux 主机需要构建私有 glibc 2.34。Verilator、VCS、LSF、Verdi 和
+未选择的 Agent CLI 会列出，但缺失不会阻断只安装 managed 依赖的路径。
 
 默认 setup 不覆盖已有的受管 checkout、runtime 配置或 Skill 文件；如果检测到
 dirty、错误 commit、错误 license 或冲突的 Skill 路径，会 fail closed。只安装

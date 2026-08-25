@@ -94,18 +94,19 @@ checkout，或显式传 `--xverif-root <root>`。该目录下必须存在
 直接 `git pull`；依赖升级必须先评审新 commit/许可证/第三方边界并更新 lock，
 再用新 checkout 重跑 `make setup-xverif check-xverif`。
 
-## Spec Kit 安装提示需要 Python 3.11
+## managed runtime 或 Spec Kit 提示 Python 不可用
 
-固定的 Spec Kit v0.16.4 明确要求 Python 3.11 或更新版本。系统 `python3` 较旧时，
-使用已批准的 3.11+ interpreter：
+默认 setup 不解析系统 `python3` 或 shell alias，而是使用
+`deps/runtime.lock.json` 固定的 CPython 3.12.11。先检查受管 runtime：
 
 ```bash
-python3.11 scripts/setup_spec_kit.py
-python3.11 scripts/check_spec_kit.py
+./scripts/runtime-versions --verbose
+./scripts/setup_managed.sh --check
+./scripts/setup --isolation managed --no-agent
 ```
 
-不要降低 lock 中的 `python_requires`，也不要让主项目运行时依赖 Spec Kit。它是
-可选规格子系统，core structure/test/example 在未安装时仍应工作。
+不要降低 lock 中的 `python_requires`，也不要回退到宿主 Python。partial 或 drifted
+`.deps/runtime` 会 fail closed；保留现场并由 Human 移走该 exact path 后再安装。
 
 ## Agent runtime 无法解析
 
@@ -181,11 +182,12 @@ keys。adapter 不会自动 fallback 到 MCP、其它 backend 或 fixture。
 ## xverif MCP 返回 `MCP_SDK_MISSING`
 
 `xverif mcp install` 只安装锁定 checkout 中的 `xverif_mcp` source 和
-`tools/xverif-mcp` launcher，不会把 Python `mcp[cli]` 传递依赖偷偷安装到当前
-环境。请在 Codex/Kimi 实际使用的 Python 3.11+ 环境安装该依赖，再运行：
+`tools/xverif-mcp` launcher。默认 managed setup 已按
+`deps/runtime-requirements.lock` 安装并校验 `mcp[cli]` 及其传递依赖；不要再向宿主
+Python 安装。用 managed interpreter 检查：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp status --project-root .
+./scripts/managed-python scripts/verif_harness.py xverif mcp status --project-root .
 ```
 
 不要把 `.mcp.json`、token、license 值或本机绝对路径提交到项目仓库。
@@ -226,7 +228,13 @@ analysis complete、coverage closed、assertion correct 或 regression passed。
 是否 dirty、origin/HEAD/License/Cargo.lock 是否与 lock 不同，或 binary version
 是否不匹配。安装器不覆盖已有状态。先保存人工文件，由 Human 明确移走这两个
 exact path，再运行 `make setup-wavepeek check-wavepeek`。首次安装需要访问固定
-GitHub tag 和官方 release archive，不需要 Rust 或 crates.io。
+GitHub tag 和官方 release archive，不需要 Rust 或 crates.io。Linux 主机先检查
+glibc；低于 2.34 时还会从 lock 固定的 GNU source 构建
+`.deps/glibc-2.34`。该条件路径要求 GCC 6.2+、GNU Make 4.0+、binutils
+assembler/linker 2.25+、GNU texinfo 4.7+、GNU awk 3.1.2+、Bison 2.7+、
+GNU sed 3.02+ 和 Python 3.4+；managed CPython 满足最后一项。缺少或版本过旧、
+private loader/hash 漂移或版本 probe 失败均为 `BLOCKED`；禁止通过全局
+`LD_LIBRARY_PATH` 绕过。
 
 ## WavePeek 返回 `PROTOCOL_ERROR`
 
