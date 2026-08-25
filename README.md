@@ -101,23 +101,25 @@ verif-harness Skill / control plane
 Commercial simulator licenses, scheduler configuration, and private wrappers
 are intentionally not included.
 
-## Install and connect an RTL project
+## Install and initialize a verification workspace
 
 ```bash
 git clone https://github.com/dummy11/verif-harness.git ~/tools/verif-harness
+mkdir -p ~/workspaces/my-dut-verification
 cd ~/tools/verif-harness
-./scripts/setup --runtime codex --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --workspace-root ~/workspaces/my-dut-verification
 ```
 
 Kimi Code 使用：
 
 ```bash
-./scripts/setup --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime kimi --workspace-root ~/workspaces/my-dut-verification
 ```
 
 `setup` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
 verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，不会被 vendored
-进 RTL 工程。runtime 配置和 Skill 链接安装到 `--project-root` 指定的工程：
+进工作空间或 RTL 目录。runtime 配置和 Skill 链接安装到 `--workspace-root` 指定的
+工作空间：
 `--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
 `.kimi-code/` 并以 Kimi 原生 `--yolo` 启动。setup 不修改 `~/.codex` 或
 `~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
@@ -131,13 +133,13 @@ verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，�
 默认 setup 不覆盖已有的受管 checkout、runtime 配置或 Skill 文件；如果检测到
 dirty、错误 commit、错误 license 或冲突的 Skill 路径，会 fail closed。只安装
 依赖而不启动 Agent 时使用 `--no-agent`；若还要配置目标工程，应同时显式传入
-`--runtime codex|kimi --project-root <path>`。
+`--runtime codex|kimi --workspace-root <path>`。
 
 默认安装完成后，setup 会直接进入所选 Agent CLI。若使用了 `--no-agent`，或之后
-需要重新进入已经配置好的工程，先切换到目标 RTL 工程目录，再启动对应 CLI：
+需要重新进入已经配置好的工作空间，先切换到工作空间目录，再启动对应 CLI：
 
 ```bash
-cd /path/to/rtl-project
+cd ~/workspaces/my-dut-verification
 codex                  # Codex runtime
 # 或
 kimi --yolo            # Kimi Code runtime
@@ -163,7 +165,8 @@ $verif-harness bootstrap --project-root . --integration codex
 Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
 入口。
 
-安装完成后，请直接阅读并按用户指南操作：
+进入工作空间后，请直接阅读并按用户指南操作。Stage 0 会在工作空间内询问并记录
+RTL 根目录、DUT top 文件和验证目录；setup 阶段不绑定 RTL 路径：
 
 [verif-harness 用户指南](skills/verif-harness/docs/user_guide.md)
 
@@ -211,8 +214,8 @@ deps/                    Reviewed optional-dependency locks and schemas
 ## Supported agent runtimes
 
 The reusable Skill is under `skills/verif-harness/`. Follow
-[Install and connect an RTL project](#install-and-connect-an-rtl-project) to
-expose it at the runtime-native target-project path.
+[Install and initialize a verification workspace](#install-and-initialize-a-verification-workspace)
+to expose the Skill at the workspace runtime path.
 
 Codex:
 

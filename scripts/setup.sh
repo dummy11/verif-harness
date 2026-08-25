@@ -2,27 +2,27 @@
 set -euo pipefail
 
 package_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-project_root="$package_root"
+workspace_root="$package_root"
 install_verilator=false
 runtime=auto
 launch_agent=true
 
 usage() {
-  echo "usage: $0 [--project-root PATH] [--install-verilator] [--runtime codex|kimi] [--no-agent]" >&2
-  echo "       runtime selects project-scoped Codex/Kimi settings; setup never edits user config." >&2
+  echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--no-agent]" >&2
+  echo "       workspace-root receives runtime/spec/workflow files; RTL is selected later in Stage 0." >&2
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-root)
+    --workspace-root|--project-root)
       shift
       if [[ $# -eq 0 ]]; then
         usage
         exit 2
       fi
-      project_root="$1"
+      workspace_root="$1"
       ;;
-    --project-root=*) project_root="${1#*=}" ;;
+    --workspace-root=*|--project-root=*) workspace_root="${1#*=}" ;;
     --install-verilator) install_verilator=true ;;
     --runtime)
       shift
@@ -46,11 +46,11 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ ! -d "$project_root" ]]; then
-  echo "ERROR: project root does not exist or is not a directory: $project_root" >&2
+if [[ ! -d "$workspace_root" ]]; then
+  echo "ERROR: workspace root does not exist or is not a directory: $workspace_root" >&2
   exit 2
 fi
-project_root="$(cd "$project_root" && pwd)"
+workspace_root="$(cd "$workspace_root" && pwd)"
 
 if [[ "$runtime" != "auto" && "$runtime" != "codex" && "$runtime" != "kimi" ]]; then
   echo "ERROR: runtime must be codex or kimi." >&2
@@ -133,25 +133,25 @@ if [[ "$launch_agent" == true ]]; then
 fi
 if [[ "$runtime" == "codex" ]]; then
   agent_cli="$codex_cli"
-  if [[ "$project_root" == "$package_root" ]]; then
+  if [[ "$workspace_root" == "$package_root" ]]; then
     if [[ ! -f "$package_root/.codex/config.toml" || ! -f "$package_root/.codex/rules/default.rules" ]]; then
       echo "ERROR: package Codex config is missing: $package_root/.codex/config.toml" >&2
       echo "       Refusing to fall back to global Codex settings." >&2
       exit 2
     fi
   else
-    mkdir -p "$project_root/.codex/rules"
-    if [[ -L "$project_root/.codex/config.toml" || -L "$project_root/.codex/rules/default.rules" ]]; then
+    mkdir -p "$workspace_root/.codex/rules"
+    if [[ -L "$workspace_root/.codex/config.toml" || -L "$workspace_root/.codex/rules/default.rules" ]]; then
       echo "ERROR: refusing to follow a symlink in project Codex config paths." >&2
       exit 2
     fi
-    if [[ ! -e "$project_root/.codex/config.toml" ]]; then
-      cp "$package_root/.codex/config.toml" "$project_root/.codex/config.toml"
-      echo "Created project Codex config: $project_root/.codex/config.toml"
+    if [[ ! -e "$workspace_root/.codex/config.toml" ]]; then
+      cp "$package_root/.codex/config.toml" "$workspace_root/.codex/config.toml"
+      echo "Created workspace Codex config: $workspace_root/.codex/config.toml"
     fi
-    if [[ ! -e "$project_root/.codex/rules/default.rules" ]]; then
-      cp "$package_root/.codex/rules/default.rules" "$project_root/.codex/rules/default.rules"
-      echo "Created project Codex rules: $project_root/.codex/rules/default.rules"
+    if [[ ! -e "$workspace_root/.codex/rules/default.rules" ]]; then
+      cp "$package_root/.codex/rules/default.rules" "$workspace_root/.codex/rules/default.rules"
+      echo "Created workspace Codex rules: $workspace_root/.codex/rules/default.rules"
     fi
   fi
 else
@@ -159,31 +159,31 @@ else
   # Kimi Code's project-local file currently supports workspace settings only;
   # permission rules remain a host-level Kimi configuration concern.  Do not
   # create or modify ~/.kimi-code/config.toml here.
-  if [[ -L "$project_root/.kimi-code/local.toml" ]]; then
-    echo "ERROR: refusing to follow a symlink at $project_root/.kimi-code/local.toml" >&2
+  if [[ -L "$workspace_root/.kimi-code/local.toml" ]]; then
+    echo "ERROR: refusing to follow a symlink at $workspace_root/.kimi-code/local.toml" >&2
     exit 2
-  elif [[ -f "$project_root/.kimi-code/local.toml" ]]; then
-    echo "Using project Kimi config: $project_root/.kimi-code/local.toml"
+  elif [[ -f "$workspace_root/.kimi-code/local.toml" ]]; then
+    echo "Using workspace Kimi config: $workspace_root/.kimi-code/local.toml"
   else
-    mkdir -p "$project_root/.kimi-code"
+    mkdir -p "$workspace_root/.kimi-code"
     printf '%s\n' \
       '# Project-scoped Kimi Code workspace settings for verif-harness.' \
       '# Kimi Code currently accepts workspace options in this file; permission' \
       '# rules are intentionally not duplicated here because they are host-level.' \
       '[workspace]' \
-      'additional_dir = []' > "$project_root/.kimi-code/local.toml"
-    echo "Created project Kimi config: $project_root/.kimi-code/local.toml"
+      'additional_dir = []' > "$workspace_root/.kimi-code/local.toml"
+    echo "Created workspace Kimi config: $workspace_root/.kimi-code/local.toml"
   fi
   agent_args+=(--yolo)
 fi
-skill_parent="$project_root/.agents/skills"
+skill_parent="$workspace_root/.agents/skills"
 invocation='$verif-harness'
 if [[ "$runtime" == "kimi" ]]; then
-  skill_parent="$project_root/.kimi-code/skills"
+  skill_parent="$workspace_root/.kimi-code/skills"
   invocation='/skill:verif-harness'
 fi
 skill_link="$skill_parent/verif-harness"
-if [[ "$project_root" == "$package_root" ]]; then
+if [[ "$workspace_root" == "$package_root" ]]; then
   skill_target="../../skills/verif-harness"
 else
   skill_target="$package_root/skills/verif-harness"
@@ -204,11 +204,11 @@ fi
 echo "Setup PASS: Spec Kit, xverif CLI/MCP, and WavePeek are installed."
 if [[ "$launch_agent" != true ]]; then
   echo "Agent launch skipped (--no-agent)."
-  echo "Target project configured at: $project_root"
-  echo "Start later with: (cd \"$project_root\" && codex) or (cd \"$project_root\" && kimi)"
+  echo "Workspace configured at: $workspace_root"
+  echo "Start later with: (cd \"$workspace_root\" && codex) or (cd \"$workspace_root\" && kimi)"
   exit 0
 fi
-echo "Starting $runtime CLI in $project_root now."
+echo "Starting $runtime CLI in workspace $workspace_root now."
 echo "Inside the Agent CLI, invoke: $invocation"
-cd "$project_root"
+cd "$workspace_root"
 exec "$agent_cli" "${agent_args[@]}"

@@ -25,7 +25,7 @@ every run. Contributors should include exact tool versions with bug reports.
 xverif integration uses an approved checkout of
 `https://github.com/BLANK2077/xverif.git`. The exact reviewed commit is stored
 in `deps/xverif.lock.json`; run `./scripts/setup --runtime codex|kimi
---project-root <rtl-project>` from the verif-harness package checkout to install it into
+--workspace-root <verification-workspace>` from the verif-harness package checkout to install it into
 `.deps/xverif`, including the locked `xverif_mcp` package and
 `tools/xverif-mcp` launcher. The CLI adapter records the selected wrapper
 SHA-256 and checkout commit for every run. The MCP Python dependency
@@ -35,7 +35,7 @@ change, never an implicit branch update.
 
 WavePeek uses reviewed source from `https://github.com/kleverhq/wavepeek.git`.
 Its lock records the exact commit, version, License and Cargo.lock hashes.
-the default `./scripts/setup --runtime codex|kimi --project-root <rtl-project>`
+the default `./scripts/setup --runtime codex|kimi --workspace-root <verification-workspace>`
 from the verif-harness package checkout verifies an official platform-specific
 VCD/FST release archive against a pinned SHA-256; public CI does not enable
 proprietary FSDB support and no local Rust build is required.

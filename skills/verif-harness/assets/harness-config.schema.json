@@ -18,7 +18,7 @@
       "properties": {
         "root": {
           "type": "string",
-          "description": "Directory containing RTL sources, project-root-relative. E.g., 'rtl/'."
+          "description": "Directory containing RTL sources. It may be workspace-relative (e.g., 'rtl/') or an explicitly reviewed absolute path outside the workspace."
         },
         "top_module": {
           "type": "string",
@@ -26,7 +26,7 @@
         },
         "top_file": {
           "type": "string",
-          "description": "Project-root-relative path to the file containing the DUT top module."
+          "description": "Workspace-relative or explicitly reviewed absolute path to the file containing the DUT top module."
         }
       }
     },

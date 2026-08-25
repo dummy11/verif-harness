@@ -13,15 +13,15 @@ Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WaveP
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup --runtime codex --project-root /path/to/rtl-project
-# or: ./scripts/setup --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
+# or: ./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
 # or
 make setup-wavepeek check-wavepeek
 ```
 
 The setup command is run from the verif-harness package checkout. WavePeek is
 managed below that checkout's `.deps/`; waveform requests and output artifacts
-remain below the target RTL project.
+remain below the verification workspace.
 
 `deps/wavepeek.lock.json` fixes the HTTPS repository, tag, full commit,
 version, Apache-2.0 License hash, Cargo.lock hash, empty feature set, official
@@ -48,9 +48,9 @@ For CI or shell automation, the underlying wrapper remains available:
 ```bash
 python3 /path/to/verif-harness/scripts/verif_harness.py wavepeek probe
 python3 /path/to/verif-harness/scripts/verif_harness.py wavepeek run \
-  --project-root /path/to/rtl-project \
-  --request /path/to/rtl-project/wavepeek-request.json \
-  --out-dir /path/to/rtl-project/artifacts/wavepeek/query-001
+  --project-root /path/to/verification-workspace \
+  --request /path/to/verification-workspace/wavepeek-request.json \
+  --out-dir /path/to/verification-workspace/artifacts/wavepeek/query-001
 ```
 
 In Codex or Kimi Code, use `$verif-harness waveform ...` for the reviewed

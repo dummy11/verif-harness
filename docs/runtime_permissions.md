@@ -20,14 +20,14 @@ The intended command policy is:
 
 | Operation | Policy |
 | --- | --- |
-| Read or edit files below the project root | Allow within the sandbox |
+| Read or edit files below the workspace root | Allow within the sandbox |
 | `git status`, `diff`, `log`, `show`, `branch` | Allow |
 | `git add`, local `commit`, `switch` | Allow after the requested change is reviewed |
 | `make`, Python tests, Verilator, VCS, xverif, WavePeek | Allow when declared by the project workflow |
 | `git fetch` | Allow when needed for repository inspection |
 | `git push` | Keep as a separately authorized remote mutation |
 | `git reset --hard`, `git clean -fd[x]`, force push | Block |
-| Writes outside approved workspace roots | Block |
+| Writes outside the approved workspace root | Block |
 
 This policy is guidance for the Agent host; it is not a replacement for the
 host sandbox or approval engine.
@@ -62,7 +62,7 @@ installed Codex version changes.
 Kimi Code uses its own sandbox, approval, and command-policy configuration. Do
 not copy Codex TOML or assume that Codex `prefix_rule` syntax is accepted by
 Kimi. Apply the same policy table above through Kimi's documented native
-settings, keeping the project root as the only writable workspace whenever
+settings, keeping the workspace root as the only writable workspace whenever
 possible.
 
 For Kimi projects, setup creates the project-local Kimi file and Skill entry at:
@@ -87,18 +87,22 @@ approval records.
 
 ## Runtime setup
 
-Keep the package checkout and RTL project separate, then choose the target and
-runtime explicitly:
+Keep the package checkout, verification workspace, and RTL directory separate.
+Choose the workspace and runtime explicitly:
 
 ```bash
-./scripts/setup --runtime codex --project-root /path/to/rtl-project
-./scripts/setup --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
+./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
 ```
+
+The setup workspace is not the RTL root. Stage 0 asks for and records the RTL
+root and DUT top file in `.harness-config.json`; those paths may be workspace
+relative or explicitly reviewed external paths.
 
 The selected runtime determines both the project configuration and launch
 arguments: Codex requires `.codex/config.toml` and starts without extra flags;
 Kimi creates/uses `.kimi-code/local.toml` and starts as `kimi --yolo`. These
-files are written below the selected RTL project, while managed dependencies
+files are written below the selected workspace, while managed dependencies
 remain below the verif-harness package checkout. Neither path changes a
 user-level configuration file.
 

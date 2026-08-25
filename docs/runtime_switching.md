@@ -20,17 +20,17 @@ selected runtime.
 The runtime key names the Agent surface, not the model. K3 is selected in Kimi
 Code and is not written into `.harness-config.json` or Spec Kit specifications.
 
-## Bootstrap a new project
+## Initialize a verification workspace
 
-Keep the verif-harness package checkout separate from the RTL project. Run
-setup from the package checkout and pass the target explicitly. Managed
-dependencies remain below the package's Git-ignored `.deps/`; runtime config,
-the runtime-native Skill link, Spec Kit artifacts, and verification outputs
-belong to the target project. Setup starts the selected Agent CLI with the
-target project as its working directory:
+Keep the verif-harness package checkout, verification workspace, and RTL
+directory separate. Run setup from the package checkout and pass the workspace
+explicitly. Managed dependencies remain below the package's Git-ignored
+`.deps/`; runtime config, the runtime-native Skill link, Spec Kit artifacts, and
+verification outputs belong to the workspace. Stage 0 later records the RTL
+root and DUT top file.
 
 ```bash
-./scripts/setup --runtime codex --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
 ```
 
 When `--runtime auto` is used, setup selects the only installed Agent CLI. If
@@ -39,10 +39,10 @@ requires an explicit choice. An existing `.specify/integration.json` remains
 the authority for an already bootstrapped Spec Kit project; setup does not
 rewrite that file implicitly.
 
-For an empty project without a runtime marker, choose explicitly:
+For an empty workspace without a runtime marker, choose explicitly:
 
 ```bash
-./scripts/setup --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
 ```
 
 After the CLI starts, invoke `$verif-harness` in Codex or
@@ -53,10 +53,10 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 state.
 
 If setup was run with `--no-agent`, start the configured runtime manually from
-the target project:
+the workspace:
 
 ```bash
-cd /path/to/rtl-project
+cd /path/to/verification-workspace
 codex                  # Codex
 # or
 kimi --yolo            # Kimi Code
@@ -64,13 +64,13 @@ kimi --yolo            # Kimi Code
 
 Then invoke the runtime-native Skill inside that CLI. Starting the CLI from the
 verif-harness package directory would make `.` refer to the package checkout,
-not the RTL project.
+not the verification workspace.
 
 For dependency-only automation, use `./scripts/setup --no-agent`; this skips
-the final CLI launch and target runtime configuration but still installs and
+the final CLI launch and workspace runtime configuration but still installs and
 verifies Spec Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek. To configure a
 target without launching an Agent, also pass explicit `--runtime codex|kimi`
-and `--project-root <path>`.
+and `--workspace-root <path>`.
 
 Inspect the result without changing the project:
 

@@ -27,12 +27,13 @@ under the Git-ignored `.deps/` directory.
 
 ```bash
 cd /path/to/verif-harness
-./scripts/setup --runtime codex --project-root /path/to/rtl-project
-# or: ./scripts/setup --runtime kimi --project-root /path/to/rtl-project
+./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
+# or: ./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
 ```
 
 The package checkout owns the managed `.deps/xverif` source and launcher. The
-target RTL project owns `.harness/`, MCP profiles, requests, and evidence.
+verification workspace owns `.harness/`, MCP profiles, requests, and evidence;
+Stage 0 records the RTL directory separately.
 
 Equivalent focused commands are:
 
@@ -70,7 +71,7 @@ administration, and test orchestration are not part of the CLI request contract.
 
 ```bash
 python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp install \
-  --project-root /path/to/rtl-project
+  --project-root /path/to/verification-workspace
 ```
 
 setup 会同时安装并验证 source、launcher 和 commit，并在当前 Python 3.11+
@@ -80,7 +81,7 @@ setup 会同时安装并验证 source、launcher 和 commit，并在当前 Pytho
 
 ```bash
 python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp configure \
-  --project-root /path/to/rtl-project --runtime codex --backend direct
+  --project-root /path/to/verification-workspace --runtime codex --backend direct
 ```
 
 Kimi Code 使用 `--runtime kimi`。profile 写入
@@ -92,7 +93,7 @@ Kimi Code 使用 `--runtime kimi`。profile 写入
 
 ```bash
 python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp status \
-  --project-root /path/to/rtl-project
+  --project-root /path/to/verification-workspace
 ```
 
 然后在当前 Agent runtime 的 MCP 配置中注册一个名为 `xverif` 的 stdio server，

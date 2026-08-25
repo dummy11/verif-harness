@@ -152,15 +152,16 @@ Spec Kit 的 `.specify/integration.json` 是项目 runtime 唯一事实源；不
 `.harness-config.json` 里复制一份 runtime 配置。Codex 的 integration key 是
 `codex`，Kimi Code 是 `kimi`。
 
-verif-harness 安装目录与 RTL 项目目录应分离。新项目由安装目录中的
-`setup --runtime codex|kimi --project-root <project>` 在目标工程创建
-runtime-native Skill 入口，并以目标工程为工作目录启动 Agent CLI；进入 CLI 后再
-调用 bootstrap：
+verif-harness 安装目录、验证工作空间与 RTL 目录应分离。新项目由安装目录中的
+`setup --runtime codex|kimi --workspace-root <workspace>` 在工作空间创建
+runtime-native Skill 入口，并以工作空间为工作目录启动 Agent CLI；RTL 根目录和
+DUT top 文件由 Stage 0 询问并写入 `.harness-config.json`，进入 CLI 后再调用
+bootstrap：
 
-如果 setup 使用了 `--no-agent`，则在 setup 完成后手动进入目标工程并启动 runtime：
+如果 setup 使用了 `--no-agent`，则在 setup 完成后手动进入工作空间并启动 runtime：
 
 ```bash
-cd /path/to/rtl-project
+cd /path/to/verification-workspace
 codex                  # 或：kimi --yolo
 ```
 

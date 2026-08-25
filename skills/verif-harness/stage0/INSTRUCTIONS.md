@@ -21,9 +21,9 @@ receive Codex-only TOML assets.
 
 Before starting:
 
-- Current directory is the project root.
-- There is some form of RTL under the project (verify with
-  `find . -maxdepth 4 -type f \( -name '*.v' -o -name '*.sv' \) | head`).
+- Current directory is the verification workspace root.
+- RTL may be inside or outside the workspace; the Stage 0 Q&A must record its
+  reviewed path explicitly.
 - `.harness-config.json` does NOT already exist. If it does, stop and ask
   the user whether to re-bootstrap (destructive) or exit.
 - For a new project, `.specify/` exists and the Stage 0 Spec Kit specification,
@@ -57,7 +57,8 @@ basename "$PWD"
 python3 <verif-harness-root>/scripts/verif_harness.py runtime status \
   --project-root .
 
-# Candidate RTL roots (dirs containing .v/.sv, sorted by file count desc)
+# Candidate RTL roots inside the workspace (dirs containing .v/.sv, sorted by
+# file count desc). Also inspect any external RTL path supplied by the user.
 find . -maxdepth 3 -type d \( -name rtl -o -name hdl -o -name design -o -name src \) 2>/dev/null
 
 # Top-module candidates: modules that no other module instantiates
@@ -82,7 +83,8 @@ default text (e.g., `sim/`, `rtl/`) as an option in Step 2 anyway.
 Batch 1 — ask these four together using the available user-input mechanism:
 
 1. **Project name** — options: `<basename>` (default), Other
-2. **RTL root directory** — options: detected candidates (up to 3), Other
+2. **RTL root directory** — options: detected candidates (up to 3), an
+   absolute or workspace-relative path, Other
 3. **Verification root directory** — options: detected + `sim/`, Other
 4. **DUT top file** — options: top 3 file candidates from discovery, Other
 
