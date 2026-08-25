@@ -35,9 +35,10 @@ class SetupScriptTest(unittest.TestCase):
 
     def test_csh_entrypoint_delegates_without_csh_parsing_bash(self) -> None:
         source = (ROOT / "scripts/setup.csh").read_text(encoding="utf-8")
-        self.assertIn("#!/bin/csh -f", source)
+        self.assertIn("#!/bin/csh", source)
         self.assertIn("$?VERIF_HARNESS_PYTHON", source)
         self.assertIn("python3.13 python3.12 python3.11", source)
+        self.assertIn("sys.version_info >= (3, 11)", source)
         self.assertIn("where -p", source)
         self.assertIn('setenv VERIF_HARNESS_PYTHON "$python_path"', source)
         self.assertIn('exec "$bash_path" "$script_dir/setup.sh"', source)
@@ -52,6 +53,7 @@ class SetupScriptTest(unittest.TestCase):
             result = subprocess.run(
                 [shutil.which("csh"), "-f", str(entrypoint)],
                 cwd=root,
+                env={**os.environ, "VERIF_HARNESS_PYTHON": str(Path("/bin/sh"))},
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -76,7 +78,9 @@ class SetupScriptTest(unittest.TestCase):
             commands = root / "bin"
             commands.mkdir()
             versioned_python = commands / "python3.11"
-            versioned_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            versioned_python.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$0"\n', encoding="utf-8"
+            )
             versioned_python.chmod(0o755)
             environment = os.environ.copy()
             environment.pop("VERIF_HARNESS_PYTHON", None)
@@ -92,6 +96,44 @@ class SetupScriptTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), str(versioned_python))
+            self.assertFalse((root / "2").exists())
+
+    @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
+    def test_csh_preserves_the_python3_selected_by_its_startup_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entrypoint = root / "setup.csh"
+            shutil.copy2(ROOT / "scripts/setup.csh", entrypoint)
+            setup = root / "setup.sh"
+            setup.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$VERIF_HARNESS_PYTHON"\n',
+                encoding="utf-8",
+            )
+            setup.chmod(0o755)
+            selected_python = root / "selected-python3"
+            selected_python.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$0"\n', encoding="utf-8"
+            )
+            selected_python.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+            (home / ".cshrc").write_text(
+                f"alias python3 {selected_python}\n", encoding="utf-8"
+            )
+            environment = os.environ.copy()
+            environment.pop("VERIF_HARNESS_PYTHON", None)
+            environment["HOME"] = str(home)
+            result = subprocess.run(
+                [shutil.which("csh"), str(entrypoint)],
+                cwd=root,
+                env=environment,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(selected_python))
             self.assertFalse((root / "2").exists())
 
     def test_setup_uses_shell_selected_python(self) -> None:

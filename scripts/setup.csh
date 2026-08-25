@@ -1,4 +1,4 @@
-#!/bin/csh -f
+#!/bin/csh
 # csh/tcsh entry point. The setup implementation uses Bash arrays, [[ ]], and
 # strict-mode semantics, so csh dispatches it explicitly instead of parsing it.
 set script_dir = "$0:h"
@@ -11,12 +11,24 @@ if ( $?VERIF_HARNESS_PYTHON ) then
     endif
 endif
 if ( "$python_path" == "" || ! -x "$python_path" ) then
-    foreach python_candidate (python3 python3.13 python3.12 python3.11)
+    set python_commands = (`where python3`)
+    if ( $#python_commands > 0 ) then
+        set python_probe = (`python3 -c 'import os,sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1); print(os.path.realpath(sys.executable))'`)
+        if ( $#python_probe > 0 ) then
+            if ( -x "$python_probe[1]" ) set python_path = "$python_probe[1]"
+        endif
+    endif
+endif
+if ( "$python_path" == "" || ! -x "$python_path" ) then
+    foreach python_candidate (python3.13 python3.12 python3.11)
         set python_matches = (`where -p "$python_candidate"`)
         if ( $#python_matches > 0 ) then
-            if ( -x "$python_matches[1]" ) then
-                set python_path = "$python_matches[1]"
-                break
+            set python_probe = (`"$python_matches[1]" -c 'import os,sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1); print(os.path.realpath(sys.executable))'`)
+            if ( $#python_probe > 0 ) then
+                if ( -x "$python_probe[1]" ) then
+                    set python_path = "$python_probe[1]"
+                    break
+                endif
             endif
         endif
     end
