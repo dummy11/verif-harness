@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -33,8 +36,63 @@ class SetupScriptTest(unittest.TestCase):
     def test_csh_entrypoint_delegates_without_csh_parsing_bash(self) -> None:
         source = (ROOT / "scripts/setup.csh").read_text(encoding="utf-8")
         self.assertIn("#!/bin/csh -f", source)
+        self.assertIn("$?VERIF_HARNESS_PYTHON", source)
+        self.assertIn("python3.13 python3.12 python3.11", source)
+        self.assertIn("where -p", source)
         self.assertIn('setenv VERIF_HARNESS_PYTHON "$python_path"', source)
         self.assertIn('exec "$bash_path" "$script_dir/setup.sh"', source)
+        self.assertNotRegex(source, r"(?m)^\s*echo .*>&2")
+
+    @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
+    def test_csh_error_does_not_create_a_file_named_2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entrypoint = root / "setup.csh"
+            shutil.copy2(ROOT / "scripts/setup.csh", entrypoint)
+            result = subprocess.run(
+                [shutil.which("csh"), "-f", str(entrypoint)],
+                cwd=root,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Bash setup implementation is missing", result.stderr)
+            self.assertFalse((root / "2").exists())
+
+    @unittest.skipUnless(shutil.which("csh"), "csh is not installed")
+    def test_csh_falls_back_to_a_versioned_python_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entrypoint = root / "setup.csh"
+            shutil.copy2(ROOT / "scripts/setup.csh", entrypoint)
+            setup = root / "setup.sh"
+            setup.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$VERIF_HARNESS_PYTHON"\n',
+                encoding="utf-8",
+            )
+            setup.chmod(0o755)
+            commands = root / "bin"
+            commands.mkdir()
+            versioned_python = commands / "python3.11"
+            versioned_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            versioned_python.chmod(0o755)
+            environment = os.environ.copy()
+            environment.pop("VERIF_HARNESS_PYTHON", None)
+            environment["PATH"] = f"{commands}:/bin"
+            result = subprocess.run(
+                [shutil.which("csh"), "-f", str(entrypoint)],
+                cwd=root,
+                env=environment,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(versioned_python))
+            self.assertFalse((root / "2").exists())
 
     def test_setup_uses_shell_selected_python(self) -> None:
         source = SETUP.read_text(encoding="utf-8")
