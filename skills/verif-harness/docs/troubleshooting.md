@@ -82,7 +82,7 @@ evidence 本身必须进入 required-evidence 哈希集合。不能伪造 metada
 
 ## `xverif` adapter 报 `set XVERIF_HOME`
 
-在完整 verif-harness 仓库先运行 `./scripts/setup.sh --no-agent`，确认
+在 verif-harness 安装目录先运行 `./scripts/setup.sh --no-agent`，确认
 `.deps/xverif` 已按 lock 安装。独立 Skill 环境可设置 `XVERIF_HOME` 指向已批准
 checkout，或显式传 `--xverif-root <root>`。该目录下必须存在
 `tools/<selected-tool>`。不要把 PyPI 同名包或任意 executable 当成该工具仓库。

@@ -22,25 +22,27 @@ Code and is not written into `.harness-config.json` or Spec Kit specifications.
 
 ## Bootstrap a new project
 
-Run setup from the cloned verif-harness checkout. It installs all managed
-dependencies, creates the selected runtime-native Skill link, and immediately
-starts the selected Agent CLI:
+Keep the verif-harness package checkout separate from the RTL project. Run
+setup from the package checkout and pass the target explicitly. Managed
+dependencies remain below the package's Git-ignored `.deps/`; runtime config,
+the runtime-native Skill link, Spec Kit artifacts, and verification outputs
+belong to the target project. Setup starts the selected Agent CLI with the
+target project as its working directory:
 
 ```bash
-./scripts/setup.sh --runtime codex
+./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
 ```
 
-When `--runtime auto` is used, setup resolves the CLI in this order:
-
-1. an existing `.specify/integration.json` record;
-2. exactly one project marker: `.agents/` or `.codex/` for Codex, or
-   `.kimi-code/` for Kimi Code;
-3. otherwise it stops and requires an explicit choice.
+When `--runtime auto` is used, setup selects the only installed Agent CLI. If
+both Codex and Kimi are installed, or neither is available, it stops and
+requires an explicit choice. An existing `.specify/integration.json` remains
+the authority for an already bootstrapped Spec Kit project; setup does not
+rewrite that file implicitly.
 
 For an empty project without a runtime marker, choose explicitly:
 
 ```bash
-./scripts/setup.sh --runtime kimi
+./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
 ```
 
 After the CLI starts, invoke `$verif-harness` in Codex or
@@ -51,8 +53,10 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 state.
 
 For dependency-only automation, use `./scripts/setup.sh --no-agent`; this skips
-the final CLI launch but still installs and verifies Spec Kit, xverif CLI/MCP,
-`mcp[cli]`, and WavePeek.
+the final CLI launch and target runtime configuration but still installs and
+verifies Spec Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek. To configure a
+target without launching an Agent, also pass explicit `--runtime codex|kimi`
+and `--project-root <path>`.
 
 Inspect the result without changing the project:
 

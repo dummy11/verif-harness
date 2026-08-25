@@ -17,19 +17,30 @@ PROFILE_KEYS = {
     "schema_version", "server_id", "runtime", "transport", "backend", "source",
     "source_commit", "required_tools", "environment_keys", "registration",
 }
+PACKAGE_ROOT = Path(__file__).resolve().parents[4]
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"ERROR: {message}")
 
 
+def dependency_root(project_root: Path) -> Path:
+    """Locate the package checkout while preserving the in-tree legacy layout."""
+    if (project_root / "scripts/setup_xverif.py").is_file() and (
+        project_root / "deps/xverif.lock.json"
+    ).is_file():
+        return project_root
+    return PACKAGE_ROOT
+
+
 def managed_state(project_root: Path) -> dict[str, Any]:
+    package_root = dependency_root(project_root)
     result = subprocess.run(
         [
             sys.executable,
-            str(project_root / "scripts/setup_xverif.py"),
+            str(package_root / "scripts/setup_xverif.py"),
             "--project-root",
-            str(project_root),
+            str(package_root),
             "--check",
             "--json",
         ],
@@ -87,8 +98,9 @@ def validate_profile(value: Any, lock_commit: str | None = None) -> dict[str, An
 
 
 def lock_commit(project_root: Path) -> str:
+    package_root = dependency_root(project_root)
     try:
-        lock = json.loads((project_root / "deps/xverif.lock.json").read_text(encoding="utf-8"))
+        lock = json.loads((package_root / "deps/xverif.lock.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         fail(f"cannot read xverif lock: {exc}")
     commit = lock.get("commit")
@@ -177,8 +189,9 @@ def status(args: argparse.Namespace) -> int:
 
 def install(args: argparse.Namespace) -> int:
     project_root = args.project_root.resolve()
+    package_root = dependency_root(project_root)
     result = subprocess.run(
-        [sys.executable, str(project_root / "scripts/setup_xverif.py"), "--project-root", str(project_root), "--json"],
+        [sys.executable, str(package_root / "scripts/setup_xverif.py"), "--project-root", str(package_root), "--json"],
         check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     if result.stdout:

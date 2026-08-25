@@ -20,9 +20,15 @@ Spec Kit 被固定到 `deps/spec-kit.lock.json` 中的 release tag、完整 comm
 哈希，并安装到 Git 忽略的 `.deps/`：
 
 ```bash
+cd /path/to/verif-harness
 ./scripts/setup.sh --no-agent
 make check-spec-kit
 ```
+
+This installs the pinned Spec Kit environment below the verif-harness package
+checkout. To configure a separate RTL project, pass its path and runtime to
+`setup.sh`; the subsequent Skill bootstrap commands run from that target
+project.
 
 上游要求 Python 3.11 或更新版本。顶层 setup 会安装全部受管集成；安装器固定上游源码，
 但 Python 的传递依赖由

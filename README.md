@@ -101,21 +101,26 @@ verif-harness Skill / control plane
 Commercial simulator licenses, scheduler configuration, and private wrappers
 are intentionally not included.
 
-## Install in the current working directory
+## Install and connect an RTL project
 
 ```bash
-git clone https://github.com/dummy11/verif-harness.git .
-./scripts/setup.sh --runtime codex
+git clone https://github.com/dummy11/verif-harness.git ~/tools/verif-harness
+cd ~/tools/verif-harness
+./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
 ```
 
 Kimi Code 使用：
 
 ```bash
-./scripts/setup.sh --runtime kimi
+./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
 ```
 
 `setup.sh` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
-`.deps/` 下，仍然属于独立的上游项目，不会被 vendored 进 verif-harness。
+verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，不会被 vendored
+进 RTL 工程。runtime 配置和 Skill 链接安装到 `--project-root` 指定的工程：
+`--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
+`.kimi-code/` 并以 Kimi 原生 `--yolo` 启动。setup 不修改 `~/.codex` 或
+`~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
 安装包括：
 
 - Spec Kit 规格工作流；
@@ -123,8 +128,10 @@ Kimi Code 使用：
 - Python `mcp[cli]` SDK；
 - VCD/FST-only WavePeek binary。
 
-默认 setup 不覆盖已有的受管 checkout；如果检测到 dirty、错误 commit 或错误
-license，会 fail closed。只安装依赖而不启动 Agent 时使用 `--no-agent`。
+默认 setup 不覆盖已有的受管 checkout、runtime 配置或 Skill 文件；如果检测到
+dirty、错误 commit、错误 license 或冲突的 Skill 路径，会 fail closed。只安装
+依赖而不启动 Agent 时使用 `--no-agent`；若还要配置目标工程，应同时显式传入
+`--runtime codex|kimi --project-root <path>`。
 
 安装完成后，setup 已经进入所选 Agent CLI。不要退出 CLI 回到 shell 执行下面的
 Python wrapper；在 CLI 内调用对应的 Skill：
@@ -194,8 +201,8 @@ deps/                    Reviewed optional-dependency locks and schemas
 ## Supported agent runtimes
 
 The reusable Skill is under `skills/verif-harness/`. Follow
-[Install in the current working directory](#install-in-the-current-working-directory)
-to expose it at the runtime-native project path.
+[Install and connect an RTL project](#install-and-connect-an-rtl-project) to
+expose it at the runtime-native target-project path.
 
 Codex:
 
@@ -242,6 +249,7 @@ links every maintained Markdown document in the repository except this README.
 | [Simulator support](docs/simulator_support.md) | Tested public scope and commercial/community simulator status. |
 | [Tool versions](docs/tool_versions.md) | Supported tool baselines and installation guidance. |
 | [Agent runtime and model switching](docs/runtime_switching.md) | Bootstrap detection, Codex/Kimi Code selection, K3 model changes, and runtime migration. |
+| [Runtime permissions](docs/runtime_permissions.md) | Shared command policy and Codex/Kimi sandbox and approval boundaries. |
 | [Coding style](docs/coding_style.md) | SystemVerilog, Python, shell, and documentation conventions. |
 | [Troubleshooting](docs/troubleshooting.md) | Setup, dependency, simulator, example, and public-audit recovery. |
 | [Roadmap](docs/roadmap.md) | Planned framework releases and capability evolution. |

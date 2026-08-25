@@ -1,0 +1,33 @@
+# Project-scoped rules for verif-harness.
+# Routine commands remain sandbox-bound; these rules protect irreversible Git
+# operations if a command is requested outside the sandbox.
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Use a reviewed, recoverable operation instead of discarding workspace changes.",
+)
+
+prefix_rule(
+    pattern = ["git", "clean", "-fd"],
+    decision = "forbidden",
+    justification = "Do not permanently delete untracked workspace files.",
+)
+
+prefix_rule(
+    pattern = ["git", "clean", "-fdx"],
+    decision = "forbidden",
+    justification = "Do not permanently delete ignored and untracked workspace files.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Do not rewrite remote history from an agent session.",
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force-with-lease"],
+    decision = "forbidden",
+    justification = "Do not rewrite remote history from an agent session.",
+)

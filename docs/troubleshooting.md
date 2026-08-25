@@ -2,7 +2,7 @@
 
 ## Managed WavePeek is missing or blocked
 
-Run `./scripts/setup.sh --no-agent` or `make setup-wavepeek
+From the verif-harness package checkout, run `./scripts/setup.sh --no-agent` or `make setup-wavepeek
 check-wavepeek`. The installer refuses partial, dirty, wrong-origin,
 wrong-commit, wrong-license, wrong-Cargo.lock, or wrong-version state. It never
 updates an existing checkout. Preserve any user files, move the exact failed
@@ -18,8 +18,8 @@ this repository.
 
 ## Managed xverif is missing or blocked
 
-Run `./scripts/setup.sh --no-agent` or `make setup-xverif check-xverif` from
-the verif-harness root. The installer refuses to overwrite an existing
+From the verif-harness package checkout, run `./scripts/setup.sh --no-agent` or
+`make setup-xverif check-xverif`. The installer refuses to overwrite an existing
 `.deps/xverif`; it also fails closed when origin, commit, clean state, MIT
 License hash, or wrapper inventory differs from `deps/xverif.lock.json`.
 
@@ -30,7 +30,7 @@ overrides, not automatic fallbacks after a managed-checkout failure.
 
 ## Verilator is missing
 
-Run `./scripts/setup.sh --no-agent` for the diagnostic and install Verilator 5.x using the
+From the verif-harness package checkout, run `./scripts/setup.sh --no-agent` for the diagnostic and install Verilator 5.x using the
 method appropriate for the host. CI installs the Ubuntu package explicitly.
 
 ## A type is unknown during compilation

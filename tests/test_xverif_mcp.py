@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,16 @@ class XverifMcpProfileTest(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["state"], "RUNTIME_PROBE_REQUIRED")
         self.assertEqual(payload["tool"], "xverif_ping")
+
+    def test_separate_project_uses_package_dependency_root(self) -> None:
+        spec = importlib.util.spec_from_file_location("xverif_mcp_under_test", ADAPTER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        separate = Path(self.temporary.name) / "separate-project"
+        separate.mkdir()
+        self.assertEqual(module.dependency_root(separate), ROOT)
 
 
 if __name__ == "__main__":

@@ -26,8 +26,13 @@ under the Git-ignored `.deps/` directory.
 ## Install the pinned dependency
 
 ```bash
-./scripts/setup.sh --runtime codex   # or --runtime kimi
+cd /path/to/verif-harness
+./scripts/setup.sh --runtime codex --project-root /path/to/rtl-project
+# or: ./scripts/setup.sh --runtime kimi --project-root /path/to/rtl-project
 ```
+
+The package checkout owns the managed `.deps/xverif` source and launcher. The
+target RTL project owns `.harness/`, MCP profiles, requests, and evidence.
 
 Equivalent focused commands are:
 
@@ -64,7 +69,8 @@ administration, and test orchestration are not part of the CLI request contract.
 `tools/xverif-mcp` launcher。安装 source checkout：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp install \
+  --project-root /path/to/rtl-project
 ```
 
 setup 会同时安装并验证 source、launcher 和 commit，并在当前 Python 3.11+
@@ -73,8 +79,8 @@ setup 会同时安装并验证 source、launcher 和 commit，并在当前 Pytho
 为当前 Agent runtime 生成项目级、无凭据 profile：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp configure \
-  --project-root . --runtime codex --backend direct
+python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp configure \
+  --project-root /path/to/rtl-project --runtime codex --backend direct
 ```
 
 Kimi Code 使用 `--runtime kimi`。profile 写入
@@ -85,11 +91,12 @@ Kimi Code 使用 `--runtime kimi`。profile 写入
 检查 source、profile 和 Python SDK：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp status --project-root .
+python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp status \
+  --project-root /path/to/rtl-project
 ```
 
 然后在当前 Agent runtime 的 MCP 配置中注册一个名为 `xverif` 的 stdio server，
-使用 `.deps/xverif/tools/xverif-mcp` 作为 launcher，并显式传入 profile 要求的环境
+使用 `<verif-harness-root>/.deps/xverif/tools/xverif-mcp` 作为 launcher，并显式传入 profile 要求的环境
 变量。Codex 与 Kimi 的注册语法由各自 runtime 管理，verif-harness 不猜测或改写其
 私有配置。
 
@@ -101,11 +108,11 @@ python3 scripts/verif_harness.py xverif mcp status --project-root .
   "mcpServers": {
     "xverif": {
       "type": "stdio",
-      "command": "<project-root>/.deps/xverif/tools/xverif-mcp",
+      "command": "<verif-harness-root>/.deps/xverif/tools/xverif-mcp",
       "args": [],
       "env": {
-        "XVERIF_HOME": "<project-root>/.deps/xverif",
-        "PYTHONPATH": "<project-root>/.deps/xverif/xverif_mcp/src:<project-root>/.deps/xverif",
+        "XVERIF_HOME": "<verif-harness-root>/.deps/xverif",
+        "PYTHONPATH": "<verif-harness-root>/.deps/xverif/xverif_mcp/src:<verif-harness-root>/.deps/xverif",
         "XVERIF_MCP_BACKEND": "direct",
         "VERDI_HOME": "<verdi-install>",
         "PATH": "<complete-path>"
@@ -173,7 +180,7 @@ Root discovery is deterministic:
 explicit --xverif-root
 -> XVERIF_HOME
 -> <project-root>/.deps/xverif
--> current/repository .deps/xverif
+-> verif-harness package checkout .deps/xverif
 -> fail closed
 ```
 
