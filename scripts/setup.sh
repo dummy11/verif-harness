@@ -86,7 +86,7 @@ echo "Using Python: $python_cmd"
   echo "ERROR: default setup requires Python 3.11 or newer for Spec Kit and xverif MCP." >&2
   exit 2
 }
-make --version | head -n 1
+make --version | sed -n '1p'
 "$python_cmd" "$package_root/scripts/check_structure.py"
 
 "$python_cmd" "$package_root/scripts/setup_xverif.py" --project-root "$package_root"

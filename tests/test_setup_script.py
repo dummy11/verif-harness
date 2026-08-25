@@ -142,6 +142,11 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('"$python_cmd" -m pip', source)
         self.assertNotIn('python3 "$package_root/scripts/setup_xverif.py"', source)
 
+    def test_setup_does_not_trigger_pipefail_while_printing_make_version(self) -> None:
+        source = SETUP.read_text(encoding="utf-8")
+        self.assertIn("make --version | sed -n '1p'", source)
+        self.assertNotIn("make --version | head", source)
+
     def test_missing_workspace_root_fails_before_installation(self) -> None:
         result = self.run_setup("--workspace-root", "/path/that/does/not/exist")
         self.assertNotEqual(result.returncode, 0)
