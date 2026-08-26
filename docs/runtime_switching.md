@@ -67,6 +67,14 @@ interactive initial-prompt option. Setup therefore launches Kimi directly and
 does not run a model request before the TUI. Use `/skills` and `/mcp` after the
 Kimi TUI is ready for its complete live runtime views.
 
+Setup also configures Simplified Chinese as the default user-facing response
+language. Codex receives this through project-local `developer_instructions`;
+Kimi receives it through `.kimi-code/AGENTS.md`, so no blocking startup prompt
+is needed. Code, identifiers, commands, paths, configuration keys, protocol
+names, and raw logs remain in their original language, and an explicit user
+language request always takes precedence. The root `AGENTS.md` remains owned by
+the Stage 0 workflow.
+
 If setup was run with `--no-agent`, start it later through setup again so the
 Agent and xverif wrappers inherit the managed Python environment:
 

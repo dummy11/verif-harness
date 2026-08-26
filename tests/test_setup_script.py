@@ -136,6 +136,8 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('agent_args+=(--yolo)', source)
         self.assertIn('.codex/config.toml', source)
         self.assertIn('.kimi-code/local.toml', source)
+        self.assertIn('configure_response_language.py', source)
+        self.assertIn('--project-root "$workspace_root" --runtime "$runtime"', source)
         self.assertIn('xverif mcp configure', source)
         self.assertIn('xverif mcp status', source)
         self.assertIn('--project-root "$workspace_root" --runtime "$runtime"', source)

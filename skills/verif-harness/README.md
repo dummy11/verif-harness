@@ -135,6 +135,11 @@ Codex 中调用 `$verif-harness <mode>`，Kimi Code 中调用
 `/skill:verif-harness <mode>`。自动化或只做依赖安装时使用
 `./scripts/setup.sh --no-agent`。
 
+setup 同时把面向用户的回复语言默认设为简体中文：Codex 使用项目级
+`developer_instructions`，Kimi Code 使用 `.kimi-code/AGENTS.md`，无需执行会阻塞 TUI
+的启动 prompt。代码、标识符、命令、路径、配置键、协议名和原始日志保持原文；用户
+明确指定其他语言时，以用户要求为准。Stage 0 仍独占根目录 `AGENTS.md` 的生成。
+
 setup 在启动 Agent 前打印 required/current/status 版本清单；也可独立运行
 `./scripts/runtime-versions`，用 `--verbose` 显示路径或用 `--json` 供 CI 采集。
 

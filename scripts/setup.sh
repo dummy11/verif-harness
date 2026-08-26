@@ -212,6 +212,9 @@ else
   agent_args+=(--yolo)
 fi
 
+"$python_cmd" "$package_root/scripts/configure_response_language.py" \
+  --project-root "$workspace_root" --runtime "$runtime"
+
 skill_parent="$workspace_root/.agents/skills"
 invocation='$verif-harness'
 if [[ "$runtime" == "kimi" ]]; then
