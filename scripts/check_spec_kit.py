@@ -18,6 +18,85 @@ PRESET = ROOT / "integrations/spec-kit/preset/rtl-verification"
 CLI = ROOT / "scripts/verif_harness.py"
 
 
+def validate_noninteractive_gate_lifecycle(python: str, root: Path) -> str | None:
+    """Prove one verdict reaches only one gate when workflow stdin is closed."""
+    project = root / "gate-lifecycle"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    workflow = project / "two-gates.yml"
+    workflow.write_text(
+        """schema_version: "1.0"
+workflow:
+  id: "two-gates"
+  name: "Two Gates"
+  version: "1.0.0"
+inputs:
+  first_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  second_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+steps:
+  - id: review-first
+    type: gate
+    message: "Review first"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: first_verdict
+  - id: review-second
+    type: gate
+    message: "Review second"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: second_verdict
+""",
+        encoding="utf-8",
+    )
+    prefix = [python, "-c", "from specify_cli import main; main()", "workflow"]
+    started = subprocess.run(
+        [*prefix, "run", str(workflow), "--json"],
+        cwd=project,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if started.returncode != 0:
+        return started.stdout + started.stderr
+    try:
+        first = json.loads(started.stdout)
+    except json.JSONDecodeError as exc:
+        return f"first gate returned invalid JSON: {exc}\n{started.stdout}"
+    if first.get("status") != "paused" or first.get("current_step_id") != "review-first":
+        return f"workflow did not pause at first gate: {first!r}"
+
+    resumed = subprocess.run(
+        [
+            *prefix, "resume", first["run_id"], "--json",
+            "--input", "first_verdict=approve",
+        ],
+        cwd=project,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if resumed.returncode != 0:
+        return resumed.stdout + resumed.stderr
+    try:
+        second = json.loads(resumed.stdout)
+    except json.JSONDecodeError as exc:
+        return f"second gate returned invalid JSON: {exc}\n{resumed.stdout}"
+    if second.get("status") != "paused" or second.get("current_step_id") != "review-second":
+        return f"one verdict did not stop at the second gate: {second!r}"
+    return None
+
+
 def validate_runtime_bootstrap(runtime: str, root: Path) -> str | None:
     project = root / runtime
     project.mkdir()
@@ -106,6 +185,10 @@ def main() -> int:
         return bundle.returncode
     with tempfile.TemporaryDirectory(prefix="verif-harness-spec-kit-") as temporary:
         smoke_root = Path(temporary)
+        failure = validate_noninteractive_gate_lifecycle(python, smoke_root)
+        if failure:
+            print(failure, end="", file=sys.stderr)
+            return 1
         for runtime in ("codex", "kimi"):
             failure = validate_runtime_bootstrap(runtime, smoke_root)
             if failure:

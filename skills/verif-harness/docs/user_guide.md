@@ -351,12 +351,17 @@ constitution -> review
 ```text
 # Codex
 $verif-harness workflow-status
-$verif-harness workflow-resume <run-id>
+$verif-harness workflow-resume <run-id> --verdict approve
 
 # Kimi Code
 /skill:verif-harness workflow-status
-/skill:verif-harness workflow-resume <run-id>
+/skill:verif-harness workflow-resume <run-id> --verdict approve
 ```
+
+`stage` 和 `workflow-resume` 会关闭 Spec Kit workflow 子进程的交互 stdin，确保
+Agent 即使在 PTY 中运行也会在每个 gate 确定性地进入 `paused`。不要向 PTY 写入
+数字菜单选项；完成实际 review 后，用 `--verdict approve|reject` 显式处理当前 gate。
+该 verdict 不会传递给下一 gate，EOF 也不会被解释成 `reject`。
 
 主要规格输出位于：
 
@@ -1480,14 +1485,14 @@ $verif-harness probe
 $verif-harness bootstrap
 $verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
 $verif-harness workflow-status
-$verif-harness workflow-resume <run-id>
+$verif-harness workflow-resume <run-id> --verdict approve
 
 # Kimi Code
 /skill:verif-harness probe
 /skill:verif-harness bootstrap
 /skill:verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
 /skill:verif-harness workflow-status
-/skill:verif-harness workflow-resume <run-id>
+/skill:verif-harness workflow-resume <run-id> --verdict approve
 ```
 
 如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
@@ -1498,7 +1503,7 @@ $verif-harness probe                                      # Skill：校验固定
 $verif-harness bootstrap                                  # Skill：初始化规格 runtime 与 preset
 $verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
 $verif-harness workflow-status [run-id]                   # Skill：查看 workflow 状态
-$verif-harness workflow-resume <run-id>                   # Skill：review 后恢复 paused workflow
+$verif-harness workflow-resume <run-id> --verdict approve # Skill：显式处理当前 gate 后恢复
 ```
 
 `bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的
@@ -1526,8 +1531,9 @@ Human approval、sign-off/freeze 授权不属于普通 implementation task 自�
 各自权限边界执行。
 
 每个 review gate 都会暂停 workflow。先用 `status` 定位 run、当前 gate 和对应工件；
-完成该工件的实际 review 后再用 `resume` 继续。`resume` 只是恢复同一个 run，不能
-跳过 review，也不会把 gate verdict 提升成 Stage approval。
+完成该工件的实际 review 后再用 `resume <run-id> --verdict approve|reject` 继续。
+wrapper 不读取 PTY 菜单输入，且一次 verdict 只作用于当前 gate；`resume` 不能跳过
+review，也不会把 gate verdict 提升成 Stage approval。
 
 preset 会把以下字段追加到标准 Spec Kit 工件：DUT 只读边界、规格权威、
 REQ/VF/TC/COV/ASRT ID、verif-harness mode、owned artifact、validation、evidence、

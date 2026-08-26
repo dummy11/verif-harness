@@ -33,9 +33,10 @@ Spec Kit owns the editable specification lifecycle.
   `speckit.implement` dispatches that mode; no separate successful-path manual
   `init` call follows the workflow.
 - `status`: inspect one run or list all workflow run states.
-- `resume`: resume a paused run at its next review gate. A reviewer must inspect
-  the named artifact before choosing a gate verdict; resuming does not approve
-  the Stage.
+- `resume`: resume a paused run with an explicit `--verdict approve|reject` for
+  its current review gate. A reviewer must inspect the named artifact before
+  choosing the verdict; one verdict never carries into the next gate, and
+  resuming does not approve the Stage.
 - `docs-zh`: refresh `.specify/docs/zh-CN/`, a non-executable Simplified
   Chinese reading mirror. Its manifest records source/translation hashes and
   `full|source-is-chinese|summary|pending` status. The mirror is never a
@@ -65,7 +66,7 @@ python3 scripts/verif_harness.py spec-kit stage \
 python3 scripts/verif_harness.py spec-kit status --project-root <project>
 python3 scripts/verif_harness.py spec-kit docs-zh --project-root <project>
 python3 scripts/verif_harness.py spec-kit resume \
-  --project-root <project> <run-id>
+  --project-root <project> <run-id> --verdict approve
 python3 scripts/verif_harness.py runtime status --project-root <project>
 python3 scripts/verif_harness.py runtime switch \
   --project-root <project> --to <codex|kimi>
@@ -89,6 +90,12 @@ valid link is evidence that the package is available; do not report missing
 The launcher inherits the workspace current directory and resolves its single
 runtime marker. Add `--project-root` or `--integration` only for an explicit
 cross-project, automation, recovery, or ambiguous-marker case.
+
+Do not drive a workflow review gate by opening a PTY and feeding a numeric menu
+choice. The wrapper deliberately gives the Spec Kit workflow no interactive
+stdin so every gate persists `paused`; inspect it with `workflow-status`, then
+resume with the explicit verdict option. EOF must never become an implicit
+rejection.
 
 ## Source-of-truth policy
 

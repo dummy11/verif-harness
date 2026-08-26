@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*")
+WORKFLOW_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 FILES = {
     "dut_if.sv.tmpl": "interfaces/{dut}_if.sv",
     "dut_tb_harness.sv.tmpl": "tb/harness/{dut}_tb_harness.sv",
@@ -45,6 +46,14 @@ RUNTIME_PROFILES = {
     },
 }
 INTEGRATION_STATE = Path(".specify/integration.json")
+GATE_VERDICT_INPUTS = {
+    "review-constitution": "review_constitution_verdict",
+    "review-spec": "review_spec_verdict",
+    "review-clarification": "review_clarification_verdict",
+    "review-plan": "review_plan_verdict",
+    "authorize-execution": "authorize_execution_verdict",
+    "review-convergence": "review_convergence_verdict",
+}
 
 
 class RuntimeSelectionError(ValueError):
@@ -167,10 +176,99 @@ def managed_spec_kit() -> tuple[str, dict[str, object]]:
     return str(payload["python"]), payload
 
 
-def run_spec_kit(arguments: list[str], project_root: Path) -> int:
+def spec_kit_command(arguments: list[str]) -> list[str]:
+    """Build one command for the commit-pinned managed Spec Kit runtime."""
     python, _ = managed_spec_kit()
-    command = [python, "-c", "from specify_cli import main; main()", *arguments]
-    return subprocess.run(command, cwd=project_root, check=False).returncode
+    return [python, "-c", "from specify_cli import main; main()", *arguments]
+
+
+def run_spec_kit(
+    arguments: list[str], project_root: Path, *, noninteractive: bool = False
+) -> int:
+    """Run Spec Kit, optionally preventing a PTY from consuming gate choices."""
+    return subprocess.run(
+        spec_kit_command(arguments),
+        cwd=project_root,
+        stdin=subprocess.DEVNULL if noninteractive else None,
+        check=False,
+    ).returncode
+
+
+def spec_kit_run_status(run_id: str, project_root: Path) -> dict[str, object]:
+    """Return the stable JSON status payload for one workflow run."""
+    inspected = subprocess.run(
+        spec_kit_command(["workflow", "status", run_id, "--json"]),
+        cwd=project_root,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if inspected.returncode != 0:
+        sys.stdout.write(inspected.stdout)
+        sys.stderr.write(inspected.stderr)
+        raise RuntimeSelectionError(f"cannot inspect Spec Kit workflow run {run_id!r}")
+    try:
+        payload = json.loads(inspected.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeSelectionError(
+            f"Spec Kit returned invalid JSON while inspecting run {run_id!r}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeSelectionError(
+            f"Spec Kit status for run {run_id!r} must be a JSON object"
+        )
+    return payload
+
+
+def spec_kit_run_inputs(run_id: str, project_root: Path) -> set[str]:
+    """Read the declared inputs persisted with a safely named workflow run."""
+    if not WORKFLOW_RUN_ID.fullmatch(run_id):
+        raise RuntimeSelectionError(
+            f"invalid workflow run ID {run_id!r}"
+        )
+    path = project_root / ".specify/workflows/runs" / run_id / "inputs.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeSelectionError(
+            f"cannot read persisted inputs for workflow run {run_id!r}: {exc}"
+        ) from exc
+    inputs = payload.get("inputs") if isinstance(payload, dict) else None
+    if not isinstance(inputs, dict):
+        raise RuntimeSelectionError(
+            f"persisted inputs for workflow run {run_id!r} must be a JSON object"
+        )
+    return set(inputs)
+
+
+def resume_verdict_input(
+    payload: dict[str, object], verdict: str, available_inputs: set[str]
+) -> str:
+    """Bind a reviewed verdict to exactly the gate where a run is paused."""
+    if payload.get("status") != "paused":
+        raise RuntimeSelectionError(
+            f"workflow run {payload.get('run_id')!r} is not paused"
+        )
+    gate = payload.get("gate")
+    if not isinstance(gate, dict) or not isinstance(gate.get("step_id"), str):
+        raise RuntimeSelectionError(
+            f"workflow run {payload.get('run_id')!r} is not paused at a review gate"
+        )
+    step_id = gate["step_id"]
+    input_name = GATE_VERDICT_INPUTS.get(step_id)
+    if input_name is None:
+        raise RuntimeSelectionError(
+            f"review gate {step_id!r} has no safe verdict binding; "
+            "the run may predate this workflow version and must be restarted"
+        )
+    if input_name not in available_inputs:
+        raise RuntimeSelectionError(
+            f"workflow run {payload.get('run_id')!r} predates safe gate verdict "
+            "binding and must be restarted"
+        )
+    return f"{input_name}={verdict}"
 
 
 def generate(dut: str, output: Path, templates: Path, dry_run: bool) -> list[Path]:
@@ -239,6 +337,10 @@ def main() -> int:
     )
     resume.add_argument("run_id")
     resume.add_argument("--project-root", type=Path, default=Path.cwd())
+    resume.add_argument(
+        "--verdict", choices=("approve", "reject"),
+        help="review verdict for the run's current gate",
+    )
     status = spec_subparsers.add_parser(
         "status", help="show one or all Spec Kit workflow run states"
     )
@@ -385,7 +487,32 @@ def main() -> int:
         except RuntimeSelectionError as exc:
             parser.error(str(exc))
         if args.spec_command == "resume":
-            resumed = run_spec_kit(["workflow", "resume", args.run_id], project_root)
+            try:
+                run_status = spec_kit_run_status(args.run_id, project_root)
+                gate = run_status.get("gate")
+                if isinstance(gate, dict) and args.verdict is None:
+                    parser.error(
+                        f"run {args.run_id!r} is paused at gate "
+                        f"{gate.get('step_id')!r}; review its artifact, then pass "
+                        "--verdict approve or --verdict reject"
+                    )
+                resume_arguments = ["workflow", "resume", args.run_id]
+                if args.verdict is not None:
+                    resume_arguments.extend(
+                        [
+                            "--input",
+                            resume_verdict_input(
+                                run_status,
+                                args.verdict,
+                                spec_kit_run_inputs(args.run_id, project_root),
+                            ),
+                        ]
+                    )
+            except RuntimeSelectionError as exc:
+                parser.error(str(exc))
+            resumed = run_spec_kit(
+                resume_arguments, project_root, noninteractive=True
+            )
             if resumed == 0:
                 return refresh_spec_kit_chinese_docs(project_root)
             return resumed
@@ -421,6 +548,7 @@ def main() -> int:
                 "--input", f"integration={runtime}",
             ],
             project_root,
+            noninteractive=True,
         )
         if staged == 0:
             return refresh_spec_kit_chinese_docs(project_root)

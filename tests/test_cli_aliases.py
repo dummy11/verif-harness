@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +40,45 @@ class CliAliasTest(unittest.TestCase):
                 "--integration", "codex",
             ],
         )
+
+    def test_each_review_gate_has_an_independent_verdict_binding(self) -> None:
+        for step_id, input_name in CLI.GATE_VERDICT_INPUTS.items():
+            payload = {
+                "run_id": "abc12345",
+                "status": "paused",
+                "gate": {"step_id": step_id},
+            }
+            self.assertEqual(
+                CLI.resume_verdict_input(payload, "approve", {input_name}),
+                f"{input_name}=approve",
+            )
+
+    def test_resume_rejects_legacy_gate_without_safe_binding(self) -> None:
+        payload = {
+            "run_id": "abc12345",
+            "status": "paused",
+            "gate": {"step_id": "review-spec"},
+        }
+        with self.assertRaisesRegex(CLI.RuntimeSelectionError, "predate"):
+            CLI.resume_verdict_input(payload, "approve", set())
+
+    def test_run_input_lookup_rejects_path_traversal(self) -> None:
+        with self.assertRaisesRegex(CLI.RuntimeSelectionError, "invalid workflow run ID"):
+            CLI.spec_kit_run_inputs("../escape", Path("/tmp/project"))
+
+    def test_noninteractive_spec_kit_run_disconnects_stdin(self) -> None:
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch.object(CLI, "spec_kit_command", return_value=["specify"]),
+            mock.patch.object(CLI.subprocess, "run", return_value=completed) as run,
+        ):
+            result = CLI.run_spec_kit(
+                ["workflow", "run", "workflow.yml"], Path("/tmp/project"),
+                noninteractive=True,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
 
 
 if __name__ == "__main__":

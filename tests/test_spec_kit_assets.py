@@ -33,12 +33,28 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("authorize-execution", workflow)
         self.assertIn("inputs.stage == '0'", workflow)
         self.assertIn("review-convergence", workflow)
+        self.assertIn('version: "0.3.0"', workflow)
         self.assertIn('any: ["codex", "kimi"]', workflow)
         self.assertIn('enum: ["codex", "kimi"]', workflow)
+        verdict_inputs = (
+            "review_constitution_verdict",
+            "review_spec_verdict",
+            "review_clarification_verdict",
+            "review_plan_verdict",
+            "authorize_execution_verdict",
+            "review_convergence_verdict",
+        )
+        self.assertEqual(workflow.count("verdict_input:"), len(verdict_inputs))
+        self.assertEqual(
+            workflow.count('enum: ["", approve, reject]'), len(verdict_inputs)
+        )
+        for verdict_input in verdict_inputs:
+            self.assertEqual(workflow.count(f"verdict_input: {verdict_input}"), 1)
         wrapper = (ROOT / "scripts/verif_harness.py").read_text(encoding="utf-8")
         self.assertIn('["preset", "add", "constitution-sync"', wrapper)
         self.assertIn("configure_spec_kit_chinese_docs.py", wrapper)
         self.assertIn('"docs-zh"', wrapper)
+        self.assertIn("stdin=subprocess.DEVNULL if noninteractive else None", wrapper)
 
     def test_preset_carries_authority_and_traceability_guards(self) -> None:
         preset = INTEGRATION / "preset/rtl-verification"

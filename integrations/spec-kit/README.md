@@ -50,13 +50,13 @@ root is expected and must not be reported as a missing installation.
 $verif-harness bootstrap
 $verif-harness stage --stage 1 --objective "建立可编译、可运行的最小验证环境"
 $verif-harness workflow-status
-$verif-harness workflow-resume <run-id>
+$verif-harness workflow-resume <run-id> --verdict approve
 
 # Kimi Code
 /skill:verif-harness bootstrap
 /skill:verif-harness stage --stage 1 --objective "建立可编译、可运行的最小验证环境"
 /skill:verif-harness workflow-status
-/skill:verif-harness workflow-resume <run-id>
+/skill:verif-harness workflow-resume <run-id> --verdict approve
 ```
 
 These normal Agent commands inherit the setup-selected workspace and runtime.
@@ -111,9 +111,11 @@ task 自动分发不会扩大权限。需要 EDA、commit、push、waiver、Stag
 freeze authority 时，implement 在边界处暂停；取得独立授权后继续同一个 task，
 而不是让用户在 workflow 外重新调用该 mode。
 
-每个 gate 会让 run 进入 paused 状态。先用 `status` 确认 gate 和工件，完成对应
-review 后再用 `resume` 继续；这里的 verdict 只属于该文档/执行授权 gate，不是
-Stage approval。
+每个 gate 会让 run 进入 paused 状态。wrapper 对 workflow 子进程关闭交互 stdin，
+因此即使 Agent 使用 PTY，也不会用一次数字输入穿过当前 gate 后在下一 gate 因 EOF
+默认拒绝。先用 `status` 确认 gate 和工件，完成对应 review 后再用
+`resume <run-id> --verdict approve|reject` 继续。每次 resume 只绑定当前 gate；下一
+gate 会再次暂停。这里的 verdict 只属于该文档/执行授权 gate，不是 Stage approval。
 
 ## 单一事实源
 

@@ -3,7 +3,7 @@ schema_version: "1.0"
 bundle:
   id: "verif-harness-rtl"
   name: "verif-harness RTL Verification"
-  version: "0.2.0"
+  version: "0.3.0"
   role: "verification"
   description: "Spec-driven Stage 0-to-freeze governance for RTL verification"
   author: "verif-harness contributors"
@@ -24,6 +24,6 @@ provides:
   steps: []
   workflows:
     - id: "verif-stage-lifecycle"
-      version: "0.2.0"
+      version: "0.3.0"
 
 tags: ["rtl-verification", "systemverilog", "uvm", "stage-gates"]

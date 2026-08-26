@@ -33,7 +33,7 @@ $verif-harness bootstrap          # 内部：spec-kit bootstrap
 $verif-harness probe              # 内部：spec-kit probe
 $verif-harness stage --stage 0   # 内部：spec-kit stage
 $verif-harness workflow-status    # 内部：spec-kit status
-$verif-harness workflow-resume <run-id>  # 内部：spec-kit resume
+$verif-harness workflow-resume <run-id> --verdict approve  # 每次只恢复当前 gate
 $verif-harness evidence probe --tool xbit  # 内部：xverif probe
 $verif-harness waveform probe             # 内部：wavepeek probe
 ```

@@ -51,7 +51,8 @@ Short user-facing aliases are also supported:
 - `bootstrap` → internal `spec-kit bootstrap`
 - `stage <...>` → internal `spec-kit stage <...>`
 - `workflow-status [run-id]` → internal `spec-kit status [run-id]`
-- `workflow-resume <run-id>` → internal `spec-kit resume <run-id>`
+- `workflow-resume <run-id> --verdict approve|reject` → internal
+  `spec-kit resume <run-id> --verdict approve|reject`
 - `evidence <...>` → internal `xverif <...>`
 - `waveform <...>` → internal `wavepeek <...>`
 

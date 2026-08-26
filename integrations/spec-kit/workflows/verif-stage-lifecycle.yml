@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: "verif-stage-lifecycle"
   name: "verif-harness Stage Lifecycle"
-  version: "0.2.0"
+  version: "0.3.0"
   author: "verif-harness contributors"
   description: "以简体中文规格工件驱动一个 RTL 验证 Stage 的评审、执行与收敛"
 
@@ -25,6 +25,30 @@ inputs:
     type: string
     required: true
     enum: ["codex", "kimi"]
+  review_constitution_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_spec_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_clarification_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_plan_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  authorize_execution_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_convergence_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
 
 steps:
   - id: establish-constitution
@@ -42,6 +66,7 @@ steps:
         message: "评审 Stage 0 宪章和规格权威模型。本次文档评审不是 Stage 0 approval。"
         options: [approve, reject]
         on_reject: abort
+        verdict_input: review_constitution_verdict
 
   - id: specify
     command: speckit.specify
@@ -54,6 +79,7 @@ steps:
     message: "评审需求、权威来源、验收证据、Human Decisions 和开放问题。本 gate 只评审文档，不是 Stage approval。"
     options: [approve, reject]
     on_reject: abort
+    verdict_input: review_spec_verdict
 
   - id: clarify
     command: speckit.clarify
@@ -66,6 +92,7 @@ steps:
     message: "规划前评审已澄清的假设和未解决的 Human questions。"
     options: [approve, reject]
     on_reject: abort
+    verdict_input: review_clarification_verdict
 
   - id: plan
     command: speckit.plan
@@ -78,6 +105,7 @@ steps:
     message: "评审组件 ownership、Stage 范围、simulator/tool 边界、证据保留和 Human authority。"
     options: [approve, reject]
     on_reject: abort
+    verdict_input: review_plan_verdict
 
   - id: checklist
     command: speckit.checklist
@@ -102,6 +130,7 @@ steps:
     message: "授权执行已评审 task set。这不授权修改 DUT RTL、使用 EDA、commit、push、waiver、Stage approval 或 freeze。"
     options: [approve, reject]
     on_reject: abort
+    verdict_input: authorize_execution_verdict
 
   - id: implement
     command: speckit.implement
@@ -120,3 +149,4 @@ steps:
     message: "在独立的 verif-harness Stage gate review 前，评审规格漂移和证据完整性。"
     options: [approve, reject]
     on_reject: abort
+    verdict_input: review_convergence_verdict
