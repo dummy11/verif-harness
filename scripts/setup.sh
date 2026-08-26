@@ -83,6 +83,7 @@ export PATH="$managed_bin:$PATH"
 
 agent_cli=""
 agent_args=()
+startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及已连接的 MCP server 和 tool 名称；不要调用工具，不要修改文件，列完后等待下一条用户指令。'
 
 if [[ "$install_verilator" == true ]] && ! command -v verilator >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
@@ -258,4 +259,14 @@ echo "Changing directory to workspace: $workspace_root"
 cd "$workspace_root"
 echo "Starting $runtime CLI here: $(pwd)"
 echo "Inside the Agent CLI, invoke: $invocation"
+if [[ "$runtime" == "codex" ]]; then
+  agent_args+=("$startup_inventory_prompt")
+else
+  echo "Starting a Kimi inventory turn, then resuming it in the interactive CLI."
+  if "$agent_cli" --prompt "$startup_inventory_prompt"; then
+    agent_args+=(--continue)
+  else
+    echo "WARNING: Kimi startup inventory failed; launching a new interactive session." >&2
+  fi
+fi
 exec "$agent_cli" "${agent_args[@]}"

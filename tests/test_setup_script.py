@@ -145,6 +145,11 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('.kimi-code/skills', source)
         self.assertIn('cd "$workspace_root"', source)
         self.assertIn('Starting $runtime CLI here: $(pwd)', source)
+        self.assertIn("startup_inventory_prompt=", source)
+        self.assertIn('agent_args+=("$startup_inventory_prompt")', source)
+        self.assertIn('if "$agent_cli" --prompt "$startup_inventory_prompt"', source)
+        self.assertIn("agent_args+=(--continue)", source)
+        self.assertIn("Kimi startup inventory failed", source)
         self.assertIn('exec "$agent_cli" "${agent_args[@]}"', source)
         self.assertIn('workspace disappeared before Agent launch', source)
 

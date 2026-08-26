@@ -1444,6 +1444,11 @@ cd /path/to/verif-harness
 `--runtime codex|kimi`，仍会配置项目 Skill 和 xverif MCP 注册。正常 setup 进入
 对应 CLI 后调用 Skill：
 
+CLI runtime 启动后，setup 会自动创建一轮只读启动清单，列出当前会话实际可用的
+Skills、MCP servers 和 tools。Codex 使用交互式 initial prompt；Kimi 先通过
+`--prompt` 创建该轮，再用 `--continue` 打开同一会话。该轮不调用工具或修改文件；
+仍可使用 `/skills` 和 `/mcp` 查看 runtime 原生实时视图。
+
 ```text
 # Codex
 $verif-harness probe

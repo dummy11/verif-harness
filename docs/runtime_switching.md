@@ -54,6 +54,13 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 `.specify/` project rather than replacing its specifications or integration
 state.
 
+After the CLI runtime starts, setup creates a read-only inventory turn listing
+the Skills, MCP servers, and tools actually available to that session. Codex
+uses its interactive initial prompt. Kimi runs the inventory with `--prompt`
+and immediately opens that same latest session with `--continue`. The prompt
+does not call tools or modify files. `/skills` and `/mcp` remain available for
+the runtime-native live views.
+
 If setup was run with `--no-agent`, start it later through setup again so the
 Agent and xverif wrappers inherit the managed Python environment:
 

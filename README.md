@@ -170,6 +170,11 @@ codex                  # Codex runtime
 kimi --yolo            # Kimi Code runtime
 ```
 
+setup 启动 CLI 后会自动创建一轮只读启动清单，列出当前会话实际可用的 Skills、
+MCP servers 和 tools。Codex 通过交互 CLI 的 initial prompt 完成；Kimi 先用
+`--prompt` 创建该轮，再用 `--continue` 进入同一会话。清单不调用工具或修改文件；
+仍可在 TUI 内用 `/skills` 和 `/mcp` 打开 runtime 原生实时视图。
+
 进入 CLI 后，不要回到 shell 执行下面的 Python wrapper；在 CLI 内调用对应的
 Skill：
 
