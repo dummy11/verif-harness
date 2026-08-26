@@ -14,7 +14,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -153,16 +152,36 @@ def platform_target() -> str:
 
 
 def download(url: str, destination: Path) -> None:
-    last_error: OSError | TimeoutError | None = None
-    request = urllib.request.Request(url, headers={"User-Agent": "verif-harness/0.1"})
-    for _ in range(2):
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response, destination.open("wb") as stream:
-                shutil.copyfileobj(response, stream)
-            return
-        except (OSError, TimeoutError) as exc:
-            last_error = exc
-    fail(f"managed dependency download failed after retry: {last_error}")
+    if not url.startswith("https://"):
+        fail(f"managed dependency URL must use HTTPS: {url}")
+    curl = shutil.which("curl")
+    wget = shutil.which("wget")
+    if curl is not None:
+        downloader = "curl"
+        arguments = [
+            curl, "--proto", "=https", "--tlsv1.2", "--fail", "--location",
+            "--retry", "2", "--user-agent", "verif-harness/0.1",
+            "--output", str(destination), url,
+        ]
+    elif wget is not None:
+        downloader = "wget"
+        arguments = [
+            wget, "--https-only", "--tries=3", "--user-agent=verif-harness/0.1",
+            "--output-document", str(destination), url,
+        ]
+    else:
+        fail("managed dependency download requires curl or wget")
+    checked = run(arguments, timeout=900)
+    if checked.returncode != 0:
+        if destination.is_file():
+            destination.unlink()
+        detail = checked.stderr.strip() or checked.stdout.strip() or "unknown error"
+        fail(
+            f"managed dependency HTTPS download failed using {downloader}: {detail}; "
+            "configure the host CA trust without disabling TLS verification"
+        )
+    if not destination.is_file():
+        fail(f"managed dependency downloader produced no file: {downloader}")
 
 
 def parsed_version(value: str) -> tuple[int, ...]:

@@ -237,6 +237,11 @@ Python 3.4+；managed CPython 满足最后一项。`makeinfo` 4.7+ 仅用于 gli
 或版本过旧、private loader/hash 漂移或版本 probe 失败均为 `BLOCKED`；禁止通过
 全局 `LD_LIBRARY_PATH` 绕过。
 
+若下载 private glibc 时出现 `CERTIFICATE_VERIFY_FAILED`，installer 会统一使用宿主
+`curl`/`wget` 的 HTTPS/CA trust path，并继续校验 lock 中的 SHA-256。企业 CA 应通过
+宿主 trust store 或 downloader 标准 CA bundle 配置提供；禁止使用 `curl -k`、
+`--no-check-certificate` 或关闭 Python SSL 校验。
+
 ## WavePeek 返回 `PROTOCOL_ERROR`
 
 让 request 的 `output_format` 与 native flag 对齐：`json` 查询使用 `--json`

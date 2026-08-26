@@ -27,6 +27,11 @@ wrong-commit, wrong-license, wrong-Cargo.lock, or wrong-version state. It never
 updates an existing checkout. Preserve any user files, move the exact failed
 `.deps/wavepeek*` paths aside manually, then reinstall. Network access to the
 locked GitHub source tag and official release archive is required initially.
+WavePeek and private-glibc archives use the same host `curl`/`wget` trust path
+as the managed bootstrap, while retaining HTTPS-only transport and locked
+SHA-256 validation. On an enterprise TLS network, configure the approved CA in
+the host trust store or the downloader's standard CA-bundle setting. Never use
+`curl -k`, `--no-check-certificate`, or a disabled Python SSL context.
 
 On Linux, setup reports the detected host glibc version. If it is older than
 2.34, setup also downloads the hash-pinned GNU glibc 2.34 source and builds it

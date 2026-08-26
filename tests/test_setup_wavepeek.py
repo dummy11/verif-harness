@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +81,49 @@ class SetupWavepeekTest(unittest.TestCase):
 
     def setup(self, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(SETUP), "--project-root", str(self.project), "--archive", str(self.archive), "--json", *extra], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def import_setup_module(self, name: str):
+        spec = importlib.util.spec_from_file_location(name, SETUP)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_https_download_uses_host_curl_trust_without_insecure_flags(self) -> None:
+        module = self.import_setup_module("setup_wavepeek_download_test")
+        destination = self.root / "downloaded.tar.xz"
+        calls: list[list[str]] = []
+
+        def fake_run(arguments, **_kwargs):
+            calls.append(arguments)
+            destination.write_bytes(b"fixture")
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        with mock.patch.object(
+            module.shutil,
+            "which",
+            side_effect=lambda name: "/usr/bin/curl" if name == "curl" else None,
+        ):
+            with mock.patch.object(module, "run", side_effect=fake_run):
+                module.download(
+                    "https://ftp.gnu.org/gnu/glibc/glibc-2.34.tar.xz", destination,
+                )
+        self.assertEqual(calls[0][0], "/usr/bin/curl")
+        self.assertIn("=https", calls[0])
+        self.assertIn("--tlsv1.2", calls[0])
+        self.assertNotIn("-k", calls[0])
+        self.assertNotIn("--insecure", calls[0])
+        self.assertNotIn("--no-check-certificate", calls[0])
+
+    def test_download_rejects_non_https_url_before_running_a_tool(self) -> None:
+        module = self.import_setup_module("setup_wavepeek_https_test")
+        with mock.patch.object(module, "run") as checked:
+            with self.assertRaisesRegex(SystemExit, "must use HTTPS"):
+                module.download(
+                    "http://example.invalid/archive.tar.xz", self.root / "archive",
+                )
+        checked.assert_not_called()
 
     def test_install_and_recheck(self) -> None:
         installed = self.setup()

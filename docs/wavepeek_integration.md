@@ -38,6 +38,11 @@ from source archives and releases. No Rust toolchain or crates.io access is
 required; the private glibc path requires the normal C build prerequisites,
 including GCC and GNU Make.
 
+Release and private-glibc archives use the host `curl` or `wget` HTTPS trust
+path and are then checked against their locked SHA-256. TLS verification is
+never disabled; enterprise CA roots must be configured through the host
+downloader's normal trust mechanism.
+
 The default build intentionally omits `fsdb`. Upstream FSDB support requires a
 proprietary Verdi SDK and is outside public CI and the managed default.
 
