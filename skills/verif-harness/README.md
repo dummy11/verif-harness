@@ -197,9 +197,10 @@ python3 scripts/verif_harness.py xverif mcp configure \
 python3 scripts/verif_harness.py xverif mcp status --project-root .
 ```
 
-`configure` 只写 `.harness/mcp/xverif.json`，不修改 Codex/Kimi 私有配置。
-Runtime 注册后，先调用 `xverif_ping` 和 `xverif_tools`；source install 或静态
-profile 不能证明 MCP 已可用。
+`configure` 写 `.harness/mcp/xverif.json`、生成项目 launcher，并注册到 Codex
+或 Kimi 的项目级 MCP 配置；不修改用户级配置，不覆盖冲突注册。setup 在 runtime
+明确时自动执行。注册后先调用 `xverif_ping` 和 `xverif_tools`；source install
+或静态 profile 不能证明 MCP 已可用。
 
 xverif 仍是可选、单独许可、单独维护的底层工具；checkout 不进入
 verif-harness source archive 或 release。

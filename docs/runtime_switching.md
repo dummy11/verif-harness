@@ -67,11 +67,12 @@ Then invoke the runtime-native Skill inside that CLI. Starting the CLI from the
 verif-harness package directory would make `.` refer to the package checkout,
 not the verification workspace.
 
-For dependency-only automation, use `./scripts/setup --no-agent`; this skips
-the final CLI launch and workspace runtime configuration but still installs and
-verifies Spec Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek. To configure a
-target without launching an Agent, also pass explicit `--runtime codex|kimi`
-and `--workspace-root <path>`.
+For dependency-only automation, use `./scripts/setup --no-agent`; with runtime
+`auto`, one uniquely discovered Agent CLI is configured, while no discovered
+CLI skips workspace configuration. Both paths still install and verify Spec
+Kit, xverif CLI/MCP, `mcp[cli]`, and WavePeek.
+To configure the project Skill and xverif MCP registration without launching an
+Agent, also pass explicit `--runtime codex|kimi` and `--workspace-root <path>`.
 
 `--isolation managed` is currently the only implemented dependency backend and
 the default. It exports the managed interpreter to xverif wrappers before the

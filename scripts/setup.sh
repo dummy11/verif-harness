@@ -128,13 +128,6 @@ fi
 echo "Checking required and observed runtime/tool versions."
 "$python_cmd" "$package_root/scripts/check_runtime_versions.py" "${version_args[@]}"
 
-if [[ "$launch_agent" != true && "$runtime" == "auto" ]]; then
-  echo "Setup PASS: managed dependencies are installed under $package_root/.deps."
-  echo "Agent launch and target runtime configuration skipped (--no-agent with runtime auto)."
-  echo "To configure a target without launching it, pass --runtime codex or --runtime kimi."
-  exit 0
-fi
-
 codex_cli="$(command -v codex 2>/dev/null || true)"
 kimi_cli="$(command -v kimi 2>/dev/null || command -v kimi-cli 2>/dev/null || true)"
 if [[ "$runtime" == "auto" ]]; then
@@ -143,12 +136,24 @@ if [[ "$runtime" == "auto" ]]; then
   elif [[ -z "$codex_cli" && -n "$kimi_cli" ]]; then
     runtime=kimi
   elif [[ -n "$codex_cli" && -n "$kimi_cli" ]]; then
-    echo "ERROR: both Codex and Kimi CLIs are installed; pass --runtime codex or --runtime kimi." >&2
-    exit 2
+    if [[ "$launch_agent" == true ]]; then
+      echo "ERROR: both Codex and Kimi CLIs are installed; pass --runtime codex or --runtime kimi." >&2
+      exit 2
+    fi
   elif [[ "$launch_agent" == true ]]; then
     echo "ERROR: dependencies installed, but no Codex/Kimi CLI was found; install one or rerun with --no-agent." >&2
     exit 2
   fi
+fi
+if [[ "$runtime" == "auto" ]]; then
+  echo "Setup PASS: managed dependencies are installed under $package_root/.deps."
+  if [[ -n "$codex_cli" && -n "$kimi_cli" ]]; then
+    echo "Agent launch and target runtime configuration skipped: both Codex and Kimi CLIs were found."
+  else
+    echo "Agent launch and target runtime configuration skipped: no Codex/Kimi CLI was found."
+  fi
+  echo "Rerun with --runtime codex|kimi to select and register one without launching it."
+  exit 0
 fi
 if [[ "$launch_agent" == true ]]; then
   if [[ "$runtime" == "codex" && -z "$codex_cli" ]]; then
@@ -205,6 +210,7 @@ else
   fi
   agent_args+=(--yolo)
 fi
+
 skill_parent="$workspace_root/.agents/skills"
 invocation='$verif-harness'
 if [[ "$runtime" == "kimi" ]]; then
@@ -230,7 +236,13 @@ else
   ln -s "$skill_target" "$skill_link"
 fi
 
-echo "Setup PASS: Spec Kit, xverif CLI/MCP, and WavePeek are installed."
+echo "Configuring project-local xverif MCP registration for $runtime."
+"$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp configure \
+  --project-root "$workspace_root" --runtime "$runtime" --backend direct
+"$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp status \
+  --project-root "$workspace_root" --python "$python_cmd"
+
+echo "Setup PASS: Spec Kit, xverif CLI/MCP, and WavePeek are installed; xverif MCP is registered for $runtime."
 if [[ "$launch_agent" != true ]]; then
   echo "Agent launch skipped (--no-agent)."
   echo "Workspace configured at: $workspace_root"

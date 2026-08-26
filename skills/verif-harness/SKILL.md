@@ -181,8 +181,9 @@ lifecycle. When operating in the verif-harness repository, use
 branch, vendor upstream source, or silently update an existing checkout. Preserve
 native argv and JSON/XOUT/text semantics, capture tool Git identity and hashes,
 and fail closed on protocol, timeout, or artifact errors. MCP runtime
-registration remains host-managed and must not write credentials to the
-repository. Do not invent a single `xverif` executable, auto-switch
+registration is project-managed for an explicitly selected Codex/Kimi runtime;
+it must not modify user-level settings or write credentials to the repository.
+Do not invent a single `xverif` executable, auto-switch
 surfaces/backends, or interpret adapter PASS as verification approval.
 
 ### `wavepeek`

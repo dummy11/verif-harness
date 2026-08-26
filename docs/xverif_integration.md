@@ -89,46 +89,24 @@ xverif server 的 `mcp.server.fastmcp` API 合同。
 
 Kimi Code 使用 `--runtime kimi`。profile 写入
 `.harness/mcp/xverif.json`，只记录 runtime、direct/LSF backend、锁定 commit、
-所需环境变量名和 `host-managed` 注册边界；不会写入 token、license 值、私有 URL、
-绝对路径，也不会覆盖 Codex/Kimi 的用户配置。
+所需环境变量名和 `project-managed` 注册边界。`configure` 同时生成工作区内的
+`.harness/mcp/xverif-mcp` launcher，并将它注册到 `.codex/config.toml` 或
+`.kimi-code/mcp.json`。这些文件不会写入 token、license 值或私有 URL，也不会
+修改 Codex/Kimi 的用户级配置；已有的同名冲突注册会阻断 setup。
 
-检查 source、profile 和 Python SDK：
+检查 source、profile、项目级注册和 Python SDK：
 
 ```bash
 python3 /path/to/verif-harness/scripts/verif_harness.py xverif mcp status \
   --project-root /path/to/verification-workspace
 ```
 
-然后在当前 Agent runtime 的 MCP 配置中注册一个名为 `xverif` 的 stdio server，
-使用 `<verif-harness-root>/.deps/xverif/tools/xverif-mcp` 作为 launcher，并显式传入 profile 要求的环境
-变量。Codex 与 Kimi 的注册语法由各自 runtime 管理，verif-harness 不猜测或改写其
-私有配置。
-
-通用 stdio descriptor 可以按当前 runtime 的 MCP 配置格式改写；以下模板不包含
-凭据和机器真实路径：
-
-```json
-{
-  "mcpServers": {
-    "xverif": {
-      "type": "stdio",
-      "command": "<verif-harness-root>/.deps/xverif/tools/xverif-mcp",
-      "args": [],
-      "env": {
-        "XVERIF_HOME": "<verif-harness-root>/.deps/xverif",
-        "PYTHONPATH": "<verif-harness-root>/.deps/xverif/xverif_mcp/src:<verif-harness-root>/.deps/xverif",
-        "XVERIF_MCP_BACKEND": "direct",
-        "VERDI_HOME": "<verdi-install>",
-        "PATH": "<complete-path>"
-      }
-    }
-  }
-}
-```
-
-LSF 使用 `XVERIF_MCP_BACKEND=lsf`，并额外显式提供 profile 要求的 LSF/license
-环境变量。不要把这个带 placeholder 的 descriptor 误当作已注册证明；注册后仍须
-调用 `xverif_ping`。
+默认 setup 会自动执行上述 configure/status。使用 `--no-agent --runtime auto` 时，
+若 PATH 中只有一种 Agent CLI 就自动选择并注册；无法唯一确定 runtime 时只安装
+依赖并明确报告未注册。传入 `--runtime codex` 或 `--runtime kimi` 即使不启动
+Agent 也会完成项目级注册。LSF 使用显式
+`--backend lsf` 重新 configure；direct 与 LSF 不自动互换。注册后仍须由新启动的
+Agent session 调用 `xverif_ping`，静态文件检查不能伪造协议成功。
 
 注册完成后，第一次调用必须是 `xverif_ping`。随后先调用 `xverif_tools` 获取工具
 目录，再按 upstream schema 使用 `xverif_xdebug_*`、`xverif_xcov_*`、`xverif_bit_*`、
@@ -211,7 +189,8 @@ adapter evidence, public CI, and third-party notice must be reviewed together.
 - Existing managed dependency directories are never overwritten or updated.
 - Failures never trigger an automatic surface, backend, transport, format, or
   data-source fallback.
-- MCP source/profile setup never implies runtime registration or protocol
+- MCP source installation alone never implies registration. Explicit-runtime
+  setup/configure proves project registration structure, but not protocol
   availability; record the native `xverif_ping` response separately.
 
 Adapter `PASS` means the invocation contract passed. Consumers must still read

@@ -44,15 +44,17 @@ python3 scripts/verif_harness.py xverif mcp configure \
   --project-root . --runtime codex --backend direct
 ```
 
-`configure` writes `.harness/mcp/xverif.json`. It does not edit Codex/Kimi
-private settings, store credentials, or invent a runtime-specific config file.
-Register the profile's stdio server in the active runtime using its documented
-MCP configuration mechanism. The default repository setup installs the
+`configure` writes `.harness/mcp/xverif.json`, a generated project launcher,
+and the selected runtime's project-local registration (`.codex/config.toml` or
+`.kimi-code/mcp.json`). It is idempotent, refuses conflicting registrations,
+does not edit user-level settings, and stores no credentials. The default setup
+performs this configure step automatically when `--runtime codex|kimi` is
+explicit or resolves to one installed Agent. It also installs the
 separately managed and artifact-hash-locked `mcp[cli]==1.29.1` Python
 dependency. Use `scripts/managed-python` for later shell checks; do not install
-an unreviewed MCP version into a host Python before registration.
+an unreviewed MCP version into a host Python.
 
-Check the source/profile contract:
+Check the source/profile/project-registration contract:
 
 ```bash
 python3 scripts/verif_harness.py xverif mcp status --project-root .
@@ -61,7 +63,7 @@ python3 scripts/verif_harness.py xverif mcp status --project-root .
 Probe the actual protocol from Codex or Kimi by calling the server's
 `xverif_ping` tool. The CLI `mcp probe` command is intentionally fail-closed and
 only reports that a runtime probe is required; static checks cannot prove that
-the Agent host registered the server.
+the Agent host initialized the server or completed a protocol call.
 
 ## Procedure
 

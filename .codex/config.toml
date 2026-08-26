@@ -3,3 +3,14 @@
 
 approval_policy = "never"
 sandbox_mode = "workspace-write"
+
+# BEGIN verif-harness managed xverif MCP
+[mcp_servers.xverif]
+command = ".harness/mcp/xverif-mcp"
+args = []
+cwd = "."
+required = true
+startup_timeout_sec = 30
+tool_timeout_sec = 300
+env_vars = ["VERDI_HOME", "LD_LIBRARY_PATH", "PATH", "XVERIF_MCP_STARTUP_TIMEOUT_SEC", "XVERIF_MCP_REQUEST_TIMEOUT_SEC", "XDEBUG_SESSION_START_TIMEOUT_SEC", "XDEBUG_SESSION_IDLE_TIMEOUT_SEC"]
+# END verif-harness managed xverif MCP

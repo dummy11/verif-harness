@@ -8,3 +8,7 @@ __pycache__/
 .DS_Store
 .venv/
 .deps/
+.harness/mcp/xverif.json
+.harness/mcp/xverif-mcp
+.kimi-code/local.toml
+.kimi-code/mcp.json

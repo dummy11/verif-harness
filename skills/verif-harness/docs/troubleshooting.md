@@ -190,16 +190,17 @@ Python 安装。用 managed interpreter 检查：
 ./scripts/managed-python scripts/verif_harness.py xverif mcp status --project-root .
 ```
 
-不要把 `.mcp.json`、token、license 值或本机绝对路径提交到项目仓库。
+不要把 token 或 license 值写入 profile/注册文件。工作区 launcher 不保存绝对
+路径；它从当前工作区或 Skill 链接解析 verif-harness package，再定位受管依赖。
 
 ## xverif MCP 已配置但 `xverif_ping` 失败
 
-先确认 runtime 注册的是 `.deps/xverif/tools/xverif-mcp`，且 profile 的
+先确认 runtime 注册的是 `.harness/mcp/xverif-mcp`，且生成 launcher 固定的
 `XVERIF_HOME`/`PYTHONPATH`/`VERDI_HOME`/`PATH` 等环境变量在 MCP 子进程中显式可见。
 MCP server 不保证继承外层 shell 环境；direct 与 LSF 不能自动互换。先读取
 server 的原始错误，再分别检查 Python、Verdi/NPI、license、VDB/FSDB 或 LSF。
-`mcp status` 的 `READY_FOR_RUNTIME_REGISTRATION` 只表示 source/profile/SDK 合同
-通过，不表示 Agent host 已完成注册。
+`mcp status` 的 `READY_FOR_RUNTIME_PROBE` 只表示 source/profile/project
+registration/SDK 合同通过，不表示 Agent 已成功调用 `xverif_ping`。
 
 ## xverif MCP session 卡住或超时
 

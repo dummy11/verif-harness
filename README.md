@@ -128,6 +128,8 @@ verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，�
 `--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
 `.kimi-code/` 并以 Kimi 原生 `--yolo` 启动。setup 不修改 `~/.codex` 或
 `~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
+runtime 明确时还会生成无凭据的 xverif MCP profile/launcher，并注册到工作区的
+`.codex/config.toml` 或 `.kimi-code/mcp.json`；已有同名冲突配置会阻断 setup。
 安装包括：
 
 - 固定版本、固定平台归档哈希的 managed CPython 及 hash-locked MCP 环境；

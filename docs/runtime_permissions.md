@@ -104,7 +104,9 @@ arguments: Codex requires `.codex/config.toml` and starts without extra flags;
 Kimi creates/uses `.kimi-code/local.toml` and starts as `kimi --yolo`. These
 files are written below the selected workspace, while managed dependencies
 remain below the verif-harness package checkout. Neither path changes a
-user-level configuration file.
+user-level configuration file. Setup also installs the project xverif MCP
+registration in `.codex/config.toml` or `.kimi-code/mcp.json`, backed by a
+generated `.harness/mcp/xverif-mcp` launcher that contains no credentials.
 
 Use `--no-agent` for dependency-only CI setup. Runtime switching is performed
 at a stable review gate and is recorded by Spec Kit; it does not copy private

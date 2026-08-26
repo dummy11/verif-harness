@@ -1279,9 +1279,9 @@ python3 scripts/verif_harness.py xverif mcp status --project-root .
 
 Kimi Code 使用 `--runtime kimi`。`configure` 生成
 `.harness/mcp/xverif.json`，只包含 source commit、transport、backend 和环境变量
-名称；它不会写入 Codex/Kimi 私有 MCP 配置、secret、license 值或绝对路径。需要
-由当前 runtime 按其原生方式注册 stdio server，server launcher 为
-`.deps/xverif/tools/xverif-mcp`。
+名称；同时生成 `.harness/mcp/xverif-mcp` 并写入 Codex/Kimi 的项目级 MCP 配置。
+setup 在 runtime 明确时自动执行该步骤，不修改用户级配置，也不写入 secret 或
+license 值；已有同名冲突注册会 fail closed。
 
 注册后按以下顺序使用：
 
@@ -1440,8 +1440,9 @@ cd /path/to/verif-harness
 ./scripts/setup --isolation managed --no-agent
 ```
 
-`--no-agent` 仅用于不启动 CLI 的自动化安装。正常 setup 使用
-`--runtime codex|kimi` 后，进入对应 CLI 调用 Skill：
+`--no-agent` 仅用于不启动 CLI 的自动化安装；若同时显式传入
+`--runtime codex|kimi`，仍会配置项目 Skill 和 xverif MCP 注册。正常 setup 进入
+对应 CLI 后调用 Skill：
 
 ```text
 # Codex

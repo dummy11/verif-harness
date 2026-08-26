@@ -125,8 +125,9 @@ deps/xverif.lock.json
 `XVERIF_HOME` 只用于受控开发/部署 override，不允许失败后自动切换。
 
 该路径不会自动从 CLI 切换 MCP、从 local 切换 LSF、从 JSON 切换 XOUT，
-也不会把工具 `PASS` 提升为 Stage approval。MCP runtime registration 属于
-Codex/Kimi host；项目只保存 `.harness/mcp/xverif.json` 非敏感 profile。
+也不会把工具 `PASS` 提升为 Stage approval。setup/configure 写入非敏感 profile、
+生成 launcher，并完成 Codex/Kimi 项目级 MCP registration；Codex/Kimi host 负责
+在受信任的新 session 中初始化 server，真实可用性仍以 `xverif_ping` 为准。
 
 WavePeek 使用平行但独立的 managed 路径：
 
