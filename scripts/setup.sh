@@ -83,7 +83,7 @@ export PATH="$managed_bin:$PATH"
 
 agent_cli=""
 agent_args=()
-startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及已连接的 MCP server 和 tool 名称；不要调用工具，不要修改文件，列完后等待下一条用户指令。'
+startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及 MCP server 的 configured、connected 和 tools available 状态；setup 已配置 xverif，如果它的 tool schema 尚未出现，请标记为“configured, connection pending”，不要误报为未安装或无 MCP。不要调用工具，不要修改文件，列完后等待下一条用户指令。'
 
 if [[ "$install_verilator" == true ]] && ! command -v verilator >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
@@ -263,7 +263,22 @@ if [[ "$runtime" == "codex" ]]; then
   agent_args+=("$startup_inventory_prompt")
 else
   echo "Starting a Kimi inventory turn, then resuming it in the interactive CLI."
-  if "$agent_cli" --prompt "$startup_inventory_prompt"; then
+  kimi_help="$("$agent_cli" --help 2>&1)" || {
+    echo "ERROR: selected Kimi CLI could not report its startup options." >&2
+    exit 2
+  }
+  if [[ "$kimi_help" != *"--mcp-config-file"* || \
+        "$kimi_help" != *"--prompt"* || "$kimi_help" != *"--continue"* ]]; then
+    echo "ERROR: selected Kimi CLI lacks --mcp-config-file/--prompt/--continue support." >&2
+    exit 2
+  fi
+  kimi_mcp_config="$workspace_root/.kimi-code/mcp.json"
+  if [[ ! -f "$kimi_mcp_config" ]]; then
+    echo "ERROR: Kimi project MCP config is missing before inventory: $kimi_mcp_config" >&2
+    exit 2
+  fi
+  if "$agent_cli" --mcp-config-file "$kimi_mcp_config" \
+    --prompt "$startup_inventory_prompt"; then
     agent_args+=(--continue)
   else
     echo "WARNING: Kimi startup inventory failed; launching a new interactive session." >&2

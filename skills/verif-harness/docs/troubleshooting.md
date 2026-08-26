@@ -202,6 +202,12 @@ server 的原始错误，再分别检查 Python、Verdi/NPI、license、VDB/FSDB
 `mcp status` 的 `READY_FOR_RUNTIME_PROBE` 只表示 source/profile/project
 registration/SDK 合同通过，不表示 Agent 已成功调用 `xverif_ping`。
 
+若 Kimi 启动清单先显示“无 MCP”，随后底部才显示
+`MCP server "xverif" connected`，说明清单轮次没有在项目 MCP 加载后观察 tool
+schema。通过 setup 启动 Kimi，确认它为清单轮次显式传入
+`.kimi-code/mcp.json`；不要把先发生的 false-negative 当作 MCP 未安装证据。
+底部 connected 状态也不能替代后续 `xverif_ping`。
+
 ## xverif MCP session 卡住或超时
 
 xdebug/xcov 使用独立 stdio-loop session。确认每次操作遵循
