@@ -284,10 +284,20 @@ priority 由 verif-harness 提供。目标目录必须存在且可写，并且�
 specify init --here --integration <codex|kimi> --integration-options=--skills --script py
   -> specify preset add --dev <rtl-verification-preset> --priority 5
   -> specify preset add constitution-sync --priority 6
+  -> 生成 .specify/docs/zh-CN/ 中文阅读镜像与 hash manifest
 ```
 
 最后一步只同步仍带 Spec Kit 生成 provenance、尚未人工编辑的 constitution；已由项目
 作者修改的 constitution 不会被 preset 静默覆盖。
+
+中文阅读镜像不参与 Spec Kit 执行。已有项目或升级后可手动刷新：
+
+```text
+$verif-harness spec-kit docs-zh
+```
+
+`manifest.json` 中出现 `pending` 表示发现了尚无评审中文版本的新英文 Markdown；
+这不会改变英文执行事实源，但需要在升级评审中处理。
 
 主要文件输出：
 

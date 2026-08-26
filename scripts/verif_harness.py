@@ -121,6 +121,15 @@ def resolve_runtime(project_root: Path, requested: str = "auto") -> dict[str, ob
     )
 
 
+def refresh_spec_kit_chinese_docs(project_root: Path) -> int:
+    """Refresh the non-executable Chinese mirror for an initialized project."""
+    script = ROOT / "scripts/configure_spec_kit_chinese_docs.py"
+    return subprocess.run(
+        [sys.executable, str(script), "--project-root", str(project_root)],
+        check=False,
+    ).returncode
+
+
 def runtime_payload(project_root: Path, requested: str = "auto") -> dict[str, object]:
     resolved = resolve_runtime(project_root, requested)
     runtime = str(resolved["runtime"])
@@ -235,6 +244,10 @@ def main() -> int:
     )
     status.add_argument("run_id", nargs="?")
     status.add_argument("--project-root", type=Path, default=Path.cwd())
+    docs_zh = spec_subparsers.add_parser(
+        "docs-zh", help="refresh the non-executable Simplified Chinese .specify mirror"
+    )
+    docs_zh.add_argument("--project-root", type=Path, default=Path.cwd())
     runtime = subparsers.add_parser(
         "runtime", help="inspect or switch the project Agent runtime"
     )
@@ -350,6 +363,9 @@ def main() -> int:
             )
             if synchronized != 0:
                 return synchronized
+            documented = refresh_spec_kit_chinese_docs(project_root)
+            if documented != 0:
+                return documented
             try:
                 observed = runtime_payload(project_root)
             except RuntimeSelectionError as exc:
@@ -362,12 +378,17 @@ def main() -> int:
             return 0
         if not (project_root / ".specify").is_dir():
             parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
+        if args.spec_command == "docs-zh":
+            return refresh_spec_kit_chinese_docs(project_root)
         try:
             runtime = str(resolve_runtime(project_root)["runtime"])
         except RuntimeSelectionError as exc:
             parser.error(str(exc))
         if args.spec_command == "resume":
-            return run_spec_kit(["workflow", "resume", args.run_id], project_root)
+            resumed = run_spec_kit(["workflow", "resume", args.run_id], project_root)
+            if resumed == 0:
+                return refresh_spec_kit_chinese_docs(project_root)
+            return resumed
         if args.spec_command == "status":
             arguments = ["workflow", "status"]
             if args.run_id:
@@ -391,7 +412,7 @@ def main() -> int:
                 "verif-harness-rtl preset is not installed; run 'spec-kit bootstrap' "
                 "for a new project or add the reviewed local preset explicitly"
             )
-        return run_spec_kit(
+        staged = run_spec_kit(
             [
                 "workflow", "run",
                 str(ROOT / "integrations/spec-kit/workflows/verif-stage-lifecycle.yml"),
@@ -401,6 +422,9 @@ def main() -> int:
             ],
             project_root,
         )
+        if staged == 0:
+            return refresh_spec_kit_chinese_docs(project_root)
+        return staged
     targets = generate(args.dut, args.output.resolve(), args.templates.resolve(), args.dry_run)
     print(json.dumps({"dry_run": args.dry_run, "files": [str(path) for path in targets]}, indent=2))
     return 0

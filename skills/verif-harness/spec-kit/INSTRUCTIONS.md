@@ -36,6 +36,10 @@ Spec Kit owns the editable specification lifecycle.
 - `resume`: resume a paused run at its next review gate. A reviewer must inspect
   the named artifact before choosing a gate verdict; resuming does not approve
   the Stage.
+- `docs-zh`: refresh `.specify/docs/zh-CN/`, a non-executable Simplified
+  Chinese reading mirror. Its manifest records source/translation hashes and
+  `full|source-is-chinese|summary|pending` status. The mirror is never a
+  template, command, workflow, specification authority, or approval artifact.
 
 When operating through Codex or Kimi Code, invoke this mode through the
 runtime-native Skill inside the Agent CLI:
@@ -59,6 +63,7 @@ python3 scripts/verif_harness.py spec-kit bootstrap --project-root <project>
 python3 scripts/verif_harness.py spec-kit stage \
   --project-root <project> --stage <0-5> --objective <reviewed-objective>
 python3 scripts/verif_harness.py spec-kit status --project-root <project>
+python3 scripts/verif_harness.py spec-kit docs-zh --project-root <project>
 python3 scripts/verif_harness.py spec-kit resume \
   --project-root <project> <run-id>
 python3 scripts/verif_harness.py runtime status --project-root <project>
@@ -88,6 +93,9 @@ cross-project, automation, recovery, or ambiguous-marker case.
 ## Source-of-truth policy
 
 - New projects use `specs/` as the sole editable specification authority.
+- `.specify/docs/zh-CN/` is a derived reading aid only. Never dispatch its
+  files or use them as inputs to template resolution, command discovery,
+  workflow execution, evidence evaluation, or Human review decisions.
 - Other documentation trees contain governance, generated views, evidence
   indexes, review packets, and historical baselines, not duplicated editable
   requirements.

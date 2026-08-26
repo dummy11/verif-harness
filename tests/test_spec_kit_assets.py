@@ -37,6 +37,8 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn('enum: ["codex", "kimi"]', workflow)
         wrapper = (ROOT / "scripts/verif_harness.py").read_text(encoding="utf-8")
         self.assertIn('["preset", "add", "constitution-sync"', wrapper)
+        self.assertIn("configure_spec_kit_chinese_docs.py", wrapper)
+        self.assertIn('"docs-zh"', wrapper)
 
     def test_preset_carries_authority_and_traceability_guards(self) -> None:
         preset = INTEGRATION / "preset/rtl-verification"

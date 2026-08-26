@@ -82,6 +82,13 @@ Stage 0 constitution conditional 和 review gate，不包含 shell step。preset
 bootstrap 随后启用上游自带的 `constitution-sync`，把尚未人工编辑的初始
 constitution 安全同步为当前中文模板；已有人工内容不会被静默覆盖。
 
+bootstrap 最后生成 `.specify/docs/zh-CN/` 中文阅读镜像。它按英文源文件相对路径
+保存中文模板、已有中文文件或中文导读，并在 `manifest.json` 中记录双方 SHA-256
+以及 `full|source-is-chinese|summary|pending` 状态。该目录不参与 template
+resolution、command discovery 或 workflow，也不是规格、证据或审批事实源。已有项目
+可通过 `$verif-harness spec-kit docs-zh` 刷新；Stage workflow 和 resume 成功后也会
+自动刷新。
+
 每个 task 必须声明一个 verif-harness mode、owned outputs、evidence 和 validation
 command。Codex 使用 `$verif-harness`，Kimi Code 使用
 `/skill:verif-harness`；二者分发同一个 mode 合同。execution gate 批准 task set

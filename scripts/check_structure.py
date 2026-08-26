@@ -29,6 +29,7 @@ def main() -> int:
         "scripts/check_wavepeek.py", "deps/spec-kit.lock.json",
         "deps/spec-kit.lock.schema.json", "scripts/setup_spec_kit.py",
         "scripts/check_spec_kit.py",
+        "scripts/configure_spec_kit_chinese_docs.py",
         "deps/runtime.lock.json", "deps/runtime.lock.schema.json",
         "deps/runtime-requirements.in", "deps/runtime-requirements.lock",
         "scripts/setup_managed.sh", "scripts/setup_managed_runtime.py",
