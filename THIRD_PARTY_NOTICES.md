@@ -58,6 +58,15 @@ in `deps/wavepeek.lock.json`. The private runtime is
 not copied into verif-harness source archives or releases, never replaces the
 system libc, and is not exposed through a global `LD_LIBRARY_PATH`.
 
+The official WavePeek executable also requires the GCC low-level runtime
+`libgcc_s.so.1`. On the private-glibc compatibility path, setup copies that
+library from the already validated host GCC into the same Git-ignored private
+runtime, records its source and installed SHA-256, and invokes it only through
+the WavePeek private loader. libgcc remains separately owned and licensed under
+GPL-3.0-or-later with the GCC Runtime Library Exception 3.1. The local copy is
+not included in verif-harness source archives or releases; review the host GCC
+package notices before redistributing a populated `.deps/` directory.
+
 ## xverif
 
 verif-harness can optionally download a commit-pinned source checkout of

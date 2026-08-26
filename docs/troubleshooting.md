@@ -44,6 +44,14 @@ missing or old required prerequisite, a drifted private runtime, or a failed
 loader probe is `BLOCKED`; do not work around it with a global
 `LD_LIBRARY_PATH`.
 
+The official WavePeek binary also needs `libgcc_s.so.1`. Setup resolves it with
+the validated GCC, copies it into the Git-ignored private runtime, and records
+source/installed SHA-256 provenance plus the GCC Runtime Library Exception
+identity. A private glibc created by the earlier installer is migrated by adding
+only this missing managed file and provenance record; other partial or drifted
+state remains blocked. Do not add host library directories to a global search
+path.
+
 ## WavePeek cannot open FSDB
 
 The managed public build deliberately supports VCD/FST only. FSDB needs the

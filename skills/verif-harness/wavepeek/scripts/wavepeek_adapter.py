@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
-ADAPTER_VERSION = "1"
+ADAPTER_VERSION = "2"
 REQUEST_KEYS = {
     "schema_version", "operation", "arguments", "working_directory",
     "environment_keys", "timeout_seconds", "output_format",
@@ -27,6 +27,7 @@ ALLOWED_PLACEHOLDERS = {"project_root", "output_dir", "request_path", "wavepeek_
 SECRET_VALUE = re.compile(r"(?i)(?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*=|\d+@[^/\s]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 RUNTIME_DESCRIPTOR = "wavepeek-runtime.json"
+LIBGCC_LICENSE = "GPL-3.0-or-later WITH GCC-exception-3.1"
 
 
 def fail(message: str) -> None:
@@ -157,14 +158,15 @@ def wavepeek_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
     keys = {
         "schema_version", "kind", "version", "root", "loader",
         "loader_sha256", "library_dirs", "license", "license_file_sha256",
-        "licenses_file_sha256",
+        "licenses_file_sha256", "libgcc_s", "libgcc_s_sha256",
+        "libgcc_license",
     }
     if not isinstance(value, dict) or set(value) != keys:
         fail(f"WavePeek runtime descriptor keys must be exactly {sorted(keys)}")
     version = value["version"]
     library_dirs = value["library_dirs"]
     if (
-        value["schema_version"] != 1
+        value["schema_version"] != 2
         or value["kind"] != "private-glibc"
         or version != "2.34"
         or value["root"] != f"../glibc-{version}"
@@ -176,12 +178,16 @@ def wavepeek_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
         != "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
         or value["licenses_file_sha256"]
         != "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc"
+        or value["libgcc_license"] != LIBGCC_LICENSE
+        or not isinstance(value["libgcc_s"], str)
+        or not isinstance(value["libgcc_s_sha256"], str)
+        or not SHA256.fullmatch(value["libgcc_s_sha256"])
         or not isinstance(library_dirs, list)
         or not library_dirs
         or not all(isinstance(item, str) and item for item in library_dirs)
     ):
         fail("WavePeek runtime descriptor identity is invalid")
-    for raw_path in (value["loader"], *library_dirs):
+    for raw_path in (value["loader"], value["libgcc_s"], *library_dirs):
         path = Path(raw_path)
         if path.is_absolute() or ".." in path.parts:
             fail("WavePeek runtime descriptor contains an unsafe relative path")
@@ -197,6 +203,13 @@ def wavepeek_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
         or sha256_file(loader) != value["loader_sha256"]
     ):
         fail("WavePeek private glibc loader is missing or has drifted")
+    libgcc = (root / value["libgcc_s"]).resolve()
+    if (
+        root not in libgcc.parents
+        or not libgcc.is_file()
+        or sha256_file(libgcc) != value["libgcc_s_sha256"]
+    ):
+        fail("WavePeek private libgcc is missing or has drifted")
     resolved_libraries = [(root / relative).resolve() for relative in library_dirs]
     if any(root not in path.parents or not path.is_dir() for path in resolved_libraries):
         fail("WavePeek private glibc library path is missing or unsafe")
@@ -205,6 +218,9 @@ def wavepeek_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
         "version": version,
         "loader": str(loader),
         "loader_sha256": value["loader_sha256"],
+        "libgcc_s": str(libgcc),
+        "libgcc_s_sha256": value["libgcc_s_sha256"],
+        "libgcc_license": value["libgcc_license"],
         "descriptor": str(descriptor_path),
     }
     return [

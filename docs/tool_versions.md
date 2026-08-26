@@ -12,6 +12,7 @@
 | xverif MCP | Same approved xverif Git commit; `mcp[cli]` is runtime-managed | Codex/Kimi MCP server for xdebug/xcov and stateless xverif tools |
 | WavePeek | 2.2.3 / approved Git commit | Deterministic VCD/FST waveform queries |
 | Private glibc | 2.34 / pinned GNU source archive | WavePeek-only compatibility runtime when host glibc is older than 2.34 |
+| Private `libgcc_s` | Copied and SHA-256-recorded from validated GCC | WavePeek-only GCC runtime dependency inside the private-glibc boundary |
 
 ## Managed runtime
 

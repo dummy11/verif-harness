@@ -210,6 +210,22 @@ class SetupWavepeekTest(unittest.TestCase):
         )
         loader.chmod(0o755)
         (library / "libc.so.6").write_text("fixture\n")
+        libgcc = library / "libgcc_s.so.1"
+        libgcc.write_text("fixture libgcc runtime\n")
+        libgcc_hash = hashlib.sha256(libgcc.read_bytes()).hexdigest()
+        provenance = {
+            "schema_version": 1,
+            "name": "libgcc_s.so.1",
+            "source_path": "/fixture/gcc/libgcc_s.so.1",
+            "source_sha256": libgcc_hash,
+            "installed_path": "lib/libgcc_s.so.1",
+            "installed_sha256": libgcc_hash,
+            "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
+            "notice": "fixture local GCC runtime copy",
+        }
+        provenance_path = glibc / "share/verif-harness/libgcc-runtime.json"
+        provenance_path.parent.mkdir(parents=True)
+        provenance_path.write_text(json.dumps(provenance))
         license_text = "fixture private glibc license\n"
         license_path = glibc / "share/licenses/glibc/COPYING.LIB"
         license_path.parent.mkdir(parents=True)
@@ -238,6 +254,40 @@ class SetupWavepeekTest(unittest.TestCase):
         blockers, observed = module.validate_binary(binary, {"version": "2.2.3"})
         self.assertEqual(blockers, [])
         self.assertEqual(observed, "wavepeek v2.2.3")
+
+    def test_private_libgcc_is_copied_and_hashed_from_validated_gcc(self) -> None:
+        module = self.import_setup_module("setup_wavepeek_libgcc_test")
+        glibc = self.root / "glibc-2.34"
+        library = glibc / "lib"
+        library.mkdir(parents=True)
+        loader = library / "ld-linux-x86-64.so.2"
+        loader.write_text("fixture loader\n")
+        loader.chmod(0o755)
+        source = self.root / "gcc/libgcc_s.so.1"
+        source.parent.mkdir()
+        source.write_bytes(b"validated gcc runtime\n")
+
+        def fake_run(arguments, **_kwargs):
+            self.assertEqual(arguments, ["/usr/bin/gcc", "-print-file-name=libgcc_s.so.1"])
+            return subprocess.CompletedProcess(arguments, 0, str(source) + "\n", "")
+
+        with mock.patch.object(module.shutil, "which", return_value="/usr/bin/gcc"):
+            with mock.patch.object(module, "run", side_effect=fake_run):
+                self.assertTrue(
+                    module.install_private_libgcc(
+                        glibc, "x86_64-unknown-linux-gnu",
+                    )
+                )
+        installed = library / "libgcc_s.so.1"
+        self.assertEqual(installed.read_bytes(), source.read_bytes())
+        provenance = json.loads(
+            (glibc / "share/verif-harness/libgcc-runtime.json").read_text()
+        )
+        self.assertEqual(provenance["installed_sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+        blockers, observed = module.validate_private_libgcc(glibc, loader)
+        self.assertEqual(blockers, [])
+        self.assertIsNotNone(observed)
+        self.assertEqual(observed["license"], "GPL-3.0-or-later WITH GCC-exception-3.1")
 
 
 if __name__ == "__main__":

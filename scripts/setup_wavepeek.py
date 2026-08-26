@@ -51,6 +51,9 @@ LINUX_LOADERS = {
     "x86_64-unknown-linux-gnu": "ld-linux-x86-64.so.2",
 }
 RUNTIME_DESCRIPTOR = "wavepeek-runtime.json"
+LIBGCC_NAME = "libgcc_s.so.1"
+LIBGCC_LICENSE = "GPL-3.0-or-later WITH GCC-exception-3.1"
+LIBGCC_PROVENANCE = Path("share/verif-harness/libgcc-runtime.json")
 
 
 def fail(message: str) -> None:
@@ -272,6 +275,118 @@ def private_glibc_loader(root: Path, target: str) -> Path | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+def private_libgcc_path(root: Path, loader: Path) -> Path:
+    return loader.parent / LIBGCC_NAME
+
+
+def validate_private_libgcc(
+    root: Path, loader: Path,
+) -> tuple[list[str], dict[str, Any] | None]:
+    provenance_path = root / LIBGCC_PROVENANCE
+    try:
+        provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"private libgcc provenance is missing or unreadable: {exc}"], None
+    expected_keys = {
+        "schema_version", "name", "source_path", "source_sha256",
+        "installed_path", "installed_sha256", "license", "notice",
+    }
+    if not isinstance(provenance, dict) or set(provenance) != expected_keys:
+        return ["private libgcc provenance keys differ from the managed contract"], None
+    expected_library = private_libgcc_path(root, loader).resolve()
+    installed_raw = provenance.get("installed_path")
+    installed_path = Path(installed_raw) if isinstance(installed_raw, str) else Path()
+    source_sha256 = provenance.get("source_sha256")
+    installed_sha256 = provenance.get("installed_sha256")
+    blockers: list[str] = []
+    if (
+        provenance.get("schema_version") != 1
+        or provenance.get("name") != LIBGCC_NAME
+        or provenance.get("license") != LIBGCC_LICENSE
+        or not isinstance(provenance.get("source_path"), str)
+        or not provenance["source_path"]
+        or not isinstance(provenance.get("notice"), str)
+        or not provenance["notice"]
+        or not isinstance(source_sha256, str)
+        or not SHA256.fullmatch(source_sha256)
+        or not isinstance(installed_sha256, str)
+        or not SHA256.fullmatch(installed_sha256)
+        or source_sha256 != installed_sha256
+    ):
+        blockers.append("private libgcc provenance identity is invalid")
+    if installed_path.is_absolute() or ".." in installed_path.parts:
+        blockers.append("private libgcc provenance path is unsafe")
+    else:
+        installed = (root / installed_path).resolve()
+        if installed != expected_library:
+            blockers.append("private libgcc path differs from the managed location")
+        elif not installed.is_file() or sha256_file(installed) != installed_sha256:
+            blockers.append("private libgcc is missing or has drifted")
+    return (blockers, None) if blockers else ([], provenance)
+
+
+def install_private_libgcc(root: Path, target: str) -> bool:
+    root = root.resolve()
+    loader = private_glibc_loader(root, target)
+    if loader is None:
+        fail(f"cannot install private libgcc without the {target} glibc loader")
+    destination = private_libgcc_path(root, loader)
+    provenance_path = root / LIBGCC_PROVENANCE
+    if destination.exists() or provenance_path.exists():
+        if destination.is_file() and provenance_path.is_file():
+            return False
+        fail("private libgcc runtime is partial; refusing to overwrite it")
+    gcc = shutil.which("gcc")
+    if gcc is None:
+        fail("private libgcc installation requires the validated GCC")
+    located = run([gcc, "-print-file-name=libgcc_s.so.1"], timeout=30)
+    source_text = located.stdout.strip()
+    source = Path(source_text)
+    if located.returncode != 0 or not source.is_absolute() or not source.is_file():
+        detail = located.stderr.strip() or source_text or "not found"
+        fail(f"GCC cannot resolve an absolute libgcc_s.so.1: {detail}")
+    source = source.resolve()
+    source_hash = sha256_file(source)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    provenance_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_library = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    temporary_provenance = provenance_path.with_name(
+        f".{provenance_path.name}.{os.getpid()}.tmp"
+    )
+    provenance = {
+        "schema_version": 1,
+        "name": LIBGCC_NAME,
+        "source_path": str(source),
+        "source_sha256": source_hash,
+        "installed_path": destination.relative_to(root).as_posix(),
+        "installed_sha256": source_hash,
+        "license": LIBGCC_LICENSE,
+        "notice": (
+            "Local GCC runtime copy for WavePeek only; Git-ignored and excluded "
+            "from verif-harness source archives and releases."
+        ),
+    }
+    try:
+        shutil.copy2(source, temporary_library)
+        if sha256_file(temporary_library) != source_hash:
+            fail("copied private libgcc SHA-256 differs from its GCC source")
+        temporary_provenance.write_text(
+            json.dumps(provenance, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary_library, destination)
+        os.replace(temporary_provenance, provenance_path)
+    finally:
+        for temporary in (temporary_library, temporary_provenance):
+            if temporary.is_file():
+                temporary.unlink()
+    print(
+        f"Installed local {LIBGCC_NAME} for the WavePeek private runtime.",
+        file=sys.stderr,
+    )
+    return True
+
+
 def validate_private_glibc(
     root: Path, target: str, contract: dict[str, Any]
 ) -> tuple[list[str], dict[str, Any] | None]:
@@ -305,16 +420,22 @@ def validate_private_glibc(
     library_dirs = sorted(
         {loader.parent.resolve(), *(path.parent.resolve() for path in libc_paths)}
     )
+    libgcc_blockers, libgcc = validate_private_libgcc(root, loader)
+    blockers.extend(libgcc_blockers)
     if blockers:
         return blockers, None
+    assert libgcc is not None
     descriptor = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "private-glibc",
         "version": contract["version"],
         "root": f"../glibc-{contract['version']}",
         "loader": loader.relative_to(root).as_posix(),
         "loader_sha256": sha256_file(loader),
         "library_dirs": [path.relative_to(root).as_posix() for path in library_dirs],
+        "libgcc_s": libgcc["installed_path"],
+        "libgcc_s_sha256": libgcc["installed_sha256"],
+        "libgcc_license": libgcc["license"],
         "license": contract["license"],
         "license_file_sha256": contract["license_file_sha256"],
         "licenses_file_sha256": contract["licenses_file_sha256"],
@@ -402,6 +523,7 @@ def install_private_glibc(
             source_licenses,
             installed_license.parent / contract["licenses_file"],
         )
+        install_private_libgcc(staged_root, target)
         blockers, _ = validate_private_glibc(staged_root, target, contract)
         if blockers:
             fail("built private glibc failed validation: " + "; ".join(blockers))
@@ -467,14 +589,15 @@ def load_runtime_descriptor(binary: Path) -> dict[str, Any] | None:
     keys = {
         "schema_version", "kind", "version", "root", "loader",
         "loader_sha256", "library_dirs", "license", "license_file_sha256",
-        "licenses_file_sha256",
+        "licenses_file_sha256", "libgcc_s", "libgcc_s_sha256",
+        "libgcc_license",
     }
     if not isinstance(value, dict) or set(value) != keys:
         fail(f"WavePeek runtime descriptor keys must be exactly {sorted(keys)}")
     if value["version"] != "2.34":
         fail("WavePeek runtime descriptor version is invalid")
     if (
-        value["schema_version"] != 1
+        value["schema_version"] != 2
         or value["kind"] != "private-glibc"
         or value["root"] != f"../glibc-{value['version']}"
         or value["license"] != "LGPL-2.1-or-later"
@@ -485,6 +608,10 @@ def load_runtime_descriptor(binary: Path) -> dict[str, Any] | None:
         != "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
         or value["licenses_file_sha256"]
         != "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc"
+        or value["libgcc_license"] != LIBGCC_LICENSE
+        or not isinstance(value["libgcc_s"], str)
+        or not isinstance(value["libgcc_s_sha256"], str)
+        or not SHA256.fullmatch(value["libgcc_s_sha256"])
     ):
         fail("WavePeek runtime descriptor identity is invalid")
     if (
@@ -493,7 +620,7 @@ def load_runtime_descriptor(binary: Path) -> dict[str, Any] | None:
         or not all(isinstance(item, str) and item for item in value["library_dirs"])
     ):
         fail("WavePeek runtime descriptor library_dirs must be non-empty")
-    for raw_path in (value["loader"], *value["library_dirs"]):
+    for raw_path in (value["loader"], value["libgcc_s"], *value["library_dirs"]):
         path_value = Path(raw_path)
         if path_value.is_absolute() or ".." in path_value.parts:
             fail("WavePeek runtime descriptor contains an unsafe relative path")
@@ -516,6 +643,13 @@ def binary_command(binary: Path) -> tuple[list[str], dict[str, Any] | None]:
         or sha256_file(loader) != descriptor["loader_sha256"]
     ):
         fail("WavePeek private glibc loader is missing or has drifted")
+    libgcc = (root / descriptor["libgcc_s"]).resolve()
+    if (
+        root not in libgcc.parents
+        or not libgcc.is_file()
+        or sha256_file(libgcc) != descriptor["libgcc_s_sha256"]
+    ):
+        fail("WavePeek private libgcc is missing or has drifted")
     library_dirs = [(root / relative).resolve() for relative in descriptor["library_dirs"]]
     if any(root not in path.parents or not path.is_dir() for path in library_dirs):
         fail("WavePeek private glibc library path is missing or unsafe")
@@ -667,6 +801,15 @@ def main() -> int:
             private_blockers, runtime_descriptor = validate_private_glibc(
                 private_glibc_root, selected_target, glibc_contract
             )
+            if (
+                private_blockers
+                and not args.check
+                and all(blocker.startswith("private libgcc") for blocker in private_blockers)
+            ):
+                install_private_libgcc(private_glibc_root, selected_target)
+                private_blockers, runtime_descriptor = validate_private_glibc(
+                    private_glibc_root, selected_target, glibc_contract
+                )
             private_state = "BLOCKED" if private_blockers else "READY"
         elif args.check:
             private_blockers = [
@@ -726,6 +869,10 @@ def main() -> int:
         "private_glibc_root": str(private_glibc_root) if private_required else None,
         "runtime_descriptor": (
             str(runtime_descriptor_path(binary)) if runtime_descriptor is not None else None
+        ),
+        "private_libgcc_sha256": (
+            runtime_descriptor.get("libgcc_s_sha256")
+            if runtime_descriptor is not None else None
         ),
         "blockers": blockers,
         "notice": "WavePeek remains an optional, separately licensed source dependency; FSDB is not enabled.",

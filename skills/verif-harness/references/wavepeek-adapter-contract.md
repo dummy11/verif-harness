@@ -10,8 +10,10 @@ The managed source checkout is `.deps/wavepeek`; the compiled executable is
 `.deps/wavepeek-bin/wavepeek`. Both are excluded from Git and release archives.
 Linux hosts older than glibc 2.34 additionally use `.deps/glibc-2.34` and a
 `.deps/wavepeek-bin/wavepeek-runtime.json` descriptor. The adapter validates
-the private loader hash and invokes it with `--library-path` for WavePeek only;
-it never exports `LD_LIBRARY_PATH` or changes the system libc.
+the private loader and locally managed `libgcc_s.so.1` hashes and invokes them
+with `--library-path` for WavePeek only; it never exports `LD_LIBRARY_PATH` or
+changes the system libc. The copied GCC runtime remains under `.deps/`, records
+its separate license identity, and is excluded from source archives/releases.
 Discovery order is explicit CLI arguments, `WAVEPEEK_HOME`/`WAVEPEEK_BIN`, the
 request project's managed paths, the current directory, then the
 verif-harness repository managed paths.

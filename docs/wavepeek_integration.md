@@ -38,6 +38,13 @@ from source archives and releases. No Rust toolchain or crates.io access is
 required; the private glibc path requires the normal C build prerequisites,
 including GCC and GNU Make.
 
+The official WavePeek binary's `libgcc_s.so.1` dependency is copied from the
+validated GCC into the same private runtime. Setup records its source and
+installed SHA-256 plus its separate GPL-3.0-or-later WITH GCC-exception-3.1
+identity. The runtime descriptor and adapter verify the copied library before
+each invocation; neither a host library directory nor a global
+`LD_LIBRARY_PATH` is added.
+
 Release and private-glibc archives use the host `curl` or `wget` HTTPS trust
 path and are then checked against their locked SHA-256. TLS verification is
 never disabled; enterprise CA roots must be configured through the host

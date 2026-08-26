@@ -32,7 +32,10 @@ commands; do not guess them.
 - Never vendor WavePeek source or generated binaries into verif-harness.
 - On Linux, use the lock-pinned private glibc only when the host glibc is older
   than 2.34. Invoke it as a WavePeek-only loader; never replace system libc or
-  export its library path globally.
+  export its library path globally. Keep the WavePeek-required `libgcc_s.so.1`
+  as a hashed local copy inside that private runtime with its separate GCC
+  Runtime Library Exception identity; never add a host library directory to a
+  global search path.
 - Never bypass the commit, Cargo.lock, license hash, clean-tree, or version
   checks.
 - Never put waveform contents, secrets, or environment values into requests.

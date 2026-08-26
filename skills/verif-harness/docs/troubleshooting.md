@@ -237,6 +237,12 @@ Python 3.4+；managed CPython 满足最后一项。`makeinfo` 4.7+ 仅用于 gli
 或版本过旧、private loader/hash 漂移或版本 probe 失败均为 `BLOCKED`；禁止通过
 全局 `LD_LIBRARY_PATH` 绕过。
 
+官方 WavePeek binary 还依赖 `libgcc_s.so.1`。setup 通过已验证 GCC 定位该文件，
+复制到 Git-ignored private runtime，并记录 source/installed SHA-256 与 GCC Runtime
+Library Exception 身份。旧 installer 已成功生成的 private glibc 只会补充这一缺失
+文件和 provenance；其它 partial/drifted 状态继续 fail closed。禁止把宿主 GCC
+library 目录加入全局搜索路径。
+
 若下载 private glibc 时出现 `CERTIFICATE_VERIFY_FAILED`，installer 会统一使用宿主
 `curl`/`wget` 的 HTTPS/CA trust path，并继续校验 lock 中的 SHA-256。企业 CA 应通过
 宿主 trust store 或 downloader 标准 CA bundle 配置提供；禁止使用 `curl -k`、

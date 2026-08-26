@@ -108,11 +108,16 @@ class WavepeekAdapterTest(unittest.TestCase):
             "exec \"$@\"\n"
         )
         loader.chmod(0o755)
+        libgcc = library / "libgcc_s.so.1"
+        libgcc.write_text("fixture libgcc runtime\n")
         descriptor = {
-            "schema_version": 1, "kind": "private-glibc", "version": "2.34",
+            "schema_version": 2, "kind": "private-glibc", "version": "2.34",
             "root": "../glibc-2.34", "loader": "lib/ld-linux-x86-64.so.2",
             "loader_sha256": hashlib.sha256(loader.read_bytes()).hexdigest(),
             "library_dirs": ["lib"], "license": "LGPL-2.1-or-later",
+            "libgcc_s": "lib/libgcc_s.so.1",
+            "libgcc_s_sha256": hashlib.sha256(libgcc.read_bytes()).hexdigest(),
+            "libgcc_license": "GPL-3.0-or-later WITH GCC-exception-3.1",
             "license_file_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
             "licenses_file_sha256": "b33d0bd9f685b46853548814893a6135e74430d12f6d94ab3eba42fc591f83bc",
         }
@@ -122,6 +127,10 @@ class WavepeekAdapterTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         assert payload is not None
         self.assertEqual(payload["tool_identity"]["runtime"]["version"], "2.34")
+        self.assertEqual(
+            payload["tool_identity"]["runtime"]["libgcc_s_sha256"],
+            descriptor["libgcc_s_sha256"],
+        )
         self.assertEqual(payload["argv"][0], str(loader.resolve()))
         self.assertNotIn("LD_LIBRARY_PATH", payload["environment_keys"])
 

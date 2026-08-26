@@ -255,6 +255,14 @@ def managed_rows(root: Path, runtime_lock: dict[str, Any]) -> tuple[list[Version
             "required", "WavePeek glibc", "host >=2.34 or private 2.34",
             current, "PASS" if glibc_ok else "FAIL", source,
         ))
+        if private_required:
+            libgcc_hash = str(wavepeek.get("private_libgcc_sha256") or "unavailable")
+            rows.append(VersionRow(
+                "required", "WavePeek private libgcc_s",
+                "local GCC runtime copy with SHA-256", libgcc_hash,
+                "PASS" if re.fullmatch(r"[0-9a-f]{64}", libgcc_hash) else "FAIL",
+                source,
+            ))
     else:
         rows.append(VersionRow(
             "informational", "WavePeek glibc", "Linux only", "not applicable", "N/A",
