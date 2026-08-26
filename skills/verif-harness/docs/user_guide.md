@@ -176,8 +176,17 @@ $verif-harness bootstrap --project-root . --integration codex
 runtime 状态检查仍可通过底层 wrapper 执行：
 
 ```bash
-python3 scripts/verif_harness.py runtime status --project-root .
+# Codex workspace
+.agents/skills/verif-harness/scripts/verif-harness runtime status --project-root .
+
+# Kimi Code workspace
+.kimi-code/skills/verif-harness/scripts/verif-harness runtime status --project-root .
 ```
+
+这两个 launcher 位于 setup 创建的 Skill 链接内，会先解析链接真实路径，再从完整
+verif-harness checkout 调用 managed Python 和仓库 wrapper。不要因为工作空间本身
+没有 `scripts/`、`deps/` 或 `integrations/` 就判断 package 缺失，也不要在工作空间
+内重复 clone。
 
 `auto` 只接受唯一证据：`.agents/` 或 `.codex/` 表示 Codex，`.kimi-code/`
 表示 Kimi Code；同时存在或全部不存在时必须显式选择。bootstrap 完成后以

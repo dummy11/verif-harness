@@ -128,6 +128,9 @@ verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，�
 `--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
 `.kimi-code/` 并以 Kimi 原生 `--yolo` 启动。setup 不修改 `~/.codex` 或
 `~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
+Skill 内置 launcher 会解析该项目链接，返回原安装目录中的完整 checkout；Agent
+不得仅因工作空间根目录没有 `scripts/`、`deps/` 或 `integrations/` 就误报安装缺失，
+也不应要求在工作空间内再次 clone。
 runtime 明确时还会生成无凭据的 xverif MCP profile/launcher，并注册到工作区的
 `.codex/config.toml` 或 `.kimi-code/mcp.json`；已有同名冲突配置会阻断 setup。
 安装包括：

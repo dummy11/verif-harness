@@ -54,6 +54,12 @@ the selected runtime in `.specify/integration.json`. It refuses an existing
 `.specify/` project rather than replacing its specifications or integration
 state.
 
+The runtime-native Skill is a project link into the complete package checkout.
+Its `scripts/verif-harness` launcher resolves that link before invoking managed
+dependencies. Repository-level `scripts/`, `deps/`, and `integrations/` are not
+expected below a separate verification workspace; the Agent must not infer a
+missing installation from the workspace tree alone or request another clone.
+
 After Codex starts, setup creates a read-only inventory turn listing the Skills,
 MCP servers, and tools actually available to that session. Kimi 0.38 exposes
 `--prompt` only as a blocking non-interactive request and has no stable

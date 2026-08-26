@@ -30,6 +30,14 @@ checkout. To configure a separate RTL project, pass its path and runtime to
 `setup.sh`; the subsequent Skill bootstrap commands run from that target
 project.
 
+The target project contains a runtime-native Skill link, not a second package
+copy. When the Agent dispatches a package command from that workspace, it must
+use `.agents/skills/verif-harness/scripts/verif-harness` for Codex or
+`.kimi-code/skills/verif-harness/scripts/verif-harness` for Kimi Code. The
+launcher resolves the link back to this complete checkout before accessing
+`scripts/`, `deps/`, or `integrations/`; their absence below the target project
+root is expected and must not be reported as a missing installation.
+
 上游要求 Python 3.11 或更新版本。顶层 setup 会安装全部受管集成；安装器固定上游源码，
 但 Python 的传递依赖由
 锁定版本的 `pyproject.toml` 解析；需要完全离线或供应链可复现时，维护者还应在

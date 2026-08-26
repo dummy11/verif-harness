@@ -72,6 +72,31 @@ ambiguous after the M1.1 scaffold and requires human judgment.
 If the requested state is partial or ambiguous, stop before writing and report
 the conflicting evidence.
 
+## Package checkout resolution
+
+The verification workspace and the complete verif-harness package checkout are
+separate roots. Never decide that repository-level scripts, dependency locks,
+or integrations are absent merely because they are not below the current
+workspace directory.
+
+When setup installed this Skill into a separate workspace, dispatch package
+commands through the runtime-native Skill link:
+
+```text
+# Codex workspace
+.agents/skills/verif-harness/scripts/verif-harness <mode> ...
+
+# Kimi Code workspace
+.kimi-code/skills/verif-harness/scripts/verif-harness <mode> ...
+```
+
+The launcher resolves the Skill symlink to the reviewed package checkout,
+validates the repository wrapper and Spec Kit assets, and uses the managed
+Python runtime. Prefer it over reconstructing a package path. If the active
+runtime link is missing, broken, or resolves to an incomplete checkout, stop
+and ask the user to rerun setup from the reviewed checkout. Do not ask for a
+second clone inside the workspace and do not fall back to host Python.
+
 ## Global invariants
 
 Apply these rules in every mode:

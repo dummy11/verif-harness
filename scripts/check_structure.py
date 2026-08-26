@@ -34,6 +34,7 @@ def main() -> int:
         "scripts/setup_managed.sh", "scripts/setup_managed_runtime.py",
         "scripts/managed-python", "scripts/runtime-versions",
         "scripts/check_runtime_versions.py",
+        "skills/verif-harness/scripts/verif-harness",
         "skills/verif-harness/xverif/scripts/xverif_mcp.py",
     ):
         if not (ROOT / name).is_file():

@@ -6,10 +6,13 @@ Spec Kit owns the editable specification lifecycle.
 ## Required context
 
 1. Read project `AGENTS.md` and `.harness-config.json`.
-2. Read `integrations/spec-kit/README.md` from a complete verif-harness checkout.
-3. Read the current Spec Kit constitution, program/stage spec, plan, tasks, and
+2. Resolve the complete verif-harness checkout through the active runtime Skill
+   link and its `scripts/verif-harness` launcher. Do not look for repository
+   scripts, locks, or integrations below a separate verification workspace.
+3. Read `integrations/spec-kit/README.md` from that resolved checkout.
+4. Read the current Spec Kit constitution, program/stage spec, plan, tasks, and
    checklist before dispatching an execution mode.
-4. Read the requested verif-harness mode instructions before writing.
+5. Read the requested verif-harness mode instructions before writing.
 
 ## Supported operations
 
@@ -58,6 +61,24 @@ python3 scripts/verif_harness.py runtime status --project-root <project>
 python3 scripts/verif_harness.py runtime switch \
   --project-root <project> --to <codex|kimi>
 ```
+
+Inside an Agent session whose current directory is a separate verification
+workspace, fulfill the native Skill invocation with the matching project-local
+launcher:
+
+```text
+# Codex internal dispatch
+.agents/skills/verif-harness/scripts/verif-harness bootstrap \
+  --project-root . --integration codex
+
+# Kimi Code internal dispatch
+.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap \
+  --project-root . --integration kimi
+```
+
+These paths traverse setup-managed Skill links into the complete checkout. A
+valid link is evidence that the package is available; do not report missing
+`scripts/`, `deps/`, or `integrations/` based only on the workspace root.
 
 ## Source-of-truth policy
 

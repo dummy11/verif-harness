@@ -207,6 +207,20 @@ registration/SDK 合同通过，不表示 Agent 已成功调用 `xverif_ping`。
 新 setup 会直接进入 Kimi TUI，不再执行该前置模型请求。进入后使用 `/skills` 和
 `/mcp` 查看运行态。底部 connected 状态不能替代后续 `xverif_ping`。
 
+若 Kimi 报告 Skill 只有说明和 assets、缺少仓库根目录的 `scripts/`、`deps/` 或
+`integrations/`，先确认它是否只检查了当前 verification workspace。setup 安装的是
+指向完整 checkout 中 `skills/verif-harness` 的项目链接；应通过下面的 Skill launcher
+解析链接并执行，不需要提供第二份仓库或在 workspace 内 clone：
+
+```bash
+.kimi-code/skills/verif-harness/scripts/verif-harness probe
+.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap \
+  --project-root . --integration kimi
+```
+
+只有 launcher 明确报告链接断裂或 checkout 不完整时，才从原 reviewed checkout
+重新运行 setup。不要改用宿主 Python，也不要绕过 pinned Spec Kit lock。
+
 ## xverif MCP session 卡住或超时
 
 xdebug/xcov 使用独立 stdio-loop session。确认每次操作遵循
