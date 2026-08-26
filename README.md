@@ -172,10 +172,11 @@ kimi --yolo            # Kimi Code runtime
 
 setup 启动 CLI 后会自动创建一轮只读启动清单，列出当前会话实际可用的 Skills、
 MCP servers 和 tools。Codex 通过交互 CLI 的 initial prompt 完成；Kimi 先用
-`--mcp-config-file .kimi-code/mcp.json --prompt` 显式加载项目 MCP 并创建该轮，再用
-`--continue` 进入同一会话。清单区分 configured、connected 和 tools available，
-避免把仍在连接的 xverif 误报为未安装；它不调用工具或修改文件。仍可在 TUI 内用
-`/skills` 和 `/mcp` 打开 runtime 原生实时视图。
+`--prompt` 创建该轮，再用 `--continue` 进入同一会话；若当前 Kimi 暴露
+`--mcp-config-file`，setup 会显式传入 `.kimi-code/mcp.json`，否则使用项目 MCP
+自动发现。清单区分 configured、connected 和 tools available，避免把仍在连接的
+xverif 误报为未安装；它不调用工具或修改文件。仍可在 TUI 内用 `/skills` 和
+`/mcp` 打开 runtime 原生实时视图。
 
 进入 CLI 后，不要回到 shell 执行下面的 Python wrapper；在 CLI 内调用对应的
 Skill：

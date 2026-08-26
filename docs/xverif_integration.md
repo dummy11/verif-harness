@@ -108,10 +108,11 @@ Agent 也会完成项目级注册。LSF 使用显式
 `--backend lsf` 重新 configure；direct 与 LSF 不自动互换。注册后仍须由新启动的
 Agent session 调用 `xverif_ping`，静态文件检查不能伪造协议成功。
 
-Kimi 的 setup 启动清单轮次会显式传入工作区 `.kimi-code/mcp.json`，避免该轮在
-项目 MCP 自动发现完成前先回答“无 MCP”。清单必须区分 `configured`、host
-`connected` 和 `tools available`；底部出现 `MCP server "xverif" connected`
-仍只证明 host 已挂载 tool schema，首次真实协议探针依旧是 `xverif_ping`。
+Kimi 的 setup 启动清单轮次会检测 `--mcp-config-file`：支持时显式传入工作区
+`.kimi-code/mcp.json`，不支持时使用项目 MCP 自动发现，不因缺少该可选参数阻断
+CLI。清单必须区分 `configured`、host `connected` 和 `tools available`；底部出现
+`MCP server "xverif" connected` 仍只证明 host 已挂载 tool schema，首次真实协议
+探针依旧是 `xverif_ping`。
 
 注册完成后，第一次调用必须是 `xverif_ping`。随后先调用 `xverif_tools` 获取工具
 目录，再按 upstream schema 使用 `xverif_xdebug_*`、`xverif_xcov_*`、`xverif_bit_*`、

@@ -57,11 +57,13 @@ state.
 After the CLI runtime starts, setup creates a read-only inventory turn listing
 the Skills, MCP servers, and tools actually available to that session. Codex
 uses its interactive initial prompt. Kimi runs the inventory with `--prompt`
-while explicitly passing the project `.kimi-code/mcp.json`, then immediately
-opens that same latest session with `--continue`. The inventory distinguishes
-configured, connected, and tool-available states so an MCP server that is still
-starting is not reported as absent. The prompt does not call tools or modify
-files. `/skills` and `/mcp` remain available for the runtime-native live views.
+and immediately opens that same latest session with `--continue`. Setup passes
+the project `.kimi-code/mcp.json` explicitly when that Kimi version exposes
+`--mcp-config-file`; newer variants without that option use project MCP
+auto-discovery. The inventory distinguishes configured, connected, and
+tool-available states so an MCP server that is still starting is not reported
+as absent. The prompt does not call tools or modify files. `/skills` and `/mcp`
+remain available for the runtime-native live views.
 
 If setup was run with `--no-agent`, start it later through setup again so the
 Agent and xverif wrappers inherit the managed Python environment:

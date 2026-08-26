@@ -1446,10 +1446,11 @@ cd /path/to/verif-harness
 
 CLI runtime 启动后，setup 会自动创建一轮只读启动清单，列出当前会话实际可用的
 Skills、MCP servers 和 tools。Codex 使用交互式 initial prompt；Kimi 先通过
-`--mcp-config-file .kimi-code/mcp.json --prompt` 显式加载项目 MCP 并创建该轮，再用
-`--continue` 打开同一会话。清单区分 configured、connected 和 tools available，
-不会把仍在连接的 xverif 误报为未安装；该轮不调用工具或修改文件。仍可使用
-`/skills` 和 `/mcp` 查看 runtime 原生实时视图。
+`--prompt` 创建该轮，再用 `--continue` 打开同一会话；支持
+`--mcp-config-file` 时显式传入 `.kimi-code/mcp.json`，否则使用项目 MCP 自动发现。
+清单区分 configured、connected 和 tools available，不会把仍在连接的 xverif
+误报为未安装；该轮不调用工具或修改文件。仍可使用 `/skills` 和 `/mcp` 查看
+runtime 原生实时视图。
 
 ```text
 # Codex

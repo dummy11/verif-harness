@@ -267,9 +267,8 @@ else
     echo "ERROR: selected Kimi CLI could not report its startup options." >&2
     exit 2
   }
-  if [[ "$kimi_help" != *"--mcp-config-file"* || \
-        "$kimi_help" != *"--prompt"* || "$kimi_help" != *"--continue"* ]]; then
-    echo "ERROR: selected Kimi CLI lacks --mcp-config-file/--prompt/--continue support." >&2
+  if [[ "$kimi_help" != *"--prompt"* || "$kimi_help" != *"--continue"* ]]; then
+    echo "ERROR: selected Kimi CLI lacks --prompt/--continue support." >&2
     exit 2
   fi
   kimi_mcp_config="$workspace_root/.kimi-code/mcp.json"
@@ -277,8 +276,15 @@ else
     echo "ERROR: Kimi project MCP config is missing before inventory: $kimi_mcp_config" >&2
     exit 2
   fi
-  if "$agent_cli" --mcp-config-file "$kimi_mcp_config" \
-    --prompt "$startup_inventory_prompt"; then
+  kimi_inventory_args=(--prompt "$startup_inventory_prompt")
+  if [[ "$kimi_help" == *"--mcp-config-file"* ]]; then
+    kimi_inventory_args=(--mcp-config-file "$kimi_mcp_config" \
+      "${kimi_inventory_args[@]}")
+    echo "Kimi inventory will explicitly load: $kimi_mcp_config"
+  else
+    echo "Kimi CLI has no --mcp-config-file option; using project MCP auto-discovery."
+  fi
+  if "$agent_cli" "${kimi_inventory_args[@]}"; then
     agent_args+=(--continue)
   else
     echo "WARNING: Kimi startup inventory failed; launching a new interactive session." >&2
