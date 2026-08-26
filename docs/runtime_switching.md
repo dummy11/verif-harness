@@ -95,7 +95,7 @@ as fallbacks.
 Inspect the result without changing the project:
 
 ```bash
-python3 scripts/verif_harness.py runtime status --project-root .
+python3 scripts/verif_harness.py runtime status
 ```
 
 ## Change the model within one runtime
@@ -124,10 +124,10 @@ Use setup once for the target runtime, then switch only from a stable review
 gate with no command step running:
 
 ```bash
-python3 scripts/verif_harness.py workflow-status --project-root .
-python3 scripts/verif_harness.py runtime status --project-root .
-python3 scripts/verif_harness.py runtime switch --project-root . --to kimi
-python3 scripts/verif_harness.py runtime status --project-root .
+python3 scripts/verif_harness.py workflow-status
+python3 scripts/verif_harness.py runtime status
+python3 scripts/verif_harness.py runtime switch --to kimi
+python3 scripts/verif_harness.py runtime status
 ```
 
 The switch delegates to the pinned Spec Kit `integration switch` command. Spec

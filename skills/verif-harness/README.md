@@ -143,14 +143,17 @@ setup 在启动 Agent 前打印 required/current/status 版本清单；也可独
 ```text
 # Codex
 $verif-harness probe
-$verif-harness bootstrap --project-root . --integration codex
-$verif-harness stage --project-root . --stage 1 --objective "最小可运行环境"
+$verif-harness bootstrap
+$verif-harness stage --stage 1 --objective "最小可运行环境"
 
 # Kimi Code
 /skill:verif-harness probe
-/skill:verif-harness bootstrap --project-root . --integration kimi
-/skill:verif-harness stage --project-root . --stage 1 --objective "最小可运行环境"
+/skill:verif-harness bootstrap
+/skill:verif-harness stage --stage 1 --objective "最小可运行环境"
 ```
+
+正常 setup 流程已选择 workspace 与 runtime，Skill 命令继承当前目录并自动解析唯一
+runtime marker；仅跨项目自动化、恢复或 marker 歧义时才增加显式覆盖参数。
 
 `python3 scripts/verif_harness.py ...` 仅作为 CI、脚本自动化或没有 Agent CLI 时的
 底层 wrapper 入口，不是 setup 后的默认交互方式。
@@ -191,10 +194,10 @@ $verif-harness evidence probe --tool xbit
 MCP source/profile 生命周期：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 scripts/verif_harness.py xverif mcp install
 python3 scripts/verif_harness.py xverif mcp configure \
-  --project-root . --runtime codex --backend direct
-python3 scripts/verif_harness.py xverif mcp status --project-root .
+  --runtime codex --backend direct
+python3 scripts/verif_harness.py xverif mcp status
 ```
 
 `configure` 写 `.harness/mcp/xverif.json`、生成项目 launcher，并注册到 Codex

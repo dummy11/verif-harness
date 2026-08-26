@@ -187,7 +187,7 @@ keys。adapter 不会自动 fallback 到 MCP、其它 backend 或 fixture。
 Python 安装。用 managed interpreter 检查：
 
 ```bash
-./scripts/managed-python scripts/verif_harness.py xverif mcp status --project-root .
+./scripts/managed-python scripts/verif_harness.py xverif mcp status
 ```
 
 不要把 token 或 license 值写入 profile/注册文件。工作区 launcher 不保存绝对
@@ -214,8 +214,7 @@ registration/SDK 合同通过，不表示 Agent 已成功调用 `xverif_ping`。
 
 ```bash
 .kimi-code/skills/verif-harness/scripts/verif-harness probe
-.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap \
-  --project-root . --integration kimi
+.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap
 ```
 
 只有 launcher 明确报告链接断裂或 checkout 不完整时，才从原 reviewed checkout

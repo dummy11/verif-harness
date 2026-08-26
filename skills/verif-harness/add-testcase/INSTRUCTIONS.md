@@ -19,7 +19,7 @@ Run a dry-run first:
 
 ```bash
 python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
-  --project-root . --test-name <prefix>_<name>_test \
+  --test-name <prefix>_<name>_test \
   --base-test <prefix>_base_test --base-vseq <prefix>_job_vseq_base \
   --dry-run
 ```

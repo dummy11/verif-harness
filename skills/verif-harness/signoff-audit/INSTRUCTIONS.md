@@ -10,7 +10,7 @@ Run:
 
 ```bash
 python3 <skill-dir>/signoff-audit/scripts/audit_signoff.py \
-  --project-root . --stage <N>
+  --stage <N>
 ```
 
 Options:

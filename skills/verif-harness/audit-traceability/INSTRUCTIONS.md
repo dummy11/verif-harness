@@ -14,8 +14,7 @@ Use this mode after tests or plans change and before a stage gate.
 Run:
 
 ```bash
-python3 <skill-dir>/audit-traceability/scripts/audit_traceability.py \
-  --project-root .
+python3 <skill-dir>/audit-traceability/scripts/audit_traceability.py
 ```
 
 Options:

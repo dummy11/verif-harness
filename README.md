@@ -185,12 +185,16 @@ Skill：
 ```text
 # Codex CLI
 $verif-harness probe
-$verif-harness bootstrap --project-root . --integration codex
+$verif-harness bootstrap
 
 # Kimi Code CLI
 /skill:verif-harness probe
-/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap
 ```
+
+setup 已把 CLI 启动目录和 runtime marker 固定到所选 workspace；正常交互命令不再
+重复填写 `--project-root .` 或 `--integration`。只有跨项目自动化、恢复流程或 marker
+歧义时才显式覆盖。
 
 这些是短命令别名：`probe/bootstrap/stage` 内部路由到 Spec Kit，`evidence`
 路由到 xverif，`waveform` 路由到 WavePeek。显式的 `spec-kit`、`xverif` 和

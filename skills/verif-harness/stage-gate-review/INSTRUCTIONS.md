@@ -17,7 +17,7 @@ enter Stage N+1.
 
    ```bash
    python3 <skill-dir>/stage-gate-review/scripts/build_stage_gate.py \
-     --project-root . --completed-stage <N> \
+     --completed-stage <N> \
      --out <docs-root>/stage<N>_gate_re_review.md
    ```
 

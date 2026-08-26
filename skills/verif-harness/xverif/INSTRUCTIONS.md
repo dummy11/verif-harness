@@ -34,14 +34,14 @@ The pinned xverif checkout includes `xverif_mcp` and the `tools/xverif-mcp`
 launcher. Install its source with:
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 scripts/verif_harness.py xverif mcp install
 ```
 
 Configure a non-secret project profile for the active Agent runtime:
 
 ```bash
 python3 scripts/verif_harness.py xverif mcp configure \
-  --project-root . --runtime codex --backend direct
+  --runtime codex --backend direct
 ```
 
 `configure` writes `.harness/mcp/xverif.json`, a generated project launcher,
@@ -57,7 +57,7 @@ an unreviewed MCP version into a host Python.
 Check the source/profile/project-registration contract:
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp status --project-root .
+python3 scripts/verif_harness.py xverif mcp status
 ```
 
 Probe the actual protocol from Codex or Kimi by calling the server's

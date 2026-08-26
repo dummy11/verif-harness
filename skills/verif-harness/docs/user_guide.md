@@ -167,20 +167,20 @@ codex                  # 或：kimi --yolo
 
 ```text
 # Codex
-$verif-harness bootstrap --project-root . --integration codex
+$verif-harness bootstrap
 
 # Kimi Code
-/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap
 ```
 
 runtime 状态检查仍可通过底层 wrapper 执行：
 
 ```bash
 # Codex workspace
-.agents/skills/verif-harness/scripts/verif-harness runtime status --project-root .
+.agents/skills/verif-harness/scripts/verif-harness runtime status
 
 # Kimi Code workspace
-.kimi-code/skills/verif-harness/scripts/verif-harness runtime status --project-root .
+.kimi-code/skills/verif-harness/scripts/verif-harness runtime status
 ```
 
 这两个 launcher 位于 setup 创建的 Skill 链接内，会先解析链接真实路径，再从完整
@@ -264,18 +264,19 @@ Python wrapper：
 
 ```text
 # Codex
-$verif-harness bootstrap --project-root . --integration codex
+$verif-harness bootstrap
 
 # Kimi Code
-/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap
 ```
 
 `python3 scripts/verif_harness.py spec-kit bootstrap ...` 仅保留给 CI、脚本自动化
 或无 Agent CLI 的底层入口。
 
-显式业务输入是项目根目录和 runtime；Python script mode、固定版本 Spec Kit、
-`verif-harness-rtl` preset 和 preset priority 由 verif-harness 提供。
-目标目录必须存在且可写，并且不能已有 `.specify/`。
+正常 setup 流程从当前目录取得项目根目录，并从唯一 runtime marker 解析 runtime；
+二者不是需要重复输入的业务参数。只有跨项目自动化、恢复或 marker 歧义时才显式
+覆盖。Python script mode、固定版本 Spec Kit、`verif-harness-rtl` preset 和 preset
+priority 由 verif-harness 提供。目标目录必须存在且可写，并且不能已有 `.specify/`。
 
 它内部依次执行：
 
@@ -309,11 +310,11 @@ simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.jso
 
 ```text
 # Codex
-$verif-harness stage --project-root . --stage 0 \
+$verif-harness stage --stage 0 \
   --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
 
 # Kimi Code
-/skill:verif-harness stage --project-root . --stage 0 \
+/skill:verif-harness stage --stage 0 \
   --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
 ```
 
@@ -335,12 +336,12 @@ constitution -> review
 
 ```text
 # Codex
-$verif-harness workflow-status --project-root .
-$verif-harness workflow-resume --project-root . <run-id>
+$verif-harness workflow-status
+$verif-harness workflow-resume <run-id>
 
 # Kimi Code
-/skill:verif-harness workflow-status --project-root .
-/skill:verif-harness workflow-resume --project-root . <run-id>
+/skill:verif-harness workflow-status
+/skill:verif-harness workflow-resume <run-id>
 ```
 
 主要规格输出位于：
@@ -898,7 +899,7 @@ $verif-harness doctor  # 只读检查健康度、阶段状态和下一安全动�
 
 ```bash
 # doctor Skill：输出机器可读的只读健康检查结果
-python3 <skill-dir>/doctor/scripts/doctor.py --project-root . --json
+python3 <skill-dir>/doctor/scripts/doctor.py --json
 ```
 
 **输出**：ERROR、WARNING、INFO、推断出的 stage state、legacy Claude artifact、
@@ -1003,7 +1004,7 @@ mask/tolerance。
 ```bash
 # add-testcase Skill：先 dry-run 预览 testcase/vseq/package 变更
 python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
-  --project-root . --test-name <prefix>_<name>_test \
+  --test-name <prefix>_<name>_test \
   --base-test <prefix>_base_test --base-vseq <prefix>_job_vseq_base \
   --dry-run
 ```
@@ -1280,10 +1281,10 @@ $verif-harness evidence probe --tool xbit  # 经 Skill 调用 xverif probe
 参数包装进 CLI request：
 
 ```bash
-python3 scripts/verif_harness.py xverif mcp install --project-root .
+python3 scripts/verif_harness.py xverif mcp install
 python3 scripts/verif_harness.py xverif mcp configure \
-  --project-root . --runtime codex --backend direct
-python3 scripts/verif_harness.py xverif mcp status --project-root .
+  --runtime codex --backend direct
+python3 scripts/verif_harness.py xverif mcp status
 ```
 
 Kimi Code 使用 `--runtime kimi`。`configure` 生成
@@ -1462,17 +1463,17 @@ Codex CLI 启动后，setup 会通过 interactive initial prompt 自动创建一
 ```text
 # Codex
 $verif-harness probe
-$verif-harness bootstrap --project-root . --integration codex
-$verif-harness stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-$verif-harness workflow-status --project-root .
-$verif-harness workflow-resume --project-root . <run-id>
+$verif-harness bootstrap
+$verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+$verif-harness workflow-status
+$verif-harness workflow-resume <run-id>
 
 # Kimi Code
 /skill:verif-harness probe
-/skill:verif-harness bootstrap --project-root . --integration kimi
-/skill:verif-harness stage --project-root . --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-/skill:verif-harness workflow-status --project-root .
-/skill:verif-harness workflow-resume --project-root . <run-id>
+/skill:verif-harness bootstrap
+/skill:verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
+/skill:verif-harness workflow-status
+/skill:verif-harness workflow-resume <run-id>
 ```
 
 如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
@@ -1480,7 +1481,7 @@ $verif-harness workflow-resume --project-root . <run-id>
 
 ```text
 $verif-harness probe                                      # Skill：校验固定版本规格工具
-$verif-harness bootstrap --project-root <project>         # Skill：初始化规格 runtime 与 preset
+$verif-harness bootstrap                                  # Skill：初始化规格 runtime 与 preset
 $verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
 $verif-harness workflow-status [run-id]                   # Skill：查看 workflow 状态
 $verif-harness workflow-resume <run-id>                   # Skill：review 后恢复 paused workflow
@@ -1549,7 +1550,7 @@ Spec Kit 自身的 Python 传递依赖仍需在高保证或离线环境维护独
 ```bash
 # audit-traceability Skill：审计 feature/test/manifest/plan 的结构映射
 python3 <skill-dir>/audit-traceability/scripts/audit_traceability.py \
-  --project-root . [--manifest <path>] [--json] [--out <path>] [--strict]
+  [--manifest <path>] [--json] [--out <path>] [--strict]
 ```
 
 **输出**：duplicate、missing implementation、manifest mismatch、verification ID
@@ -1656,7 +1657,7 @@ questions、CR、动态 evidence 和 artifact limitations。
 ```bash
 # stage-gate-review Skill：生成保持所有决定未勾选的 Draft gate packet
 python3 <skill-dir>/stage-gate-review/scripts/build_stage_gate.py \
-  --project-root . --completed-stage <N> \
+  --completed-stage <N> \
   --out <docs-root>/stage<N>_gate_re_review.md
 ```
 
@@ -1684,7 +1685,7 @@ reviewer/date/Approval Decision。
 ```bash
 # signoff-audit Skill：只读复核 sign-off packet、manifest 与批准记录
 python3 <skill-dir>/signoff-audit/scripts/audit_signoff.py \
-  --project-root . --stage <N> [--packet <path>] [--manifest <path>] \
+  --stage <N> [--packet <path>] [--manifest <path>] \
   [--json] [--out <path>] [--strict]
 ```
 
@@ -1746,7 +1747,7 @@ checks、每个文件的 SHA-256/size，以及：
 ```bash
 # oss-readiness Skill：扫描 public export、community files 与 Git history
 python3 <skill-dir>/oss-readiness/scripts/audit_oss_readiness.py \
-  --project-root . --require-community --history
+  --require-community --history
 ```
 
 **输出**：敏感 pattern/path、缺失社区文件、example/CI 问题和整体 readiness。

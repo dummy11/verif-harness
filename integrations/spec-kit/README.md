@@ -47,17 +47,21 @@ root is expected and must not be reported as a missing installation.
 
 ```text
 # Codex
-$verif-harness bootstrap --project-root . --integration codex
-$verif-harness stage --project-root . --stage 1 --objective "建立可编译、可运行的最小验证环境"
-$verif-harness workflow-status --project-root .
-$verif-harness workflow-resume --project-root . <run-id>
+$verif-harness bootstrap
+$verif-harness stage --stage 1 --objective "建立可编译、可运行的最小验证环境"
+$verif-harness workflow-status
+$verif-harness workflow-resume <run-id>
 
 # Kimi Code
-/skill:verif-harness bootstrap --project-root . --integration kimi
-/skill:verif-harness stage --project-root . --stage 1 --objective "建立可编译、可运行的最小验证环境"
-/skill:verif-harness workflow-status --project-root .
-/skill:verif-harness workflow-resume --project-root . <run-id>
+/skill:verif-harness bootstrap
+/skill:verif-harness stage --stage 1 --objective "建立可编译、可运行的最小验证环境"
+/skill:verif-harness workflow-status
+/skill:verif-harness workflow-resume <run-id>
 ```
+
+These normal Agent commands inherit the setup-selected workspace and runtime.
+Use explicit `--project-root` or `--integration` only from automation, outside
+the workspace, or when runtime markers are ambiguous.
 
 `python3 scripts/verif_harness.py spec-kit ...` 仅用于 CI、脚本自动化和高级诊断。
 

@@ -23,12 +23,21 @@ class CliAliasTest(unittest.TestCase):
         self.assertEqual(CLI.COMMAND_ALIASES["evidence"], ("xverif",))
         self.assertEqual(CLI.COMMAND_ALIASES["waveform"], ("wavepeek",))
 
-    def test_alias_rewrite_preserves_arguments(self) -> None:
-        raw = ["bootstrap", "--project-root", ".", "--integration", "codex"]
+    def test_alias_rewrite_supports_setup_inherited_defaults(self) -> None:
+        raw = ["bootstrap"]
         alias = CLI.COMMAND_ALIASES[raw[0]]
-        self.assertEqual([*alias, *raw[1:]], [
-            "spec-kit", "bootstrap", "--project-root", ".", "--integration", "codex",
-        ])
+        self.assertEqual([*alias, *raw[1:]], ["spec-kit", "bootstrap"])
+
+    def test_alias_rewrite_preserves_explicit_cross_project_overrides(self) -> None:
+        raw = ["bootstrap", "--project-root", "/tmp/project", "--integration", "codex"]
+        alias = CLI.COMMAND_ALIASES[raw[0]]
+        self.assertEqual(
+            [*alias, *raw[1:]],
+            [
+                "spec-kit", "bootstrap", "--project-root", "/tmp/project",
+                "--integration", "codex",
+            ],
+        )
 
 
 if __name__ == "__main__":

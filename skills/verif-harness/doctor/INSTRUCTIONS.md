@@ -14,7 +14,7 @@ Run this mode before choosing a write mode or when project state is unclear.
 2. Run:
 
    ```bash
-   python3 <skill-dir>/doctor/scripts/doctor.py --project-root .
+   python3 <skill-dir>/doctor/scripts/doctor.py
    ```
 
 3. If machine-readable output is useful, add `--json`.

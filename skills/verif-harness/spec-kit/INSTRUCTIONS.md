@@ -39,11 +39,11 @@ runtime-native Skill inside the Agent CLI:
 ```text
 # Codex
 $verif-harness probe
-$verif-harness bootstrap --project-root . --integration codex
+$verif-harness bootstrap
 
 # Kimi Code
 /skill:verif-harness probe
-/skill:verif-harness bootstrap --project-root . --integration kimi
+/skill:verif-harness bootstrap
 ```
 
 The repository Python wrapper remains available for CI, automation, or hosts
@@ -68,17 +68,18 @@ launcher:
 
 ```text
 # Codex internal dispatch
-.agents/skills/verif-harness/scripts/verif-harness bootstrap \
-  --project-root . --integration codex
+.agents/skills/verif-harness/scripts/verif-harness bootstrap
 
 # Kimi Code internal dispatch
-.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap \
-  --project-root . --integration kimi
+.kimi-code/skills/verif-harness/scripts/verif-harness bootstrap
 ```
 
 These paths traverse setup-managed Skill links into the complete checkout. A
 valid link is evidence that the package is available; do not report missing
 `scripts/`, `deps/`, or `integrations/` based only on the workspace root.
+The launcher inherits the workspace current directory and resolves its single
+runtime marker. Add `--project-root` or `--integration` only for an explicit
+cross-project, automation, recovery, or ambiguous-marker case.
 
 ## Source-of-truth policy
 

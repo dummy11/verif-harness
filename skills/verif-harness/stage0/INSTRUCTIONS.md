@@ -54,8 +54,7 @@ Step 2's questions. Do NOT hardcode any project-specific defaults.
 basename "$PWD"
 
 # Active Agent runtime (authoritative after Spec Kit bootstrap)
-python3 <verif-harness-root>/scripts/verif_harness.py runtime status \
-  --project-root .
+python3 <verif-harness-root>/scripts/verif_harness.py runtime status
 
 # Candidate RTL roots inside the workspace (dirs containing .v/.sv, sorted by
 # file count desc). Also inspect any external RTL path supplied by the user.

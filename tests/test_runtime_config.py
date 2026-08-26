@@ -4,6 +4,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -102,6 +103,31 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertIn("kimi", calls[0])
         self.assertIn("--ignore-agent-tools", calls[0])
         self.assertEqual(calls[1][:3], ["preset", "add", "--dev"])
+
+    def test_bootstrap_inherits_workspace_and_unique_runtime_marker(self) -> None:
+        calls: list[tuple[list[str], Path]] = []
+        (self.root / ".kimi-code").mkdir()
+
+        def fake_spec_kit(arguments: list[str], project_root: Path) -> int:
+            calls.append((arguments, project_root))
+            if arguments[0] == "init":
+                self.write_state("kimi")
+            return 0
+
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            arguments = ["verif_harness.py", "bootstrap", "--ignore-agent-tools"]
+            with mock.patch.object(CLI, "run_spec_kit", side_effect=fake_spec_kit):
+                with mock.patch.object(sys, "argv", arguments):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(CLI.main(), 0)
+        finally:
+            os.chdir(previous)
+
+        self.assertEqual(calls[0][1], self.root.resolve())
+        self.assertIn("kimi", calls[0][0])
+        self.assertIn("--ignore-agent-tools", calls[0][0])
 
     def test_runtime_switch_revalidates_recorded_state(self) -> None:
         self.write_state("codex")

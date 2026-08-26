@@ -14,7 +14,7 @@ after every release candidate commit.
 
    ```bash
    python3 <skill-dir>/oss-readiness/scripts/audit_oss_readiness.py \
-     --project-root . --require-community --history
+     --require-community --history
    ```
 
 5. Review every finding manually. Run secret-scanning tools approved by the

@@ -97,6 +97,16 @@ runtime link is missing, broken, or resolves to an incomplete checkout, stop
 and ask the user to rerun setup from the reviewed checkout. Do not ask for a
 second clone inside the workspace and do not fall back to host Python.
 
+Setup launches the Agent with the verification workspace as its current
+directory and installs exactly the selected runtime marker. In this normal
+interactive path, rely on command defaults: do not ask the user to repeat
+`--project-root .`, `--integration codex|kimi`, or the workspace path for
+`bootstrap`, `stage`, `workflow-status`, `workflow-resume`, or `runtime status`.
+Require an explicit project root only for cross-project/automation commands or
+for deterministic evidence tools whose schemas require it. Require an explicit
+runtime only when markers are ambiguous or an operation intentionally changes
+runtime registration.
+
 ## Global invariants
 
 Apply these rules in every mode:
