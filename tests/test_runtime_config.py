@@ -103,6 +103,9 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertIn("kimi", calls[0])
         self.assertIn("--ignore-agent-tools", calls[0])
         self.assertEqual(calls[1][:3], ["preset", "add", "--dev"])
+        self.assertEqual(
+            calls[2], ["preset", "add", "constitution-sync", "--priority", "6"]
+        )
 
     def test_bootstrap_inherits_workspace_and_unique_runtime_marker(self) -> None:
         calls: list[tuple[list[str], Path]] = []

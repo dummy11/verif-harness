@@ -283,7 +283,11 @@ priority 由 verif-harness 提供。目标目录必须存在且可写，并且�
 ```text
 specify init --here --integration <codex|kimi> --integration-options=--skills --script py
   -> specify preset add --dev <rtl-verification-preset> --priority 5
+  -> specify preset add constitution-sync --priority 6
 ```
+
+最后一步只同步仍带 Spec Kit 生成 provenance、尚未人工编辑的 constitution；已由项目
+作者修改的 constitution 不会被 preset 静默覆盖。
 
 主要文件输出：
 

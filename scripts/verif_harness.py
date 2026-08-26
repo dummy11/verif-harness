@@ -344,6 +344,12 @@ def main() -> int:
             )
             if installed != 0:
                 return installed
+            synchronized = run_spec_kit(
+                ["preset", "add", "constitution-sync", "--priority", "6"],
+                project_root,
+            )
+            if synchronized != 0:
+                return synchronized
             try:
                 observed = runtime_payload(project_root)
             except RuntimeSelectionError as exc:

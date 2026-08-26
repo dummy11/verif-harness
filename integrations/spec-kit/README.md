@@ -74,8 +74,13 @@ Spec Kit 生成的 `.specify/integration.json` 是 runtime 唯一事实源。boo
 
 工作流位于 `workflows/verif-stage-lifecycle.yml`，只包含 Spec Kit command、
 Stage 0 constitution conditional 和 review gate，不包含 shell step。preset 位于
-`preset/rtl-verification/`，将
-verif-harness 治理约束追加到标准模板，并在 implement 命令前加入执行护栏。
+`preset/rtl-verification/`，以完整的 RTL 专用中文模板替换五个标准项目工件模板，
+并在 implement 命令前加入执行护栏。`specs/`、constitution、plan、tasks、checklist
+等面向项目评审的 Markdown 默认使用简体中文；代码、命令、路径、配置键、协议名、
+标准标识符和原始引用保持原文。`.specify/` 中的上游内部命令和运行文件继续保留其
+发行语言，不作为项目规格交付物翻译。
+bootstrap 随后启用上游自带的 `constitution-sync`，把尚未人工编辑的初始
+constitution 安全同步为当前中文模板；已有人工内容不会被静默覆盖。
 
 每个 task 必须声明一个 verif-harness mode、owned outputs、evidence 和 validation
 command。Codex 使用 `$verif-harness`，Kimi Code 使用

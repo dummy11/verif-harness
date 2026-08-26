@@ -2,9 +2,9 @@ schema_version: "1.0"
 workflow:
   id: "verif-stage-lifecycle"
   name: "verif-harness Stage Lifecycle"
-  version: "0.1.0"
+  version: "0.2.0"
   author: "verif-harness contributors"
-  description: "Specifies, reviews, executes, and converges one RTL verification stage"
+  description: "以简体中文规格工件驱动一个 RTL 验证 Stage 的评审、执行与收敛"
 
 requires:
   speckit_version: ">=0.16.4"
@@ -16,11 +16,11 @@ inputs:
     type: string
     required: true
     enum: ["0", "1", "2", "3", "4", "5"]
-    prompt: "Verification stage (0-5)"
+    prompt: "验证 Stage（0-5）"
   objective:
     type: string
     required: true
-    prompt: "Reviewed objective for this verification stage"
+    prompt: "本验证 Stage 已评审的 objective"
   integration:
     type: string
     required: true
@@ -35,11 +35,11 @@ steps:
         command: speckit.constitution
         integration: "{{ inputs.integration }}"
         input:
-          args: "Establish the RTL verification constitution: verif-harness is the top-level control plane, specs/ is the sole editable specification authority, DUT RTL is read-only, tool evidence is not approval, and Human authority is preserved."
+          args: "使用简体中文建立 RTL 验证宪章：verif-harness 是顶层控制面，specs/ 是唯一可编辑规格权威，DUT RTL 只读，工具证据不是审批，并保留 Human authority。代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。"
 
       - id: review-constitution
         type: gate
-        message: "Review the Stage 0 constitution and specification-authority model. This document review is not Stage 0 approval."
+        message: "评审 Stage 0 宪章和规格权威模型。本次文档评审不是 Stage 0 approval。"
         options: [approve, reject]
         on_reject: abort
 
@@ -47,11 +47,11 @@ steps:
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "Stage {{ inputs.stage }} RTL verification: {{ inputs.objective }}. Apply the verif-harness RTL verification contract and preserve the specification hierarchy."
+      args: "使用简体中文编写面向项目评审的 Markdown（代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文）。Stage {{ inputs.stage }} RTL 验证目标：{{ inputs.objective }}。应用 verif-harness RTL 验证合同并保持规格层级。"
 
   - id: review-spec
     type: gate
-    message: "Review requirements, authority sources, acceptance evidence, Human Decisions, and open questions. This gate reviews the document; it is not Stage approval."
+    message: "评审需求、权威来源、验收证据、Human Decisions 和开放问题。本 gate 只评审文档，不是 Stage approval。"
     options: [approve, reject]
     on_reject: abort
 
@@ -59,11 +59,11 @@ steps:
     command: speckit.clarify
     integration: "{{ inputs.integration }}"
     input:
-      args: "Resolve only answerable ambiguities. Record semantic or authority questions for Human review; do not silently assume."
+      args: "使用简体中文更新面向项目评审的 Markdown；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。只解决可以回答的歧义；把语义或权限问题记录给 Human review，不得静默假设。"
 
   - id: review-clarification
     type: gate
-    message: "Review clarified assumptions and unresolved Human questions before planning."
+    message: "规划前评审已澄清的假设和未解决的 Human questions。"
     options: [approve, reject]
     on_reject: abort
 
@@ -71,11 +71,11 @@ steps:
     command: speckit.plan
     integration: "{{ inputs.integration }}"
     input:
-      args: "Map each requirement to a verif-harness mode, owned artifact, validation, evidence contract, and Human gate for Stage {{ inputs.stage }}."
+      args: "使用简体中文编写面向项目评审的 Markdown；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。把 Stage {{ inputs.stage }} 的每条需求映射到 verif-harness mode、owned artifact、validation、evidence contract 和 Human gate。"
 
   - id: review-plan
     type: gate
-    message: "Review component ownership, stage scope, simulator/tool boundaries, evidence retention, and Human authority."
+    message: "评审组件 ownership、Stage 范围、simulator/tool 边界、证据保留和 Human authority。"
     options: [approve, reject]
     on_reject: abort
 
@@ -83,23 +83,23 @@ steps:
     command: speckit.checklist
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create an RTL verification specification-quality checklist; do not create an implementation test list."
+      args: "使用简体中文创建 RTL 验证规格质量 checklist；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。不要创建实现测试列表。"
 
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "Create traceable Stage {{ inputs.stage }} tasks with REQ/VF/TC/COV/ASRT IDs, verif-harness modes, output paths, validation, evidence, and Human gates. For a new Stage 0 project without .harness-config.json, include exactly one verif-harness init task with complete owned-output and validation postconditions."
+      args: "使用简体中文创建可追踪的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。每个 task 包含 REQ/VF/TC/COV/ASRT IDs、verif-harness modes、output paths、validation、evidence 和 Human gates。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 owned-output 和 validation postconditions。"
 
   - id: analyze
     command: speckit.analyze
     integration: "{{ inputs.integration }}"
     input:
-      args: "Check consistency, coverage, ambiguity, duplicated authority, and task traceability before execution."
+      args: "使用简体中文报告执行前的一致性、覆盖、歧义、重复权威和 task traceability 检查结果；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。"
 
   - id: authorize-execution
     type: gate
-    message: "Authorize execution of the reviewed task set. This does not authorize DUT RTL edits, EDA use, commits, pushes, waivers, Stage approval, or freeze."
+    message: "授权执行已评审 task set。这不授权修改 DUT RTL、使用 EDA、commit、push、waiver、Stage approval 或 freeze。"
     options: [approve, reject]
     on_reject: abort
 
@@ -107,16 +107,16 @@ steps:
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "Execute only reviewed Stage {{ inputs.stage }} tasks by automatically dispatching each matching verif-harness mode exactly once. Retain required evidence and verify every task-declared owned output and validation postcondition. Do not require duplicate manual mode calls; an approved Stage 0 init task follows the same rule."
+      args: "只执行已评审的 Stage {{ inputs.stage }} tasks，并把每个 task 自动分发到匹配的 verif-harness mode 且仅一次。生成或更新的面向项目评审 Markdown 默认使用简体中文；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。保留所需证据并核对每个 task 声明的 owned output 和 validation postcondition。不得要求重复手动调用 mode；已批准的 Stage 0 init task 同样遵守此规则。"
 
   - id: converge
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     input:
-      args: "Reconcile implementation and evidence with the reviewed specification. Verify every task-owned output and evidence path exists and every approved validation command passed. Record missing artifacts or other deviations as incomplete tasks and change requests; do not hide them with an untracked duplicate manual mode call or grant approval."
+      args: "使用简体中文更新面向项目评审的收敛记录；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。对照已评审规格核对实现和证据，验证每个 task-owned output 和 evidence path 存在且已批准 validation command 通过。把缺失产物或其他偏差记录为 incomplete tasks 和 change requests；不得用未追踪的重复 mode 调用掩盖问题，也不得授予 approval。"
 
   - id: review-convergence
     type: gate
-    message: "Review specification drift and evidence completeness before the separate verif-harness Stage gate review."
+    message: "在独立的 verif-harness Stage gate review 前，评审规格漂移和证据完整性。"
     options: [approve, reject]
     on_reject: abort

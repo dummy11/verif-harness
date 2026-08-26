@@ -1,35 +1,74 @@
+<!--
+  文档语言合同：面向项目评审的叙述、标题、表格说明和待填写提示默认使用简体中文。
+  代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。
+-->
 
-## verif-harness RTL Verification Principles
+# [PROJECT_NAME] 宪章
 
-### DUT immutability
+## 核心原则
 
-The configured DUT RTL is an external, read-only asset. Specifications, plans,
-tasks, generated verification code, and tool invocations MUST NOT modify it.
+### [PRINCIPLE_1_NAME]
 
-### One specification authority
+[PRINCIPLE_1_DESCRIPTION]
 
-`specs/` is the sole editable source of verification requirements. Generated
-documentation views, evidence indexes, reports, and review packets MUST link
-back to it and MUST NOT become competing specification authorities.
+### [PRINCIPLE_2_NAME]
 
-### Traceable execution
+[PRINCIPLE_2_DESCRIPTION]
 
-Every executable task MUST identify its requirement, verification feature,
-stage, verif-harness mode, expected artifact, evidence contract, and owner.
-The canonical chain is `REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT ->
-EVIDENCE -> GATE`.
+### [PRINCIPLE_3_NAME]
 
-### Evidence and authority separation
+[PRINCIPLE_3_DESCRIPTION]
 
-Spec Kit and verif-harness command success is not functional verification
-evidence. xverif, WavePeek, simulators, coverage tools, and assertion tools
-produce bounded evidence, not approval. Human Decisions, waivers, stage gates,
-sign-off, freeze, publication safety, and ambiguous specification semantics
-remain Human authority.
+### [PRINCIPLE_4_NAME]
 
-### Frozen baseline control
+[PRINCIPLE_4_DESCRIPTION]
 
-Approved Human Decisions and Approval Decisions MUST remain immutable without
-an approved change request. An existing approved project imported into Spec Kit
-MUST be represented as an immutable baseline and MUST NOT be rewritten as if it
-had originally been developed through Spec Kit.
+### [PRINCIPLE_5_NAME]
+
+[PRINCIPLE_5_DESCRIPTION]
+
+## verif-harness RTL 验证原则
+
+### DUT 不可变
+
+已配置的 DUT RTL 是外部只读资产。规格、计划、任务、生成的验证代码和工具调用
+不得修改 DUT RTL。
+
+### 单一规格权威
+
+`specs/` 是验证需求唯一可编辑的事实源。生成的文档视图、证据索引、报告和评审包
+必须链接回该事实源，不得形成相互竞争的规格权威。
+
+### 可追踪执行
+
+每个可执行任务必须标明 requirement、verification feature、Stage、
+`verif-harness mode`、预期产物、证据合同和 owner。规范链路为：
+`REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`。
+
+### 证据与权限分离
+
+Spec Kit 或 verif-harness 命令成功不等于功能验证证据。xverif、WavePeek、
+simulator、coverage 和 assertion 工具只产生有边界的证据，不产生审批。
+Human Decisions、waiver、Stage gate、sign-off、freeze、发布安全性和歧义规格语义
+始终属于 Human authority；工具输出不得表示为 Human approval。
+
+### 冻结基线控制
+
+已批准的 Human Decisions 和 Approval Decisions 在没有获批 change request 时必须
+保持不可变。导入已有批准项目时，必须表示为 immutable baseline，不得改写成仿佛
+最初就是通过 Spec Kit 开发的历史。
+
+## [SECTION_2_NAME]
+
+[SECTION_2_CONTENT]
+
+## [SECTION_3_NAME]
+
+[SECTION_3_CONTENT]
+
+## 治理
+
+[GOVERNANCE_RULES]
+
+**版本**：[CONSTITUTION_VERSION] | **批准日期**：[RATIFICATION_DATE] |
+**最近修订**：[LAST_AMENDED_DATE]

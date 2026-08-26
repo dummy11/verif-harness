@@ -23,7 +23,11 @@ Spec Kit owns the editable specification lifecycle.
   `.specify/`; never force-merge it.
 - `stage`: run the local `verif-stage-lifecycle.yml` for exactly one Stage 0-5
   objective. The workflow has document review gates and an execution gate but
-  does not approve a Stage. For a new Stage 0 project without
+  does not approve a Stage. Project-review Markdown generated under `specs/`
+  and the constitution default to Simplified Chinese; code, commands, paths,
+  configuration keys, protocol names, stable identifiers, and original quoted
+  material remain unchanged. Upstream `.specify/` infrastructure files remain
+  in their distribution language. For a new Stage 0 project without
   `.harness-config.json`, the reviewed task set must contain exactly one
   `verif-harness mode: init` task. After execution authorization,
   `speckit.implement` dispatches that mode; no separate successful-path manual

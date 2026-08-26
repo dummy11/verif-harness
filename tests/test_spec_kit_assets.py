@@ -35,12 +35,15 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("review-convergence", workflow)
         self.assertIn('any: ["codex", "kimi"]', workflow)
         self.assertIn('enum: ["codex", "kimi"]', workflow)
+        wrapper = (ROOT / "scripts/verif_harness.py").read_text(encoding="utf-8")
+        self.assertIn('["preset", "add", "constitution-sync"', wrapper)
 
     def test_preset_carries_authority_and_traceability_guards(self) -> None:
         preset = INTEGRATION / "preset/rtl-verification"
         manifest = (preset / "preset.yml").read_text(encoding="utf-8")
         self.assertIn('id: "verif-harness-rtl"', manifest)
         self.assertIn('strategy: "prepend"', manifest)
+        self.assertEqual(manifest.count('strategy: "replace"'), 5)
         combined = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted(preset.rglob("*.md"))
@@ -48,6 +51,23 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("DUT RTL", combined)
         self.assertIn("REQ -> VF -> PLAN -> TASK -> MODE", combined)
         self.assertIn("Human approval", combined)
+
+    def test_project_review_templates_default_to_simplified_chinese(self) -> None:
+        preset = INTEGRATION / "preset/rtl-verification"
+        templates = sorted((preset / "templates").glob("*.md"))
+        self.assertEqual(len(templates), 5)
+        for path in templates:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("默认使用简体中文", source, path.name)
+            self.assertIn("原始引用保持原文", source, path.name)
+
+        workflow = (
+            INTEGRATION / "workflows/verif-stage-lifecycle.yml"
+        ).read_text(encoding="utf-8")
+        self.assertGreaterEqual(workflow.count("使用简体中文"), 8)
+        self.assertIn(".specify/", (
+            ROOT / "integrations/spec-kit/README.md"
+        ).read_text(encoding="utf-8"))
 
     def test_user_guide_defines_one_specification_authority(self) -> None:
         guide = (
