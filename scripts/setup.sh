@@ -83,7 +83,7 @@ export PATH="$managed_bin:$PATH"
 
 agent_cli=""
 agent_args=()
-startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及 MCP server 的 configured、connected 和 tools available 状态；setup 已配置 xverif，如果它的 tool schema 尚未出现，请标记为“configured, connection pending”，不要误报为未安装或无 MCP。不要调用工具，不要修改文件，列完后等待下一条用户指令。'
+codex_startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及 MCP server 的 configured、connected 和 tools available 状态；setup 已配置 xverif，如果它的 tool schema 尚未出现，请标记为“configured, connection pending”，不要误报为未安装或无 MCP。不要调用工具，不要修改文件，列完后等待下一条用户指令。'
 
 if [[ "$install_verilator" == true ]] && ! command -v verilator >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
@@ -260,34 +260,9 @@ cd "$workspace_root"
 echo "Starting $runtime CLI here: $(pwd)"
 echo "Inside the Agent CLI, invoke: $invocation"
 if [[ "$runtime" == "codex" ]]; then
-  agent_args+=("$startup_inventory_prompt")
+  agent_args+=("$codex_startup_inventory_prompt")
 else
-  echo "Starting a Kimi inventory turn, then resuming it in the interactive CLI."
-  kimi_help="$("$agent_cli" --help 2>&1)" || {
-    echo "ERROR: selected Kimi CLI could not report its startup options." >&2
-    exit 2
-  }
-  if [[ "$kimi_help" != *"--prompt"* || "$kimi_help" != *"--continue"* ]]; then
-    echo "ERROR: selected Kimi CLI lacks --prompt/--continue support." >&2
-    exit 2
-  fi
-  kimi_mcp_config="$workspace_root/.kimi-code/mcp.json"
-  if [[ ! -f "$kimi_mcp_config" ]]; then
-    echo "ERROR: Kimi project MCP config is missing before inventory: $kimi_mcp_config" >&2
-    exit 2
-  fi
-  kimi_inventory_args=(--prompt "$startup_inventory_prompt")
-  if [[ "$kimi_help" == *"--mcp-config-file"* ]]; then
-    kimi_inventory_args=(--mcp-config-file "$kimi_mcp_config" \
-      "${kimi_inventory_args[@]}")
-    echo "Kimi inventory will explicitly load: $kimi_mcp_config"
-  else
-    echo "Kimi CLI has no --mcp-config-file option; using project MCP auto-discovery."
-  fi
-  if "$agent_cli" "${kimi_inventory_args[@]}"; then
-    agent_args+=(--continue)
-  else
-    echo "WARNING: Kimi startup inventory failed; launching a new interactive session." >&2
-  fi
+  echo "Kimi starts directly without a blocking inventory turn."
+  echo "After the TUI is ready, use /skills and /mcp for the live inventory."
 fi
 exec "$agent_cli" "${agent_args[@]}"

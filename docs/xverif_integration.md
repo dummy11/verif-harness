@@ -108,9 +108,9 @@ Agent 也会完成项目级注册。LSF 使用显式
 `--backend lsf` 重新 configure；direct 与 LSF 不自动互换。注册后仍须由新启动的
 Agent session 调用 `xverif_ping`，静态文件检查不能伪造协议成功。
 
-Kimi 的 setup 启动清单轮次会检测 `--mcp-config-file`：支持时显式传入工作区
-`.kimi-code/mcp.json`，不支持时使用项目 MCP 自动发现，不因缺少该可选参数阻断
-CLI。清单必须区分 `configured`、host `connected` 和 `tools available`；底部出现
+Kimi 0.38 的 `--prompt` 是阻塞的非交互请求，不能作为 TUI initial prompt。setup
+不会在 Kimi TUI 前运行模型清单，避免认证、模型请求或 MCP 初始化令启动无限等待。
+进入 TUI 后使用 `/mcp` 查看 host 连接状态；底部出现
 `MCP server "xverif" connected` 仍只证明 host 已挂载 tool schema，首次真实协议
 探针依旧是 `xverif_ping`。
 

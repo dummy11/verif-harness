@@ -1444,13 +1444,11 @@ cd /path/to/verif-harness
 `--runtime codex|kimi`，仍会配置项目 Skill 和 xverif MCP 注册。正常 setup 进入
 对应 CLI 后调用 Skill：
 
-CLI runtime 启动后，setup 会自动创建一轮只读启动清单，列出当前会话实际可用的
-Skills、MCP servers 和 tools。Codex 使用交互式 initial prompt；Kimi 先通过
-`--prompt` 创建该轮，再用 `--continue` 打开同一会话；支持
-`--mcp-config-file` 时显式传入 `.kimi-code/mcp.json`，否则使用项目 MCP 自动发现。
-清单区分 configured、connected 和 tools available，不会把仍在连接的 xverif
-误报为未安装；该轮不调用工具或修改文件。仍可使用 `/skills` 和 `/mcp` 查看
-runtime 原生实时视图。
+Codex CLI 启动后，setup 会通过 interactive initial prompt 自动创建一轮只读清单，
+列出当前会话实际可用的 Skills、MCP servers 和 tools。Kimi 0.38 的 `--prompt`
+是阻塞的非交互请求，当前没有带 initial prompt 进入 TUI 的稳定参数；setup 因此
+直接进入 Kimi TUI，不再运行前置模型清单。TUI ready 后使用 `/skills` 和 `/mcp`
+查看 runtime 原生实时视图。
 
 ```text
 # Codex
