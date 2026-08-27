@@ -1,1850 +1,969 @@
 # 用户指南：从 Stage 0 到 Verification Freeze
 
-本文是 `verif-harness` 的完整操作手册，包含：
+本文面向第一次使用 verif-harness 的验证工程师，按实际操作顺序说明：
 
-- RTL 验证项目从 0 到 freeze 的推荐顺序；
-- Spec Kit 两条入口命令与 runtime-native `verif-harness init` 的关系；
-- 31 个模式各自的用途、输入、输出、用法和适用场景；
-- 每个阶段必须由人工完成的决策；
-- 各模式的能力边界和不能据此得出的结论。
+1. 基本调用方式；
+2. Stage 0–5 的完整操作代码；
+3. 每个 Stage 的目标、步骤、产物、证据和退出条件；
+4. Spec Kit 的规格治理、任务执行和评审流程；
+5. 关键术语与概念；
+6. mode 与工具索引。
 
-项目自身的 `AGENTS.md`、roadmap、verification plan 和 architecture 优先于
-本文。调用任何写模式前，必须先读取项目规则；DUT RTL 始终只读。
+正文中的关键术语链接到第五章。先按第一、二章跑通主流程，再根据第三、四章
+处理 Stage 细节和 review gate。若项目状态不明确，先运行只读的
+`$verif-harness doctor` 或 `$verif-harness status <run-id>`，不要猜测当前 Stage，
+也不要绕过 workflow 直接执行写模式。
 
-当前角色模型是：`verif-harness` 为最上层控制面，GitHub Spec Kit 为规格面，
-现有 Skill modes 为执行能力面，xverif/WavePeek/EDA 为证据面，Human 为权限面。
-新项目以 `specs/` 为唯一可编辑规格事实源，不再让 `specs/` 与 `sim/docs/`
-同时维护可编辑需求。
+---
 
 ## 1. 基本调用方式
 
-在 RTL 验证项目根目录中调用：
+### 1.1 Codex 与 Kimi Code
+
+在 setup 选定的 verification workspace 中启动 Agent CLI。setup 已经记录 workspace、
+runtime 和对应 Skill，因此正常交互不需要重复传 `--project-root`、`--integration` 或
+workspace 路径。
+
+Codex 使用：
 
 ```text
-$verif-harness <mode> [arguments]  # 调用指定 verif-harness Skill mode
+$verif-harness <command> [arguments]
 ```
 
-这是 Codex 调用语法。Kimi Code 使用：
+Kimi Code 使用：
 
 ```text
-/skill:verif-harness <mode> [arguments]
+/skill:verif-harness <command> [arguments]
 ```
 
-两种 runtime 使用同一组 31 个模式、输入输出合同和 Human 权限边界。
+本文后续统一使用 Codex 写法。Kimi Code 只需把 `$verif-harness` 替换为
+`/skill:verif-harness`，command 和参数保持不变。
 
-例如：
+### 1.2 第一次进入 workspace
 
 ```text
-$verif-harness doctor                       # 只读检查项目状态并推荐下一步
-$verif-harness add-uvc-skeleton data_in     # 为 data_in 生成 UVC class 骨架
-$verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
-```
-
-这些语法也用于 workflow 外的诊断、recovery 和 legacy import。若当前 Spec Kit
-`tasks.md` 已声明某个 mode，execution gate 批准后应由 persistent task runner 自动
-调度；不要因为本文展示了直接调用语法，就在成功路径中再手动执行一次。
-
-未指定 mode 时：
-
-- 存在 `.harness-config.json`：默认执行只读 `doctor`；
-- 不存在 `.harness-config.json` 且不存在 `.specify/`：先进入
-  `bootstrap`（内部：`spec-kit bootstrap`）；Stage 0 task set 评审并获得执行授权后，由
-  persistent task runner 自动调度 `init`，不在 workflow 外重复手动调用；
-- 项目状态冲突或 stage 不明确：停止写入并报告冲突。
-
-所有写模式默认只增不覆盖。Markdown 发生变化后，执行项目 `AGENTS.md`
-规定的 Markdown workflow，并 review 自动修复产生的 diff。
-
-## 2. Stage 0→freeze 总流程
-
-### 2.1 四层职责
-
-```text
-verif-harness：Stage policy、能力选择、任务分发、traceability、权限护栏
-  -> Spec Kit：constitution、specify、clarify、plan、checklist、tasks、analyze、converge
-  -> modes/tools：生成 TB、运行审计、调用 xverif/WavePeek/EDA、保留 evidence
-  -> Human：规格语义、Human Decisions、waiver、gate、sign-off、freeze
-```
-
-Spec Kit 把“文档优先”变成可执行工作流，但它是 agentic framework，不是
-deterministic tool。`specify`、`checklist`、`workflow gate` 或 task Agent 成功
-都不能替代 compile、simulation、regression、coverage、assertion 或人工审批。
-
-规格层级不要按每条 shell command 建一个完整 spec，而应保持：
-
-```text
-项目 constitution
-  -> verification program spec（spec of specs）
-  -> Stage / feature spec
-  -> plan + tasks + evidence contracts
-```
-
-统一追踪链为：
-
-```text
-REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
-```
-
-已完成或已批准的存量项目不重写历史：把现有批准文档、日期、证据和 decision
-作为 immutable imported baseline 链接到 Spec Kit；后续变更才走新的 spec-driven
-流程。`sim/docs/` 可继续保存治理、生成视图、证据索引和 review packet，但不得
-成为第二个可编辑需求权威。
-
-### 2.2 全流程
-
-```text
-Spec Kit bootstrap：解析 Codex/Kimi Code runtime 并安装 RTL verification preset
-  -> Stage 0 workflow：建立 constitution 与 verification program specification
-  -> Stage 0：文档与治理基线
-  -> Human 批准范围、规格来源和 Human Decisions
-  -> Stage 1：可编译、可运行的最小 harness/UVM 环境
-  -> Human Stage 1 gate
-  -> Stage 2：Golden/reference-model 功能对拍
-  -> Human Stage 2 gate
-  -> Stage 3：coverage model 与 assertion fleet
-  -> Human Stage 3 gate
-  -> Stage 4：随机回归、边界场景与 CI
-  -> Human Stage 4 gate
-  -> Stage 5：coverage/assertion/performance/stability closure
-  -> Human Stage 5 sign-off
-  -> freeze-baseline                  # Skill：生成 hash 锚定的 freeze candidate
-  -> Human freeze approval
-  -> 单独授权的 tag/push/release
-```
-
-`doctor` 在每个 stage 入口和每次 session 恢复时重复使用；
-`regression-triage` 在任何非全绿 regression 后使用；`change-control` 在任何
-approved/frozen baseline 发生变化时立即使用。
-
-`xverif` 与 WavePeek 都不是独立 stage，而是贯穿 Stage 0～5 的确定性工具委派
-通道。只在存在具体问题、明确输入和有限查询范围时调用；工具 `PASS` 只说明本次
-命令成功，不代表 testcase PASS、stage gate 通过或 verification closure。
-
-`spec-kit` 在每个 Stage 的开始和实现后使用：开始时执行 specify/clarify/plan/
-checklist/tasks/analyze；获得执行授权后把 task 分发给对应 verif-harness mode；
-完成后 converge 并记录 specification drift。Spec Kit review gate 只是文档或任务
-审阅点，真正的 Stage gate 仍由 `stage-gate-review` 生成 packet 后由 Human 批准。
-
-所有被 reviewed task 声明的 mode 都使用同一分发合同，不只 `init`：execution gate
-批准后，persistent task runner 只调用 `current_task_id` 对应的 mode，并检查 owned
-outputs、evidence paths 和 validation command。正常路径不要求用户再逐个手动调用；缺少产物时 task
-保持 incomplete，由 `converge` 记录 deviation。只有显式批准并留痕的 recovery、
-legacy import，或者不属于 task set 的 workflow control/Human boundary 命令才单独
-调用，例如 `bootstrap`、`status/resume`、`stage-gate-review` 和最终 freeze 授权流。
-如果某个 mode 还需要独立 EDA、commit、push、waiver 或其他权限，task runner 必须
-停在该权限边界；获得授权后由同一 task 继续分发，而不是把正常执行责任转给用户
-手动重复调用。
-
-`xverif` 用于 VCS/VDB/FSDB/SVA/日志相关事实：`xbit` 计算 bit、slice、mask 和
-signedness，`xloc` 恢复日志位置，`xsva` 分析 assertion，`xcov` 查询 coverage
-database，`xdebug` 查询设计或 FSDB，`xentry` 解码结构化 entry，`xwaveform`
-渲染已导出的波形 manifest。`verif-harness` 先选择验证任务，再经 CLI adapter
-调用对应 xverif native tool。
-
-WavePeek 用于有限范围的 VCD/FST 查询：检查层次和信号、读取指定时刻的值、查找
-变化、验证 property 或抽取协议传输。默认托管集成不读取 FSDB；只有 FSDB 时优先
-使用 `xverif xdebug`。如需启用 WavePeek FSDB extension，必须由人工明确批准
-Verdi SDK 许可和本地隔离策略。
-
-## 专题：Agent runtime 与模型切换
-
-Spec Kit 的 `.specify/integration.json` 是项目 runtime 唯一事实源；不要在
-`.harness-config.json` 里复制一份 runtime 配置。Codex 的 integration key 是
-`codex`，Kimi Code 是 `kimi`。
-
-verif-harness 安装目录、验证工作空间与 RTL 目录应分离。新项目由安装目录中的
-`setup --runtime codex|kimi --workspace-root <workspace>` 在工作空间创建
-runtime-native Skill 入口，并以工作空间为工作目录启动 Agent CLI；RTL 根目录和
-DUT top 文件由 Stage 0 询问并写入 `.harness-config.json`，进入 CLI 后再调用
-bootstrap：
-
-如果 setup 使用了 `--no-agent`，则在 setup 完成后手动进入工作空间并启动 runtime：
-
-```bash
-cd /path/to/verification-workspace
-codex                  # 或：kimi --yolo
-```
-
-```text
-# Codex
+$verif-harness probe
 $verif-harness bootstrap
-
-# Kimi Code
-/skill:verif-harness bootstrap
+$verif-harness doctor
 ```
 
-runtime 状态检查仍可通过底层 wrapper 执行：
+- `probe`：验证固定版本 Spec Kit 和受管 Python runtime。
+- `bootstrap`：初始化 `.specify/`、当前 Agent integration 和 RTL verification preset。
+- `doctor`：只读检查项目状态并推荐下一安全动作。
 
-```bash
-# Codex workspace
-.agents/skills/verif-harness/scripts/verif-harness runtime status
+即使 workspace 在 setup 开始时为空，setup 安装 Skill、MCP 等资产后目录也会变成
+非空。仍然直接运行 `$verif-harness bootstrap`，不要添加 `--force`。wrapper 会先
+确认 `.specify/` 不存在，再在内部非交互完成初始化；已有 `.specify/` 时会硬拒绝。
 
-# Kimi Code workspace
-.kimi-code/skills/verif-harness/scripts/verif-harness runtime status
-```
+### 1.3 启动一个 Stage workflow
 
-这两个 launcher 位于 setup 创建的 Skill 链接内，会先解析链接真实路径，再从完整
-verif-harness checkout 调用 managed Python 和仓库 wrapper。不要因为工作空间本身
-没有 `scripts/`、`deps/` 或 `integrations/` 就判断 package 缺失，也不要在工作空间
-内重复 clone。
-
-`auto` 只接受唯一证据：`.agents/` 或 `.codex/` 表示 Codex，`.kimi-code/`
-表示 Kimi Code；同时存在或全部不存在时必须显式选择。bootstrap 完成后以
-`.specify/integration.json` 为准，不再根据目录猜测。
-
-### 同一 runtime 内更换模型
-
-例如在 Kimi Code 中切换到 K3，只改变 Agent 的模型选择，不改变 `kimi`
-integration。推荐流程：
-
-1. 在 Spec Kit review gate 暂停，确认没有 command step 正在执行；
-2. 记录 run ID 并运行 `status`；
-3. 按 Agent runtime 官方方法选择新模型；
-4. 运行 `runtime status` 和 runtime-native `verif-harness doctor`；
-5. 恢复原 workflow，不重建已批准 spec/task，不重复执行完成的 mode，不重写
-   evidence 或 approval。
-
-reviewed/frozen baseline 后如新模型产生仓库差异，必须进入 `change-control`。
-换模型本身既不是 waiver，也不是验证证据。
-
-### Codex 与 Kimi Code 之间切换 runtime
-
-先在目标目录安装 verif-harness Skill，再在稳定 review gate 执行：
+每次只启动一个明确的 [Stage](#term-stage)：
 
 ```text
-$verif-harness status --project-root <project>
-python3 scripts/verif_harness.py runtime status --project-root <project>
-python3 scripts/verif_harness.py runtime switch \
-  --project-root <project> --to <codex|kimi>
-python3 scripts/verif_harness.py runtime status --project-root <project>
+$verif-harness stage --stage <0-5> --objective "本 Stage 的明确目标"
 ```
 
-wrapper 委派固定版本 Spec Kit 的 `integration switch`，并在返回后验证
-`.specify/integration.json`。它不会自动使用 `--force`。如果 Spec Kit 发现人工
-修改过的 managed Skill 文件，保留修改并停止，由 Human review 差异；不要手工
-删除 runtime 目录或编辑 integration JSON 绕过保护。
+runtime-native launcher 会启动独立 worker，并立即返回：
 
-切换完成后，用新 runtime 的原生语法运行 `doctor`，检查并恢复原 workflow。
-完整英文操作说明见顶层 `docs/runtime_switching.md`。
+- `run_id`；
+- worker PID；
+- `.specify/workflows/runs/<run-id>/verif-harness-worker.log`；
+- 下一条 `status <run-id>` 命令。
 
-## 专题：三条入口指令的关系
+不要用 600 秒 timeout 或其他外层后台任务包裹 `stage`，也不要在 worker 存活时重复
+启动同一个 Stage。
 
-新项目最容易混淆的三条指令是：
+### 1.4 查看状态与处理 review gate
 
 ```text
-$verif-harness bootstrap
-$verif-harness stage --stage 0
-$verif-harness init
+$verif-harness status <run-id>
 ```
 
-它们不是三个并列的项目初始化命令，而是规格基础设施、Stage 0 规格工作流和工程
-落地三个连续层次：
+重点读取以下机器字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `status` | Spec Kit workflow 状态 |
+| `worker_active` | 是否仍有 worker 正在修改该 run |
+| `resume_allowed` | 当前是否允许调用 `resume` |
+| `action_required` | 当前需要等待、评审、回答 blocker 或恢复 stale run |
+| `next_action` | wrapper 给出的唯一安全下一动作 |
+
+只有 `paused` 且 `action_required: review-gate` 时，完成真实评审后才能提交 verdict：
 
 ```text
-bootstrap：安装规格系统
-    -> stage --stage 0：定义、澄清、规划并审阅 Stage 0
-        -> persistent task runner：逐项分发已授权 task
-            -> $verif-harness init：把已审规格落成验证工程治理层
-```
-
-### 三条指令的职责对照
-
-| 指令 | 解决的问题 | 主要输入 | 主要输出 |
-| --- | --- | --- | --- |
-| `bootstrap` | 项目用什么 runtime、规格工具、模板和 workflow | 现有项目根目录、runtime 选择 | `.specify/`、runtime-native Spec Kit skills、`verif-harness-rtl` preset |
-| `stage --stage 0` | 项目要验证什么、依据什么、怎样规划和验收 | Stage 0 objective、规格来源、只读 RTL 边界 | constitution、spec、plan、tasks、checklist、workflow run |
-| `$verif-harness init` | 怎样把 reviewed Stage 0 task 落成可工作的验证工程 | reviewed specs、DUT/目录元数据、task contract | `.harness-config.json`、`AGENTS.md`、`.harness/`、派生治理视图、review packet、M1.1 scaffold |
-
-一句话概括：`bootstrap` 建工具，`stage 0` 定规格，`init` 按规格建工程。
-
-### 1. `bootstrap`：安装规格基础设施（内部路由到 `spec-kit bootstrap`）
-
-进入 Codex/Kimi CLI 后，使用 runtime-native Skill 调用；不要退出 CLI 再手动执行
-Python wrapper：
-
-```text
-# Codex
-$verif-harness bootstrap
-
-# Kimi Code
-/skill:verif-harness bootstrap
-```
-
-`python3 scripts/verif_harness.py spec-kit bootstrap ...` 仅保留给 CI、脚本自动化
-或无 Agent CLI 的底层入口。
-
-正常 setup 流程从当前目录取得项目根目录，并从唯一 runtime marker 解析 runtime；
-二者不是需要重复输入的业务参数。只有跨项目自动化、恢复或 marker 歧义时才显式
-覆盖。Python script mode、固定版本 Spec Kit、`verif-harness-rtl` preset 和 preset
-priority 由 verif-harness 提供。目标目录必须存在且可写，并且不能已有 `.specify/`。
-
-它内部依次执行：
-
-```text
-specify init --here --integration <codex|kimi> --integration-options=--skills --script py
-  -> specify preset add --dev <rtl-verification-preset> --priority 5
-  -> specify preset add constitution-sync --priority 6
-  -> 生成 .specify/docs/zh-CN/ 中文阅读镜像与 hash manifest
-```
-
-最后一步只同步仍带 Spec Kit 生成 provenance、尚未人工编辑的 constitution；已由项目
-作者修改的 constitution 不会被 preset 静默覆盖。
-
-中文阅读镜像不参与 Spec Kit 执行。已有项目或升级后可手动刷新：
-
-```text
-$verif-harness spec-kit docs-zh
-```
-
-`manifest.json` 中出现 `pending` 表示发现了尚无评审中文版本的新英文 Markdown；
-这不会改变英文执行事实源，但需要在升级评审中处理。
-
-主要文件输出：
-
-```text
-<project>/
-├── .specify/
-│   ├── integration.json
-│   ├── memory/
-│   ├── scripts/
-│   ├── templates/
-│   ├── workflows/
-│   └── presets/verif-harness-rtl/
-└── <.agents|.kimi-code>/skills/speckit-*/
-```
-
-`bootstrap` 不接收 DUT top、Stage objective、testcase、coverage、assertion 或
-simulator 语义，也不生成 `specs/<feature>/spec.md`、`.harness-config.json`、TB、
-仿真证据或 Stage approval。它是一次性的基础设施安装；已有 `.specify/` 时会拒绝
-覆盖，不能用强制重跑代替迁移评审。
-
-### 2. `stage --stage 0`：运行 Stage 0 规格生命周期（内部路由到 `spec-kit stage`）
-
-进入 CLI 后调用 Skill，且必须包含 reviewed objective：
-
-```text
-# Codex
-$verif-harness stage --stage 0 \
-  --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
-
-# Kimi Code
-/skill:verif-harness stage --stage 0 \
-  --objective "建立 RTL 验证规格、治理规则和可追踪 Stage 0 baseline"
-```
-
-它要求项目已经完成 `bootstrap` 并安装 `verif-harness-rtl` preset。Stage 0 比
-Stage 1～5 多 constitution 建立步骤，完整顺序是：
-
-```text
-constitution -> review
-  -> specify -> review
-  -> clarify -> review
-  -> plan -> review
-  -> checklist -> review
-  -> tasks -> review
-  -> analyze -> authorize execution
-  -> implement through reviewed verif-harness modes
-  -> review -> converge -> review
-```
-
-每个 review gate 都让 run 进入 paused 状态。先检查工件，再恢复同一个 run：
-
-```text
-# Codex
-$verif-harness status
 $verif-harness resume <run-id> --verdict approve
-$verif-harness resume <run-id> --answer "已取得的回答或 authority 引用"
-
-# Kimi Code
-/skill:verif-harness status
-/skill:verif-harness resume <run-id> --verdict approve
-/skill:verif-harness resume <run-id> --answer "已取得的回答或 authority 引用"
+# 或
+$verif-harness resume <run-id> --verdict reject
 ```
 
-`stage` 和 `resume` 会关闭 Spec Kit workflow 子进程的交互 stdin，确保
-Agent 即使在 PTY 中运行也会在每个 gate 确定性地进入 `paused`。不要向 PTY 写入
-数字菜单选项；完成实际 review 后，用 `--verdict approve|reject` 显式处理当前 gate。
-该 verdict 不会传递给下一 gate，EOF 也不会被解释成 `reject`。
+当 `running` 且 `worker_active: true` 时，`resume_allowed` 为 false。即使用户之前已经
+写了 `--verdict approve`，也不能调用 resume，只能等待并执行返回的 `next_action`。
 
-Codex/Kimi 的 runtime-native launcher 会将 `stage` 和 `resume` 放入独立
-worker，立即返回 run ID、PID 和日志路径；使用 `status <run-id>` 轮询，
-不要再让 Agent 用固定 600 秒 bash task 等待整个命令。若旧 worker 被外层 timeout
-终止且 run 残留为 `running`，先检查日志并确认相关 PID/进程均已退出，再执行
-`recover <run-id> --confirm-stale`，随后 `resume <run-id>` 重试原
-current step。检测到活进程时 recovery 会拒绝，且不得启动重复 Stage。
-
-主要规格输出位于：
+当 task runner 报告 [TASK](#term-task) 为 `BLOCKED` 时，取得 Human 回答或 authority
+引用后只恢复当前 task：
 
 ```text
-.specify/memory/constitution.md
-specs/<stage0-feature>/spec.md
-specs/<stage0-feature>/plan.md
-specs/<stage0-feature>/tasks.md
-specs/<stage0-feature>/checklists/
+$verif-harness resume <run-id> --answer "明确回答或 authority 引用"
 ```
 
-这些文件定义 requirement、Verification Feature、Human Decision、open question、
-task、mode、artifact、evidence 和 gate。review gate 只审阅文档或授权 task set，
-不是 Stage 0 approval。
-
-### 3. `$verif-harness init`：执行已授权的 Stage 0 工程落地 task
-
-runtime-native `verif-harness init` 是 Agent Skill mode，不是前两条 Python CLI
-的同义命令。
-它读取 reviewed Spec Kit Stage 0 工件和只读 RTL，生成：
+只有确认外层进程异常终止、run 仍标为 `running` 且没有活 worker 时，才允许：
 
 ```text
-.harness-config.json
-.harness/
-.codex/agents/                         # 仅 Codex 的可选辅助 agents
-AGENTS.md
-<verif-root>/docs/                   # specs/ 的派生治理视图，不是第二规格源
-<verif-root>/docs/stage0_review_packet.md
-<verif-root>/testbench/...           # M1.1 空目录 scaffold，不含 TB 实现
-<verif-root>/filelist/
-<verif-root>/regress/
+$verif-harness recover <run-id> --confirm-stale
+$verif-harness resume <run-id>
 ```
 
-Stage 0 不允许借 `init` 生成 driver、monitor、scoreboard、testcase 或其他 TB 源码，
-更不能修改 DUT RTL。
+`recover` 不是普通重试命令，绝不能对 live worker 使用。
 
-新项目的 `tasks.md` 必须包含且只包含一个对应的 init task，例如：
+### 1.5 常用短命令
 
 ```text
-Task ID: TASK-S0-INIT
-REQ / VF IDs: REQ-S0-BOOT / VF-S0-BOOT
-Stage: 0
-verif-harness mode: init
-Input contract: reviewed Stage 0 spec/plan/tasks/checklist/analyze + RTL metadata
-Owned output paths: .harness-config.json, AGENTS.md, .harness/, derived docs, scaffold
-Validation command: project Markdown/workflow check
-Expected evidence: generated-file inventory + validation log
-Human gate: Stage 0 execution authorization and later Stage 0 approval
+$verif-harness help                 # 查看短命令
+$verif-harness help coverage        # 查看映射、输入和权限边界
+$verif-harness status <run-id>      # workflow 状态
+$verif-harness docs                 # 刷新中文阅读镜像
+$verif-harness trace                # traceability 审计
+$verif-harness gate 3               # 生成 Stage 3 Draft gate packet
+$verif-harness signoff 5            # 审计 Stage 5 sign-off packet
 ```
 
-execution gate 批准这个 task 后，persistent task runner 应自动调度
-`$verif-harness init` 一次。因此正常流程是：
+短命令和 canonical mode 的完整对照见[第六章](#mode-index)。
+
+### 1.6 什么时候使用底层 Python wrapper
+
+正常 Agent 交互优先使用 `$verif-harness`。以下形式只用于 CI、跨项目自动化或高级诊断：
 
 ```text
-tasks.md 声明 init
-  -> Human 授权 task set
-  -> persistent task runner 自动调用 init
-  -> 检查 owned outputs/evidence/validation
-  -> speckit.converge
+python3 scripts/verif_harness.py spec-kit status \
+  --project-root <project> <run-id>
 ```
 
-不是：
+不要在普通 workspace 中重复传 setup 已经确定的 root 和 runtime，也不要绕过 Skill
+的 [MODE](#term-mode)、权限和 [GATE](#term-gate) 边界。
+
+---
+
+## 2. Stage 0–5 完整操作代码
+
+本章只列用户需要执行的主流程命令，所有 Stage 集中在这里。每个 Stage 内生成的
+[TASK](#term-task) 由 persistent task runner 逐项分发到已评审的 [MODE](#term-mode)；
+正常路径不要在 workflow 外手工重复调用 implementation mode。
+
+### 2.1 一次性准备
 
 ```text
-persistent task runner 已执行 init
-  -> 用户再次手动调用 init                  # 错误：重复执行
+$verif-harness probe
+$verif-harness bootstrap
+$verif-harness doctor
 ```
 
-### 自动分发与完成判定
-
-“自动调用”是 agentic dispatch，但“完成”必须由 task postcondition 判定。仅当以下
-条件同时满足，init task 才能标记 complete：
-
-- task 声明的全部 owned output 已存在；
-- evidence path 已记录且可读取；
-- approved validation command 返回成功；
-- 没有越过 DUT RTL、EDA、commit/push、waiver 或 Human approval 边界。
-
-如果 Agent 退出成功但 `.harness-config.json`、`AGENTS.md`、治理视图、
-review packet 或 scaffold 缺失，结论必须是 `TASK INCOMPLETE`。`converge` 应记录
-dispatch deviation；不能用 workflow 外未追踪的手动 `init` 掩盖问题。
-
-经过评审的 recovery 可以重试同一个 task，但必须保存原 run ID、task ID、已有
-产物和日志，并记录重试原因。直接 `$verif-harness init` 只用于这种 recovery 或
-immutable legacy-baseline import。
-
-同一规则适用于所有被 `tasks.md` 声明的 verif-harness modes：
+### 2.2 Stage 0：规格与治理基线
 
 ```text
-TASK -> reviewed MODE -> persistent task runner 逐项分发
-     -> ARTIFACT/EVIDENCE/VALIDATION postcondition -> converge
+$verif-harness stage --stage 0 \
+  --objective "建立可评审的验证规格、治理基线和最小工程骨架"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness gate 0
 ```
 
-`bootstrap`、`status/resume`、review gate、独立 `stage-gate-review`、Human approval、
-sign-off 和 freeze authority 不属于普通 implementation-task 自动分发，仍按各自的
-workflow 或 Human 权限边界执行。
+新项目的已评审 `tasks.md` 必须恰好包含一个 `mode: init` task。execution gate 批准后，
+task runner 自动分发它；正常流程不再手工运行 `$verif-harness init`。
 
-### 三种包含 `init` 的名字不要混用
-
-| 名称 | 实际用途 | 是否是 Stage 0 工程落地 |
-| --- | --- | --- |
-| bootstrap 内部的 `specify init` | 创建 `.specify/` 和所选 Spec Kit integration | 否 |
-| `$verif-harness init` | 生成 Stage 0 harness 治理层、派生视图和目录 scaffold | 是 |
-| `python3 scripts/verif_harness.py init <dut>` | 生成简单、additive DUT integration 示例模板 | 否 |
-
-最后一条 Python CLI 会在 `interfaces/`、`sva/`、`bind/`、`tb/` 和 `filelists/`
-生成模板文件；它不能替代 `$verif-harness init`，也不应在 Stage 0 绕过 reviewed
-task contract 使用。
-
-### 人工参与发生在哪里
-
-- `bootstrap`：通常不需要项目语义决策，但已有 `.specify/` 时必须人工决定迁移，
-  不能覆盖。
-- `stage --stage 0`：Human 审阅 constitution、spec、clarification、plan、task set
-  和 execution authorization。
-- `init`：如果 reviewed spec 没有提供项目名、RTL root、DUT top、verification root、
-  design docs 或 reference-model path，Human 需要补充这些输入；这是 task 执行中的
-  输入确认，不是要求用户重新调用命令。
-- workflow 完成后：另行运行 `stage-gate-review 0` 生成 Draft packet，由 Human
-  决定 Stage 0 是否批准。
-
-## 3. 分阶段推荐顺序
-
-### 3.1 Stage 0：文档基线
+### 2.3 Stage 1：最小可运行验证环境
 
 ```text
-doctor                                # Skill：只读检查初始项目状态
-  -> spec-kit bootstrap               # Skill：初始化 Codex/Kimi integration 与 RTL preset
-  -> spec-kit stage --stage 0         # Skill：生成并审阅 Stage 0 spec/plan/tasks
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task mode
-          -> init                      # Skill：生成 harness 治理资产及规格派生视图
-          -> audit-traceability        # Skill：审计计划与实现的结构追踪关系
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 0              # Skill：生成 Stage 0 Draft gate packet
-  -> Human Stage 0 baseline approval
+$verif-harness stage --stage 1 \
+  --objective "建立接口、UVC、harness、env、filelist 和 compile-only smoke"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness gate 1
 ```
 
-人工必须确认验证范围、规格权威来源、sign-off 标准、Human Decisions、
-Provisional 和 open questions。Stage 0 不允许生成 TB 源码。
-
-### 3.2 Stage 1：最小可运行环境
+### 2.4 Stage 2：功能检查与 reference model
 
 ```text
-doctor                                # Skill：确认 Stage 1 入口状态
-  -> spec-kit stage --stage 1         # Skill：审阅 Stage 1 spec/plan/tasks 并授权执行
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
-          -> add-interface             # Skill：生成协议 interface 与 modport
-          -> add-shared-pkg            # Skill：生成公共类型及 pack/unpack helper
-          -> add-uvc-skeleton          # Skill：生成 driver/monitor/agent class 骨架
-          -> add-harness-layer         # Skill：生成 DUT/TB harness、SVA 与 bind 骨架
-          -> add-env-layer             # Skill：生成 env、base test 与 thin tb_top
-          -> finalize-filelist-and-make # Skill：固化编译顺序与 compile target
-          -> add-simulator-profile     # Skill：生成已评审的 simulator 配置
-          -> complete-uvc              # Skill：实现显式 ready/valid UVC 合约
-          -> add-testcase              # Skill：生成 candidate testcase 骨架
-          -> add-regression-runner     # Skill：生成隔离、可复现的 regression runner
-          -> xverif                    # Skill：按任务授权查日志、位宽、SVA 或 FSDB
-          -> wavepeek                  # Skill：按任务授权查询有限 VCD/FST 波形
-          -> audit-traceability        # Skill：审计 feature/test/plan 结构映射
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 1              # Skill：生成 Stage 1 Draft gate packet
-  -> Human Stage 1 approval
+$verif-harness stage --stage 2 \
+  --objective "建立可追踪 testcase、scoreboard 和 reference-model 对拍"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness trace
+$verif-harness gate 2
 ```
 
-人工提供并确认 clock/reset、协议、SRAM、timeout、DUT port 和 simulator
-语义；在真实 EDA 环境检查 compile、elaboration、waveform 和 sanity test。
-`xverif xloc/xbit/xsva/xdebug` 用于定位编译或运行日志、核对位宽/掩码、解释协议
-property，以及查询 scope、driver、X/Z 和 FSDB 值。WavePeek 的
-`info/scope/signal/change/property` 用于受限时窗内确认 clock/reset、首次握手、
-latency、hang、残留数据和 X/Z 传播。信号、时窗、预期事件和最终 sanity verdict
-仍由人工确认。
-
-### 3.3 Stage 2：Reference model 与功能对拍
+### 2.5 Stage 3：Coverage 与 Assertion
 
 ```text
-doctor                                # Skill：确认 Stage 2 入口状态
-  -> spec-kit stage --stage 2         # Skill：审阅 Stage 2 spec/plan/tasks 并授权执行
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
-          -> add-refmodel-bridge       # Skill：生成 Golden/Syscan/DPI 结构适配层
-          -> complete-scoreboard       # Skill：仅为明确 FIFO alignment 生成比较器
-          -> add-testcase              # Skill：生成 Golden engagement/compare 测试
-          -> xverif                    # Skill：按任务授权算 mask/slice 或查 FSDB
-          -> wavepeek                  # Skill：按任务授权查询首个分歧时窗
-          -> regression-triage         # Skill：失败时归一化 signature 并核对重跑
-          -> audit-traceability        # Skill：审计 Golden/test/plan 结构映射
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 2              # Skill：生成 Stage 2 Draft gate packet
-  -> Human Stage 2 approval
+$verif-harness stage --stage 3 \
+  --objective "实现已评审 coverage/assertion 计划并建立可审计证据"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness coverage-audit
+$verif-harness assertion-audit
+$verif-harness trace
+$verif-harness gate 3
 ```
 
-人工确认 numeric representation、mask、alignment、residual、unsupported
-configuration 和 Golden engagement。Port-level compare 或项目专用 wrapper
-不能由通用 FIFO scoreboard 替换。
-`xverif xbit/xentry/xdebug` 用于复算 mismatch 的 mask/slice/signedness、解码多拍
-entry，并检查 FSDB 中 DUT/Golden 的第一个不同值。WavePeek 的
-`value/change/extract` 用于从 VCD/FST 截取 mismatch 前后的握手和 payload 事实。
-两者都不能自行决定 numeric、alignment、mask 或 Golden 语义。
-
-### 3.4 Stage 3：Coverage 与 Assertion
+### 2.6 Stage 4：Regression、CI 与性能合同
 
 ```text
-doctor                                # Skill：确认 Stage 3 入口状态
-  -> spec-kit stage --stage 3         # Skill：审阅 Stage 3 spec/plan/tasks 并授权执行
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
-          -> add-coverage-skeleton     # Skill：从已评审合约生成 coverage model
-          -> add-assertion-skeleton    # Skill：从已评审 property 生成 SVA/bind
-          -> add-testcase              # Skill：生成 coverage/assertion focused 测试
-          -> xverif                    # Skill：按任务授权分析原生 SVA/VDB
-          -> wavepeek                  # Skill：按任务授权查询反例或 hole 场景
-          -> regression-triage         # Skill：失败时核对 same-seed 重跑
-          -> audit-traceability        # Skill：审计 bin/assertion/test/plan 映射
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 3              # Skill：生成 Stage 3 Draft gate packet
-  -> Human Stage 3 approval
+$verif-harness stage --stage 4 \
+  --objective "建立确定性 regression、失败分诊、CI 和性能门禁"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness trace
+$verif-harness gate 4
 ```
 
-人工批准 coverage denominator、cross、property、sampling clock、reset disable、
-vacuity 处理和逐对象 unreachable waiver。
-`xverif xsva` 用于 list/scan/lint/parse/explain，`xverif xcov` 用于读取 VDB summary、
-hole、scope 和 source evidence，`xdebug` 可补充 FSDB 反例事实。WavePeek 用于在
-VCD/FST 中检查 assertion 触发窗口或 hole 对应场景是否发生；它不能证明 coverage
-bin 已命中。coverage denominator、property 意图、vacuity 和 waiver 仍需人工批准。
-
-### 3.5 Stage 4：Regression 与 CI
+### 2.7 Stage 5：闭合、sign-off 与 freeze
 
 ```text
-doctor                                # Skill：确认 Stage 4 入口状态
-  -> spec-kit stage --stage 4         # Skill：审阅 Stage 4 spec/plan/tasks 并授权执行
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
-          -> add-testcase              # Skill：补随机、边界和稳定性 candidate 测试
-          -> add-regression-runner     # Skill：已有完整 runner 时只复用、不覆盖
-          -> add-ci-hook               # Skill：生成待人工合并的 CI job fragment
-          -> xverif                    # Skill：按任务授权查询失败证据
-          -> wavepeek                  # Skill：按任务授权查询失败 seed 波形
-          -> regression-triage         # Skill：每次非全绿时分类候选 root cause
-          -> audit-traceability        # Skill：审计默认 regression 与计划映射
-          -> change-control            # Skill：baseline 变化时审计 change request
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 4              # Skill：生成 Stage 4 Draft gate packet
-  -> Human Stage 4 approval
+$verif-harness stage --stage 5 \
+  --objective "闭合 traceability、coverage、assertion 和 regression 证据"
+
+$verif-harness status <run-id>
+$verif-harness resume <run-id> --verdict approve   # 仅用于当前 paused gate
+# 重复 status → review → resume，直到 workflow 完成
+
+$verif-harness trace
+$verif-harness coverage-audit
+$verif-harness assertion-audit
+$verif-harness gate 5
+$verif-harness signoff 5
+
+# Human 明确授权 freeze，且工作树位于已评审 clean commit 后：
+$verif-harness freeze
+
+# 仅准备公开发布候选时运行；它不授权发布：
+$verif-harness release
 ```
 
-人工或获授权基础设施提供 simulator license、scheduler、secret 和 CI runner；
-test 从 candidate 晋级 default regression 必须有已评审的动态 PASS 证据。
-每个失败先保留 seed、命令、日志和原始数据库，再用 xverif 取得稳定的日志位置、
-FSDB/VDB/SVA/entry 事实，或用 WavePeek 在对应 VCD/FST 中查找首个分歧。查询结果随
-same-seed rerun 一起交给 `regression-triage`；root cause 分类和 testcase 晋级仍由
-人工评审。
+`gate`、`signoff`、`freeze` 和 `release` 只生成或审计候选材料，不替代 Human approval，
+也不自动授权 commit、tag、push 或公开发布。
 
-### 3.6 Stage 5：闭合、签核与 freeze
+---
 
-```text
-doctor                                # Skill：确认 Stage 5 入口与剩余 blocker
-  -> spec-kit stage --stage 5         # Skill：审阅 Stage 5 closure spec/plan/tasks
-       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
-          -> add-performance-gate      # Skill：按已评审公式/阈值检查性能合同
-          -> add-testcase              # Skill：只补剩余 hole/corner/closure case
-          -> required regression rounds # 项目动作：需独立 EDA 权限
-          -> regression-triage         # Skill：持续审计失败直到全部关闭
-          -> xverif                    # Skill：按任务授权生成补充证据
-          -> wavepeek                  # Skill：按任务授权抽查波形
-          -> coverage-closure          # Skill：审计 coverage evidence 完整性
-          -> assertion-closure         # Skill：审计 assertion evidence 完整性
-          -> audit-traceability        # Skill：执行最终结构追踪审计
-          -> change-control            # Skill：确认 baseline 变更均有已审 CR
-       -> speckit.converge             # Skill：校验 task outputs/evidence/validation
-  -> stage-gate-review 5              # Skill：生成 Stage 5 Draft gate packet
-  -> Human Stage 5 approval
-  -> signoff-audit 5                  # Skill：审计已记录 sign-off 元数据与证据
-  -> freeze-baseline                  # Skill：生成 SHA-256 freeze candidate
-  -> Human freeze approval
-  -> separately authorized tag/push
-```
+## 3. 每个 Stage 的步骤与细节
 
-`coverage-closure` 和 `assertion-closure` 的 JSON 只是 tool-neutral adapter，
-不能替代原始 coverage database、compile/elaboration report 和 assertion report。
-Stage 5 中，`xverif xcov/xsva/xdebug` 提供 VDB、SVA 和 FSDB 的原生补充证据；
-WavePeek 对代表性的 VCD/FST hole、waiver 或 corner window 做可重放抽查。两类工具
-证据必须映射回 verification plan、coverage/assertion plan 和 closure adapter，
-不能直接产生 waiver、Stage 5 approval 或 freeze verdict。
+<a id="stage-0"></a>
 
-### 3.7 xverif 与 WavePeek 选择规则
+### 3.1 Stage 0：规格、权限与治理基线
 
-| 当前输入或问题 | 首选通道 | 说明 |
-| --- | --- | --- |
-| VCS 日志、`L_XXXXXXXX` 位置 | `xverif xloc` | 恢复稳定源码位置并保留日志证据 |
-| bit/slice/mask/signedness | `xverif xbit` | 产生可复算的 SystemVerilog 数值结果 |
-| SVA source/property | `xverif xsva` | 用于 list、lint、parse 和 explain |
-| VDB coverage database | `xverif xcov` | 原生读取 summary、hole、scope 和 source evidence |
-| FSDB、driver/load/value | `xverif xdebug` | WavePeek 默认不启用专有 FSDB feature |
-| entry/descriptor/header | `xverif xentry` | 解码多拍结构化字段 |
-| 已导出的 waveform manifest | `xverif xwaveform` | 渲染图像或统计，不替代原始波形 |
-| VCD/FST 层次、值、变化、property | `wavepeek` | 适合明确 signal/scope/time 的有限查询 |
-| VCD/FST 协议传输抽取 | `wavepeek` | mapping 和协议语义必须先由人工确认 |
+**目标**
 
-Stage 0 只允许安装、`probe` 和把工具证据要求写入计划，不使用工具输出批准文档
-基线。Stage 1～5 的具体调用方法与输入输出分别见 §5.13 和 §5.14。
+建立唯一规格事实源、项目治理合同、DUT 只读边界、目录 ownership 和最小 M1.1
+scaffold。Stage 0 不是完整 testbench 实现阶段。
 
-## 4. Bootstrap 与 Stage 1 结构模式
+**进入条件**
 
-### 4.1 `init`
+- workspace 和 Agent runtime 已由 setup 确定；
+- DUT/specification 的来源与权限明确；
+- 不把 proprietary RTL、日志、URL、license 或 scheduler 配置复制进公共仓库；
+- `.specify/` 尚未初始化时先执行 bootstrap。
 
-**用途**：把已有 reviewed Spec Kit Stage 0 specification 的 RTL 项目 bootstrap
-成 harness-style 项目，并生成治理与规格派生视图。
+**步骤**
 
-**适用场景**：项目根目录没有 `.harness-config.json`，但已有 `.specify/` 和通过
-文档 review gate 的 Stage 0 spec/plan/tasks/checklist；或已批准存量项目已登记为
-immutable imported baseline。
+1. Spec Kit 建立或同步 constitution。
+2. 在 `specs/` 中定义 [REQ](#term-req)、[VF](#term-vf)、Human Decision 和 open question。
+3. 评审 spec，不能由 Agent 自行批准未知语义。
+4. clarify 未决的接口、reset、时序、reference-model 和工具约束。
+5. 生成 [PLAN](#term-plan)、checklist 和精简 [TASK](#term-task) 合同。
+6. `review-tasks` 确认 mode、owned outputs、validation、evidence 和 dependencies。
+7. `analyze` 检查歧义、重复权威和 traceability gap。
+8. `authorize-execution` 后，task runner 自动分发唯一的 `mode: init` task。
+9. `converge` 对照规格复核产物、证据与 validation。
+10. 单独生成 Stage 0 gate packet，交由 Human 评审。
 
-新项目的正常路径中，Stage 0 `tasks.md` 必须声明一次 `verif-harness mode: init`；
-execution gate 批准后由 persistent task runner 自动调度。下方直接调用只用于有记录的
-recovery 或 legacy import，不是 workflow 成功后的重复步骤。
-
-**输入**：
-
-- 项目根目录及其中的 `.v/.sv` 文件；
-- 项目名、RTL root、verification root；
-- DUT top file/module；
-- 可选 design-doc root；
-- 可选 reference-model spec；
-- Spec Kit constitution、Stage 0 spec/plan/tasks/checklist/analyze 结果；
-- 通过 discovery 和 Human 回答形成的初始配置。
-
-**用法**：
-
-```text
-$verif-harness init  # 仅 recovery/legacy 路径直接调用；正常路径由 implement 调度
-```
-
-**输出**：
+**典型 Artifact**
 
 - `.harness-config.json`；
 - `AGENTS.md`；
-- `.harness/` workflow assets；
-- `.codex/agents/` 辅助 agent 配置（仅 Codex；Kimi Code 不生成这些 TOML）；
-- 链接 `specs/` 的 verification/governance 派生视图和 Stage 0 review packet；
-- Stage 1 M1.1 空目录骨架与 `.gitkeep`。
+- `.harness/` 控制与 review 资产；
+- `specs/<feature>/spec.md`、`plan.md`、`tasks.md`、checklists；
+- 必需的 harness/UVM 目录骨架和派生治理视图。
 
-**人工参与**：确认所有 discovery 结果，评审整个 Stage 0 文档集，批准或修改
-Human Decisions/Provisional/open questions。
+**最低 Evidence**
 
-**边界**：已有配置时不得重新覆盖；Stage 0 不生成 TB 代码；不得在 `sim/docs/`
-重新定义 requirement 或建立第二个可编辑规格权威；生成文档不是 Stage 0 approval。
+- bootstrap/runtime probe；
+- `doctor` 结果；
+- init task 的 outputs/evidence/validation postconditions；
+- Stage 0 review packet；
+- unresolved questions 与 Human Decisions 清单。
 
-### 4.2 `add-interface`
+**退出条件**
 
-**用途**：根据明确的 interface contract 生成 protocol interface 和对应 UVC
-落点目录。
+- 单一规格权威明确；
+- DUT RTL 保持只读；
+- 所有 executable task 均为 `interaction: none`；
+- 所有 `OPEN B###` 已解决后才允许 execution gate；
+- Human 对 Stage 0 gate packet 作出独立决定。
 
-**适用场景**：Stage 0 已批准，准备建立 ctrl/data/SRAM 等接口。
+<a id="stage-1"></a>
 
-**输入**：
+### 3.2 Stage 1：结构完整、可编译的最小环境
 
-- `.harness-config.json`；
-- `harness-spec.yaml` 中的 interface name、parameters、input args、signals；
-- 每个 signal 的 `to-dut`、`from-dut` 或 `clkrst` 角色；
-- 可选 modport name override 和 parameterized instances；
-- `tb_architecture.md` 的 modport/接口约束。
+**目标**
 
-**用法**：
+建立 interface、shared package、UVC skeleton、harness、env、thin `tb_top`、显式
+filelist 和 compile-only smoke。此阶段证明结构与编译链成立，不宣称功能验证闭合。
+
+**步骤**
+
+1. 从已评审接口合同生成 interface 和 transaction 类型。
+2. 为每个协议边界建立 UVC skeleton。
+3. 在 harness 层完成 DUT 实例化、端口映射、clock/reset、tie-off、adapter、bind。
+4. 在 UVM env 层建立 agent、scoreboard/coverage shell、base test 和 `tb_top`。
+5. 固化 compile order、filelist 和 simulator profile。
+6. 运行 compile/elaboration/smoke，并归档确定性结果。
+7. 审计 tests 不包含可由 interface/harness API 表达的 DUT hierarchy 路径。
+
+**常见 task mode**
+
+`interface`、`package`、`uvc`、`harness`、`env`、`build`、`simulator`。
+
+**典型 Artifact**
+
+- protocol interface；
+- UVC class skeleton；
+- harness、SVA/bind skeleton；
+- env、base test、thin `tb_top`；
+- filelist、Makefile fragment、simulator profile。
+
+**最低 Evidence**
+
+- compile order 审计；
+- compile/elaboration/smoke 结果；
+- DUT RTL dirtiness 检查；
+- task-owned outputs 和 validation 记录。
+
+**退出条件**
+
+环境结构可以重复构建，DUT 与验证职责分层正确，尚未实现的行为以显式 TODO 或后续
+VF/TASK 表达，不能把 skeleton 存在误报为 simulator support 或功能 PASS。
+
+<a id="stage-2"></a>
+
+### 3.3 Stage 2：功能场景、scoreboard 与 reference model
+
+**目标**
+
+把已评审 [VF](#term-vf) 落为 driver/monitor 行为、testcase、scoreboard 和可选
+reference-model adapter，形成 REQ/VF/test/evidence 的功能追踪闭环。
+
+**步骤**
+
+1. 明确 protocol handshake、backpressure、reset 和非法输入合同。
+2. 完成 UVC driver/monitor 行为，不从 DUT RTL 猜测协议语义。
+3. 定义 exact、mask、tolerance、ordering、timeout 等 compare policy。
+4. 接入经评审的 Golden/reference model；记录版本、语义和 adapter 边界。
+5. 为正常、边界、错误与恢复路径增加 testcase/vseq。
+6. 运行固定 seed 的功能 regression，并保留逐 testcase 结果。
+7. 执行 traceability audit，确认每个 testcase 能回溯到 VF/REQ。
+
+**常见 task mode**
+
+`uvc-complete`、`scoreboard`、`refmodel`、`test`、`regression`、`evidence`、`waveform`。
+
+**典型 Artifact**
+
+- 完整 driver/monitor；
+- scoreboard 与 compare policy；
+- reference-model bridge；
+- tests、sequences、caselist；
+- regression manifest。
+
+**最低 Evidence**
+
+- testcase PASS/FAIL/TIMEOUT 状态；
+- seed、命令、工具版本和 log 路径；
+- scoreboard mismatch 证据；
+- reference-model identity/provenance；
+- REQ/VF/test 映射审计。
+
+**退出条件**
+
+计划内功能场景均有 testcase 和可复现结果；缺少 Golden、工具或输入时必须报告
+`MISSING_ARTIFACT`、`TOOL_NOT_FOUND` 或 blocker，不能静默降级成 PASS。
+
+<a id="stage-3"></a>
+
+### 3.4 Stage 3：Coverage 与 Assertion
+
+**目标**
+
+把 coverage plan 和 assertion plan 转换为可执行、可追踪、可审计的实现与证据。
+
+**步骤**
+
+1. 评审 coverpoint、bin、cross、ignore/illegal bin 的精确定义。
+2. 为每个 COV ID 生成 coverage skeleton 并关联 REQ/VF/test。
+3. 评审 assertion antecedent、consequent、clock、disable/reset 和 vacuity 语义。
+4. 为每个 ASRT ID 生成 checker/bind skeleton。
+5. 证明 assertion 已 compile、bind 且产生 attempts，而不仅是“文件存在”。
+6. 汇总 coverage hits、holes、exclusions 和 totals。
+7. 对 coverage/assertion gap 建立 task、blocker、waiver request 或 change request。
+
+**常见 task mode**
+
+`coverage`、`assertion`、`coverage-audit`、`assertion-audit`、`test`、`trace`。
+
+**典型 Artifact**
+
+- covergroup/coverage collector；
+- assertion checker 与 bind；
+- coverage/assertion plan 更新；
+- exclusions/waiver candidate。
+
+**最低 Evidence**
+
+- coverage item/hit/total 报告；
+- assertion compile/bind/attempt/failure/vacuity 报告；
+- 关联 testcase 和 regression run；
+- exclusion 或 waiver 的独立 authority 记录。
+
+**退出条件**
+
+所有计划项均可追踪到实现和证据；coverage hole、vacuous assertion 和 exclusion 未被
+隐藏；工具结果不会自动批准 waiver 或 Stage gate。
+
+<a id="stage-4"></a>
+
+### 3.5 Stage 4：确定性 Regression、CI 与性能门禁
+
+**目标**
+
+把单次测试扩展为可重放 regression，建立失败分诊、CI fragment 和经评审的性能合同。
+
+**步骤**
+
+1. 定义 caselist、seed 策略、并发隔离、timeout 和结果 schema。
+2. 每个 testcase 使用独立输出目录，避免并发污染证据。
+3. 汇总 PASS/FAIL/TIMEOUT/TOOL_NOT_FOUND 等稳定状态。
+4. 对失败执行 primary 与 same-seed rerun，生成候选分类而非自动 root cause。
+5. 生成待人工合并的 CI fragment，不写入组织 secrets 或 scheduler policy。
+6. 对已评审指标运行固定公式的 performance gate。
+7. 审计默认 regression 与 REQ/VF/test/coverage/assertion 的结构映射。
+
+**常见 task mode**
+
+`regression`、`triage`、`ci`、`performance`、`evidence`、`waveform`、`trace`。
+
+**典型 Artifact**
+
+- regression runner、caselist 和结果汇总；
+- failure triage report；
+- CI fragment；
+- performance contract 和 evaluator 输出。
+
+**最低 Evidence**
+
+- 每个 testcase 的命令、seed、退出状态和日志；
+- same-seed rerun 对比；
+- CI 在受支持环境中的可复现运行；
+- 性能输入、公式、阈值和结果。
+
+**退出条件**
+
+默认 regression 可重复执行并严格汇总，失败未被重试掩盖，CI/性能声明均有可复现证据；
+没有证据时不能声称 simulator、scheduler 或性能目标受支持。
+
+<a id="stage-5"></a>
+
+### 3.6 Stage 5：闭合、sign-off 与 freeze
+
+**目标**
+
+确认规格、实现和证据闭环，审计 baseline 后变更，形成可供 Human sign-off/freeze
+决策的候选材料。
+
+**步骤**
+
+1. 运行最终 traceability、coverage、assertion、regression 和 performance 审计。
+2. 核对所有 blocker、deviation、waiver 和 change request 的状态及 authority。
+3. 检查 baseline 后 Git diff 是否被 change-control 覆盖。
+4. 生成 Stage 5 Draft gate packet 并进行 Human Stage review。
+5. 运行 signoff audit，只复核 packet/evidence/approval metadata 的结构完整性。
+6. Human 明确授权 freeze 后，在 clean reviewed commit 上生成 SHA-256 freeze candidate。
+7. 公开发布另走 `release`/OSS readiness 分支，并再次进行保密与许可评审。
+
+**常见 task mode**
+
+`trace`、`coverage-audit`、`assertion-audit`、`change`、`gate`、`signoff`、`freeze`、
+`release`。
+
+**典型 Artifact**
+
+- closure reports；
+- Stage 5 gate packet；
+- sign-off audit report；
+- freeze candidate manifest；
+- 可选 OSS readiness report。
+
+**最低 Evidence**
+
+- 全链 traceability closure；
+- coverage/assertion/performance/regression 最终证据；
+- CR/waiver/approval metadata；
+- clean commit 和 artifact SHA-256；
+- public candidate 的 license、denylist 和敏感内容审计。
+
+**退出条件**
+
+工具只能报告 `READY_FOR_HUMAN_REVIEW` 或发现问题。Human 才能批准 Stage、sign-off、
+freeze、tag、push 和公开发布；这些 authority 不能由 Agent 或 workflow success 推导。
+
+---
+
+## 4. Spec Kit 治理流程
+
+### 4.1 四个平面
 
 ```text
-$verif-harness add-interface  # 根据已评审 interface contract 生成接口
+verif-harness 控制面：Stage policy / dispatch / traceability / authority boundary
+          |
+          +-> Spec Kit 规格面：constitution / spec / plan / checklist / tasks
+          +-> verif-harness 能力面：受控 mode 与 persistent task runner
+          +-> xverif / WavePeek / EDA 证据面：确定性工具输出
+          +-> Human 权限面：decision / waiver / gate / sign-off / freeze
 ```
 
-**输出**：
+Spec Kit 管理规格生命周期，但不拥有验证证据和 Human approval。verif-harness 是
+最上层控制面，决定 [Stage](#term-stage)、[MODE](#term-mode)、traceability 和权限边界。
 
-- `<verif_root>/testbench/top/if/<prefix>_<name>.sv`；
-- 每个接口对应的 `uvc/<agent>_agent/seq/` 目录；
-- driver、monitor、DUT 和 clock/reset modport。
+### 4.2 唯一规格权威
 
-**人工参与**：确认 signal direction、clocking ownership、参数宽度和接口分组。
+新项目以 `specs/` 为唯一可编辑规格事实源（editable requirement source）：
 
-**边界**：不生成 UVC class；不能只凭端口名前缀确认协议语义；缺少完整 spec
-时不能继续。
+- `spec.md`：需求、Verification Features、场景、边界和成功标准；
+- `plan.md`：架构、owner、Stage、mode、artifact、evidence 和 gate 映射；
+- `tasks.md`：精简、可执行、可恢复的 task contracts；
+- `checklists/`：规格质量与可验证性检查。
 
-### 4.3 `add-shared-pkg`
+`sim/docs/`、review packet、evidence index 和 `.specify/docs/zh-CN/` 都不是第二个可编辑
+需求权威。已有批准项目应作为 `immutable imported baseline` 导入，不重写历史决定。
 
-**用途**：生成 UVM 无关的公共类型、参数以及宽总线 pack/unpack helper。
-
-**适用场景**：interface 已存在，多个 UVC/Golden/monitor 需要一致的数据布局。
-
-**输入**：
-
-- `.harness-config.json`；
-- `harness-spec.yaml` 的 parameters、local parameters、enums；
-- 可选 `pack_pattern`：packed signal、二维 dimensions、element width；
-- architecture 中已批准的位打包顺序。
-
-**用法**：
+### 4.3 一个 Stage 的完整 lifecycle
 
 ```text
-$verif-harness add-shared-pkg  # 生成公共类型、参数及 pack/unpack helper
+establish-constitution
+  -> review-constitution
+  -> specify
+  -> review-spec
+  -> clarify
+  -> review-clarification
+  -> plan
+  -> review-plan
+  -> checklist
+  -> review-checklist
+  -> tasks
+  -> review-tasks
+  -> analyze
+  -> authorize-execution
+  -> persistent task runner
+  -> review-implementation
+  -> converge
+  -> review-convergence
+  -> independent stage-gate-review
 ```
 
-**输出**：
+其中每个 review gate 都会持久化 `paused`，等待 Human 检查对应工件。一次 verdict 只
+绑定当前 gate，不会自动带入下一 gate，也不会提升为 Stage approval。
 
-- `<prefix>_tb_pkg.sv`：parameter、enum、lane typedef；
-- `<prefix>_pack_pkg.sv`：pack/unpack function，或无 pattern 时的明确 stub；
-- 必要时向 `tb.f` 添加 package 条目。
+### 4.4 文档生成与评审
 
-**人工参与**：确认 lane 顺序、signedness、dimension 和 enum 编码。
+1. `specify` 生成或更新 [REQ](#term-req)、[VF](#term-vf) 和场景。
+2. `clarify` 显式处理歧义，不允许 Agent 猜测 DUT、协议或 Human Decision。
+3. `plan` 把 VF 映射到 [MODE](#term-mode)、[ARTIFACT](#term-artifact)、
+   [EVIDENCE](#term-evidence) 和 [GATE](#term-gate)。
+4. `checklist` 检查需求质量、完整性、边界和可验证性。
+5. `tasks` 把计划压缩为可执行合同，不复制 `plan.md` 的长篇叙述。
+6. `analyze` 在执行前检查冲突、歧义、重复权威和 traceability gap。
 
-**边界**：当前 pack generator 只直接支持二维 pattern；不导入 UVM/UVC；不同
-来源的同名参数值冲突时必须停止。
+文档由 Agent 生成时只是 review candidate。生成成功不等于语义正确或已获批准。
 
-### 4.4 `add-uvc-skeleton [name]`
+### 4.5 Task contract 与 persistent runner
 
-**用途**：为一个或全部 interface 生成分层 UVC class 骨架。
-
-**适用场景**：interface 和 shared packages 已完成，但 driver/monitor 行为尚未实现。
-
-**输入**：
-
-- 可选 `<name>`，省略时处理全部 interfaces；
-- `harness-spec.yaml` 的 interface、instances、parameters、item/sequence names；
-- 已存在的 shared package 和 interface；
-- `tb_architecture.md` 的 agent 分层定义。
-
-**用法**：
+一个 executable task 使用一行摘要和三行合同：
 
 ```text
-$verif-harness add-uvc-skeleton          # 为所有已定义接口生成 UVC 骨架
-$verif-harness add-uvc-skeleton data_in  # 仅为 data_in 生成 UVC 骨架
+- [ ] T012 [VF-001] 实现 FIFO 顺序检查
+  - mode: `scoreboard`
+  - outputs: `tb/env/fifo_scoreboard.sv`; evidence: `evidence/T012.json`
+  - validate: `make compile`; needs: `T008`; interaction: `none`
 ```
 
-**输出**：
-
-- agent config、item、sequencer、driver、monitor、coverage subscriber；
-- agent 或 parameterized top-agent/sub-agent；
-- default sequence 和 UVC package；
-- 必要的 `tb.f` incdir/package 条目。
-
-**人工参与**：确认 active/passive ownership、parameterized instances、item 字段
-和 sequence 职责。
-
-**边界**：run/build phase 仅为空骨架；骨架 compile visibility 不代表协议完成。
-
-### 4.5 `add-harness-layer`
-
-**用途**：建立 DUT 与验证环境之间唯一的结构集成层。
-
-**适用场景**：interfaces 已生成，准备连接 DUT、clock/reset、straps、status
-probes、SVA 和 bind。
-
-**输入**：
-
-- `.harness-config.json`；
-- `harness-spec.yaml` 的接口 port map、straps、status probes、variants；
-- 只读解析得到的 DUT top port list；
-- architecture/verification plan 中已批准的 harness ownership。
-
-**用法**：
+runner 每次只执行 `current_task_id`，状态为：
 
 ```text
-$verif-harness add-harness-layer  # 生成 DUT/TB harness、SVA 与 bind 骨架
+READY -> RUNNING -> DONE
+                  -> BLOCKED
 ```
 
-**输出**：
+只有以下 postconditions 全部满足，runner 才能标记 `[x]`：
 
-- DUT-side `rtl_wrap`、`dut_select`、`dut_harness`；
-- TB-side harness interface、API package、reset/status/strap API、clock/reset
-  generator；
-- SVA checker stubs 和 filelist snippet。
+- owned outputs 存在；
+- evidence path 存在；
+- reviewed validation command 返回 0；
+- task contract 未在运行中被 Agent 修改；
+- dependencies 已完成。
 
-**人工参与**：逐端口 review 映射、tie-off、variant、probe 层级和 reset/strap
-语义，并在真实编译器确认 elaboration。
+需要 Human 回答、额外 authority 或规格决策的内容必须成为 `OPEN B###` 或运行时
+`BLOCKED`，不能写成假装可自动执行的 task，也不能让 Agent 等待 terminal input。
 
-**边界**：不修改 RTL；不根据端口名静默猜测 mapping；缺少 interface 或完整
-port spec 时停止。
+### 4.6 Workflow 状态机
 
-### 4.6 `add-env-layer`
+| 状态 | `resume_allowed` | 正确动作 |
+| --- | --- | --- |
+| `starting/running`，worker live | false | 等待并轮询 `status` |
+| `paused`，review gate | true | 评审工件后提交一个 verdict |
+| task `BLOCKED` | true | 取得回答后用 `--answer` 恢复当前 task |
+| `running`，无 live worker | false | 检查日志，确认 stale 后执行 `recover` |
+| recovered `failed` | true | `resume <run-id>` 重试当前 step |
+| completed | false | 进入独立 Stage gate 或下一 Stage |
 
-**用途**：生成 env/test 层及轻薄 `tb_top`，把 harness 和 UVC 组合成可编译环境。
+用户命令不能绕过状态前置条件。尤其不能在 live worker 正在运行时因用户已经输入
+`approve` 就再次调用 resume。
 
-**适用场景**：UVC packages 和 harness API 已存在。
+### 4.7 追踪治理链
 
-**输入**：
-
-- `.harness-config.json` 和 `harness-spec.yaml`；
-- UVC package/agent 类型；
-- harness aggregate API；
-- env knobs、interface instances 和 architecture ownership。
-
-**用法**：
-
-```text
-$verif-harness add-env-layer  # 生成 env、base test、packages 与 thin tb_top
-```
-
-**输出**：
-
-- env config、virtual sequencer、env；
-- scoreboard/coverage collector shell；
-- env package、base test、test package；
-- thin `tb_top`；
-- 必要的 filelist 条目。
-
-**人工参与**：确认 virtual interface 分发、agent enable、analysis connection
-计划和 `tb_top` 只承担结构职责。
-
-**边界**：初始 scoreboard/coverage write body 无功能；不加入 test-specific
-logic 或默认 `UVM_TESTNAME`。
-
-### 4.7 `finalize-filelist-and-make`
-
-**用途**：按规范依赖顺序生成完整 filelist 和首次 compile/elaboration target。
-
-**适用场景**：Stage 1 M1.1 所有结构源文件已落地。
-
-**输入**：
-
-- `.harness-config.json`；
-- 实际存在的 RTL、interface、package、UVC、env/test、harness、SVA、top 文件；
-- 可选 RTL exclude list；
-- architecture 中的 compile-order contract。
-
-**用法**：
-
-```text
-$verif-harness finalize-filelist-and-make  # 固化 filelist、编译顺序和 Makefile
-```
-
-**输出**：
-
-- `<verif_root>/filelist/rtl.f`；
-- `<verif_root>/filelist/tb.f`；
-- `<verif_root>/filelist/sim.f`；
-- `<verif_root>/regress/Makefile`，提供 `help/compile/clean`。
-
-**人工参与**：已有 filelist/Makefile 时选择 merge/diff/approved overwrite；在
-VCS 等真实环境 review warning 和 elaboration。
-
-**边界**：不把不存在的文件写入 filelist；该阶段不自动增加完整 regress/cov
-target；compile error 不会被解释为通过。
-
-## 5. 实现、执行与集成模式
-
-### 5.1 `doctor`
-
-**用途**：只读判断项目健康度、阶段状态和下一安全动作。
-
-**适用场景**：接手项目、恢复 session、进入新 stage、升级 skill 或不知道下一步。
-
-**输入**：项目根目录、可选 `AGENTS.md`、`.harness-config.json`、docs/TB/Git 状态。
-
-**用法**：
-
-```text
-$verif-harness doctor  # 只读检查健康度、阶段状态和下一安全动作
-```
-
-底层命令可加 `--json`：
-
-```bash
-# doctor Skill：输出机器可读的只读健康检查结果
-python3 <skill-dir>/doctor/scripts/doctor.py --json
-```
-
-**输出**：ERROR、WARNING、INFO、推断出的 stage state、legacy Claude artifact、
-RTL dirtiness 和 recommended next mode。
-
-**人工参与**：决定是否执行建议的写模式，解释 ambiguous stage state。
-
-**边界**：不修复文件；clean audit 不证明 simulation PASS 或 stage approval。
-
-### 5.2 `add-simulator-profile`
-
-**用途**：把 simulator 命令、能力和 evidence path 固化成可 review 配置。
-
-**适用场景**：增加 VCS、Questa、Xcelium、Verilator 或 custom simulator profile。
-
-**输入**：`simulator-profile.json`，包含 name、provider、version、compile/run token
-arrays、environment variable names、capabilities、evidence paths。支持
-`{filelist}`、`{top}`、`{binary}`、`{seed}`、`{test}` placeholder。
-
-**用法**：
-
-```bash
-# add-simulator-profile Skill：从显式合约生成 simulator profile 与 Makefile fragment
-python3 <skill-dir>/add-simulator-profile/scripts/generate_profile.py \
-  --spec simulator-profile.json \
-  --profile-out sim/config/simulator-profile.json \
-  --make-out sim/config/simulator-profile.mk
-```
-
-**输出**：normalized JSON profile 和 Makefile fragment。
-
-**人工参与**：提供真实 tool/version，审查命令，在真实 EDA 环境运行并归档日志。
-
-**边界**：环境只记录变量名，不记录 license/secret value；输出状态仅
-`CONFIGURED`，不是 `TESTED` 或 `SUPPORTED`。
-
-### 5.3 `complete-uvc`
-
-**用途**：根据显式协议合约生成具体 driver/monitor 行为。
-
-**适用场景**：ready/valid source UVC 已有 item/interface 骨架，需要实现 drive、
-handshake timeout 和 monitor publish。
-
-**输入**：`uvc-contract.json`，包含 item/class/base/vif types、config-db vif key、
-driver/monitor clocking block、valid/ready signal、payload mapping、timeout 和
-plan references。
-
-**用法**：
-
-```bash
-# complete-uvc Skill：从显式 ready/valid 合约生成 driver 与 monitor
-python3 <skill-dir>/complete-uvc/scripts/generate_uvc.py \
-  --spec uvc-contract.json --driver-out <driver.svh> \
-  --monitor-out <monitor.svh>
-```
-
-**输出**：具体 driver 和 monitor class，包含 vif 获取、ready timeout、transaction
-capture 和 analysis-port publish。
-
-**人工参与**：确认协议确实是 ready/valid source，review reset ownership、
-clocking region、payload timing，并运行 protocol tests。
-
-**边界**：不支持的控制/SRAM/credit/乱序协议必须另行实现；生成代码不是协议
-正确性证明。
-
-### 5.4 `complete-scoreboard`
-
-**用途**：根据显式 compare contract 生成 FIFO-aligned UVM scoreboard。
-
-**适用场景**：expected/actual transaction 一一按顺序到达，比较策略已评审。
-
-**输入**：`scoreboard-contract.json`，包含 class/base、expected/actual type、
-`alignment: fifo`、字段表达式、`exact/masked/abs_tolerance` 策略和 plan refs。
-
-**用法**：
-
-```bash
-# complete-scoreboard Skill：从 FIFO compare 合约生成 scoreboard
-python3 <skill-dir>/complete-scoreboard/scripts/generate_scoreboard.py \
-  --spec scoreboard-contract.json --out <scoreboard.svh>
-```
-
-**输出**：两个 analysis FIFO、pair compare、compare/mismatch counter、no-compare
-和 residual check。
-
-**人工参与**：批准 alignment、mask、numeric/tolerance、reset flush 和 end-of-test
-policy；运行 mismatch/residual/no-compare focused tests。
-
-**边界**：不支持 tag matching、乱序或 port-level compare；不能从字段名推断
-mask/tolerance。
-
-### 5.5 `add-testcase`
-
-**用途**：创建一个 compile-safe UVM test/vseq，并注册 package include。
-
-**适用场景**：testcase list 中已有批准的 testcase ID、feature mapping 和预期结果。
-
-**输入**：project root、test name、base test、base vseq；可选 candidate caselist。
-
-**用法**：
-
-```bash
-# add-testcase Skill：先 dry-run 预览 testcase/vseq/package 变更
-python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
-  --test-name <prefix>_<name>_test \
-  --base-test <prefix>_base_test --base-vseq <prefix>_job_vseq_base \
-  --dry-run
-```
-
-Review 后去掉 `--dry-run`；只有明确的 focused list 才使用：
-
-```text
---candidate-caselist <path>  # add-testcase Skill：仅登记到指定 candidate list
-```
-
-**输出**：test `.svh`、vseq `.svh`、package include；可选 candidate caselist 条目。
-
-**人工参与**：实现并审阅 stimulus/expected behavior，确认动态 PASS 后决定是否
-晋级 default regression。
-
-**边界**：不会自动加入 default regression；骨架不证明 stimulus/checking 完成。
-
-### 5.6 `add-coverage-skeleton`
-
-**用途**：从已评审 JSON 合约生成 coverage class。
-
-**适用场景**：coverage plan 已给出确切表达式、bins、cross 和 plan ID。
-
-**输入**：coverage spec 的 class/base、sample fields、covergroups、coverpoints、raw
-bin clauses、cross items 和 `plan_refs`。
-
-**用法**：
-
-```bash
-# add-coverage-skeleton Skill：从已评审 bin/cross 合约生成 coverage class
-python3 <skill-dir>/add-coverage-skeleton/scripts/generate_coverage.py \
-  --spec coverage-spec.json --out <collector-fragment.svh>
-```
-
-**输出**：可编译 coverage class/fragment。
-
-**人工参与**：批准 denominator、bin boundary、ignore/illegal bin、sampling event
-和 cross 价值；查看真实 coverage report。
-
-**边界**：不从自然语言或 signal name 猜 coverage；拒绝缺 plan ref、重复 name
-和 output overwrite。
-
-### 5.7 `add-assertion-skeleton`
-
-**用途**：从已评审 property contract 生成 checker 和可选 bind。
-
-**适用场景**：assertion plan 已给出 clock/reset、property 和 failure message。
-
-**输入**：assertion spec 的 checker ports、clock/reset、assertion IDs、property
-expressions、messages、plan refs 和可选 bind mapping。
-
-**用法**：
-
-```bash
-# add-assertion-skeleton Skill：从已评审 property 合约生成 checker 与 bind
-python3 <skill-dir>/add-assertion-skeleton/scripts/generate_assertions.py \
-  --spec assertion-spec.json --checker-out <checker.sv> \
-  --bind-out <bind.sv>
-```
-
-**输出**：checker module 和可选 bind statement。
-
-**人工参与**：review sampling region、reset disable、vacuity、X behavior、width、
-hierarchy；执行正向和故障注入 focused tests。
-
-**边界**：缺 property 时只输出 TODO，不伪装成已实现 assertion；不把自然语言
-静默翻译成 property。
-
-### 5.8 `add-refmodel-bridge`
-
-**用途**：生成 Syscan HDL shell wrapper 或 DPI-C import package 的结构适配层。
-
-**适用场景**：reference-model backend/API 已批准，准备连接 verification harness。
-
-**输入**：local/upstream reference-model spec，以及 `bridge-spec.json` 中的 backend、
-guard、HDL ports 或 DPI signatures、disabled assignments 和 plan refs。
-
-**用法**：
-
-```bash
-# add-refmodel-bridge Skill：生成 Syscan wrapper 或 DPI import package
-python3 <skill-dir>/add-refmodel-bridge/scripts/generate_bridge.py \
-  --spec bridge-spec.json --out <bridge.sv>
-```
-
-**输出**：Syscan structural wrapper 或 DPI import package。
-
-**人工参与**：批准 backend、numeric semantics、alignment、mask、unsupported policy、
-residual handling、compare ownership 和 Golden engagement test。
-
-**边界**：adapter 只建立连接；零 mismatch 且 Golden 未 engaged 不能 PASS。
-
-### 5.9 `add-regression-runner`
-
-**用途**：添加 simulator-neutral、隔离、可复现的 regression launcher 和严格
-result collector。
-
-**适用场景**：已有 runnable test 和稳定的 end-of-test result contract。
-
-**输入**：
-
-- caselist；
-- run directory；
-- numeric seed 或 seed file；
-- jobs/timeout/log name；
-- argv-style simulator command，必须包含 `{test}` 和 `{seed}`；
-- collector 的 result prefix/regex 和是否 require Golden。
-
-**用法**：复制 mode scripts 和 Makefile fragment 后，例如：
-
-```bash
-# add-regression-runner Skill：按 caselist/seed 启动隔离 regression
-python3 run_regression.py --caselist tests.caselist --runs-dir runs \
-  --seed 123 --jobs 4 -- simulator +UVM_TESTNAME={test} +ntb_random_seed={seed}
-
-# add-regression-runner Skill：按严格结果合约汇总每个 testcase
-python3 collect_results.py --runs-dir runs --caselist tests.caselist \
-  --result-prefix PROJECT_RESULT --require-golden
-```
-
-**输出**：每 testcase 独立 run dir、`command.json`、log、`batch_seed.txt`、
-`batch.json`、`report.md/json`、`failed.caselist` 和 `seed.txt`。
-
-**人工参与**：定义 result/Golden contract，提供 simulator 环境，审阅 crash、
-timeout、no-compare 和 rerun 结果。
-
-**边界**：不替换已有项目专用 runner；不使用 shell interpolation；缺结束 banner
-不能 PASS。
-
-### 5.10 `add-ci-hook`
-
-**用途**：从显式合约生成 GitLab CI 或 Jenkins 验证 job fragment。
-
-**适用场景**：本地 compile/smoke/regression 稳定，准备接入 CI。
-
-**输入**：`ci-spec.json` 的 provider、commands、runner tags/agent、timeout、公开
-variables 和 artifact paths。
-
-**用法**：
-
-```bash
-# add-ci-hook Skill：从显式 CI 合约生成待人工合并的 job fragment
-python3 <skill-dir>/add-ci-hook/scripts/generate_ci.py \
-  --spec ci-spec.json --out <ci-fragment>
-```
-
-**输出**：可人工 merge 的 `.gitlab-ci.yml` 或 Jenkins fragment。
-
-**人工参与**：配置 runner、license、secret、scheduler、timeout/cleanup，merge
-fragment，并在真实 pipeline 验证 commit 与结果。
-
-**边界**：不修改 live CI、不 trigger pipeline、不配置 credential、不执行内部
-`git pull`。
-
-### 5.11 `add-performance-gate`
-
-**用途**：按已评审的固定算术和 predicate 检查结构化性能记录。
-
-**适用场景**：需要 gate latency、bubble、utilization、cadence、count 或场景完整性。
-
-**输入**：performance contract 的 marker、required/key fields、constant/field/ratio
-operands、`eq/ne/lt/le/gt/ge` predicates、completeness rules；一个或多个 log。
-
-**用法**：
-
-```bash
-# add-performance-gate Skill：按固定公式与阈值评估结构化性能记录
-python3 <skill-dir>/add-performance-gate/scripts/evaluate_performance.py \
-  --contract performance-contract.json --log run-a.log --log run-b.log
-```
-
-按脚本 help 可加 JSON/report output 参数。
-
-**输出**：逐 record predicate 结果、completeness failures、Markdown/JSON summary
-和非零失败退出码。
-
-**人工参与**：定义指标、公式、threshold、expected count 和 waiver；确认 producer
-与 contract 使用同一语义。
-
-**边界**：只执行白名单算术；不发明公式/threshold，不因历史表现放宽 gate。
-
-### 5.12 `regression-triage`
-
-**用途**：对失败日志形成稳定 signature、候选分类和同 seed 重跑审计。
-
-**适用场景**：regression 不是全绿，需要保留证据地缩小问题域。
-
-**输入**：primary `report.json`、same-seed rerun `report.json`、包含 regex 和
-candidate classification 的 `triage-rules.json`。
-
-**用法**：
-
-```bash
-# regression-triage Skill：结合 primary/same-seed rerun 生成候选分类
-python3 <skill-dir>/regression-triage/scripts/triage_regression.py \
-  --report runs/report.json --rerun-report rerun/report.json \
-  --rules triage-rules.json --out runs/triage.json
-```
-
-**输出**：每个失败的 normalized signature、matched rule、candidate classification、
-primary/rerun log、seed consistency、blockers 和整体 state。
-
-**人工参与**：判断真实 root cause，以及属于 RTL、TB、Golden、spec 还是 infra。
-
-**边界**：regex match 不是 root-cause 结论；不改 test verdict、不创建 waiver、
-不修改源码。
-
-### 5.13 `xverif`
-
-**用途**：在不削弱 `verif-harness` stage/framework 治理的前提下，把一个已评审
-的底层确定性操作委派给 `BLANK2077/xverif` 工具族，并生成可追溯 evidence。
-
-**适用场景**：任一 Stage 需要以下事实或计算时：
-
-- `xbit`：SystemVerilog literal、signed/unsigned、slice、mask、表达式；
-- `xdebug`：daidir/FSDB 的 scope、driver/load、value、protocol、active driver；
-- `xcov`：VDB coverage summary、hole、scope、source evidence 和 export；
-- `xentry`：多拍 entry/descriptor/header 的 raw field 解码；
-- `xloc`：从 `L_XXXXXXXX` 恢复 UVM 日志源码位置；
-- `xsva`：SVA list/scan/lint/parse/explain；
-- `xwaveform`：从已导出 manifest 渲染波形 JPG/stats。
-
-**输入**：
-
-- 完整仓库的 `deps/xverif.lock.json`，固定
-  `https://github.com/BLANK2077/xverif.git`、完整 commit、MIT License hash
-  、七个 wrapper、`xverif_mcp` package 和 `tools/xverif-mcp` launcher；独立
-  Skill 部署则提供等价的已批准 checkout root；
-- `xverif-request.json`：`tool`、evidence 分类用 `operation`、native `arguments`、
-  可选项目相对 `stdin_path`、working directory、环境变量名、timeout、
-  `json/xout/text`、接受退出码和 expected artifacts；
-- selected tool 的 upstream reference/action schema；
-- 项目 `AGENTS.md`、verification plan 和当前 stage 的证据要求。
-
-**用法**：在完整 verif-harness 仓库一次性安装并验证固定版本：
-
-```bash
-# xverif Skill：安装并验证 commit-pinned managed dependency
-cd /path/to/verif-harness
-./scripts/setup --no-agent
-# 或：make setup-xverif check-xverif
-```
-
-安装器只在 `.deps/xverif` 不存在时执行 temporary clone、detached checkout、
-完整校验和 atomic publish；已有目录只验证，不 pull、不 checkout、不覆盖。
-
-然后确认 selected wrapper 和上游身份：
-
-```bash
-# xverif Skill：确认指定 native wrapper 与上游身份
-python3 <skill-dir>/xverif/scripts/xverif_adapter.py probe \
-  --tool xbit \
-  --out /tmp/xverif-xbit-probe.json
-```
-
-复制并修改 `xverif/xverif-request.example.json`，然后运行：
-
-```bash
-# xverif Skill：执行已评审 request，并把证据写入全新目录
-python3 <skill-dir>/xverif/scripts/xverif_adapter.py run \
-  --project-root . --request xverif-request.json \
-  --out-dir artifacts/xverif/xbit-conv-001
-```
-
-也可经开源项目根 CLI 进入同一 adapter：
-
-```text
-$verif-harness evidence probe --tool xbit  # 经 Skill 调用 xverif probe
-```
-
-#### xverif MCP 安装、配置和使用
-
-锁定 checkout 中包含 `xverif_mcp` FastMCP server。MCP 是独立 surface，不把 MCP
-参数包装进 CLI request：
-
-```bash
-python3 scripts/verif_harness.py xverif mcp install
-python3 scripts/verif_harness.py xverif mcp configure \
-  --runtime codex --backend direct
-python3 scripts/verif_harness.py xverif mcp status
-```
-
-Kimi Code 使用 `--runtime kimi`。`configure` 生成
-`.harness/mcp/xverif.json`，只包含 source commit、transport、backend 和环境变量
-名称；同时生成 `.harness/mcp/xverif-mcp` 并写入 Codex/Kimi 的项目级 MCP 配置。
-setup 在 runtime 明确时自动执行该步骤，不修改用户级配置，也不写入 secret 或
-license 值；已有同名冲突注册会 fail closed。
-
-注册后按以下顺序使用：
-
-1. 调用 `xverif_ping`，确认 MCP server 的真实协议可用。
-2. 调用 `xverif_tools` 获取当前 tool/action catalog；不要猜 tool 或 action 名。
-3. xdebug/xcov 遵循 `session_open -> query -> session_close`，每个 session 单独
-   记录 name、backend、timeout 和 native completeness。
-4. 需要持久化时使用 MCP tool 的 `xverif_output_path`，并把生成文件加入项目 evidence
-   manifest；保留 response 原文和 server/tool schema hash。
-5. 读取 native `ok/status/error/finding/completeness` 后再形成诊断，不把 MCP
-   `isError=false` 或进程启动成功当作验证通过。
-
-`xverif mcp probe` 不伪造协议成功；它只提示必须由 Codex/Kimi 调用
-`xverif_ping`。真实 MCP 结果必须由 Agent runtime 或受控 MCP client 归档。
-
-adapter 按显式 `--xverif-root` → `XVERIF_HOME` → project/current/repository
-`.deps/xverif` 的固定顺序查找；正常托管使用无需传路径。
-
-`xbit` JSON 示例 request 的核心字段为：
-
-```json
-{
-  "schema_version": 1,
-  "tool": "xbit",
-  "operation": "conv",
-  "arguments": ["conv", "8'shff", "--json"],
-  "stdin_path": null,
-  "working_directory": ".",
-  "environment_keys": [],
-  "timeout_seconds": 60,
-  "output_format": "json",
-  "acceptable_exit_codes": [0],
-  "expected_artifacts": []
-}
-```
-
-对于 xdebug/xcov/xentry 的 native JSON envelope，优先把请求写入项目内文件，
-在 `stdin_path` 指定该文件并让 native arguments 从 `-` 读取。adapter 只在结果中
-记录 stdin 的路径、大小和 SHA-256，不复制正文。
-
-**输出**：唯一新 evidence directory，其中包含：
-
-- `result.json`：adapter state、tool/operation、argv、cwd、允许的 environment key、
-  request/stdin hash、xverif Git commit/remote/dirty、wrapper hash、exit code、
-  native output format、parsed JSON（仅 JSON 模式）、artifact hashes 和 blockers；
-- `stdout.log`：native stdout 原样字节，XOUT 不反解析、不重排、不加 marker；
-- `stderr.log`：native stderr 原样字节；
-- 状态 `PASS/FAIL/TIMEOUT/TOOL_NOT_FOUND/PROTOCOL_ERROR/MISSING_ARTIFACT`。
-
-**人工参与**：选择正确的 native tool/action 和 CLI/MCP surface；评审 JSON schema、
-argument、环境、EDA/NPI/license/LSF 条件、output completeness、result semantics 与
-项目 stage evidence 的映射；决定失败后的下一动作，不允许自动 fallback。
-
-**边界**：xverif 是可选、单独许可和维护的工具仓库，而不是统一 executable；
-`.deps/xverif` 不进入 verif-harness Git/source archive/release；不得直接 pull 或
-vendor 上游源码。adapter 只允许七个 one-shot
-wrapper；MCP 只走 pinned `xverif_mcp` server，不把 MCP 参数壳写进 CLI；不自动切 CLI/MCP、
-JSON/XOUT、local/LSF、backend 或 data source；adapter `PASS` 不是 testcase PASS、
-coverage/assertion closure、waiver、Stage approval 或 freeze。
-
-### 5.14 `wavepeek`
-
-**用途**：把显式、有限范围的 VCD/FST 波形查询交给固定 commit 的
-`kleverhq/wavepeek` CLI，并归档可重放的工具身份、argv、stdout/stderr 和 hash
-证据。典型操作包括 `info`、`scope`、`signal`、`value`、`change`、`property`
-和各类 `extract`。
-
-**适用场景**：回归失败后定位首个变化；检查某个时窗内握手或 payload；抽取
-APB/AHB/AXI/AXI-Stream 传输；在 coverage/assertion triage 中取得确定性波形
-事实；CI 中执行不依赖 GUI 的 VCD/FST 查询。不用于猜测信号、无限制导出整份
-波形或自动宣布 root cause。
-
-**输入**：固定上游 URL/tag/commit/version/Apache-2.0 License hash/Cargo.lock
-hash/空 feature 集/四个平台官方 release archive SHA-256 的
-`deps/wavepeek.lock.json`；含 `operation`、native
-`arguments`、项目内 working directory、environment-key names、timeout、
-`json/jsonl/text`、accepted exit codes 和 expected artifacts 的 request；以及已
-授权的 VCD/FST、明确 scope/signal/time/property/protocol mapping。参数以固定
-版本的 `wavepeek help/docs/schema` 为准。
-
-**用法**：先安装并执行真实 schema smoke：
-
-```bash
-# wavepeek Skill：安装固定版本、验证 schema，并确认 adapter 可用
-cd /path/to/verif-harness
-./scripts/setup --no-agent
-# 或：make setup-wavepeek check-wavepeek
-```
-
-```text
-$verif-harness waveform probe  # 只执行身份/schema smoke
-```
-
-安装器只在 source 和 binary 都不存在时工作：clone exact tagged commit，校验
-origin/HEAD/clean/License/Cargo.lock，下载当前平台官方 VCD/FST release archive，
-校验 lock 中 SHA-256，然后原子发布 `.deps/wavepeek` 和
-`.deps/wavepeek-bin/wavepeek`。已有、partial、dirty 或 mismatched 状态只返回
-`BLOCKED`，不 pull、不覆盖。安装不需要 Rust 或 crates.io。
-
-复制 `wavepeek/wavepeek-request.example.json` 后执行：
-
-```bash
-# wavepeek Skill：执行有限 VCD/FST request 并归档可重放证据
-python3 scripts/verif_harness.py wavepeek run \
-  --project-root . --request wavepeek-request.json \
-  --out-dir artifacts/wavepeek/query-001
-```
-
-例如查询 request 的 `operation` 为 `info` 时，`arguments` 可为
-`["info", "--waves", "waves/failure.vcd", "--json"]`，`output_format` 必须
-为 `json`。JSONL request 必须使用 native `--jsonl`。
-
-**输出**：安装器发布 Git-ignored `.deps/wavepeek` source 和
-`.deps/wavepeek-bin/wavepeek` executable；Linux host glibc 低于 2.34 时还会发布
-Git-ignored `.deps/glibc-2.34` 和 WavePeek-only runtime descriptor。adapter 在全新 out-dir 生成
-`result.json`、`stdout.log`、`stderr.log`，记录 source Git identity、binary/
-request/output/artifact hashes、可选 private loader identity、argv、cwd、exit code、parsed JSON/JSONL 和
-blockers。timeout、非预期 exit、非法 JSON、残缺 JSONL、缺 artifact 都 fail
-closed。
-
-**人工参与**：选择有意义的信号、时窗、采样事件、mapping、property 和 expected
-value；判断结果能否支持 root cause、bug/waiver/closure；审阅 lock upgrade 与
-Apache-2.0 边界。需要 FSDB 时还必须确认 Verdi SDK 许可和本地隔离策略。
-
-**边界**：WavePeek 保持独立源码所有权和发布边界；source、binary、Cargo target
-和 waveform 不进入 verif-harness Git/release。默认不启用需要专有 Verdi SDK
-的 `fsdb` feature。adapter 不使用 shell、不转存 environment values、不自动
-扩大查询，也不把 PASS 解释为 RTL 正确、root cause 确认或 freeze 完成。
-
-### 5.15 `spec-kit`
-
-**用途**：在 `verif-harness` 顶层控制面下，用固定版本 GitHub Spec Kit 管理
-constitution、program/stage specification、clarification、plan、checklist、tasks、
-analysis、implementation dispatch 和 convergence。它解决“每个 Stage 的执行任务
-从哪份已评审规格产生、结果回写到哪条 requirement”的问题，不替代验证工具。
-
-**适用场景**：新 RTL 验证项目从零建立规格单一事实源；每个 Stage 进入实现前
-建立可审阅 spec/plan/tasks；实现后检查规格漂移；已有 approved 项目导入为不可变
-baseline 后管理新 change request。不要为每条 CLI command 单独建立完整 spec；
-使用 constitution → verification program → Stage/feature → task/evidence 的层级。
-
-**输入**：
-
-- 操作：`probe`、`bootstrap`、`stage`、`status` 或 `resume`；
-- 完整 verif-harness 仓库及 `deps/spec-kit.lock.json`；
-- 已通过 `./scripts/setup --isolation managed` 安装的固定 CPython 3.12.11；
-- `bootstrap` 的项目根目录；
-- `stage` 的 Stage `0`～`5` 和已评审 objective；
-- 项目 `AGENTS.md`、只读 RTL 边界、规格来源及已有 baseline；
-- Human Decisions、Provisional、open questions 和 evidence contracts。
-
-**用法**：
-
-```bash
-cd /path/to/verif-harness
-./scripts/setup --isolation managed --no-agent
-```
-
-`--no-agent` 仅用于不启动 CLI 的自动化安装；若同时显式传入
-`--runtime codex|kimi`，仍会配置项目 Skill 和 xverif MCP 注册。正常 setup 进入
-对应 CLI 后调用 Skill：
-
-Codex CLI 启动后，setup 会通过 interactive initial prompt 自动创建一轮只读清单，
-列出当前会话实际可用的 Skills、MCP servers 和 tools。Kimi 0.38 的 `--prompt`
-是阻塞的非交互请求，当前没有带 initial prompt 进入 TUI 的稳定参数；setup 因此
-直接进入 Kimi TUI，不再运行前置模型清单。TUI ready 后使用 `/skills` 和 `/mcp`
-查看 runtime 原生实时视图。
-
-```text
-# Codex
-$verif-harness probe
-$verif-harness bootstrap
-$verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-$verif-harness status
-$verif-harness resume <run-id> --verdict approve
-
-# Kimi Code
-/skill:verif-harness probe
-/skill:verif-harness bootstrap
-/skill:verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-/skill:verif-harness status
-/skill:verif-harness resume <run-id> --verdict approve
-```
-
-如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
-自动化入口。
-
-```text
-$verif-harness probe                                      # Skill：校验固定版本规格工具
-$verif-harness bootstrap                                  # Skill：初始化规格 runtime 与 preset
-$verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
-$verif-harness status [run-id]                   # Skill：查看 workflow 状态
-$verif-harness resume <run-id> --verdict approve # Skill：显式处理当前 gate 后恢复
-$verif-harness recover <run-id> --confirm-stale  # Skill：修复确认中断的 running run
-```
-
-`bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的
-`verif-stage-lifecycle.yml`，顺序为：
-
-```text
-Stage 0 only: constitution -> review
-  -> specify -> review -> clarify -> review -> plan -> review
-  -> checklist -> review -> tasks -> review
-  -> analyze -> authorize execution
-  -> persistent task runner -> implementation review -> converge -> review
-```
-
-`tasks.md` 中每个 task 必须声明 mode、input contract、owned output、evidence、
-validation 和 Human gate。execution gate 批准后，persistent task runner 只调度当前
-task 对应的 mode 一次；用户不需要按照 task list 再手动逐个调用。该规则覆盖全部
-被 task 声明的生成、工具委派、回归、审计和 closure modes。
-
-dispatch 是 agentic，但完成判定不是“命令返回过”：只有 owned outputs/evidence
-paths 存在且 approved validation command 通过，task 才能进入 complete。
-`converge` 必须把缺失产物记录为 incomplete/deviation；恢复重试要关联原 task/run
-并保留旧 evidence，不能用未追踪的重复手动调用掩盖问题。
-
-`bootstrap`、`status/resume`、workflow review gate、独立 `stage-gate-review`、
-Human approval、sign-off/freeze 授权不属于普通 implementation task 自动分发，仍按
-各自权限边界执行。
-
-每个 review gate 都会暂停 workflow。先用 `status` 定位 run、当前 gate 和对应工件；
-完成该工件的实际 review 后再用 `resume <run-id> --verdict approve|reject` 继续。
-wrapper 不读取 PTY 菜单输入，且一次 verdict 只作用于当前 gate；`resume` 不能跳过
-review，也不会把 gate verdict 提升成 Stage approval。
-checklist、tasks 和 task execution 之后也分别保留 review boundary。task execution
-内部按 `current_task_id` 逐项执行；遇到 Human/authority/specification 问题时写入
-`BLOCKED` 并终止该子 Agent，而不是等待终端输入。
-
-preset 会把以下字段追加到标准 Spec Kit 工件：DUT 只读边界、规格权威、
-REQ/VF/TC/COV/ASRT ID、verif-harness mode、owned artifact、validation、evidence、
-Human gate。推荐追踪链是：
+每个可执行工作必须保持：
 
 ```text
 REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 ```
 
-**输出**：固定版本/commit probe；`.specify/` 和 runtime-native Spec Kit skills；`specs/`
-下的 constitution/spec/plan/tasks/checklist；workflow run state；映射到
-verif-harness modes 的任务；每个已分发 task 的 output/evidence/validation
-postcondition；规格漂移和 unresolved questions。`sim/docs/` 只保存
-治理、生成视图、证据索引和 review packet，不是第二个可编辑 requirement source。
+各术语分别见 [REQ](#term-req)、[VF](#term-vf)、[PLAN](#term-plan)、
+[TASK](#term-task)、[MODE](#term-mode)、[ARTIFACT](#term-artifact)、
+[EVIDENCE](#term-evidence) 和 [GATE](#term-gate)。
 
-**不能得出的结论**：Spec Kit 命令成功、checklist 全勾选或 workflow review gate
-通过，不能证明 compile/elaboration/simulation/regression/coverage/assertion/
-performance PASS，也不能批准 Human Decision、waiver、Stage gate、sign-off、freeze、
-commit、push 或公开发布。managed runtime 的 MCP 传递依赖已经 artifact-hash-locked；
-Spec Kit 自身的 Python 传递依赖仍需在高保证或离线环境维护独立 wheel/hash lock。
+该链支持：
 
-## 6. 治理、闭合与发布模式
+- 正向回答“这条需求将如何实现、验证和评审”；
+- 反向回答“这个 PASS 属于哪个 artifact、task、VF 和 requirement”；
+- 在 gate 前发现孤立需求、无证据实现、未追踪测试和重复权威。
 
-### 6.1 `audit-traceability`
+### 4.8 Converge 与独立 Stage gate
 
-**用途**：审计 feature/test/manifest/coverage/assertion ID 的结构追踪关系。
+`converge` 对照已评审规格核对每个 task 的 output、evidence 和 validation，把缺失内容
+记录为 incomplete task、deviation 或 change request。它不能通过重复运行未追踪 mode
+掩盖缺口。
 
-**适用场景**：计划、test、caselist 发生变化后，以及每个 stage gate 前。
+workflow 内的 `review-convergence` 只评审规格漂移和证据完整性。随后运行的
+`stage-gate-review` 才生成独立 Draft gate packet；两者都不能自行批准 Stage。
 
-**输入**：`.harness-config.json`、verification docs、TB tree；可选 manifest。
+### 4.9 中文阅读镜像
 
-**用法**：
-
-```bash
-# audit-traceability Skill：审计 feature/test/manifest/plan 的结构映射
-python3 <skill-dir>/audit-traceability/scripts/audit_traceability.py \
-  [--manifest <path>] [--json] [--out <path>] [--strict]
-```
-
-**输出**：duplicate、missing implementation、manifest mismatch、verification ID
-统计、warnings/errors 和可选 JSON/report。
-
-**人工参与**：判断 focused/retired/planned test 是否合理，并修复真正的 semantic
-traceability gap。
-
-**边界**：name/ID match 只证明结构 linkage，不证明 stimulus/checking/coverage
-语义闭合；不自动修改文档或 caselist。
-
-### 6.2 `coverage-closure`
-
-**用途**：审计 functional coverage freeze evidence。
-
-**适用场景**：Stage 5，coverage plan 已全部实现并完成 coverage merge。
-
-**输入**：`coverage-evidence.json`，包含 tool/version、database IDs、每个 plan item
-的 id/status/hits/plan ref、可选 approved waiver，以及 reported totals。
-
-**用法**：
-
-```bash
-# coverage-closure Skill：审计 tool-neutral coverage evidence 与 totals
-python3 <skill-dir>/coverage-closure/scripts/audit_coverage_closure.py \
-  --evidence coverage-evidence.json --json \
-  --out artifacts/coverage-closure.json
-```
-
-**输出**：audited covered/excluded/uncovered totals、closure percentage、blockers、
-database IDs 和 `READY_FOR_HUMAN_FREEZE_REVIEW`/`BLOCKED`。
-
-**人工参与**：对照 native VDB/UCDB/URG report，批准 denominator 和逐对象 waiver，
-决定是否接受 evidence limitation。
-
-**边界**：不解析 proprietary database、不 merge coverage、不创建 waiver；100%
-reported percentage 本身不等于 closure。
-
-### 6.3 `assertion-closure`
-
-**用途**：审计 assertion 是否真正 compile、bind、attempt 且无未处理 failure/vacuity。
-
-**适用场景**：Stage 5 assertion freeze review。
-
-**输入**：`assertion-evidence.json`，包含 tool、compile/elaboration logs，以及每个
-assertion 的 id、compiled、bound、attempts、passes、failures、vacuous、plan ref
-和可选 approved waiver。
-
-**用法**：
-
-```bash
-# assertion-closure Skill：审计 compile/bind/attempt/failure/vacuity 证据
-python3 <skill-dir>/assertion-closure/scripts/audit_assertion_closure.py \
-  --evidence assertion-evidence.json --json \
-  --out artifacts/assertion-closure.json
-```
-
-**输出**：assertion/attempt/pass/failure totals、logs、blockers 和
-`READY_FOR_HUMAN_FREEZE_REVIEW`/`BLOCKED`。
-
-**人工参与**：确认 property 语义、clock/reset、vacuity、native report 和 waiver。
-
-**边界**：source presence 或 failure=0 不足以证明 closure；不修改 checker/bind。
-
-### 6.4 `change-control`
-
-**用途**：审计 approved baseline 之后的 change request 和 Git diff 覆盖。
-
-**适用场景**：frozen decision、验证架构、RTL 行为或 sign-off baseline 发生变化。
-
-**输入**：`changes.json` 的 baseline ref，以及每个 CR 的 id/status/description/files、
-reviewer/date/rationale、tests/coverage/assertions/docs/regressions impact；可选 Git
-project root。
-
-**用法**：
-
-```bash
-# change-control Skill：审计 baseline 后的 CR 与 Git diff 覆盖
-python3 <skill-dir>/change-control/scripts/audit_change_control.py \
-  --contract changes.json --project-root . --audit-git --json \
-  --out artifacts/change-control.json
-```
-
-**输出**：CR/file counts、Git changed files、undeclared/missing/open/incomplete
-blockers 和 `READY_FOR_HUMAN_REVIEW`/`BLOCKED`。
-
-**人工参与**：批准/拒绝 CR，决定 frozen decision 是否变更，批准 RTL owner 的
-修复和 rebaseline。
-
-**边界**：输入中的 `approved` 只能记录已有 Human decision；工具不会创建批准。
-
-### 6.5 `stage-gate-review <completed-stage>`
-
-**用途**：从当前仓库证据生成某个 stage 的 Draft review packet。
-
-**适用场景**：Stage N deliverables/exit criteria 已完成，准备进入 Stage N+1；
-terminal Stage 使用 `--final`。
-
-**输入**：completed stage、项目 governance/roadmap/plans、Provisional、open
-questions、CR、动态 evidence 和 artifact limitations。
-
-**用法**：
-
-```bash
-# stage-gate-review Skill：生成保持所有决定未勾选的 Draft gate packet
-python3 <skill-dir>/stage-gate-review/scripts/build_stage_gate.py \
-  --completed-stage <N> \
-  --out <docs-root>/stage<N>_gate_re_review.md
-```
-
-最终 stage 可加 `--final`；已有 draft 只有在批准 exact replacement 后才用
-`--force`。
-
-**输出**：所有判定保持未勾选的 Draft packet，列出 exit criteria、证据、
-Provisional disposition 候选、open question 和 CR。
-
-**人工参与**：逐项判断 PASS/FAIL/accepted limitation，处理 Provisional，填写
-reviewer/date/Approval Decision。
-
-**边界**：不能自行勾选 criterion、关闭问题、修改 frozen source decision 或批准 gate。
-
-### 6.6 `signoff-audit <stage>`
-
-**用途**：只读复核最终 sign-off packet 的结构和已记录批准元数据。
-
-**适用场景**：请求 Human sign-off 前，或批准后确认仓库记录内部一致。
-
-**输入**：project root、stage；可选 packet、authoritative manifest、strict mode。
-
-**用法**：
-
-```bash
-# signoff-audit Skill：只读复核 sign-off packet、manifest 与批准记录
-python3 <skill-dir>/signoff-audit/scripts/audit_signoff.py \
-  --stage <N> [--packet <path>] [--manifest <path>] \
-  [--json] [--out <path>] [--strict]
-```
-
-**输出**：审计 findings、可选 JSON/report，以及以下状态之一：
-
-- `INCOMPLETE`：结构 blocker；
-- `READY_FOR_HUMAN_REVIEW`：结构齐全但尚无批准；
-- `APPROVED_RECORDED`：packet 中已有 Human approval record。
-
-**人工参与**：对照 regression、coverage、assertion、CI、performance、CR 和 waiver
-原始证据，执行最终 sign-off。
-
-**边界**：`APPROVED_RECORDED` 是读取结果，不是 skill 新批准；无法验证不可访问
-的原始 EDA artifact。
-
-### 6.7 `freeze-baseline`
-
-**用途**：在 clean Git commit 上生成证据状态校验和 SHA-256 freeze manifest。
-
-**适用场景**：Stage 5 已获得 Human approval，准备锚定最终验证基线。
-
-**输入**：`freeze-contract.json`，包含 freeze name、baseline ref、RTL root/policy、
-required evidence、JSON state checks、include files、tool versions，以及可选已存在的
-Human approval record。
-
-**用法**：
-
-```bash
-# freeze-baseline Skill：在 clean commit 上生成 SHA-256 freeze candidate
-python3 <skill-dir>/freeze-baseline/scripts/build_freeze_manifest.py \
-  --project-root . --contract freeze-contract.json \
-  --out /tmp/freeze-candidate.json
-```
-
-**输出**：commit、branch、baseline、clean flag、RTL diff、tool versions、state
-checks、每个文件的 SHA-256/size，以及：
-
-- `READY_FOR_HUMAN_FREEZE_REVIEW`；或
-- 输入已包含有效 Human approval evidence 时的 `APPROVED_RECORDED`。
-
-**人工参与**：review commit、hash、state、RTL diff、证据限制并批准 freeze；另行
-授权 tag/push/release。
-
-**边界**：dirty tree、missing evidence、failed state 或 disallowed RTL change
-直接阻塞；不修改 Git、不 tag、不 push、不批准、不公开。
-
-### 6.8 `oss-readiness`
-
-**用途**：检查准备公开的干净 export 是否具备社区文件、可复现 example，并扫描
-敏感标识、绝对路径和 Git history。
-
-**适用场景**：把通用 verification infrastructure 发布到公共仓库之前；不属于
-内部 DUT functional freeze 主线。
-
-**输入**：待公开 project root、community files、denylist、example/CI；可选 history。
-
-**用法**：
-
-```bash
-# oss-readiness Skill：扫描 public export、community files 与 Git history
-python3 <skill-dir>/oss-readiness/scripts/audit_oss_readiness.py \
-  --require-community --history
-```
-
-**输出**：敏感 pattern/path、缺失社区文件、example/CI 问题和整体 readiness。
-
-**人工参与**：确认代码权属和公开权限，运行组织批准的 secret scanner，人工 review
-每个 finding，并做 fresh-clone reproduction。
-
-**边界**：零 finding 不证明无保密信息、不授予 license/publication rights，也不
-执行发布。
-
-### 6.9 `patterns [topic]`
-
-**用途**：查询 harness、compile order、regression、lifecycle 或 Stage 2+ 合约模式。
-
-**适用场景**：需要方法说明、设计 review 或问题解释，但不准备修改项目。
-
-**输入**：可选 topic，例如 `stage1`、`regression`、`coverage`、`signoff`、`freeze`。
-
-**用法**：
+项目规格 `spec.md`、`plan.md`、`tasks.md` 和 checklist 默认使用简体中文；代码、命令、
+路径、配置键、协议名、稳定 ID 和原始引用保持原文。上游 `.specify/` 基础设施保留其
+发行语言。
 
 ```text
-$verif-harness patterns regression  # 查询 regression 设计与证据模式
-$verif-harness patterns freeze      # 查询 sign-off/freeze 治理模式
+$verif-harness docs
 ```
 
-**输出**：基于 `references/*.md` 的说明、约束和推荐做法。
+该命令刷新 `.specify/docs/zh-CN/` 阅读镜像和 hash manifest。镜像不参与 template
+resolution、command discovery、workflow execution，也不是 specification、evidence
+或 approval 事实源。
 
-**人工参与**：把通用 pattern 与项目 spec/architecture 对齐。
+---
 
-**边界**：只读说明；不会自动应用 pattern 或修改任何文件。
+## 5. 关键术语与概念
 
-## 7. 人工参与清单
+<a id="term-stage"></a>
 
-| 人工职责 | 主要阶段 |
+### 5.1 Stage
+
+Stage 是验证成熟度和评审范围，不只是命令序号：
+
+| Stage | 核心问题 |
 | --- | --- |
-| 确认规格来源、验证范围和 sign-off 标准 | Stage 0 |
-| 批准 Human Decisions 和每个 Stage gate | Stage 0～5 |
-| 解释有歧义的协议、位切片、数值、mask、时序和 reset 语义 | 全阶段 |
-| 提供 VCS/Questa/Xcelium、Syscan、license、scheduler 和 CI runner | Stage 1～5 |
-| 审阅 compile/elaboration、waveform 和原始 EDA evidence | Stage 1～5 |
-| 判断 mismatch 属于 RTL、TB、Golden、spec 还是 infra | Stage 2～5 |
-| 修改或批准修改 DUT RTL | 出现 RTL bug 时 |
-| 批准 testcase 从 candidate 晋级 default regression | Stage 2～5 |
-| 批准 coverage denominator、unreachable item 和 waiver | Stage 3～5 |
-| 审阅 assertion property、attempt 和 vacuity | Stage 3～5 |
-| 批准 change request 和 frozen decision 变更 | 全阶段 |
-| 接受无法归档等 evidence limitation | Stage gate/sign-off |
-| 最终 Stage 5 sign-off 与 verification freeze | Stage 5 |
-| 授权 Git tag、push、release 或公开发布 | Freeze 后 |
+| 0 | 规格、权限、治理和最小 scaffold 是否成立？ |
+| 1 | verification environment 是否结构正确且可编译？ |
+| 2 | 功能场景、scoreboard 和 reference model 是否可追踪、可复现？ |
+| 3 | coverage 和 assertion 是否按计划实现并产生有效证据？ |
+| 4 | regression、CI、triage 和性能合同是否稳定？ |
+| 5 | traceability、closure、sign-off 和 freeze 候选是否完整？ |
 
-## 8. 最终判定原则
+Stage workflow 完成不等于 Stage approval。Human 必须审阅独立 gate packet。
 
-以下结果都不能单独代表项目已经验证完成：
+<a id="term-req"></a>
 
-- 代码生成成功；
-- compile/elaboration 成功；
-- regression 进程 exit code 为 0；
-- Golden mismatch 为 0 但没有 engagement proof；
-- coverage 报告显示 100%，但 denominator/waiver 未审查；
-- assertion failure 为 0，但 attempt 为 0 或 vacuous；
-- audit 返回 `READY_FOR_HUMAN_REVIEW`；
-- manifest 已生成 SHA-256。
+### 5.2 REQ — Requirement
 
-真正的 freeze 需要动态证据、结构审计、change-control、Human Stage 5 sign-off、
-clean commit freeze manifest，以及单独授权的版本控制动作共同闭合。
+[REQ](#term-req) 描述 DUT 或验证系统必须满足的可观察要求，回答“必须是什么”。
+
+```text
+REQ-001：所有被 DUT 接收的输入 transaction 必须保持顺序输出。
+```
+
+好的 REQ 应可观察、无歧义、可判断 PASS/FAIL，且不偷偷包含实现假设。
+
+<a id="term-vf"></a>
+
+### 5.3 VF — Verification Feature
+
+[VF](#term-vf) 把 REQ 拆成验证环境必须提供的检查、激励或采集能力，回答“怎样验证”。
+
+```text
+REQ-001
+├── VF-001 正常流量下的顺序和数据完整性检查
+├── VF-002 backpressure 下的顺序检查
+└── VF-003 reset 中断后的恢复检查
+```
+
+REQ 与 VF 不要求一一对应，但每个 VF 必须能回溯到至少一个已评审 REQ。
+
+<a id="term-plan"></a>
+
+### 5.4 PLAN — 验证计划
+
+[PLAN](#term-plan) 把 REQ/VF 转换为验证架构和执行策略，定义 owner、Stage、mode、
+artifact、evidence、失败重跑策略和 Human gate。
+
+| REQ/VF | Stage | Mode | Owned artifact | Evidence | Human gate |
+| --- | ---: | --- | --- | --- | --- |
+| REQ-001/VF-001 | 2 | `scoreboard` | `tb/env/fifo_scoreboard.sv` | compile + regression | Stage 2 review |
+
+PLAN 是策略，不应膨胀成逐文件操作流水账。
+
+<a id="term-task"></a>
+
+### 5.5 TASK — 可执行任务合同
+
+[TASK](#term-task) 是从 PLAN 拆出的、可以单独执行、验证、阻塞和恢复的最小工作单元。
+它必须声明 VF、mode、owned outputs、evidence、validation、dependencies 和
+`interaction: none`。
+
+TASK 是一次具体工作；MODE 是完成这类工作的可复用能力。需要 Human 判断的事情不是
+TASK，而是 blocker、decision 或 gate。
+
+<a id="term-mode"></a>
+
+### 5.6 MODE — 受控执行能力
+
+[MODE](#term-mode) 是 verif-harness 中职责明确、输入受审、权限受限的执行入口，例如
+`interface`、`scoreboard`、`test`、`coverage`、`regression` 和 `trace`。
+
+```text
+TASK T012 -> MODE scoreboard
+```
+
+task runner 只能分发 task 合同中已评审的 mode 和参数，不能临时选择任意工具或 shell
+操作绕过权限边界。
+
+<a id="term-artifact"></a>
+
+### 5.7 ARTIFACT — 产物
+
+[ARTIFACT](#term-artifact) 是 task 实际创建或修改的持久化对象，例如 interface、UVC、
+scoreboard、test、coverage model、assertion、filelist、配置或 review packet。
+
+owned artifact 用来限制 task 的写入范围。Artifact 存在只表示“做出了东西”，不证明
+其正确性。
+
+<a id="term-evidence"></a>
+
+### 5.8 EVIDENCE — 证据
+
+[EVIDENCE](#term-evidence) 证明 artifact 满足 task、VF 和 REQ，例如：
+
+- compile/elaboration/simulation/regression 结果；
+- testcase 状态、seed、命令、工具版本和日志；
+- coverage/assertion/performance 报告；
+- waveform 查询与 provenance；
+- artifact hash 和 traceability audit。
+
+```text
+ARTIFACT = 做出了什么
+EVIDENCE = 凭什么相信它有效
+```
+
+文件存在、Agent 声称完成、Spec Kit command 成功或 checklist 被勾选，都不能单独作为
+确定性验证证据。
+
+<a id="term-gate"></a>
+
+### 5.9 GATE — 人工评审门
+
+[GATE](#term-gate) 判断工件和证据是否足够，以及是否允许进入下一步。常见 gate 包括
+spec/plan/tasks review、execution authorization、implementation review、Stage gate、
+sign-off 和 freeze authorization。
+
+```text
+测试 PASS ≠ gate 自动批准
+gate 批准 ≠ Stage 自动批准
+Stage 通过 ≠ sign-off/freeze 自动批准
+```
+
+Agent、Spec Kit、xverif、WavePeek 和 simulator 都不能代替 Human 批准 decision、waiver、
+Stage、sign-off、freeze、commit、push 或 release。
+
+### 5.10 完整追踪示例
+
+```text
+REQ-001
+所有已接收 transaction 必须保持顺序输出
+    ↓
+VF-001
+验证环境提供端到端顺序和数据完整性检查
+    ↓
+PLAN
+使用 input/output monitor、reference queue 和 scoreboard
+    ↓
+TASK T012
+实现并注册 FIFO scoreboard
+    ↓
+MODE scoreboard
+    ↓
+ARTIFACT
+tb/env/fifo_scoreboard.sv
+    ↓
+EVIDENCE
+compile PASS + 正常/乱序注入 regression 报告
+    ↓
+GATE
+Human 审查映射、实现和证据后决定 approve/reject
+```
+
+缺少任一链接都不是闭环。常见缺口包括：
+
+- 有 REQ，没有对应 VF；
+- 有 PLAN，没有 executable TASK；
+- TASK 未指定 MODE 或 owned output；
+- 有 ARTIFACT，没有 EVIDENCE；
+- 有测试 PASS，但无法回溯到 REQ/VF；
+- 有 EVIDENCE，但没有经过对应 Human GATE。
+
+<a id="term-runtime"></a>
+
+### 5.11 Agent runtime 与模型
+
+runtime 指 Codex 或 Kimi Code 的 integration、Skill 目录和启动方式；模型是同一 runtime
+内部选择的推理模型。更换模型不等于切换 runtime。`.specify/integration.json` 是项目
+runtime 的唯一事实源，runtime switch 必须在稳定 review gate 执行。
+
+<a id="term-baseline"></a>
+
+### 5.12 Baseline、Change Control、Sign-off 与 Freeze
+
+- baseline：经评审、可追溯的起点；
+- change control：baseline 后变更必须有 CR、影响分析和证据；
+- sign-off audit：检查候选材料，不授予 sign-off；
+- freeze candidate：把 clean commit 和 artifacts 固定为 hash manifest；
+- Human freeze approval：独立权限决定，不由工具产生。
+
+### 5.13 Spec Kit、xverif 与 WavePeek
+
+- Spec Kit：agentic specification lifecycle，不是 simulator 或证据工具；
+- xverif：把一个已评审 request 委托给固定版本 native 工具并保存不可变证据；
+- WavePeek：对 VCD/FST 执行有限、可重放查询并记录 provenance；FSDB 默认禁用；
+- EDA simulator：产生 compile/simulation/regression 等动态证据，但不拥有 Stage policy。
+
+---
+
+<a id="mode-index"></a>
+
+## 6. Mode 与工具索引
+
+完整的 31 个模式（mode）、用途、典型场景和命令见
+[Agent Skill modes](../../../docs/skill_modes.md)。在 Agent 中也可以运行：
+
+```text
+$verif-harness help
+$verif-harness help <alias-or-mode>
+```
+
+### 6.1 结构与实现 mode
+
+| 短命令 | Canonical mode | 常见 Stage |
+| --- | --- | ---: |
+| `interface` | `add-interface` | 1 |
+| `package` | `add-shared-pkg` | 1 |
+| `uvc [name]` | `add-uvc-skeleton [name]` | 1 |
+| `harness` | `add-harness-layer` | 1 |
+| `env` | `add-env-layer` | 1 |
+| `build` | `finalize-filelist-and-make` | 1 |
+| `simulator` | `add-simulator-profile` | 1–4 |
+| `uvc-complete` | `complete-uvc` | 2 |
+| `scoreboard` | `complete-scoreboard` | 2 |
+| `refmodel` | `add-refmodel-bridge` | 2 |
+| `test` | `add-testcase` | 2–4 |
+| `coverage` | `add-coverage-skeleton` | 3 |
+| `assertion` | `add-assertion-skeleton` | 3 |
+
+### 6.2 执行、证据与治理 mode
+
+| 短命令 | Canonical mode | 常见 Stage |
+| --- | --- | ---: |
+| `regression` | `add-regression-runner` | 2–4 |
+| `triage` | `regression-triage` | 4 |
+| `ci` | `add-ci-hook` | 4 |
+| `performance` | `add-performance-gate` | 4–5 |
+| `coverage-audit` | `coverage-closure` | 3–5 |
+| `assertion-audit` | `assertion-closure` | 3–5 |
+| `trace` | `audit-traceability` | 2–5 |
+| `change` | `change-control` | baseline 后 |
+| `gate <stage>` | `stage-gate-review <stage>` | 0–5 |
+| `signoff <stage>` | `signoff-audit <stage>` | 5 |
+| `freeze` | `freeze-baseline` | 5 |
+| `release` | `oss-readiness` | public candidate |
+| `pattern [topic]` | `patterns [topic]` | 任意 |
+
+### 6.3 Workflow 与工具入口
+
+| 命令 | 作用 |
+| --- | --- |
+| `probe` | 检查 pinned Spec Kit runtime |
+| `bootstrap` | 初始化规格 infrastructure 和 integration |
+| `stage ...` | 启动一个 Stage lifecycle |
+| `status [run-id]` | 查看 workflow、worker 和 task 状态 |
+| `resume ...` | 只在状态允许时处理 gate/task recovery |
+| `recover ...` | 修复确认无 live worker 的 stale run |
+| `docs` | 刷新中文阅读镜像 |
+| `evidence ...` | 委托 xverif |
+| `waveform ...` | 委托 WavePeek |
+
+canonical mode 及输入合同分别位于 `skills/verif-harness/<mode>/INSTRUCTIONS.md`。
+不要仅凭 mode 名称猜测必需参数；通过 `help` 或当前 reviewed task contract 调用。
+
+---
+
+## 7. 最终判定原则
+
+1. `specs/` 是新项目唯一可编辑 requirement source。
+2. DUT RTL 始终是外部只读资产。
+3. Agent 生成内容只是 review candidate，不是批准语义。
+4. TASK 必须通过 MODE、ARTIFACT、EVIDENCE 和 validation postconditions 才能 DONE。
+5. Spec Kit command 或 workflow success 不是 simulation evidence。
+6. simulator/xverif/WavePeek PASS 不是 Human approval。
+7. workflow review gate、Stage gate、sign-off、freeze 和 release 是不同权限边界。
+8. 任何不确定状态先运行 `doctor` 或 `status`，不要猜测、重跑或跳过 gate。
+
+最短总结：
+
+```text
+REQ 定义目标
+VF 定义验证能力
+PLAN 设计路径
+TASK 划分执行单元
+MODE 受控实施
+ARTIFACT 承载结果
+EVIDENCE 证明结果
+GATE 决定是否继续
+```

@@ -240,12 +240,36 @@ def main() -> int:
     guide = ROOT / "skills/verif-harness/docs/user_guide.md"
     if guide.is_file():
         guide_text = guide.read_text(encoding="utf-8")
+        catalog = (ROOT / "docs/skill_modes.md").read_text(encoding="utf-8")
         for mode in modes:
-            if f"`{mode}" not in guide_text:
-                failures.append(f"skill user guide lacks mode: {mode}")
-        for label in ("**用途**", "**适用场景**", "**输入**", "**用法**", "**输出**"):
-            if guide_text.count(label) < len(modes):
-                failures.append(f"skill user guide lacks per-mode field: {label}")
+            if f"| `{mode}" not in catalog:
+                failures.append(f"skill mode catalog lacks mode: {mode}")
+        required_guide_sections = (
+            "## 1. 基本调用方式",
+            "## 2. Stage 0–5 完整操作代码",
+            "## 3. 每个 Stage 的步骤与细节",
+            "## 4. Spec Kit 治理流程",
+            "## 5. 关键术语与概念",
+            "## 6. Mode 与工具索引",
+        )
+        for heading in required_guide_sections:
+            if heading not in guide_text:
+                failures.append(f"skill user guide lacks section: {heading}")
+        for stage in range(6):
+            if f"### 2.{stage + 2} Stage {stage}" not in guide_text:
+                failures.append(f"skill user guide lacks Stage {stage} command section")
+            if f"--stage {stage}" not in guide_text:
+                failures.append(f"skill user guide lacks Stage {stage} command")
+        for term in (
+            "stage", "req", "vf", "plan", "task", "mode", "artifact",
+            "evidence", "gate",
+        ):
+            if f'<a id="term-{term}"></a>' not in guide_text:
+                failures.append(f"skill user guide lacks term anchor: {term}")
+            if f"](#term-{term})" not in guide_text:
+                failures.append(f"skill user guide lacks term link: {term}")
+        if "REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE" not in guide_text:
+            failures.append("skill user guide lacks complete traceability chain")
     for failure in failures:
         print(f"ERROR: {failure}")
     if failures:
