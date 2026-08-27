@@ -32,6 +32,9 @@ class CliAliasTest(unittest.TestCase):
         self.assertEqual(CLI.COMMAND_ALIASES["status"], ("spec-kit", "status"))
         self.assertEqual(CLI.COMMAND_ALIASES["resume"], ("spec-kit", "resume"))
         self.assertEqual(CLI.COMMAND_ALIASES["block"], ("spec-kit", "block"))
+        self.assertEqual(
+            CLI.COMMAND_ALIASES["revise-tasks"], ("spec-kit", "revise-tasks")
+        )
         self.assertEqual(CLI.COMMAND_ALIASES["recover"], ("spec-kit", "recover"))
         self.assertEqual(CLI.COMMAND_ALIASES["docs"], ("spec-kit", "docs-zh"))
         self.assertEqual(CLI.COMMAND_ALIASES["evidence"], ("xverif",))
@@ -103,6 +106,24 @@ class CliAliasTest(unittest.TestCase):
             guidance["next_action"],
             "resume abc12345 --verdict approve|reject",
         )
+
+    def test_status_for_execution_blocker_retries_without_fake_answer(self) -> None:
+        task_state = {
+            "status": "BLOCKED",
+            "current_task_id": "T001",
+            "tasks": [
+                {
+                    "task_id": "T001",
+                    "status": "BLOCKED",
+                    "blocker": {"kind": "execution", "question": "validation failed"},
+                }
+            ],
+        }
+        guidance = CLI.workflow_action_guidance(
+            "abc12345", {"status": "paused"}, task_state, worker_active=False
+        )
+        self.assertEqual(guidance["action_required"], "retry-task")
+        self.assertEqual(guidance["next_action"], "resume abc12345")
 
     def test_run_input_lookup_rejects_path_traversal(self) -> None:
         with self.assertRaisesRegex(CLI.RuntimeSelectionError, "invalid workflow run ID"):

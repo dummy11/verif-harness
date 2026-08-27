@@ -63,6 +63,42 @@ class TaskRunnerTest(unittest.TestCase):
         self.assertEqual(tasks[0].validate, "test -f out/one.txt; true")
         self.assertEqual(blockers, [])
 
+    def test_parser_rejects_prose_as_validation_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tasks.md"
+            source = task_text().replace(
+                "`test -f out/one.txt; true`",
+                "`summarize_validation_result 输出无未解决关键项`",
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(RUNNER.TaskRunnerError, "not available"):
+                RUNNER.parse_tasks(path)
+
+    def test_parser_rejects_semicolon_separated_output_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tasks.md"
+            source = task_text().replace(
+                "outputs: `out/one.txt`",
+                "outputs: `out/one.txt`; `out/extra.txt`",
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(RUNNER.TaskRunnerError, "use commas"):
+                RUNNER.parse_tasks(path)
+
+    def test_parser_accepts_comma_separated_output_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tasks.md"
+            source = task_text().replace(
+                "outputs: `out/one.txt`",
+                "outputs: `out/one.txt`, `out/extra.txt`",
+                1,
+            )
+            path.write_text(source, encoding="utf-8")
+            tasks, _ = RUNNER.parse_tasks(path)
+            self.assertEqual(tasks[0].outputs, ("out/one.txt", "out/extra.txt"))
+
     def test_open_blocker_prevents_task_review_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -216,6 +252,70 @@ class TaskRunnerTest(unittest.TestCase):
             )
             self.assertEqual(state["status"], "BLOCKED")
             self.assertEqual(state["tasks"][0]["blocker"]["kind"], "specification")
+
+    def test_reviewed_revision_rebinds_and_reconciles_blocked_task(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            tasks_path, run_dir = write_project(project, task_text())
+            state = RUNNER.initialize_state(project, run_dir, "abc12345", "codex")
+            state["status"] = "BLOCKED"
+            state["current_task_id"] = "T001"
+            state["tasks"][0]["status"] = "BLOCKED"
+            state["tasks"][0]["attempts"] = 1
+            state["tasks"][0]["blocker"] = {
+                "kind": "execution",
+                "question": "legacy validation exited 127",
+            }
+            RUNNER.atomic_write_json(RUNNER.state_path(run_dir), state)
+            tasks_path.write_text(
+                tasks_path.read_text(encoding="utf-8").replace(
+                    "test -f out/one.txt; true", "test -f out/one.txt", 1
+                ),
+                encoding="utf-8",
+            )
+            (project / "out").mkdir()
+            (project / "evidence").mkdir()
+            (project / "out/one.txt").write_text("ok", encoding="utf-8")
+            (project / "evidence/one.json").write_text("{}", encoding="utf-8")
+
+            result = RUNNER.approve_revised_contract(
+                project, run_dir, "abc12345", "修正 legacy 自然语言 validation"
+            )
+
+            revised = result["task_execution"]
+            self.assertEqual(revised["status"], "READY")
+            self.assertEqual(revised["tasks"][0]["status"], "DONE")
+            self.assertEqual(revised["tasks"][1]["status"], "READY")
+            self.assertIn("- [x] T001", tasks_path.read_text(encoding="utf-8"))
+            audit = json.loads(
+                (run_dir / RUNNER.TASK_REVISIONS_FILE).read_text(encoding="utf-8")
+            )
+            self.assertTrue(audit[0]["blocked_task_reconciled"])
+            review = json.loads(
+                (run_dir / RUNNER.TASK_REVIEW_FILE).read_text(encoding="utf-8")
+            )
+            self.assertEqual(review["review_kind"], "task-contract-revision")
+
+    def test_contract_revision_refuses_to_rewrite_completed_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            tasks_path, run_dir = write_project(project, task_text())
+            state = RUNNER.initialize_state(project, run_dir, "abc12345", "codex")
+            state["status"] = "BLOCKED"
+            state["current_task_id"] = "T002"
+            state["tasks"][0]["status"] = "DONE"
+            state["tasks"][1]["status"] = "BLOCKED"
+            RUNNER.atomic_write_json(RUNNER.state_path(run_dir), state)
+            tasks_path.write_text(
+                tasks_path.read_text(encoding="utf-8").replace(
+                    "test -f out/two.txt", "test -s out/two.txt", 1
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RUNNER.TaskRunnerError, "after tasks are DONE"):
+                RUNNER.approve_revised_contract(
+                    project, run_dir, "abc12345", "attempt unsafe rewrite"
+                )
 
     def test_validation_timeout_terminates_the_process_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

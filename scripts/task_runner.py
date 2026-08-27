@@ -8,6 +8,7 @@ import hashlib
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -19,6 +20,7 @@ from typing import Callable
 
 TASK_STATE_FILE = "verif-harness-tasks.json"
 TASK_REVIEW_FILE = "verif-harness-task-review.json"
+TASK_REVISIONS_FILE = "verif-harness-task-revisions.json"
 TASK_STATE_SCHEMA = 1
 TASK_TIMEOUT_SECONDS = 1800
 VALIDATION_TIMEOUT_SECONDS = 600
@@ -32,6 +34,16 @@ META_LINE = re.compile(r"^\s{2,}-\s+(.+?)\s*$")
 META_ITEM = re.compile(r"^([a-z]+):\s*(.*?)\s*$")
 ALLOWED_META = {"mode", "outputs", "evidence", "validate", "needs", "interaction"}
 BLOCK_KINDS = {"human", "authority", "specification", "execution"}
+SHELL_BUILTINS = {
+    ".", ":", "[", "break", "cd", "command", "continue", "eval", "exec",
+    "exit", "export", "false", "getopts", "hash", "pwd", "read", "readonly",
+    "return", "set", "shift", "test", "times", "trap", "true", "type", "ulimit",
+    "umask", "unset", "wait",
+}
+SHELL_KEYWORDS = {
+    "case", "do", "done", "elif", "else", "esac", "fi", "for", "if", "then",
+    "until", "while",
+}
 
 
 class TaskRunnerError(ValueError):
@@ -71,8 +83,8 @@ class TaskContract:
 
 
 def _csv(value: str) -> tuple[str, ...]:
-    value = value.strip().strip("`")
-    if value.lower() in {"", "none", "无"}:
+    value = value.strip()
+    if value.strip("`").lower() in {"", "none", "无"}:
         return ()
     items = []
     for item in value.split(","):
@@ -82,6 +94,60 @@ def _csv(value: str) -> tuple[str, ...]:
         if item:
             items.append(item)
     return tuple(items)
+
+
+def _comma_list(value: str, task_id: str, field: str) -> tuple[str, ...]:
+    """Parse compact list fields and reject ambiguous prose-style separators."""
+    if ";" in value:
+        raise TaskRunnerError(
+            f"task {task_id} {field} must use commas between items; semicolons "
+            "separate task metadata fields"
+        )
+    items = _csv(value)
+    for item in items:
+        if not item or "`" in item or "\n" in item or "\x00" in item:
+            raise TaskRunnerError(f"task {task_id} has malformed {field} item: {item!r}")
+        if re.fullmatch(r"\[[^]]+\]", item):
+            raise TaskRunnerError(f"task {task_id} {field} still contains a template placeholder")
+    return items
+
+
+def _validation_command(value: str, task_id: str) -> str:
+    """Reject prose/placeholders before review binds a task contract."""
+    command = value.strip().strip("`").strip()
+    if not command:
+        raise TaskRunnerError(f"task {task_id} validation must not be empty")
+    if "\n" in command or "\x00" in command:
+        raise TaskRunnerError(f"task {task_id} validation must be one shell command line")
+    if re.fullmatch(r"\[[^]]+\]", command):
+        raise TaskRunnerError(f"task {task_id} validation still contains a template placeholder")
+    syntax = subprocess.run(
+        ["/bin/sh", "-n", "-c", command],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if syntax.returncode != 0:
+        detail = syntax.stderr.strip() or "invalid shell syntax"
+        raise TaskRunnerError(f"task {task_id} validation is not valid /bin/sh syntax: {detail}")
+    try:
+        words = shlex.split(command, posix=True)
+    except ValueError as exc:
+        raise TaskRunnerError(f"task {task_id} validation cannot be parsed: {exc}") from exc
+    while words and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]):
+        words.pop(0)
+    if not words:
+        raise TaskRunnerError(f"task {task_id} validation has no executable command")
+    executable = words[0]
+    if executable not in SHELL_BUILTINS | SHELL_KEYWORDS and "/" not in executable:
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]+", executable) or shutil.which(executable) is None:
+            raise TaskRunnerError(
+                f"task {task_id} validation must start with an executable shell command; "
+                f"{executable!r} is not available"
+            )
+    return command
 
 
 def parse_tasks(path: Path) -> tuple[list[TaskContract], list[dict[str, str]]]:
@@ -146,18 +212,17 @@ def parse_tasks(path: Path) -> tuple[list[TaskContract], list[dict[str, str]]]:
             raise TaskRunnerError(
                 f"task {task_id} interaction must be 'none'; represent Human work as an OPEN B### blocker"
             )
-        outputs = _csv(metadata["outputs"])
-        evidence = _csv(metadata["evidence"])
+        outputs = _comma_list(metadata["outputs"], task_id, "outputs")
+        evidence = _comma_list(metadata["evidence"], task_id, "evidence")
+        needs = _comma_list(metadata.get("needs", "none"), task_id, "needs")
         if not outputs:
             raise TaskRunnerError(f"task {task_id} must declare at least one owned output")
         if not evidence:
             raise TaskRunnerError(f"task {task_id} must declare at least one evidence path")
         mode = metadata["mode"].strip().strip("`")
-        validation = metadata["validate"].strip().strip("`")
+        validation = _validation_command(metadata["validate"], task_id)
         if not mode:
             raise TaskRunnerError(f"task {task_id} mode must not be empty")
-        if not validation:
-            raise TaskRunnerError(f"task {task_id} validation must not be empty")
         tasks.append(
             TaskContract(
                 task_id=task_id,
@@ -168,7 +233,7 @@ def parse_tasks(path: Path) -> tuple[list[TaskContract], list[dict[str, str]]]:
                 outputs=outputs,
                 evidence=evidence,
                 validate=validation,
-                needs=_csv(metadata.get("needs", "none")),
+                needs=needs,
                 interaction=interaction,
                 line_number=index + 1,
             )
@@ -210,7 +275,7 @@ def resolve_tasks_path(project_root: Path) -> Path:
     return tasks_path
 
 
-def atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+def atomic_write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.")
     try:
@@ -547,6 +612,124 @@ def _validate(
     if return_code != 0:
         return f"validation exited with code {return_code}; see {log_path}"
     return None
+
+
+def approve_revised_contract(
+    project_root: Path, run_dir: Path, run_id: str, reason: str
+) -> dict[str, object]:
+    """Rebind a corrected contract for a blocked run with explicit audit provenance."""
+    if not reason.strip():
+        raise TaskRunnerError("task contract revision requires a review reason")
+    state = read_state(run_dir)
+    if state is None or state.get("run_id") != run_id:
+        raise TaskRunnerError(f"task state for run {run_id!r} does not exist")
+    if state.get("status") != "BLOCKED":
+        raise TaskRunnerError("task contract revision is allowed only while a task is BLOCKED")
+    if state.get("task_worker_pid") is not None:
+        raise TaskRunnerError("task worker is still active; stop and inspect it before revision")
+    old_entries = _task_entries(state)
+    completed = [str(item.get("task_id")) for item in old_entries if item.get("status") == "DONE"]
+    if completed:
+        raise TaskRunnerError(
+            "cannot revise a contract after tasks are DONE; start a new workflow to preserve "
+            f"review provenance: {', '.join(completed)}"
+        )
+
+    tasks_path, tasks = validate_document(project_root)
+    prechecked = [task.task_id for task in tasks if task.checked]
+    if prechecked:
+        raise TaskRunnerError(
+            "revised task contract contains pre-checked tasks: " + ", ".join(prechecked)
+        )
+    old_hash = state.get("task_contract_sha256")
+    new_hash = contract_fingerprint(tasks)
+    if old_hash == new_hash:
+        raise TaskRunnerError("task contract did not change; resume the blocked task instead")
+    revisions_path = run_dir / TASK_REVISIONS_FILE
+    try:
+        revisions = json.loads(revisions_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        revisions = []
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TaskRunnerError(f"cannot read task revision audit {revisions_path}: {exc}") from exc
+    if not isinstance(revisions, list):
+        raise TaskRunnerError(f"task revision audit is malformed: {revisions_path}")
+
+    old_by_id = {str(item.get("task_id")): item for item in old_entries}
+    entries: list[dict[str, object]] = []
+    for contract in tasks:
+        previous = old_by_id.get(contract.task_id, {})
+        entry = contract.as_dict()
+        entry.update(
+            {
+                "status": "READY",
+                "attempts": int(previous.get("attempts", 0)),
+                "blocker": None,
+                "answer": None,
+                "started_at": None,
+                "finished_at": None,
+                "pid": None,
+                "log": str(previous.get("log") or run_dir / f"task-{contract.task_id}.log"),
+            }
+        )
+        entries.append(entry)
+
+    blocked_task_id = state.get("current_task_id")
+    state.update(
+        {
+            "tasks_file": str(tasks_path),
+            "task_contract_sha256": new_hash,
+            "status": "READY",
+            "current_task_id": None,
+            "task_worker_pid": None,
+            "tasks": entries,
+            "updated_at": _utc_now(),
+        }
+    )
+
+    reconciled = False
+    reconcile_reason = "blocked task was removed from the revised contract"
+    current = next(
+        (item for item in entries if item.get("task_id") == blocked_task_id), None
+    )
+    if current is not None:
+        log_path = Path(str(current["log"]))
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        reconcile_reason = _validate(project_root, current, log_path) or ""
+        if not reconcile_reason:
+            _mark_checkbox(tasks_path, str(blocked_task_id))
+            current["status"] = "DONE"
+            current["finished_at"] = _utc_now()
+            reconciled = True
+            state["status"] = (
+                "DONE" if all(item.get("status") == "DONE" for item in entries) else "READY"
+            )
+            state["updated_at"] = current["finished_at"]
+
+    review_payload: dict[str, object] = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "tasks_file": str(tasks_path),
+        "task_contract_sha256": new_hash,
+        "reviewed_at": _utc_now(),
+        "review_kind": "task-contract-revision",
+        "review_reason": reason.strip(),
+    }
+    revision = {
+        "run_id": run_id,
+        "reviewed_at": review_payload["reviewed_at"],
+        "reason": reason.strip(),
+        "blocked_task_id": blocked_task_id,
+        "old_task_contract_sha256": old_hash,
+        "new_task_contract_sha256": new_hash,
+        "blocked_task_reconciled": reconciled,
+        "reconciliation_gap": reconcile_reason or None,
+    }
+    revisions.append(revision)
+    atomic_write_json(revisions_path, revisions)
+    atomic_write_json(run_dir / TASK_REVIEW_FILE, review_payload)
+    atomic_write_json(state_path(run_dir), state)
+    return {"revision": revision, "task_execution": state}
 
 
 def _mark_checkbox(tasks_path: Path, task_id: str) -> None:

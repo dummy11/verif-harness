@@ -35,6 +35,7 @@ $verif-harness stage --stage 0 --objective "建立 Stage 0 规格基线" # 内�
 $verif-harness status [run-id]                    # 内部：spec-kit status
 $verif-harness resume <run-id> --verdict approve # 每次只恢复当前 gate
 $verif-harness resume <run-id> --answer "..."    # 只恢复当前 BLOCKED task
+$verif-harness revise-tasks <run-id> --verdict approve --reason "..."
 $verif-harness recover <run-id> --confirm-stale  # 仅恢复确认已中断的 running run
 $verif-harness docs                               # 刷新中文阅读镜像
 $verif-harness evidence probe --tool xbit  # 内部：xverif probe
@@ -150,6 +151,11 @@ validation。Codex 以 `$verif-harness` 调用，Kimi Code 以
 正常路径不需要用户重复手动调用。缺少产物或 validation 失败时，task 保持
 incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声明的 mode，不只
 适用于 `init`；workflow control 和 Human authority 命令仍遵守各自独立边界。
+
+若旧 run 因已评审 task contract 本身有误而在 implementation 阶段阻塞，先修正
+`tasks.md`，再由 Human 使用 `revise-tasks ... --verdict approve --reason "..."`
+重新绑定合同。该命令只接受尚无 DONE task、暂停在 `review-implementation` 的 run，
+并保留旧/新 hash、理由和 reconciliation 结果；不能伪造原 `review-tasks` provenance。
 
 完整仓库中使用固定版本：
 

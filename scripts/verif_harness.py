@@ -44,6 +44,7 @@ COMMAND_ALIASES = {
     "status": ("spec-kit", "status"),
     "resume": ("spec-kit", "resume"),
     "block": ("spec-kit", "block"),
+    "revise-tasks": ("spec-kit", "revise-tasks"),
     "recover": ("spec-kit", "recover"),
     "docs": ("spec-kit", "docs-zh"),
     "evidence": ("xverif",),
@@ -672,6 +673,12 @@ def workflow_action_guidance(
             "next_action": f"recover {run_id} --confirm-stale",
         }
     if task_status == "BLOCKED":
+        if not task_runner.blocked_task_requires_answer(task_state or {}):
+            return {
+                "resume_allowed": True,
+                "action_required": "retry-task",
+                "next_action": f"resume {run_id}",
+            }
         return {
             "resume_allowed": True,
             "action_required": "answer-task-blocker",
@@ -818,6 +825,14 @@ def main() -> int:
     block.add_argument("--project-root", type=Path, default=Path.cwd())
     block.add_argument("--kind", choices=sorted(task_runner.BLOCK_KINDS), required=True)
     block.add_argument("--question", required=True)
+    revise_tasks = spec_subparsers.add_parser(
+        "revise-tasks",
+        help="approve and rebind a corrected task contract for a blocked run",
+    )
+    revise_tasks.add_argument("run_id")
+    revise_tasks.add_argument("--project-root", type=Path, default=Path.cwd())
+    revise_tasks.add_argument("--verdict", choices=("approve",), required=True)
+    revise_tasks.add_argument("--reason", required=True)
     docs_zh = spec_subparsers.add_parser(
         "docs-zh", help="refresh the non-executable Simplified Chinese .specify mirror"
     )
@@ -968,6 +983,38 @@ def main() -> int:
             except task_runner.TaskRunnerError as exc:
                 parser.error(str(exc))
             print(json.dumps(blocked, indent=2, sort_keys=True, ensure_ascii=False))
+            return 0
+        if args.spec_command == "revise-tasks":
+            try:
+                workflow_state = spec_kit_run_status(args.run_id, project_root)
+                gate = workflow_state.get("gate")
+                if (
+                    workflow_state.get("status") != "paused"
+                    or not isinstance(gate, dict)
+                    or gate.get("step_id") != "review-implementation"
+                ):
+                    parser.error(
+                        "task contract revision requires a run paused at "
+                        "review-implementation"
+                    )
+                revised = task_runner.approve_revised_contract(
+                    project_root,
+                    workflow_run_dir(project_root, args.run_id),
+                    args.run_id,
+                    args.reason,
+                )
+            except (RuntimeSelectionError, task_runner.TaskRunnerError) as exc:
+                parser.error(str(exc))
+            print(json.dumps(revised, indent=2, sort_keys=True, ensure_ascii=False))
+            task_execution = revised.get("task_execution")
+            if isinstance(task_execution, dict) and task_execution.get("status") == "DONE":
+                print(
+                    f"NEXT: status {args.run_id}; review implementation, then resume "
+                    f"{args.run_id} --verdict approve|reject",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"NEXT: resume {args.run_id}", file=sys.stderr)
             return 0
         if args.spec_command == "recover":
             try:

@@ -89,6 +89,9 @@ Workflow and tool aliases are also supported:
 - `resume <run-id> --answer <text>` → resume only the current `BLOCKED` task
 - `block <run-id> <task-id> --kind <...> --question <text>` → persist a real
   task-level blocker from the running Agent
+- `revise-tasks <run-id> --verdict approve --reason <text>` → explicitly review
+  and rebind a corrected contract for an implementation-blocked run with no
+  completed tasks
 - `recover <run-id> --confirm-stale` → internal `spec-kit recover` for a
   confirmed externally interrupted run only
 - `docs` → internal `spec-kit docs-zh`
@@ -277,6 +280,12 @@ Executable `T###` items use the compact task contract and declare
 `interaction: none`. Represent Human answers, new authority, or unresolved
 semantics as `OPEN B###` blockers. Refuse `review-tasks` and execution approval
 until all blockers are resolved.
+
+Within each compact contract, separate multiple `outputs`, `evidence`, and
+`needs` values with commas, never semicolons. `validate` must be a real,
+noninteractive `/bin/sh` command rather than prose, an Agent instruction, or a
+placeholder. Task review must fail before binding the contract when its path
+lists, shell syntax, or initial executable are invalid.
 
 ### `doctor`
 

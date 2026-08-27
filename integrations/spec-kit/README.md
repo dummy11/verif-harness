@@ -113,6 +113,9 @@ verif-harness mode、owned outputs、evidence、validation、dependencies，且
 `review-tasks` 批准时 wrapper 记录不含 checkbox 的 contract SHA-256；analyze 或其他
 步骤若改动 mode/outputs/evidence/validation/dependencies，execution authorization
 会失败并要求重新评审。
+同时会机械校验：多值 `outputs`/`evidence`/`needs` 只能使用英文逗号，`validate`
+必须具有合法 `/bin/sh` 语法且从当前环境可识别的命令开始。自然语言 validation 和
+分号分隔的路径不能进入执行阶段。
 
 execution gate 批准后，wrapper 的独立 task runner 持久化
 `READY/RUNNING/DONE/BLOCKED`，每次只把 `current_task_id` 分发给 Codex 的
@@ -135,6 +138,9 @@ push、waiver、Stage approval、freeze authority 或规格歧义时，Agent 必
 `block <run-id> <task-id> --kind ... --question ...`。wrapper 观察到持久化
 `BLOCKED` 后会终止当前子 Agent；`status` 显示问题，取得回答后用
 `resume <run-id> --answer "..."` 只重试该 task。
+若旧 run 的合同本身错误且尚无 DONE task，可在修正并人工评审 `tasks.md` 后使用
+`revise-tasks <run-id> --verdict approve --reason "..."` 重新绑定；工具保存旧/新
+hash 和 reconciliation 记录，不能改写已完成历史。
 
 每个 gate 会让 run 进入 paused 状态。wrapper 对 workflow 子进程关闭交互 stdin，
 因此即使 Agent 使用 PTY，也不会用一次数字输入穿过当前 gate 后在下一 gate 因 EOF

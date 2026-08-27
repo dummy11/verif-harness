@@ -191,10 +191,25 @@ contract、owned output/evidence path、validation command 和 Human gate。只�
 不会因 Agent 进程返回 0 而假装完成。
 
 让 `converge` 记录 dispatch deviation，并保留原 run ID、task ID、已有产物和日志。
-取得问题对应的回答/authority，或修正 task/执行环境后，用
-`resume <run-id> --answer "..."` 重试同一个 task；重试
-必须留痕且不得覆盖先前 evidence。该规则适用于 `init`、所有生成模式、xverif、
-WavePeek、回归/审计/closure 模式，不允许把重复手动调用当作正常流程。
+若合同正确，只是缺少 Human 回答或执行环境已修复，用
+`resume <run-id> --answer "..."` 重试同一个 task。
+
+若根因是旧版生成的 task contract 本身错误，例如 `validate` 是自然语言或
+`outputs` 用分号分隔，在没有任何 DONE task 且 workflow 暂停于
+`review-implementation` 时：
+
+```text
+# 先修正 tasks.md，并人工评审 diff
+$verif-harness revise-tasks <run-id> --verdict approve \
+  --reason "修正 validation 命令和 outputs 分隔符"
+$verif-harness resume <run-id>
+```
+
+该修订会保存旧/新 contract hash、评审理由和 postcondition reconciliation；当前
+阻塞 task 的新 postconditions 已满足时直接记为 DONE，避免重复副作用，否则只重试
+该 task。已有 DONE task 时命令拒绝修改历史，必须启动新 workflow。重试必须留痕且
+不得覆盖先前 evidence。该规则适用于 `init`、所有生成模式、xverif、WavePeek、
+回归/审计/closure 模式，不允许把重复手动调用当作正常流程。
 
 ## xverif probe PASS，但执行失败
 

@@ -145,6 +145,9 @@ block question, and resume never replays `DONE` tasks.
 - Keep executable tasks `interaction: none`. Record Human answers, new authority,
   or unresolved semantics as `OPEN B###`; do not approve task review while any
   such blocker remains.
+- Separate multiple `outputs`, `evidence`, and `needs` values with commas.
+  Require `validate` to be a real noninteractive `/bin/sh` command, never a
+  natural-language completion condition, Agent instruction, or placeholder.
 - Bind `review-tasks` approval to the compact contract hash. Refuse execution
   authorization if analyze or any later action changes task semantics; checkbox
   changes made by the runner do not change that hash.

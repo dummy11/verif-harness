@@ -196,7 +196,8 @@ setup 已把 CLI 启动目录和 runtime marker 固定到所选 workspace；正�
 重复填写 `--project-root .` 或 `--integration`。只有跨项目自动化、恢复流程或 marker
 歧义时才显式覆盖。
 
-常用 workflow 命令使用短别名：`probe/bootstrap/stage/status/resume/recover/docs`
+常用 workflow 命令使用短别名：
+`probe/bootstrap/stage/status/resume/revise-tasks/recover/docs`
 内部路由到 Spec Kit，旧的 `workflow-status/workflow-resume/workflow-recover`
 继续兼容。`evidence` 路由到 xverif，`waveform` 路由到 WavePeek。其他常用模式也有
 `test/coverage/regression/trace/gate/signoff/freeze` 等一词别名；运行

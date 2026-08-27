@@ -136,11 +136,11 @@ steps:
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "使用简体中文创建精简、可人工阅读的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。严格采用一行任务加紧邻紧凑元数据的模板。T### 只表示 interaction: none 的可执行工作；需要人工回答、额外权限或规格决策的内容必须写成 OPEN B### 阻塞项，不得伪装成 task。每个 task 只包含适用的追踪 IDs、mode、owned outputs、evidence、validation 和 dependencies。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 postconditions。"
+      args: "使用简体中文创建精简、可人工阅读的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。严格采用一行任务加紧邻紧凑元数据的模板。T### 只表示 interaction: none 的可执行工作；需要人工回答、额外权限或规格决策的内容必须写成 OPEN B### 阻塞项，不得伪装成 task。每个 task 只包含适用的追踪 IDs、mode、owned outputs、evidence、validation 和 dependencies。outputs/evidence/needs 多项只用英文逗号分隔；validate 必须填写可由 /bin/sh 非交互执行的真实命令，禁止自然语言完成条件、Agent 指令和占位符。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 postconditions。"
 
   - id: review-tasks
     type: gate
-    message: "评审精简 task contract、traceability、owned outputs、validation 和 evidence。存在 OPEN B### 或 interaction 不为 none 时不得批准；本 gate 不授权执行。"
+    message: "评审精简 task contract、traceability、owned outputs、validation 和 evidence。outputs/evidence/needs 必须用英文逗号分隔；validation 必须是可由 /bin/sh 非交互执行的真实命令而非自然语言。存在 OPEN B###、无效合同或 interaction 不为 none 时不得批准；本 gate 不授权执行。"
     options: [approve, reject]
     on_reject: abort
     verdict_input: review_tasks_verdict

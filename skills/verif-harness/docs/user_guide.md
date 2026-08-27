@@ -756,6 +756,12 @@ establish-constitution
   - validate: `make compile`; needs: `T008`; interaction: `none`
 ```
 
+多个 `outputs`、`evidence` 或 `needs` 必须用英文逗号分隔，不能用分号。`validate`
+不是完成条件的自然语言描述，而是 runner 在项目根目录通过 `/bin/sh` 非交互执行的
+真实命令。`review-tasks` 批准时会先检查路径列表、shell 语法和首个可执行命令；例如
+“analyze 输出无关键项”会被当场拒绝，而不会等到 implementation 阶段以退出码 127
+阻塞。
+
 runner 每次只执行 `current_task_id`，状态为：
 
 ```text
@@ -781,12 +787,17 @@ READY -> RUNNING -> DONE
 | `starting/running`，worker live | false | 等待并轮询 `status` |
 | `paused`，review gate | true | 评审工件后提交一个 verdict |
 | task `BLOCKED` | true | 取得回答后用 `--answer` 恢复当前 task |
+| task `BLOCKED`，且已评审合同有误 | false | 修正并人工评审后用 `revise-tasks --verdict approve --reason ...` 重新绑定 |
 | `running`，无 live worker | false | 检查日志，确认 stale 后执行 `recover` |
 | recovered `failed` | true | `resume <run-id>` 重试当前 step |
 | completed | false | 进入独立 Stage gate 或下一 Stage |
 
 用户命令不能绕过状态前置条件。尤其不能在 live worker 正在运行时因用户已经输入
 `approve` 就再次调用 resume。
+
+`revise-tasks` 是旧 run 的受控修订通道，不会回写或伪造原 `review-tasks` gate。
+它只允许尚无 DONE task、workflow 已暂停在 `review-implementation`、当前 task 已
+BLOCKED 的情形，并记录旧/新 contract hash、Human 理由和 reconciliation 结果。
 
 ### 4.8 追踪治理链
 

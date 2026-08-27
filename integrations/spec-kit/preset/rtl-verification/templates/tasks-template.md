@@ -34,6 +34,13 @@ description: "精简、可阻塞恢复的 RTL 验证 Stage 任务清单"
 
 每个任务只保留一行摘要和三行执行合同。字段名保持英文以便 runner 确定性解析：
 
+- `outputs`、`evidence` 和 `needs` 有多项时只用英文逗号分隔；分号只分隔 metadata
+  字段，不能分隔路径。
+- `validate` 必须是可由 `/bin/sh` 非交互执行的真实命令，例如 `make compile` 或
+  `python3 scripts/check.py`；不能填写自然语言完成条件、Agent 指令或占位符。
+- `review-tasks` 批准前，runner 会检查路径列表、shell 语法和首个可执行命令；检查
+  不通过时必须修改 task contract 后重新评审。
+
 ```text
 - [ ] T### [VF-###] 生成接口和对应结构
   - mode: `interface`
@@ -46,12 +53,12 @@ description: "精简、可阻塞恢复的 RTL 验证 Stage 任务清单"
 - [ ] T001 [VF-001] [清晰动作与交付结果]
   - mode: `[verif-harness mode and reviewed arguments]`
   - outputs: `[exact owned path]`; evidence: `[exact evidence path]`
-  - validate: `[reviewed noninteractive command]`; needs: `none`; interaction: `none`
+  - validate: `[real noninteractive /bin/sh command]`; needs: `none`; interaction: `none`
 
 - [ ] T002 [P] [VF-002] [清晰动作与交付结果]
   - mode: `[verif-harness mode and reviewed arguments]`
   - outputs: `[exact owned path]`; evidence: `[exact evidence path]`
-  - validate: `[reviewed noninteractive command]`; needs: `T001`; interaction: `none`
+  - validate: `[real noninteractive /bin/sh command]`; needs: `T001`; interaction: `none`
 
 ### Stage 0 规则
 
