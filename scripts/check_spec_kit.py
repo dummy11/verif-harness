@@ -100,6 +100,8 @@ steps:
 def validate_runtime_bootstrap(runtime: str, root: Path) -> str | None:
     project = root / runtime
     project.mkdir()
+    setup_marker = project / "setup-created.txt"
+    setup_marker.write_text("preserve setup output\n", encoding="utf-8")
     bootstrapped = subprocess.run(
         [
             sys.executable, str(CLI), "spec-kit", "bootstrap",
@@ -110,6 +112,8 @@ def validate_runtime_bootstrap(runtime: str, root: Path) -> str | None:
     )
     if bootstrapped.returncode != 0:
         return bootstrapped.stdout + bootstrapped.stderr
+    if setup_marker.read_text(encoding="utf-8") != "preserve setup output\n":
+        return f"{runtime} bootstrap modified an existing setup-created file"
     state = json.loads((project / ".specify/integration.json").read_text(encoding="utf-8"))
     if state.get("default_integration") != runtime:
         return f"{runtime} bootstrap recorded the wrong default integration"

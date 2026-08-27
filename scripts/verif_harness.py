@@ -649,6 +649,60 @@ def resume_verdict_input(
     return f"{input_name}={verdict}"
 
 
+def workflow_action_guidance(
+    run_id: str,
+    workflow_state: dict[str, object],
+    task_state: dict[str, object] | None,
+    *,
+    worker_active: bool,
+) -> dict[str, object]:
+    """Describe the only safe next workflow action for Agent launchers."""
+    status = workflow_state.get("status")
+    task_status = task_state.get("status") if task_state is not None else None
+    if status in {"starting", "running"} or task_status == "RUNNING":
+        if worker_active:
+            return {
+                "resume_allowed": False,
+                "action_required": "wait-for-worker",
+                "next_action": f"status {run_id}",
+            }
+        return {
+            "resume_allowed": False,
+            "action_required": "inspect-stale-worker",
+            "next_action": f"recover {run_id} --confirm-stale",
+        }
+    if task_status == "BLOCKED":
+        return {
+            "resume_allowed": True,
+            "action_required": "answer-task-blocker",
+            "next_action": f'resume {run_id} --answer "<answer>"',
+        }
+    if task_status == "READY":
+        return {
+            "resume_allowed": True,
+            "action_required": "run-reviewed-task",
+            "next_action": f"resume {run_id}",
+        }
+    gate = workflow_state.get("gate")
+    if status == "paused" and isinstance(gate, dict):
+        return {
+            "resume_allowed": True,
+            "action_required": "review-gate",
+            "next_action": f"resume {run_id} --verdict approve|reject",
+        }
+    if status == "failed":
+        return {
+            "resume_allowed": True,
+            "action_required": "resume-recovered-run",
+            "next_action": f"resume {run_id}",
+        }
+    return {
+        "resume_allowed": False,
+        "action_required": "inspect-status",
+        "next_action": f"status {run_id}",
+    }
+
+
 def generate(dut: str, output: Path, templates: Path, dry_run: bool) -> list[Path]:
     if not IDENTIFIER.fullmatch(dut):
         raise SystemExit("ERROR: DUT name must match [a-z][a-z0-9_]*")
@@ -860,11 +914,13 @@ def main() -> int:
                 parser.error(str(exc))
             init_arguments = [
                 "init", "--here", "--integration", runtime,
-                "--integration-options=--skills", "--script", "py",
+                "--integration-options=--skills", "--script", "py", "--force",
             ]
             if args.ignore_agent_tools:
                 init_arguments.append("--ignore-agent-tools")
-            initialized = run_spec_kit(init_arguments, project_root)
+            initialized = run_spec_kit(
+                init_arguments, project_root, noninteractive=True
+            )
             if initialized != 0:
                 return initialized
             installed = run_spec_kit(
@@ -1072,15 +1128,24 @@ def main() -> int:
                     metadata = worker_metadata(project_root, args.run_id)
                     if metadata is not None and not state_path.exists():
                         active = active_workflow_processes(project_root, args.run_id)
+                        starting_state: dict[str, object] = {
+                            "run_id": args.run_id,
+                            "status": "starting" if active else "worker-exited",
+                            "worker_active": bool(active),
+                            "worker_pid": metadata.get("pid"),
+                            "log": metadata.get("log"),
+                        }
+                        starting_state.update(
+                            workflow_action_guidance(
+                                args.run_id,
+                                starting_state,
+                                None,
+                                worker_active=bool(active),
+                            )
+                        )
                         print(
                             json.dumps(
-                                {
-                                    "run_id": args.run_id,
-                                    "status": "starting" if active else "worker-exited",
-                                    "worker_active": bool(active),
-                                    "worker_pid": metadata.get("pid"),
-                                    "log": metadata.get("log"),
-                                },
+                                starting_state,
                                 indent=2,
                                 sort_keys=True,
                             )
@@ -1094,6 +1159,7 @@ def main() -> int:
                     task_state = task_runner.read_state(
                         workflow_run_dir(project_root, args.run_id)
                     )
+                    active = active_workflow_processes(project_root, args.run_id)
                     if task_state is not None:
                         workflow_state["task_execution"] = task_state
                         if task_state.get("status") == "BLOCKED":
@@ -1102,6 +1168,15 @@ def main() -> int:
                             workflow_state["effective_status"] = "task-running"
                         elif task_state.get("status") == "DONE":
                             workflow_state["effective_status"] = "implementation-review"
+                    workflow_state["worker_active"] = bool(active)
+                    workflow_state.update(
+                        workflow_action_guidance(
+                            args.run_id,
+                            workflow_state,
+                            task_state,
+                            worker_active=bool(active),
+                        )
+                    )
                     print(
                         json.dumps(
                             workflow_state, indent=2, sort_keys=True, ensure_ascii=False

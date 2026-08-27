@@ -20,7 +20,10 @@ Spec Kit owns the editable specification lifecycle.
 - `bootstrap`: resolve `auto|codex|kimi`, initialize the matching Spec Kit
   integration, then add the local `verif-harness-rtl` preset. Treat
   `.specify/integration.json` as the runtime source of truth. Refuse existing
-  `.specify/`; never force-merge it.
+  `.specify/`; never force-merge it. Invoke the wrapper without `--force`, even
+  when setup has already populated the initially empty workspace. After the
+  refusal check, the wrapper handles Spec Kit's non-empty-directory bypass
+  internally and noninteractively.
 - `stage`: run the local `verif-stage-lifecycle.yml` for exactly one Stage 0-5
   objective. The workflow has document review gates and an execution gate but
   does not approve a Stage. Project-review Markdown generated under `specs/`
@@ -37,7 +40,11 @@ Spec Kit owns the editable specification lifecycle.
   its current review gate. A reviewer must inspect the named artifact before
   choosing the verdict; one verdict never carries into the next gate, and
   resuming does not approve the Stage. When the task runner is `BLOCKED`, use
-  `--answer` instead; it retries only `current_task_id`.
+  `--answer` instead; it retries only `current_task_id`. Always inspect
+  `status <run-id>` first. Its `resume_allowed` result is authoritative over
+  the requested command: when false, do not call resume. A live `running`
+  worker requires `action_required: wait-for-worker` and status polling, not a
+  verdict, even if the user already supplied one.
 - `block`: while one task is `RUNNING`, persist its concrete Human, authority,
   specification, or execution question. The runner observes the state and
   terminates that task's Agent process instead of waiting for terminal input.

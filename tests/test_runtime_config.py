@@ -83,10 +83,12 @@ class RuntimeConfigTest(unittest.TestCase):
             CLI.resolve_runtime(self.root)
 
     def test_kimi_bootstrap_dispatches_selected_integration(self) -> None:
-        calls: list[list[str]] = []
+        calls: list[tuple[list[str], bool]] = []
 
-        def fake_spec_kit(arguments: list[str], project_root: Path) -> int:
-            calls.append(arguments)
+        def fake_spec_kit(
+            arguments: list[str], project_root: Path, *, noninteractive: bool = False
+        ) -> int:
+            calls.append((arguments, noninteractive))
             if arguments[0] == "init":
                 self.write_state("kimi")
             return 0
@@ -100,19 +102,23 @@ class RuntimeConfigTest(unittest.TestCase):
             with mock.patch.object(sys, "argv", arguments):
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(CLI.main(), 0)
-        self.assertIn("kimi", calls[0])
-        self.assertIn("--ignore-agent-tools", calls[0])
-        self.assertEqual(calls[1][:3], ["preset", "add", "--dev"])
+        self.assertIn("kimi", calls[0][0])
+        self.assertIn("--force", calls[0][0])
+        self.assertIn("--ignore-agent-tools", calls[0][0])
+        self.assertTrue(calls[0][1])
+        self.assertEqual(calls[1][0][:3], ["preset", "add", "--dev"])
         self.assertEqual(
-            calls[2], ["preset", "add", "constitution-sync", "--priority", "6"]
+            calls[2][0], ["preset", "add", "constitution-sync", "--priority", "6"]
         )
 
     def test_bootstrap_inherits_workspace_and_unique_runtime_marker(self) -> None:
-        calls: list[tuple[list[str], Path]] = []
+        calls: list[tuple[list[str], Path, bool]] = []
         (self.root / ".kimi-code").mkdir()
 
-        def fake_spec_kit(arguments: list[str], project_root: Path) -> int:
-            calls.append((arguments, project_root))
+        def fake_spec_kit(
+            arguments: list[str], project_root: Path, *, noninteractive: bool = False
+        ) -> int:
+            calls.append((arguments, project_root, noninteractive))
             if arguments[0] == "init":
                 self.write_state("kimi")
             return 0
@@ -130,7 +136,32 @@ class RuntimeConfigTest(unittest.TestCase):
 
         self.assertEqual(calls[0][1], self.root.resolve())
         self.assertIn("kimi", calls[0][0])
+        self.assertIn("--force", calls[0][0])
         self.assertIn("--ignore-agent-tools", calls[0][0])
+        self.assertTrue(calls[0][2])
+
+    def test_bootstrap_does_not_expose_force_option(self) -> None:
+        arguments = [
+            "verif_harness.py", "spec-kit", "bootstrap",
+            "--project-root", str(self.root), "--integration", "kimi", "--force",
+        ]
+        with mock.patch.object(sys, "argv", arguments):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, "2"):
+                    CLI.main()
+
+    def test_bootstrap_refuses_existing_specify_before_upstream_call(self) -> None:
+        self.write_state("kimi")
+        arguments = [
+            "verif_harness.py", "spec-kit", "bootstrap",
+            "--project-root", str(self.root), "--integration", "kimi",
+        ]
+        with mock.patch.object(CLI, "run_spec_kit") as run_spec_kit:
+            with mock.patch.object(sys, "argv", arguments):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaisesRegex(SystemExit, "2"):
+                        CLI.main()
+        run_spec_kit.assert_not_called()
 
     def test_runtime_switch_revalidates_recorded_state(self) -> None:
         self.write_state("codex")

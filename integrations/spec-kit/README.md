@@ -71,12 +71,22 @@ run ID、PID 和 `.specify/workflows/runs/<run-id>/verif-harness-worker.log`。A
 这两个命令，也不要在 worker 存活时重复启动同一 Stage。底层 Python wrapper 默认仍
 以前台方式运行；自动化需要后台行为时可显式传 `--detach`。
 
+`status <run-id>` 同时返回 `worker_active`、`resume_allowed`、`action_required` 和
+`next_action`。这些字段是下一动作的机器可读前置条件：只要 run 仍为 `running` 且
+worker 存活，`resume_allowed` 就是 false，Agent 必须等待并轮询，不能因为用户已经写了
+`--verdict` 就继续调用 resume。只有 paused review gate 才接受 verdict。
+
 `bootstrap --integration auto|codex|kimi` 解析 Codex 或 Kimi Code runtime，
 初始化对应 integration，并安装本目录的本地 RTL verification preset。`auto`
 只在项目中存在唯一 runtime marker 时成功；歧义或没有 marker 时要求显式选择。
 Spec Kit 生成的 `.specify/integration.json` 是 runtime 唯一事实源。bootstrap
 拒绝覆盖已有 `.specify/`；已有项目应通过受管 runtime switch 或人工审阅后单独
 添加 preset，避免覆盖已有 constitution 或命令层。
+
+即使传给 setup 的 workspace 最初为空，setup 安装 Skill、MCP 等资产后，bootstrap
+看到的目录也会是非空的。仍应直接运行 `$verif-harness bootstrap`，不要追加
+`--force`。wrapper 会先确认 `.specify/` 不存在，再在内部以非交互方式跳过上游
+Spec Kit 的非空目录确认；已有 `.specify/` 的项目仍会被硬拒绝。
 
 工作流位于 `workflows/verif-stage-lifecycle.yml`，只包含 Spec Kit command、
 Stage 0 constitution conditional 和 review gate，不包含 shell step。preset 位于

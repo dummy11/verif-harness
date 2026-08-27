@@ -114,6 +114,12 @@ missing task instead of bypassing the workflow. After `doctor`, recommend the
 next mode but do not perform a write mode automatically. Stage state becomes
 ambiguous after the M1.1 scaffold and requires human judgment.
 
+Invoke bootstrap without a user-facing `--force`, including after setup has
+populated an initially empty workspace. The wrapper first refuses any existing
+`.specify/`, then uses the pinned Spec Kit force mode internally only to avoid
+its non-empty-directory confirmation. Never suggest retrying bootstrap with
+`--force`, and never force-merge an initialized Spec Kit project.
+
 If the requested state is partial or ambiguous, stop before writing and report
 the conflicting evidence.
 
@@ -160,6 +166,16 @@ outer task was killed while state still says `running`, inspect the recorded
 log and process state first. Only after confirming that no worker remains may
 the user authorize `recover <run-id> --confirm-stale`; then resume the
 same run so its current step is retried. Never recover a live process.
+
+Workflow state preconditions override the requested command. Before every
+`resume`, read `status <run-id>` and obey its machine-readable guidance. If it
+reports `resume_allowed: false`, do not invoke `resume`, even when the user's
+literal request included a verdict. In particular, `running` with
+`worker_active: true` requires waiting and polling the returned `next_action`;
+it is not a review gate. Submit a verdict only for `paused` plus
+`action_required: review-gate`, after reviewing the named artifact. Report the
+current state and safe next action instead of deliberately running a command
+whose precondition is false.
 
 After `authorize-execution`, use the wrapper's persistent task runner rather
 than `speckit.implement`. It executes only `current_task_id`, persists

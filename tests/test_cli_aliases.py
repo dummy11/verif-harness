@@ -82,6 +82,28 @@ class CliAliasTest(unittest.TestCase):
         with self.assertRaisesRegex(CLI.RuntimeSelectionError, "predate"):
             CLI.resume_verdict_input(payload, "approve", set())
 
+    def test_status_for_live_running_worker_forbids_resume(self) -> None:
+        guidance = CLI.workflow_action_guidance(
+            "abc12345", {"status": "running"}, None, worker_active=True
+        )
+        self.assertFalse(guidance["resume_allowed"])
+        self.assertEqual(guidance["action_required"], "wait-for-worker")
+        self.assertEqual(guidance["next_action"], "status abc12345")
+
+    def test_status_for_paused_gate_allows_one_verdict(self) -> None:
+        guidance = CLI.workflow_action_guidance(
+            "abc12345",
+            {"status": "paused", "gate": {"step_id": "review-spec"}},
+            None,
+            worker_active=False,
+        )
+        self.assertTrue(guidance["resume_allowed"])
+        self.assertEqual(guidance["action_required"], "review-gate")
+        self.assertEqual(
+            guidance["next_action"],
+            "resume abc12345 --verdict approve|reject",
+        )
+
     def test_run_input_lookup_rejects_path_traversal(self) -> None:
         with self.assertRaisesRegex(CLI.RuntimeSelectionError, "invalid workflow run ID"):
             CLI.spec_kit_run_inputs("../escape", Path("/tmp/project"))
