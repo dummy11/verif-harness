@@ -4,10 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
+import uuid
 from pathlib import Path
 
 
@@ -30,6 +35,7 @@ COMMAND_ALIASES = {
     "stage": ("spec-kit", "stage"),
     "workflow-status": ("spec-kit", "status"),
     "workflow-resume": ("spec-kit", "resume"),
+    "workflow-recover": ("spec-kit", "recover"),
     "evidence": ("xverif",),
     "waveform": ("wavepeek",),
 }
@@ -51,9 +57,16 @@ GATE_VERDICT_INPUTS = {
     "review-spec": "review_spec_verdict",
     "review-clarification": "review_clarification_verdict",
     "review-plan": "review_plan_verdict",
+    "review-checklist": "review_checklist_verdict",
+    "review-tasks": "review_tasks_verdict",
     "authorize-execution": "authorize_execution_verdict",
+    "review-implementation": "review_implementation_verdict",
     "review-convergence": "review_convergence_verdict",
 }
+AGENT_LAUNCH_ENV = "VERIF_HARNESS_AGENT_CLI"
+WORKER_METADATA = "verif-harness-worker.json"
+WORKER_LOG = "verif-harness-worker.log"
+STALE_RUN_MIN_AGE_SECONDS = 30
 
 
 class RuntimeSelectionError(ValueError):
@@ -222,13 +235,273 @@ def spec_kit_run_status(run_id: str, project_root: Path) -> dict[str, object]:
     return payload
 
 
+def workflow_run_dir(project_root: Path, run_id: str) -> Path:
+    """Return one workflow run directory after rejecting path traversal."""
+    if not WORKFLOW_RUN_ID.fullmatch(run_id):
+        raise RuntimeSelectionError(f"invalid workflow run ID {run_id!r}")
+    return project_root / ".specify/workflows/runs" / run_id
+
+
+def atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    """Write JSON atomically so status readers never observe partial metadata."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def utc_now() -> str:
+    """Return one stable UTC timestamp for worker and recovery evidence."""
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def process_is_running(pid: object) -> bool:
+    """Best-effort check that a non-zombie process still owns *pid*."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        return True
+    if os.name != "posix":
+        return True
+    inspected = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    status = inspected.stdout.strip()
+    return inspected.returncode == 0 and bool(status) and not status.startswith("Z")
+
+
+def matching_workflow_processes(run_id: str) -> list[int]:
+    """Find visible stage/resume processes associated with one workflow run."""
+    if not WORKFLOW_RUN_ID.fullmatch(run_id) or os.name != "posix":
+        return []
+    inspected = subprocess.run(
+        ["ps", "eww", "-axo", "pid=,command="],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    if inspected.returncode != 0:
+        inspected = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    matches: list[int] = []
+    for line in inspected.stdout.splitlines():
+        fields = line.strip().split(maxsplit=1)
+        if len(fields) != 2 or not fields[0].isdigit():
+            continue
+        pid, command = int(fields[0]), fields[1]
+        if pid == os.getpid():
+            continue
+        has_run_id = (
+            f"SPECKIT_WORKFLOW_RUN_ID={run_id}" in command
+            or re.search(rf"(?:resume|status)\s+{re.escape(run_id)}(?:\s|$)", command)
+            is not None
+        )
+        is_workflow = "verif_harness.py" in command or "specify_cli" in command
+        if has_run_id and is_workflow:
+            matches.append(pid)
+    return matches
+
+
+def worker_metadata(project_root: Path, run_id: str) -> dict[str, object] | None:
+    """Read optional detached-worker metadata for one run."""
+    path = workflow_run_dir(project_root, run_id) / WORKER_METADATA
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeSelectionError(
+            f"cannot read worker metadata for workflow run {run_id!r}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeSelectionError(
+            f"worker metadata for workflow run {run_id!r} must be a JSON object"
+        )
+    return payload
+
+
+def active_workflow_processes(project_root: Path, run_id: str) -> list[int]:
+    """Return tracked or discoverable processes that may still mutate a run."""
+    active = set(matching_workflow_processes(run_id))
+    metadata = worker_metadata(project_root, run_id)
+    if metadata is not None and process_is_running(metadata.get("pid")):
+        active.add(int(metadata["pid"]))
+    return sorted(active)
+
+
+def should_detach(args: argparse.Namespace) -> bool:
+    """Detach Agent-launched stage/resume commands unless foreground is explicit."""
+    return bool(
+        getattr(args, "detach", False)
+        or (
+            os.environ.get(AGENT_LAUNCH_ENV) == "1"
+            and not getattr(args, "foreground", False)
+        )
+    )
+
+
+def reserve_workflow_run(project_root: Path) -> tuple[str, Path]:
+    """Reserve a collision-free run directory before launching a worker."""
+    runs = project_root / ".specify/workflows/runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    for _ in range(100):
+        run_id = uuid.uuid4().hex[:8]
+        run_dir = runs / run_id
+        try:
+            run_dir.mkdir()
+        except FileExistsError:
+            continue
+        return run_id, run_dir
+    raise RuntimeSelectionError("cannot reserve a unique Spec Kit workflow run ID")
+
+
+def launch_detached_workflow(
+    project_root: Path,
+    run_id: str,
+    operation: str,
+    wrapper_arguments: list[str],
+) -> int:
+    """Launch a stage/resume worker that survives the Agent's outer task timeout."""
+    run_dir = workflow_run_dir(project_root, run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    active = active_workflow_processes(project_root, run_id)
+    if active:
+        raise RuntimeSelectionError(
+            f"workflow run {run_id!r} already has an active process: {active}"
+        )
+    log_path = run_dir / WORKER_LOG
+    environment = os.environ.copy()
+    environment[AGENT_LAUNCH_ENV] = "0"
+    environment["SPECKIT_WORKFLOW_RUN_ID"] = run_id
+    command = [sys.executable, str(Path(__file__).resolve()), *wrapper_arguments]
+    popen_options: dict[str, object] = {
+        "cwd": project_root,
+        "env": environment,
+        "stdin": subprocess.DEVNULL,
+        "stdout": None,
+        "stderr": subprocess.STDOUT,
+    }
+    if os.name == "posix":
+        popen_options["start_new_session"] = True
+    elif os.name == "nt":  # pragma: no cover - exercised only on Windows
+        popen_options["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
+    with log_path.open("a", encoding="utf-8") as log:
+        popen_options["stdout"] = log
+        process = subprocess.Popen(command, **popen_options)
+    metadata = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "operation": operation,
+        "pid": process.pid,
+        "started_at": utc_now(),
+        "log": str(log_path),
+        "command": wrapper_arguments,
+    }
+    atomic_write_json(run_dir / WORKER_METADATA, metadata)
+    print(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "status": "starting",
+                "worker_pid": process.pid,
+                "log": str(log_path),
+                "next": f"workflow-status {run_id}",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def recover_stale_workflow(
+    project_root: Path, run_id: str, *, confirmed: bool
+) -> dict[str, object]:
+    """Mark an externally interrupted running workflow resumable after review."""
+    if not confirmed:
+        raise RuntimeSelectionError(
+            "stale-run recovery requires --confirm-stale after checking no worker is alive"
+        )
+    run_dir = workflow_run_dir(project_root, run_id)
+    state_path = run_dir / "state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeSelectionError(
+            f"cannot read workflow state for run {run_id!r}: {exc}"
+        ) from exc
+    if not isinstance(state, dict) or state.get("run_id") != run_id:
+        raise RuntimeSelectionError(f"invalid workflow state for run {run_id!r}")
+    if state.get("status") != "running":
+        raise RuntimeSelectionError(
+            f"workflow run {run_id!r} has status {state.get('status')!r}; "
+            "only an interrupted 'running' run can be recovered"
+        )
+    age_seconds = time.time() - state_path.stat().st_mtime
+    if age_seconds < STALE_RUN_MIN_AGE_SECONDS:
+        raise RuntimeSelectionError(
+            f"workflow run {run_id!r} was updated {age_seconds:.1f}s ago; "
+            f"wait at least {STALE_RUN_MIN_AGE_SECONDS}s before stale recovery"
+        )
+    active = active_workflow_processes(project_root, run_id)
+    if active:
+        raise RuntimeSelectionError(
+            f"refusing recovery while workflow process(es) are active: {active}"
+        )
+    recovered_at = utc_now()
+    reason = (
+        "Recovered after confirmed external worker interruption; resume retries "
+        "the current step"
+    )
+    previous_updated_at = state.get("updated_at")
+    state["status"] = "failed"
+    state["error"] = reason
+    state["updated_at"] = recovered_at
+    atomic_write_json(state_path, state)
+    evidence = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "recovered_at": recovered_at,
+        "previous_status": "running",
+        "previous_updated_at": previous_updated_at,
+        "current_step_index": state.get("current_step_index"),
+        "current_step_id": state.get("current_step_id"),
+        "reason": reason,
+    }
+    atomic_write_json(run_dir / "verif-harness-recovery.json", evidence)
+    return evidence
+
+
 def spec_kit_run_inputs(run_id: str, project_root: Path) -> set[str]:
     """Read the declared inputs persisted with a safely named workflow run."""
-    if not WORKFLOW_RUN_ID.fullmatch(run_id):
-        raise RuntimeSelectionError(
-            f"invalid workflow run ID {run_id!r}"
-        )
-    path = project_root / ".specify/workflows/runs" / run_id / "inputs.json"
+    path = workflow_run_dir(project_root, run_id) / "inputs.json"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -332,6 +605,15 @@ def main() -> int:
     stage.add_argument("--project-root", type=Path, default=Path.cwd())
     stage.add_argument("--stage", choices=["0", "1", "2", "3", "4", "5"], required=True)
     stage.add_argument("--objective", required=True)
+    stage_execution = stage.add_mutually_exclusive_group()
+    stage_execution.add_argument(
+        "--detach", action="store_true",
+        help="run in a detached, logged worker and return the run ID immediately",
+    )
+    stage_execution.add_argument(
+        "--foreground", action="store_true",
+        help="run synchronously even when invoked through the Agent Skill launcher",
+    )
     resume = spec_subparsers.add_parser(
         "resume", help="resume a paused Stage workflow at its next review gate"
     )
@@ -341,11 +623,30 @@ def main() -> int:
         "--verdict", choices=("approve", "reject"),
         help="review verdict for the run's current gate",
     )
+    resume_execution = resume.add_mutually_exclusive_group()
+    resume_execution.add_argument(
+        "--detach", action="store_true",
+        help="resume in a detached, logged worker and return immediately",
+    )
+    resume_execution.add_argument(
+        "--foreground", action="store_true",
+        help="resume synchronously even when invoked through the Agent Skill launcher",
+    )
     status = spec_subparsers.add_parser(
         "status", help="show one or all Spec Kit workflow run states"
     )
     status.add_argument("run_id", nargs="?")
     status.add_argument("--project-root", type=Path, default=Path.cwd())
+    recover = spec_subparsers.add_parser(
+        "recover",
+        help="make a confirmed externally interrupted 'running' run resumable",
+    )
+    recover.add_argument("run_id")
+    recover.add_argument("--project-root", type=Path, default=Path.cwd())
+    recover.add_argument(
+        "--confirm-stale", action="store_true",
+        help="confirm the outer worker ended and authorize the state repair",
+    )
     docs_zh = spec_subparsers.add_parser(
         "docs-zh", help="refresh the non-executable Simplified Chinese .specify mirror"
     )
@@ -482,6 +783,19 @@ def main() -> int:
             parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
         if args.spec_command == "docs-zh":
             return refresh_spec_kit_chinese_docs(project_root)
+        if args.spec_command == "recover":
+            try:
+                recovered = recover_stale_workflow(
+                    project_root, args.run_id, confirmed=args.confirm_stale
+                )
+            except RuntimeSelectionError as exc:
+                parser.error(str(exc))
+            print(json.dumps(recovered, indent=2, sort_keys=True))
+            print(
+                f"NEXT: workflow-resume {args.run_id}",
+                file=sys.stderr,
+            )
+            return 0
         try:
             runtime = str(resolve_runtime(project_root)["runtime"])
         except RuntimeSelectionError as exc:
@@ -489,6 +803,12 @@ def main() -> int:
         if args.spec_command == "resume":
             try:
                 run_status = spec_kit_run_status(args.run_id, project_root)
+                if run_status.get("status") == "running":
+                    parser.error(
+                        f"run {args.run_id!r} is still marked running; inspect its worker "
+                        "and log first, then use workflow-recover --confirm-stale only if "
+                        "the process is no longer alive"
+                    )
                 gate = run_status.get("gate")
                 if isinstance(gate, dict) and args.verdict is None:
                     parser.error(
@@ -508,6 +828,19 @@ def main() -> int:
                             ),
                         ]
                     )
+                if should_detach(args):
+                    wrapper_arguments = [
+                        "spec-kit", "resume", args.run_id,
+                        "--project-root", str(project_root), "--foreground",
+                    ]
+                    if args.verdict is not None:
+                        wrapper_arguments.extend(["--verdict", args.verdict])
+                    return launch_detached_workflow(
+                        project_root,
+                        args.run_id,
+                        "resume",
+                        wrapper_arguments,
+                    )
             except RuntimeSelectionError as exc:
                 parser.error(str(exc))
             resumed = run_spec_kit(
@@ -517,10 +850,55 @@ def main() -> int:
                 return refresh_spec_kit_chinese_docs(project_root)
             return resumed
         if args.spec_command == "status":
+            if args.run_id:
+                try:
+                    state_path = workflow_run_dir(project_root, args.run_id) / "state.json"
+                    metadata = worker_metadata(project_root, args.run_id)
+                    if metadata is not None and not state_path.exists():
+                        active = active_workflow_processes(project_root, args.run_id)
+                        print(
+                            json.dumps(
+                                {
+                                    "run_id": args.run_id,
+                                    "status": "starting" if active else "worker-exited",
+                                    "worker_active": bool(active),
+                                    "worker_pid": metadata.get("pid"),
+                                    "log": metadata.get("log"),
+                                },
+                                indent=2,
+                                sort_keys=True,
+                            )
+                        )
+                        return 0 if active else 1
+                except RuntimeSelectionError as exc:
+                    parser.error(str(exc))
             arguments = ["workflow", "status"]
             if args.run_id:
                 arguments.append(args.run_id)
-            return run_spec_kit(arguments, project_root)
+            status_result = run_spec_kit(arguments, project_root)
+            if status_result == 0 and args.run_id:
+                try:
+                    metadata = worker_metadata(project_root, args.run_id)
+                    active = active_workflow_processes(project_root, args.run_id)
+                    state_path = workflow_run_dir(project_root, args.run_id) / "state.json"
+                    if metadata is not None:
+                        print(
+                            f"verif-harness worker: pid={metadata.get('pid')} "
+                            f"active={bool(active)} log={metadata.get('log')}",
+                            file=sys.stderr,
+                        )
+                    if state_path.is_file():
+                        state = json.loads(state_path.read_text(encoding="utf-8"))
+                        if isinstance(state, dict) and state.get("status") == "running" and not active:
+                            print(
+                                "WARNING: run is marked running but no workflow worker was found; "
+                                "inspect the log, then use workflow-recover "
+                                f"{args.run_id} --confirm-stale if the worker was interrupted.",
+                                file=sys.stderr,
+                            )
+                except (RuntimeSelectionError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    print(f"WARNING: cannot inspect worker metadata: {exc}", file=sys.stderr)
+            return status_result
         python, _ = managed_spec_kit()
         preset = subprocess.run(
             [
@@ -539,6 +917,23 @@ def main() -> int:
                 "verif-harness-rtl preset is not installed; run 'spec-kit bootstrap' "
                 "for a new project or add the reviewed local preset explicitly"
             )
+        if should_detach(args):
+            try:
+                run_id, _ = reserve_workflow_run(project_root)
+                return launch_detached_workflow(
+                    project_root,
+                    run_id,
+                    "stage",
+                    [
+                        "spec-kit", "stage",
+                        "--project-root", str(project_root),
+                        "--stage", args.stage,
+                        "--objective", args.objective,
+                        "--foreground",
+                    ],
+                )
+            except RuntimeSelectionError as exc:
+                parser.error(str(exc))
         staged = run_spec_kit(
             [
                 "workflow", "run",

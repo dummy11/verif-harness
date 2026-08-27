@@ -65,6 +65,12 @@ the workspace, or when runtime markers are ambiguous.
 
 `python3 scripts/verif_harness.py spec-kit ...` 仅用于 CI、脚本自动化和高级诊断。
 
+runtime-native launcher 会把 `stage` 和 `workflow-resume` 启动为独立 worker，立即返回
+run ID、PID 和 `.specify/workflows/runs/<run-id>/verif-harness-worker.log`。Agent 应使用
+`workflow-status <run-id>` 轮询，不要再用 600 秒或其他固定时限的 bash 后台任务包裹
+这两个命令，也不要在 worker 存活时重复启动同一 Stage。底层 Python wrapper 默认仍
+以前台方式运行；自动化需要后台行为时可显式传 `--detach`。
+
 `bootstrap --integration auto|codex|kimi` 解析 Codex 或 Kimi Code runtime，
 初始化对应 integration，并安装本目录的本地 RTL verification preset。`auto`
 只在项目中存在唯一 runtime marker 时成功；歧义或没有 marker 时要求显式选择。
@@ -116,6 +122,14 @@ freeze authority 时，implement 在边界处暂停；取得独立授权后继�
 默认拒绝。先用 `status` 确认 gate 和工件，完成对应 review 后再用
 `resume <run-id> --verdict approve|reject` 继续。每次 resume 只绑定当前 gate；下一
 gate 会再次暂停。这里的 verdict 只属于该文档/执行授权 gate，不是 Stage approval。
+工作流在 checklist、tasks、analyze、implement 和 converge 之间设置独立 gate，因此
+每次 verdict 后最多执行一个可能耗时的 Agent command。
+
+如果旧版本被外层 timeout 杀死且状态残留为 `running`，先查看 worker log 并确认 PID
+和关联 workflow 进程均已退出，再由用户显式执行
+`workflow-recover <run-id> --confirm-stale`。该命令保留当前 step 与已有结果，把 run
+改为可恢复的 `failed`，随后用 `workflow-resume <run-id>` 重试当前 step；检测到活进程
+时会拒绝恢复，也不会自动创建替代 run。
 
 ## 单一事实源
 

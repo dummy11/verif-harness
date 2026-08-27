@@ -340,10 +340,11 @@ constitution -> review
   -> specify -> review
   -> clarify -> review
   -> plan -> review
-  -> checklist -> tasks -> analyze
-  -> authorize execution
+  -> checklist -> review
+  -> tasks -> review
+  -> analyze -> authorize execution
   -> implement through reviewed verif-harness modes
-  -> converge -> review
+  -> review -> converge -> review
 ```
 
 每个 review gate 都让 run 进入 paused 状态。先检查工件，再恢复同一个 run：
@@ -362,6 +363,13 @@ $verif-harness workflow-resume <run-id> --verdict approve
 Agent 即使在 PTY 中运行也会在每个 gate 确定性地进入 `paused`。不要向 PTY 写入
 数字菜单选项；完成实际 review 后，用 `--verdict approve|reject` 显式处理当前 gate。
 该 verdict 不会传递给下一 gate，EOF 也不会被解释成 `reject`。
+
+Codex/Kimi 的 runtime-native launcher 会将 `stage` 和 `workflow-resume` 放入独立
+worker，立即返回 run ID、PID 和日志路径；使用 `workflow-status <run-id>` 轮询，
+不要再让 Agent 用固定 600 秒 bash task 等待整个命令。若旧 worker 被外层 timeout
+终止且 run 残留为 `running`，先检查日志并确认相关 PID/进程均已退出，再执行
+`workflow-recover <run-id> --confirm-stale`，随后 `workflow-resume <run-id>` 重试原
+current step。检测到活进程时 recovery 会拒绝，且不得启动重复 Stage。
 
 主要规格输出位于：
 
@@ -1504,6 +1512,7 @@ $verif-harness bootstrap                                  # Skill：初始化规
 $verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
 $verif-harness workflow-status [run-id]                   # Skill：查看 workflow 状态
 $verif-harness workflow-resume <run-id> --verdict approve # Skill：显式处理当前 gate 后恢复
+$verif-harness workflow-recover <run-id> --confirm-stale  # Skill：修复确认中断的 running run
 ```
 
 `bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的
@@ -1512,8 +1521,9 @@ $verif-harness workflow-resume <run-id> --verdict approve # Skill：显式处理
 ```text
 Stage 0 only: constitution -> review
   -> specify -> review -> clarify -> review -> plan -> review
-  -> checklist -> tasks -> analyze -> authorize execution
-  -> implement through verif-harness modes -> converge -> review
+  -> checklist -> review -> tasks -> review
+  -> analyze -> authorize execution
+  -> implement through verif-harness modes -> review -> converge -> review
 ```
 
 `tasks.md` 中每个 task 必须声明 mode、input contract、owned output、evidence、
@@ -1534,6 +1544,8 @@ Human approval、sign-off/freeze 授权不属于普通 implementation task 自�
 完成该工件的实际 review 后再用 `resume <run-id> --verdict approve|reject` 继续。
 wrapper 不读取 PTY 菜单输入，且一次 verdict 只作用于当前 gate；`resume` 不能跳过
 review，也不会把 gate verdict 提升成 Stage approval。
+checklist、tasks 和 implementation 之后也分别暂停，因此一次 verdict 后最多执行一个
+可能耗时的 Agent command。
 
 preset 会把以下字段追加到标准 Spec Kit 工件：DUT 只读边界、规格权威、
 REQ/VF/TC/COV/ASRT ID、verif-harness mode、owned artifact、validation、evidence、

@@ -37,6 +37,10 @@ Spec Kit owns the editable specification lifecycle.
   its current review gate. A reviewer must inspect the named artifact before
   choosing the verdict; one verdict never carries into the next gate, and
   resuming does not approve the Stage.
+- `recover`: after a fixed-duration outer task killed a worker, convert a
+  confirmed stale `running` run to resumable `failed` state while preserving
+  its current step and evidence. Require `--confirm-stale`, refuse a live
+  worker, and resume the same run; never start a replacement run silently.
 - `docs-zh`: refresh `.specify/docs/zh-CN/`, a non-executable Simplified
   Chinese reading mirror. Its manifest records source/translation hashes and
   `full|source-is-chinese|summary|pending` status. The mirror is never a
@@ -55,6 +59,13 @@ $verif-harness bootstrap
 /skill:verif-harness bootstrap
 ```
 
+The runtime-native launcher detaches `stage` and `workflow-resume`, records a
+per-run worker PID and log, and returns immediately. Poll with
+`workflow-status <run-id>`. Do not place these commands inside a 600-second (or
+other fixed-duration) background shell task, and do not submit a duplicate
+stage while the worker is active. Direct Python automation remains foreground
+unless it explicitly passes `--detach`.
+
 The repository Python wrapper remains available for CI, automation, or hosts
 without an Agent CLI:
 
@@ -67,6 +78,8 @@ python3 scripts/verif_harness.py spec-kit status --project-root <project>
 python3 scripts/verif_harness.py spec-kit docs-zh --project-root <project>
 python3 scripts/verif_harness.py spec-kit resume \
   --project-root <project> <run-id> --verdict approve
+python3 scripts/verif_harness.py spec-kit recover \
+  --project-root <project> <run-id> --confirm-stale
 python3 scripts/verif_harness.py runtime status --project-root <project>
 python3 scripts/verif_harness.py runtime switch \
   --project-root <project> --to <codex|kimi>
@@ -96,6 +109,10 @@ choice. The wrapper deliberately gives the Spec Kit workflow no interactive
 stdin so every gate persists `paused`; inspect it with `workflow-status`, then
 resume with the explicit verdict option. EOF must never become an implicit
 rejection.
+
+The lifecycle pauses after checklist generation, task generation, analysis,
+implementation, and convergence. Consequently one approved gate dispatches at
+most one potentially long Agent command before the next review boundary.
 
 ## Source-of-truth policy
 

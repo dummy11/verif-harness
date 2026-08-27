@@ -53,6 +53,8 @@ Short user-facing aliases are also supported:
 - `workflow-status [run-id]` → internal `spec-kit status [run-id]`
 - `workflow-resume <run-id> --verdict approve|reject` → internal
   `spec-kit resume <run-id> --verdict approve|reject`
+- `workflow-recover <run-id> --confirm-stale` → internal `spec-kit recover` for
+  a confirmed externally interrupted run only
 - `evidence <...>` → internal `xverif <...>`
 - `waveform <...>` → internal `wavepeek <...>`
 
@@ -107,6 +109,15 @@ Require an explicit project root only for cross-project/automation commands or
 for deterministic evidence tools whose schemas require it. Require an explicit
 runtime only when markers are ambiguous or an operation intentionally changes
 runtime registration.
+
+The runtime-native launcher starts `stage` and `workflow-resume` as detached,
+per-run workers and returns the run ID and log path immediately. Poll with
+`workflow-status`; do not wrap either command in a fixed-duration background
+shell task or start a duplicate run while its worker is active. If an older
+outer task was killed while state still says `running`, inspect the recorded
+log and process state first. Only after confirming that no worker remains may
+the user authorize `workflow-recover <run-id> --confirm-stale`; then resume the
+same run so its current step is retried. Never recover a live process.
 
 ## Global invariants
 

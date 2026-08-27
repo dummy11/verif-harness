@@ -33,7 +33,7 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("authorize-execution", workflow)
         self.assertIn("inputs.stage == '0'", workflow)
         self.assertIn("review-convergence", workflow)
-        self.assertIn('version: "0.3.0"', workflow)
+        self.assertIn('version: "0.4.0"', workflow)
         self.assertIn('any: ["codex", "kimi"]', workflow)
         self.assertIn('enum: ["codex", "kimi"]', workflow)
         verdict_inputs = (
@@ -41,7 +41,10 @@ class SpecKitAssetsTest(unittest.TestCase):
             "review_spec_verdict",
             "review_clarification_verdict",
             "review_plan_verdict",
+            "review_checklist_verdict",
+            "review_tasks_verdict",
             "authorize_execution_verdict",
+            "review_implementation_verdict",
             "review_convergence_verdict",
         )
         self.assertEqual(workflow.count("verdict_input:"), len(verdict_inputs))
@@ -50,6 +53,21 @@ class SpecKitAssetsTest(unittest.TestCase):
         )
         for verdict_input in verdict_inputs:
             self.assertEqual(workflow.count(f"verdict_input: {verdict_input}"), 1)
+        review_sequence = (
+            "review-plan",
+            "checklist",
+            "review-checklist",
+            "tasks",
+            "review-tasks",
+            "analyze",
+            "authorize-execution",
+            "implement",
+            "review-implementation",
+            "converge",
+            "review-convergence",
+        )
+        positions = [workflow.index(f"  - id: {step_id}\n") for step_id in review_sequence]
+        self.assertEqual(positions, sorted(positions))
         wrapper = (ROOT / "scripts/verif_harness.py").read_text(encoding="utf-8")
         self.assertIn('["preset", "add", "constitution-sync"', wrapper)
         self.assertIn("configure_spec_kit_chinese_docs.py", wrapper)

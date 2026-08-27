@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -22,6 +26,7 @@ class CliAliasTest(unittest.TestCase):
         self.assertEqual(CLI.COMMAND_ALIASES["stage"], ("spec-kit", "stage"))
         self.assertEqual(CLI.COMMAND_ALIASES["workflow-status"], ("spec-kit", "status"))
         self.assertEqual(CLI.COMMAND_ALIASES["workflow-resume"], ("spec-kit", "resume"))
+        self.assertEqual(CLI.COMMAND_ALIASES["workflow-recover"], ("spec-kit", "recover"))
         self.assertEqual(CLI.COMMAND_ALIASES["evidence"], ("xverif",))
         self.assertEqual(CLI.COMMAND_ALIASES["waveform"], ("wavepeek",))
 
@@ -79,6 +84,102 @@ class CliAliasTest(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_agent_launcher_defaults_stage_and_resume_to_detached(self) -> None:
+        arguments = mock.Mock(detach=False, foreground=False)
+        with mock.patch.dict(os.environ, {CLI.AGENT_LAUNCH_ENV: "1"}):
+            self.assertTrue(CLI.should_detach(arguments))
+        arguments.foreground = True
+        with mock.patch.dict(os.environ, {CLI.AGENT_LAUNCH_ENV: "1"}):
+            self.assertFalse(CLI.should_detach(arguments))
+
+    def test_detached_worker_records_run_log_and_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            run_id, run_dir = CLI.reserve_workflow_run(project)
+            process = mock.Mock(pid=43210)
+            with (
+                mock.patch.object(CLI, "active_workflow_processes", return_value=[]),
+                mock.patch.object(CLI.subprocess, "Popen", return_value=process) as popen,
+            ):
+                result = CLI.launch_detached_workflow(
+                    project,
+                    run_id,
+                    "stage",
+                    ["spec-kit", "stage", "--stage", "0", "--foreground"],
+                )
+
+            self.assertEqual(result, 0)
+            metadata = json.loads(
+                (run_dir / CLI.WORKER_METADATA).read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["pid"], 43210)
+            self.assertEqual(metadata["run_id"], run_id)
+            self.assertTrue((run_dir / CLI.WORKER_LOG).is_file())
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["SPECKIT_WORKFLOW_RUN_ID"], run_id
+            )
+            self.assertEqual(popen.call_args.kwargs["env"][CLI.AGENT_LAUNCH_ENV], "0")
+
+    def test_confirmed_stale_recovery_preserves_step_and_makes_run_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            run_id = "abc12345"
+            run_dir = CLI.workflow_run_dir(project, run_id)
+            run_dir.mkdir(parents=True)
+            state_path = run_dir / "state.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "workflow_id": "verif-stage-lifecycle",
+                        "status": "running",
+                        "current_step_index": 12,
+                        "current_step_id": "analyze",
+                        "step_results": {"review-tasks": {"status": "success"}},
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            old = time.time() - CLI.STALE_RUN_MIN_AGE_SECONDS - 5
+            os.utime(state_path, (old, old))
+            with mock.patch.object(CLI, "active_workflow_processes", return_value=[]):
+                evidence = CLI.recover_stale_workflow(
+                    project, run_id, confirmed=True
+                )
+
+            recovered = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(recovered["status"], "failed")
+            self.assertEqual(recovered["current_step_index"], 12)
+            self.assertEqual(recovered["current_step_id"], "analyze")
+            self.assertEqual(evidence["current_step_id"], "analyze")
+            self.assertTrue((run_dir / "verif-harness-recovery.json").is_file())
+
+    def test_stale_recovery_refuses_a_live_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            run_id = "abc12345"
+            run_dir = CLI.workflow_run_dir(project, run_id)
+            run_dir.mkdir(parents=True)
+            state_path = run_dir / "state.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "workflow_id": "verif-stage-lifecycle",
+                        "status": "running",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            old = time.time() - CLI.STALE_RUN_MIN_AGE_SECONDS - 5
+            os.utime(state_path, (old, old))
+            with (
+                mock.patch.object(CLI, "active_workflow_processes", return_value=[123]),
+                self.assertRaisesRegex(CLI.RuntimeSelectionError, "active"),
+            ):
+                CLI.recover_stale_workflow(project, run_id, confirmed=True)
 
 
 if __name__ == "__main__":

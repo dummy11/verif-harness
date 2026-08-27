@@ -31,14 +31,20 @@ $verif-harness stage-gate-review 4
 ```text
 $verif-harness bootstrap          # 内部：spec-kit bootstrap
 $verif-harness probe              # 内部：spec-kit probe
-$verif-harness stage --stage 0   # 内部：spec-kit stage
+$verif-harness stage --stage 0 --objective "建立 Stage 0 规格基线" # 内部：spec-kit stage
 $verif-harness workflow-status    # 内部：spec-kit status
 $verif-harness workflow-resume <run-id> --verdict approve  # 每次只恢复当前 gate
+$verif-harness workflow-recover <run-id> --confirm-stale    # 仅恢复确认已中断的 running run
 $verif-harness evidence probe --tool xbit  # 内部：xverif probe
 $verif-harness waveform probe             # 内部：wavepeek probe
 ```
 
 显式 `spec-kit` 形式仍保留给高级诊断和底层调试。
+
+通过 Codex/Kimi launcher 调用时，`stage` 和 `workflow-resume` 会在独立 worker 中运行
+并立即返回 run ID 与日志路径；用 `workflow-status` 轮询，不要用固定 600 秒后台 bash
+任务包裹。只有确认旧 worker 已退出后，才可显式运行 `workflow-recover
+<run-id> --confirm-stale`，然后恢复同一个 run。
 
 未指定模式时：
 

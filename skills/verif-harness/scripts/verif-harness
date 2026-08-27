@@ -14,4 +14,5 @@ if [[ ! -x "$managed_python" || ! -f "$wrapper" || \
   exit 2
 fi
 
+export VERIF_HARNESS_AGENT_CLI=1
 exec "$managed_python" "$wrapper" "$@"

@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: "verif-stage-lifecycle"
   name: "verif-harness Stage Lifecycle"
-  version: "0.3.0"
+  version: "0.4.0"
   author: "verif-harness contributors"
   description: "以简体中文规格工件驱动一个 RTL 验证 Stage 的评审、执行与收敛"
 
@@ -41,7 +41,19 @@ inputs:
     type: string
     default: ""
     enum: ["", approve, reject]
+  review_checklist_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_tasks_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
   authorize_execution_verdict:
+    type: string
+    default: ""
+    enum: ["", approve, reject]
+  review_implementation_verdict:
     type: string
     default: ""
     enum: ["", approve, reject]
@@ -113,11 +125,25 @@ steps:
     input:
       args: "使用简体中文创建 RTL 验证规格质量 checklist；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。不要创建实现测试列表。"
 
+  - id: review-checklist
+    type: gate
+    message: "评审 checklist 是否覆盖规格质量、歧义和可验证性；本 gate 不批准实现或 Stage。"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_checklist_verdict
+
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
       args: "使用简体中文创建可追踪的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。每个 task 包含 REQ/VF/TC/COV/ASRT IDs、verif-harness modes、output paths、validation、evidence 和 Human gates。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 owned-output 和 validation postconditions。"
+
+  - id: review-tasks
+    type: gate
+    message: "评审 task traceability、owned outputs、validation、evidence 和 Human gates；本 gate 不授权执行。"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_tasks_verdict
 
   - id: analyze
     command: speckit.analyze
@@ -137,6 +163,13 @@ steps:
     integration: "{{ inputs.integration }}"
     input:
       args: "只执行已评审的 Stage {{ inputs.stage }} tasks，并把每个 task 自动分发到匹配的 verif-harness mode 且仅一次。生成或更新的面向项目评审 Markdown 默认使用简体中文；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。保留所需证据并核对每个 task 声明的 owned output 和 validation postcondition。不得要求重复手动调用 mode；已批准的 Stage 0 init task 同样遵守此规则。"
+
+  - id: review-implementation
+    type: gate
+    message: "评审已授权 tasks 的实现结果、验证输出和缺口；本 gate 不授予 Stage approval、waiver、commit 或 push 权限。"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_implementation_verdict
 
   - id: converge
     command: speckit.converge
