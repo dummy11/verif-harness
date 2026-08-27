@@ -27,13 +27,14 @@ class SpecKitAssetsTest(unittest.TestCase):
         for command in (
             "speckit.constitution", "speckit.specify", "speckit.clarify", "speckit.plan",
             "speckit.checklist", "speckit.tasks", "speckit.analyze",
-            "speckit.implement", "speckit.converge",
+            "speckit.converge",
         ):
             self.assertIn(f"command: {command}", workflow)
+        self.assertNotIn("command: speckit.implement", workflow)
         self.assertIn("authorize-execution", workflow)
         self.assertIn("inputs.stage == '0'", workflow)
         self.assertIn("review-convergence", workflow)
-        self.assertIn('version: "0.4.0"', workflow)
+        self.assertIn('version: "0.5.0"', workflow)
         self.assertIn('any: ["codex", "kimi"]', workflow)
         self.assertIn('enum: ["codex", "kimi"]', workflow)
         verdict_inputs = (
@@ -61,7 +62,6 @@ class SpecKitAssetsTest(unittest.TestCase):
             "review-tasks",
             "analyze",
             "authorize-execution",
-            "implement",
             "review-implementation",
             "converge",
             "review-convergence",
@@ -73,13 +73,24 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertIn("configure_spec_kit_chinese_docs.py", wrapper)
         self.assertIn('"docs-zh"', wrapper)
         self.assertIn("stdin=subprocess.DEVNULL if noninteractive else None", wrapper)
+        self.assertIn("run_task_execution", wrapper)
+
+    def test_tasks_template_is_compact_and_has_real_block_contract(self) -> None:
+        template = (
+            INTEGRATION / "preset/rtl-verification/templates/tasks-template.md"
+        ).read_text(encoding="utf-8")
+        self.assertLess(len(template.splitlines()), 80)
+        self.assertIn("READY -> RUNNING -> DONE|BLOCKED", template)
+        self.assertIn("B###", template)
+        self.assertIn("interaction: `none`", template)
+        self.assertNotIn("Task ID:", template)
 
     def test_preset_carries_authority_and_traceability_guards(self) -> None:
         preset = INTEGRATION / "preset/rtl-verification"
         manifest = (preset / "preset.yml").read_text(encoding="utf-8")
         self.assertIn('id: "verif-harness-rtl"', manifest)
-        self.assertIn('strategy: "prepend"', manifest)
-        self.assertEqual(manifest.count('strategy: "replace"'), 5)
+        self.assertNotIn('strategy: "prepend"', manifest)
+        self.assertEqual(manifest.count('strategy: "replace"'), 6)
         combined = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted(preset.rglob("*.md"))

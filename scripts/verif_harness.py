@@ -15,6 +15,11 @@ import time
 import uuid
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+import task_runner
+
 
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*")
 WORKFLOW_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
@@ -36,6 +41,11 @@ COMMAND_ALIASES = {
     "workflow-status": ("spec-kit", "status"),
     "workflow-resume": ("spec-kit", "resume"),
     "workflow-recover": ("spec-kit", "recover"),
+    "status": ("spec-kit", "status"),
+    "resume": ("spec-kit", "resume"),
+    "block": ("spec-kit", "block"),
+    "recover": ("spec-kit", "recover"),
+    "docs": ("spec-kit", "docs-zh"),
     "evidence": ("xverif",),
     "waveform": ("wavepeek",),
 }
@@ -195,6 +205,64 @@ def spec_kit_command(arguments: list[str]) -> list[str]:
     return [python, "-c", "from specify_cli import main; main()", *arguments]
 
 
+def agent_exec_args(runtime: str, prompt: str) -> list[str]:
+    """Build the pinned Spec Kit integration's native noninteractive argv."""
+    python, _ = managed_spec_kit()
+    built = subprocess.run(
+        [
+            python,
+            "-c",
+            (
+                "import json,sys;"
+                "from specify_cli.integrations import get_integration;"
+                "impl=get_integration(sys.argv[1]);"
+                "args=impl.build_exec_args(sys.argv[2], output_json=False) if impl else None;"
+                "print(json.dumps(args))"
+            ),
+            runtime,
+            prompt,
+        ],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if built.returncode != 0:
+        raise task_runner.TaskRunnerError(
+            built.stderr.strip() or f"cannot resolve {runtime} Agent command"
+        )
+    try:
+        payload = json.loads(built.stdout)
+    except json.JSONDecodeError as exc:
+        raise task_runner.TaskRunnerError(
+            f"managed Spec Kit returned invalid Agent argv: {exc}"
+        ) from exc
+    if not isinstance(payload, list) or not all(isinstance(item, str) for item in payload):
+        raise task_runner.TaskRunnerError(f"runtime {runtime} cannot execute task prompts")
+    return payload
+
+
+def run_task_execution(
+    project_root: Path,
+    run_id: str,
+    runtime: str,
+    *,
+    answer: str | None = None,
+) -> dict[str, object]:
+    """Advance only the current reviewed task until DONE or a real BLOCKED state."""
+    invocation = str(RUNTIME_PROFILES[runtime]["invocation"])
+    return task_runner.run_tasks(
+        project_root,
+        workflow_run_dir(project_root, run_id),
+        run_id,
+        runtime,
+        invocation,
+        agent_exec_args,
+        answer=answer,
+    )
+
+
 def run_spec_kit(
     arguments: list[str], project_root: Path, *, noninteractive: bool = False
 ) -> int:
@@ -351,6 +419,12 @@ def active_workflow_processes(project_root: Path, run_id: str) -> list[int]:
     metadata = worker_metadata(project_root, run_id)
     if metadata is not None and process_is_running(metadata.get("pid")):
         active.add(int(metadata["pid"]))
+    try:
+        task_state = task_runner.read_state(workflow_run_dir(project_root, run_id))
+    except task_runner.TaskRunnerError as exc:
+        raise RuntimeSelectionError(str(exc)) from exc
+    if task_state is not None and process_is_running(task_state.get("task_worker_pid")):
+        active.add(int(task_state["task_worker_pid"]))
     return sorted(active)
 
 
@@ -432,7 +506,7 @@ def launch_detached_workflow(
                 "status": "starting",
                 "worker_pid": process.pid,
                 "log": str(log_path),
-                "next": f"workflow-status {run_id}",
+                "next": f"status {run_id}",
             },
             indent=2,
             sort_keys=True,
@@ -450,6 +524,37 @@ def recover_stale_workflow(
             "stale-run recovery requires --confirm-stale after checking no worker is alive"
         )
     run_dir = workflow_run_dir(project_root, run_id)
+    task_state = task_runner.read_state(run_dir)
+    if task_state is not None and task_state.get("status") == "RUNNING":
+        if process_is_running(task_state.get("task_worker_pid")):
+            raise RuntimeSelectionError(
+                f"refusing recovery while task process {task_state.get('task_worker_pid')} is active"
+            )
+        active = active_workflow_processes(project_root, run_id)
+        if active:
+            raise RuntimeSelectionError(
+                f"refusing recovery while workflow process(es) are active: {active}"
+            )
+        try:
+            recovered_task = task_runner.recover_running_task(
+                project_root, run_dir, run_id
+            )
+        except task_runner.TaskRunnerError as exc:
+            raise RuntimeSelectionError(str(exc)) from exc
+        if recovered_task is None:
+            raise RuntimeSelectionError("RUNNING task state could not be recovered")
+        return {
+            "schema_version": 1,
+            "run_id": run_id,
+            "recovered_at": utc_now(),
+            "scope": "task",
+            "current_task_id": recovered_task.get("current_task_id"),
+            "task_status": recovered_task.get("status"),
+            "reason": (
+                "Reconciled interrupted task from reviewed postconditions; "
+                "resume continues at the exact unfinished task"
+            ),
+        }
     state_path = run_dir / "state.json"
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -623,6 +728,10 @@ def main() -> int:
         "--verdict", choices=("approve", "reject"),
         help="review verdict for the run's current gate",
     )
+    resume.add_argument(
+        "--answer",
+        help="answer or authority record for the current BLOCKED task",
+    )
     resume_execution = resume.add_mutually_exclusive_group()
     resume_execution.add_argument(
         "--detach", action="store_true",
@@ -647,6 +756,14 @@ def main() -> int:
         "--confirm-stale", action="store_true",
         help="confirm the outer worker ended and authorize the state repair",
     )
+    block = spec_subparsers.add_parser(
+        "block", help="persist a task-level blocker for the current running task"
+    )
+    block.add_argument("run_id")
+    block.add_argument("task_id")
+    block.add_argument("--project-root", type=Path, default=Path.cwd())
+    block.add_argument("--kind", choices=sorted(task_runner.BLOCK_KINDS), required=True)
+    block.add_argument("--question", required=True)
     docs_zh = spec_subparsers.add_parser(
         "docs-zh", help="refresh the non-executable Simplified Chinese .specify mirror"
     )
@@ -783,6 +900,19 @@ def main() -> int:
             parser.error("Spec Kit project missing; run 'spec-kit bootstrap' first")
         if args.spec_command == "docs-zh":
             return refresh_spec_kit_chinese_docs(project_root)
+        if args.spec_command == "block":
+            try:
+                blocked = task_runner.block_task(
+                    workflow_run_dir(project_root, args.run_id),
+                    args.run_id,
+                    args.task_id,
+                    args.kind,
+                    args.question,
+                )
+            except task_runner.TaskRunnerError as exc:
+                parser.error(str(exc))
+            print(json.dumps(blocked, indent=2, sort_keys=True, ensure_ascii=False))
+            return 0
         if args.spec_command == "recover":
             try:
                 recovered = recover_stale_workflow(
@@ -792,7 +922,7 @@ def main() -> int:
                 parser.error(str(exc))
             print(json.dumps(recovered, indent=2, sort_keys=True))
             print(
-                f"NEXT: workflow-resume {args.run_id}",
+                f"NEXT: resume {args.run_id}",
                 file=sys.stderr,
             )
             return 0
@@ -803,12 +933,66 @@ def main() -> int:
         if args.spec_command == "resume":
             try:
                 run_status = spec_kit_run_status(args.run_id, project_root)
+                task_state = task_runner.read_state(
+                    workflow_run_dir(project_root, args.run_id)
+                )
                 if run_status.get("status") == "running":
                     parser.error(
                         f"run {args.run_id!r} is still marked running; inspect its worker "
-                        "and log first, then use workflow-recover --confirm-stale only if "
+                        "and log first, then use recover --confirm-stale only if "
                         "the process is no longer alive"
                     )
+                if task_state is not None and task_state.get("status") == "BLOCKED":
+                    if args.verdict is not None:
+                        parser.error(
+                            "the current task is BLOCKED; use --answer, not --verdict"
+                        )
+                    if (
+                        task_runner.blocked_task_requires_answer(task_state)
+                        and not (args.answer or "").strip()
+                    ):
+                        parser.error(
+                            "the current Human/authority/specification blocker requires --answer"
+                        )
+                    if should_detach(args):
+                        wrapper_arguments = [
+                            "spec-kit", "resume", args.run_id,
+                            "--project-root", str(project_root), "--foreground",
+                        ]
+                        if args.answer is not None:
+                            wrapper_arguments.extend(["--answer", args.answer])
+                        return launch_detached_workflow(
+                            project_root, args.run_id, "task-resume", wrapper_arguments
+                        )
+                    advanced = run_task_execution(
+                        project_root, args.run_id, runtime, answer=args.answer
+                    )
+                    print(json.dumps(advanced, indent=2, sort_keys=True, ensure_ascii=False))
+                    return 0
+                if task_state is not None and task_state.get("status") == "READY":
+                    if args.verdict is not None or args.answer is not None:
+                        parser.error(
+                            "task execution is READY; resume it without --verdict/--answer"
+                        )
+                    if should_detach(args):
+                        return launch_detached_workflow(
+                            project_root,
+                            args.run_id,
+                            "task-resume",
+                            [
+                                "spec-kit", "resume", args.run_id,
+                                "--project-root", str(project_root), "--foreground",
+                            ],
+                        )
+                    advanced = run_task_execution(project_root, args.run_id, runtime)
+                    print(
+                        json.dumps(
+                            advanced, indent=2, sort_keys=True, ensure_ascii=False
+                        )
+                    )
+                    return 0
+                if args.answer is not None:
+                    parser.error("--answer is valid only when the current task is BLOCKED")
                 gate = run_status.get("gate")
                 if isinstance(gate, dict) and args.verdict is None:
                     parser.error(
@@ -816,6 +1000,26 @@ def main() -> int:
                         f"{gate.get('step_id')!r}; review its artifact, then pass "
                         "--verdict approve or --verdict reject"
                     )
+                gate_step = gate.get("step_id") if isinstance(gate, dict) else None
+                if (
+                    gate_step in {"review-tasks", "authorize-execution"}
+                    and args.verdict == "approve"
+                ):
+                    try:
+                        if gate_step == "review-tasks":
+                            task_runner.record_reviewed_contract(
+                                project_root,
+                                workflow_run_dir(project_root, args.run_id),
+                                args.run_id,
+                            )
+                        else:
+                            task_runner.require_reviewed_contract(
+                                project_root,
+                                workflow_run_dir(project_root, args.run_id),
+                                args.run_id,
+                            )
+                    except task_runner.TaskRunnerError as exc:
+                        parser.error(str(exc))
                 resume_arguments = ["workflow", "resume", args.run_id]
                 if args.verdict is not None:
                     resume_arguments.extend(
@@ -847,6 +1051,18 @@ def main() -> int:
                 resume_arguments, project_root, noninteractive=True
             )
             if resumed == 0:
+                if gate_step == "authorize-execution" and args.verdict == "approve":
+                    try:
+                        advanced = run_task_execution(
+                            project_root, args.run_id, runtime
+                        )
+                    except task_runner.TaskRunnerError as exc:
+                        parser.error(str(exc))
+                    print(
+                        json.dumps(
+                            advanced, indent=2, sort_keys=True, ensure_ascii=False
+                        )
+                    )
                 return refresh_spec_kit_chinese_docs(project_root)
             return resumed
         if args.spec_command == "status":
@@ -872,10 +1088,30 @@ def main() -> int:
                         return 0 if active else 1
                 except RuntimeSelectionError as exc:
                     parser.error(str(exc))
-            arguments = ["workflow", "status"]
             if args.run_id:
-                arguments.append(args.run_id)
-            status_result = run_spec_kit(arguments, project_root)
+                try:
+                    workflow_state = spec_kit_run_status(args.run_id, project_root)
+                    task_state = task_runner.read_state(
+                        workflow_run_dir(project_root, args.run_id)
+                    )
+                    if task_state is not None:
+                        workflow_state["task_execution"] = task_state
+                        if task_state.get("status") == "BLOCKED":
+                            workflow_state["effective_status"] = "task-blocked"
+                        elif task_state.get("status") == "RUNNING":
+                            workflow_state["effective_status"] = "task-running"
+                        elif task_state.get("status") == "DONE":
+                            workflow_state["effective_status"] = "implementation-review"
+                    print(
+                        json.dumps(
+                            workflow_state, indent=2, sort_keys=True, ensure_ascii=False
+                        )
+                    )
+                    status_result = 0
+                except (RuntimeSelectionError, task_runner.TaskRunnerError) as exc:
+                    parser.error(str(exc))
+            else:
+                status_result = run_spec_kit(["workflow", "status"], project_root)
             if status_result == 0 and args.run_id:
                 try:
                     metadata = worker_metadata(project_root, args.run_id)
@@ -892,11 +1128,31 @@ def main() -> int:
                         if isinstance(state, dict) and state.get("status") == "running" and not active:
                             print(
                                 "WARNING: run is marked running but no workflow worker was found; "
-                                "inspect the log, then use workflow-recover "
+                                "inspect the log, then use recover "
                                 f"{args.run_id} --confirm-stale if the worker was interrupted.",
                                 file=sys.stderr,
                             )
-                except (RuntimeSelectionError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    observed_tasks = task_runner.read_state(
+                        workflow_run_dir(project_root, args.run_id)
+                    )
+                    if (
+                        observed_tasks is not None
+                        and observed_tasks.get("status") == "RUNNING"
+                        and not active
+                    ):
+                        print(
+                            "WARNING: current task is RUNNING but no worker was found; "
+                            f"inspect its log, then use recover {args.run_id} "
+                            "--confirm-stale if it was interrupted.",
+                            file=sys.stderr,
+                        )
+                except (
+                    RuntimeSelectionError,
+                    task_runner.TaskRunnerError,
+                    OSError,
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ) as exc:
                     print(f"WARNING: cannot inspect worker metadata: {exc}", file=sys.stderr)
             return status_result
         python, _ = managed_spec_kit()

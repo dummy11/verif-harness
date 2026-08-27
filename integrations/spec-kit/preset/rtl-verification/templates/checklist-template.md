@@ -41,6 +41,7 @@
 
 - 未完成 reviewer 评估的项目保持 `[ ]`。
 - 本检查表检查需求写作质量，不检查 DUT 或验证实现是否正确。
-- `speckit.implement` 可以读取 checkbox 状态作为 gate，但不得修改标记。
+- task runner 可以读取本 checklist 作为只读 gate，但不得修改 reviewer-owned 标记；
+  它只在 task postconditions 通过后更新 `tasks.md` 的对应 `[x]`。
 - `checklists/requirements.md` 由 `speckit.specify` 与 `speckit.clarify` 单独维护。
 - 发现的问题应链接到权威规格、owner 和对应 review gate。

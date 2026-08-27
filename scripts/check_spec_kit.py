@@ -118,8 +118,8 @@ def validate_runtime_bootstrap(runtime: str, root: Path) -> str | None:
     if not implement.is_file():
         return f"{runtime} bootstrap did not install the implement Skill"
     content = implement.read_text(encoding="utf-8")
-    if "verif-harness execution guard" not in content:
-        return f"{runtime} bootstrap did not apply the verif-harness preset"
+    if "verif-harness task runner boundary" not in content:
+        return f"{runtime} bootstrap did not install the task-runner boundary"
     return None
 
 

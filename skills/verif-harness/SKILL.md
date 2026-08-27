@@ -45,18 +45,60 @@ Support these explicit modes:
 - `oss-readiness`
 - `patterns [topic]`
 
-Short user-facing aliases are also supported:
+Normalize these exact, user-facing aliases to their canonical modes before
+dispatch. Preserve every trailing argument unchanged; never use prefix or fuzzy
+matching. The canonical names remain supported for scripts and existing tasks.
+
+| Short alias | Canonical mode |
+| --- | --- |
+| `interface` | `add-interface` |
+| `package` | `add-shared-pkg` |
+| `uvc [name]` | `add-uvc-skeleton [name]` |
+| `harness` | `add-harness-layer` |
+| `env` | `add-env-layer` |
+| `build` | `finalize-filelist-and-make` |
+| `regression` | `add-regression-runner` |
+| `simulator` | `add-simulator-profile` |
+| `test` | `add-testcase` |
+| `coverage` | `add-coverage-skeleton` |
+| `assertion` | `add-assertion-skeleton` |
+| `refmodel` | `add-refmodel-bridge` |
+| `uvc-complete` | `complete-uvc` |
+| `scoreboard` | `complete-scoreboard` |
+| `ci` | `add-ci-hook` |
+| `performance` | `add-performance-gate` |
+| `triage` | `regression-triage` |
+| `coverage-audit` | `coverage-closure` |
+| `assertion-audit` | `assertion-closure` |
+| `trace` | `audit-traceability` |
+| `change` | `change-control` |
+| `gate <stage>` | `stage-gate-review <stage>` |
+| `signoff <stage>` | `signoff-audit <stage>` |
+| `freeze` | `freeze-baseline` |
+| `release` | `oss-readiness` |
+| `pattern [topic]` | `patterns [topic]` |
+
+Workflow and tool aliases are also supported:
 
 - `probe` → internal `spec-kit probe`
 - `bootstrap` → internal `spec-kit bootstrap`
 - `stage <...>` → internal `spec-kit stage <...>`
-- `workflow-status [run-id]` → internal `spec-kit status [run-id]`
-- `workflow-resume <run-id> --verdict approve|reject` → internal
+- `status [run-id]` → internal `spec-kit status [run-id]`
+- `resume <run-id> --verdict approve|reject` → internal
   `spec-kit resume <run-id> --verdict approve|reject`
-- `workflow-recover <run-id> --confirm-stale` → internal `spec-kit recover` for
-  a confirmed externally interrupted run only
+- `resume <run-id> --answer <text>` → resume only the current `BLOCKED` task
+- `block <run-id> <task-id> --kind <...> --question <text>` → persist a real
+  task-level blocker from the running Agent
+- `recover <run-id> --confirm-stale` → internal `spec-kit recover` for a
+  confirmed externally interrupted run only
+- `docs` → internal `spec-kit docs-zh`
 - `evidence <...>` → internal `xverif <...>`
 - `waveform <...>` → internal `wavepeek <...>`
+
+Continue accepting `workflow-status`, `workflow-resume`, and
+`workflow-recover` as compatibility aliases. With `help [name]`, report the
+short alias, canonical mode, purpose, required inputs, and authority boundary
+without writing project files. With bare `help`, show the concise alias list.
 
 The explicit `spec-kit`, `xverif`, and `wavepeek` forms remain advanced/debug
 interfaces. Alias routing must preserve the same review gates, evidence paths,
@@ -67,7 +109,7 @@ With no mode, run `doctor` when `.harness-config.json` exists. If it does not
 exist, require a Spec Kit project and reviewed Stage 0 specification first:
 dispatch to `spec-kit bootstrap` when `.specify/` is absent. When `.specify/`
 exists, inspect the Stage 0 run and task set: dispatch `init` only from the
-approved `speckit.implement` task; otherwise report the pending review gate or
+approved task runner task; otherwise report the pending review gate or
 missing task instead of bypassing the workflow. After `doctor`, recommend the
 next mode but do not perform a write mode automatically. Stage state becomes
 ambiguous after the M1.1 scaffold and requires human judgment.
@@ -104,20 +146,26 @@ Setup launches the Agent with the verification workspace as its current
 directory and installs exactly the selected runtime marker. In this normal
 interactive path, rely on command defaults: do not ask the user to repeat
 `--project-root .`, `--integration codex|kimi`, or the workspace path for
-`bootstrap`, `stage`, `workflow-status`, `workflow-resume`, or `runtime status`.
+`bootstrap`, `stage`, `status`, `resume`, or `runtime status`.
 Require an explicit project root only for cross-project/automation commands or
 for deterministic evidence tools whose schemas require it. Require an explicit
 runtime only when markers are ambiguous or an operation intentionally changes
 runtime registration.
 
-The runtime-native launcher starts `stage` and `workflow-resume` as detached,
+The runtime-native launcher starts `stage` and `resume` as detached,
 per-run workers and returns the run ID and log path immediately. Poll with
-`workflow-status`; do not wrap either command in a fixed-duration background
+`status`; do not wrap either command in a fixed-duration background
 shell task or start a duplicate run while its worker is active. If an older
 outer task was killed while state still says `running`, inspect the recorded
 log and process state first. Only after confirming that no worker remains may
-the user authorize `workflow-recover <run-id> --confirm-stale`; then resume the
+the user authorize `recover <run-id> --confirm-stale`; then resume the
 same run so its current step is retried. Never recover a live process.
+
+After `authorize-execution`, use the wrapper's persistent task runner rather
+than `speckit.implement`. It executes only `current_task_id`, persists
+`READY/RUNNING/DONE/BLOCKED`, validates declared outputs/evidence/command before
+marking `[x]`, and never replays `DONE` tasks. A running Agent that needs Human
+input must invoke `block`; the wrapper then terminates that Agent process.
 
 ## Global invariants
 
@@ -153,7 +201,7 @@ specification exists. Read `stage0/INSTRUCTIONS.md` completely. Generate Stage
 workflow assets, `AGENTS.md`, and the M1.1 directory scaffold. Stop for Human
 review; do not start TB implementation or create a competing requirements
 authority. For a new project, Stage 0 `tasks.md` must name this mode explicitly;
-after the execution gate approves that task, `speckit.implement` dispatches it
+after the execution gate approves that task, the task runner dispatches it
 automatically. Do not require or perform a second manual `init` invocation after
 successful dispatch. Manual invocation is a recovery/import path only.
 
@@ -202,12 +250,17 @@ implementation-dispatch, and convergence documents. New projects use `specs/`
 as the sole editable specification authority; import approved legacy projects
 as immutable baselines. Spec Kit is agentic, not deterministic evidence, and
 its workflow gates are never Stage, sign-off, freeze, or publication approval.
-When an approved task names a verif-harness mode, `speckit.implement` owns the
+When an approved task names a verif-harness mode, the persistent task runner owns the
 dispatch exactly once. This applies to every mode, including generators,
 adapters, audits, closure checks, and `init`. After dispatch, require every
 owned output path, evidence path, and validation command from the task contract;
 missing artifacts mean the task is incomplete, not that the user should
 silently invoke the same mode again.
+
+Executable `T###` items use the compact task contract and declare
+`interaction: none`. Represent Human answers, new authority, or unresolved
+semantics as `OPEN B###` blockers. Refuse `review-tasks` and execution approval
+until all blockers are resolved.
 
 ### `doctor`
 

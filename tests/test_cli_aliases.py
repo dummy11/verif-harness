@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -27,6 +29,11 @@ class CliAliasTest(unittest.TestCase):
         self.assertEqual(CLI.COMMAND_ALIASES["workflow-status"], ("spec-kit", "status"))
         self.assertEqual(CLI.COMMAND_ALIASES["workflow-resume"], ("spec-kit", "resume"))
         self.assertEqual(CLI.COMMAND_ALIASES["workflow-recover"], ("spec-kit", "recover"))
+        self.assertEqual(CLI.COMMAND_ALIASES["status"], ("spec-kit", "status"))
+        self.assertEqual(CLI.COMMAND_ALIASES["resume"], ("spec-kit", "resume"))
+        self.assertEqual(CLI.COMMAND_ALIASES["block"], ("spec-kit", "block"))
+        self.assertEqual(CLI.COMMAND_ALIASES["recover"], ("spec-kit", "recover"))
+        self.assertEqual(CLI.COMMAND_ALIASES["docs"], ("spec-kit", "docs-zh"))
         self.assertEqual(CLI.COMMAND_ALIASES["evidence"], ("xverif",))
         self.assertEqual(CLI.COMMAND_ALIASES["waveform"], ("wavepeek",))
 
@@ -44,6 +51,14 @@ class CliAliasTest(unittest.TestCase):
                 "spec-kit", "bootstrap", "--project-root", "/tmp/project",
                 "--integration", "codex",
             ],
+        )
+
+    def test_short_resume_alias_preserves_run_and_verdict(self) -> None:
+        raw = ["resume", "abc12345", "--verdict", "approve"]
+        alias = CLI.COMMAND_ALIASES[raw[0]]
+        self.assertEqual(
+            [*alias, *raw[1:]],
+            ["spec-kit", "resume", "abc12345", "--verdict", "approve"],
         )
 
     def test_each_review_gate_has_an_independent_verdict_binding(self) -> None:
@@ -102,12 +117,14 @@ class CliAliasTest(unittest.TestCase):
                 mock.patch.object(CLI, "active_workflow_processes", return_value=[]),
                 mock.patch.object(CLI.subprocess, "Popen", return_value=process) as popen,
             ):
-                result = CLI.launch_detached_workflow(
-                    project,
-                    run_id,
-                    "stage",
-                    ["spec-kit", "stage", "--stage", "0", "--foreground"],
-                )
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    result = CLI.launch_detached_workflow(
+                        project,
+                        run_id,
+                        "stage",
+                        ["spec-kit", "stage", "--stage", "0", "--foreground"],
+                    )
 
             self.assertEqual(result, 0)
             metadata = json.loads(
@@ -120,6 +137,7 @@ class CliAliasTest(unittest.TestCase):
                 popen.call_args.kwargs["env"]["SPECKIT_WORKFLOW_RUN_ID"], run_id
             )
             self.assertEqual(popen.call_args.kwargs["env"][CLI.AGENT_LAUNCH_ENV], "0")
+            self.assertEqual(json.loads(output.getvalue())["next"], f"status {run_id}")
 
     def test_confirmed_stale_recovery_preserves_step_and_makes_run_resumable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

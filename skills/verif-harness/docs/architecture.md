@@ -41,9 +41,10 @@ workflow gate 成功不能作为仿真证据或 Human approval。
 ### Task 到 mode 的分发合同
 
 每个 reviewed task 都必须声明 `MODE -> ARTIFACT -> EVIDENCE`。execution gate
-批准 task set 后，`speckit.implement` 自动把每个 task 分发给对应
-`$verif-harness` mode 一次；`init`、结构生成、行为实现、xverif/WavePeek、审计和
-closure mode 没有例外。正常路径不要求用户在 workflow 外重复调用这些 mode。
+批准 task set 后，persistent task runner 每次只把 `current_task_id` 分发给对应
+`$verif-harness` mode，并持久化 `READY/RUNNING/DONE/BLOCKED`；`init`、结构生成、
+行为实现、xverif/WavePeek、审计和 closure mode 没有例外。正常路径不要求用户在
+workflow 外重复调用这些 mode，已 `DONE` 的 task 不会重跑。
 
 分发是 agentic，完成判定必须依赖 task postcondition：owned output 和 evidence
 路径存在、approved validation command 通过。任一条件缺失都进入 `converge` 的

@@ -41,7 +41,7 @@ $verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
 ```
 
 这些语法也用于 workflow 外的诊断、recovery 和 legacy import。若当前 Spec Kit
-`tasks.md` 已声明某个 mode，execution gate 批准后应由 `speckit.implement` 自动
+`tasks.md` 已声明某个 mode，execution gate 批准后应由 persistent task runner 自动
 调度；不要因为本文展示了直接调用语法，就在成功路径中再手动执行一次。
 
 未指定 mode 时：
@@ -49,7 +49,7 @@ $verif-harness stage-gate-review 4          # 生成 Stage 4 Draft gate packet
 - 存在 `.harness-config.json`：默认执行只读 `doctor`；
 - 不存在 `.harness-config.json` 且不存在 `.specify/`：先进入
   `bootstrap`（内部：`spec-kit bootstrap`）；Stage 0 task set 评审并获得执行授权后，由
-  `speckit.implement` 自动调度 `init`，不在 workflow 外重复手动调用；
+  persistent task runner 自动调度 `init`，不在 workflow 外重复手动调用；
 - 项目状态冲突或 stage 不明确：停止写入并报告冲突。
 
 所有写模式默认只增不覆盖。Markdown 发生变化后，执行项目 `AGENTS.md`
@@ -67,7 +67,7 @@ verif-harness：Stage policy、能力选择、任务分发、traceability、权�
 ```
 
 Spec Kit 把“文档优先”变成可执行工作流，但它是 agentic framework，不是
-deterministic tool。`specify`、`checklist`、`workflow gate` 或 `implement` 成功
+deterministic tool。`specify`、`checklist`、`workflow gate` 或 task Agent 成功
 都不能替代 compile、simulation、regression、coverage、assertion 或人工审批。
 
 规格层级不要按每条 shell command 建一个完整 spec，而应保持：
@@ -126,12 +126,12 @@ checklist/tasks/analyze；获得执行授权后把 task 分发给对应 verif-ha
 审阅点，真正的 Stage gate 仍由 `stage-gate-review` 生成 packet 后由 Human 批准。
 
 所有被 reviewed task 声明的 mode 都使用同一分发合同，不只 `init`：execution gate
-批准后，`speckit.implement` 自动调用对应 mode 一次，并检查 owned outputs、evidence
-paths 和 validation command。正常路径不要求用户再逐个手动调用；缺少产物时 task
+批准后，persistent task runner 只调用 `current_task_id` 对应的 mode，并检查 owned
+outputs、evidence paths 和 validation command。正常路径不要求用户再逐个手动调用；缺少产物时 task
 保持 incomplete，由 `converge` 记录 deviation。只有显式批准并留痕的 recovery、
 legacy import，或者不属于 task set 的 workflow control/Human boundary 命令才单独
 调用，例如 `bootstrap`、`status/resume`、`stage-gate-review` 和最终 freeze 授权流。
-如果某个 mode 还需要独立 EDA、commit、push、waiver 或其他权限，implement 必须
+如果某个 mode 还需要独立 EDA、commit、push、waiver 或其他权限，task runner 必须
 停在该权限边界；获得授权后由同一 task 继续分发，而不是把正常执行责任转给用户
 手动重复调用。
 
@@ -198,7 +198,7 @@ verif-harness checkout 调用 managed Python 和仓库 wrapper。不要因为工
 integration。推荐流程：
 
 1. 在 Spec Kit review gate 暂停，确认没有 command step 正在执行；
-2. 记录 run ID 并运行 `workflow-status`；
+2. 记录 run ID 并运行 `status`；
 3. 按 Agent runtime 官方方法选择新模型；
 4. 运行 `runtime status` 和 runtime-native `verif-harness doctor`；
 5. 恢复原 workflow，不重建已批准 spec/task，不重复执行完成的 mode，不重写
@@ -212,7 +212,7 @@ reviewed/frozen baseline 后如新模型产生仓库差异，必须进入 `chang
 先在目标目录安装 verif-harness Skill，再在稳定 review gate 执行：
 
 ```text
-$verif-harness workflow-status --project-root <project>
+$verif-harness status --project-root <project>
 python3 scripts/verif_harness.py runtime status --project-root <project>
 python3 scripts/verif_harness.py runtime switch \
   --project-root <project> --to <codex|kimi>
@@ -243,7 +243,7 @@ $verif-harness init
 ```text
 bootstrap：安装规格系统
     -> stage --stage 0：定义、澄清、规划并审阅 Stage 0
-        -> speckit.implement：自动分发已授权 task
+        -> persistent task runner：逐项分发已授权 task
             -> $verif-harness init：把已审规格落成验证工程治理层
 ```
 
@@ -351,24 +351,26 @@ constitution -> review
 
 ```text
 # Codex
-$verif-harness workflow-status
-$verif-harness workflow-resume <run-id> --verdict approve
+$verif-harness status
+$verif-harness resume <run-id> --verdict approve
+$verif-harness resume <run-id> --answer "已取得的回答或 authority 引用"
 
 # Kimi Code
-/skill:verif-harness workflow-status
-/skill:verif-harness workflow-resume <run-id> --verdict approve
+/skill:verif-harness status
+/skill:verif-harness resume <run-id> --verdict approve
+/skill:verif-harness resume <run-id> --answer "已取得的回答或 authority 引用"
 ```
 
-`stage` 和 `workflow-resume` 会关闭 Spec Kit workflow 子进程的交互 stdin，确保
+`stage` 和 `resume` 会关闭 Spec Kit workflow 子进程的交互 stdin，确保
 Agent 即使在 PTY 中运行也会在每个 gate 确定性地进入 `paused`。不要向 PTY 写入
 数字菜单选项；完成实际 review 后，用 `--verdict approve|reject` 显式处理当前 gate。
 该 verdict 不会传递给下一 gate，EOF 也不会被解释成 `reject`。
 
-Codex/Kimi 的 runtime-native launcher 会将 `stage` 和 `workflow-resume` 放入独立
-worker，立即返回 run ID、PID 和日志路径；使用 `workflow-status <run-id>` 轮询，
+Codex/Kimi 的 runtime-native launcher 会将 `stage` 和 `resume` 放入独立
+worker，立即返回 run ID、PID 和日志路径；使用 `status <run-id>` 轮询，
 不要再让 Agent 用固定 600 秒 bash task 等待整个命令。若旧 worker 被外层 timeout
 终止且 run 残留为 `running`，先检查日志并确认相关 PID/进程均已退出，再执行
-`workflow-recover <run-id> --confirm-stale`，随后 `workflow-resume <run-id>` 重试原
+`recover <run-id> --confirm-stale`，随后 `resume <run-id>` 重试原
 current step。检测到活进程时 recovery 会拒绝，且不得启动重复 Stage。
 
 主要规格输出位于：
@@ -420,13 +422,13 @@ Expected evidence: generated-file inventory + validation log
 Human gate: Stage 0 execution authorization and later Stage 0 approval
 ```
 
-execution gate 批准这个 task 后，`speckit.implement` 应自动调度
+execution gate 批准这个 task 后，persistent task runner 应自动调度
 `$verif-harness init` 一次。因此正常流程是：
 
 ```text
 tasks.md 声明 init
   -> Human 授权 task set
-  -> speckit.implement 自动调用 init
+  -> persistent task runner 自动调用 init
   -> 检查 owned outputs/evidence/validation
   -> speckit.converge
 ```
@@ -434,7 +436,7 @@ tasks.md 声明 init
 不是：
 
 ```text
-speckit.implement 已执行 init
+persistent task runner 已执行 init
   -> 用户再次手动调用 init                  # 错误：重复执行
 ```
 
@@ -448,7 +450,7 @@ speckit.implement 已执行 init
 - approved validation command 返回成功；
 - 没有越过 DUT RTL、EDA、commit/push、waiver 或 Human approval 边界。
 
-如果 `speckit.implement` 退出成功但 `.harness-config.json`、`AGENTS.md`、治理视图、
+如果 Agent 退出成功但 `.harness-config.json`、`AGENTS.md`、治理视图、
 review packet 或 scaffold 缺失，结论必须是 `TASK INCOMPLETE`。`converge` 应记录
 dispatch deviation；不能用 workflow 外未追踪的手动 `init` 掩盖问题。
 
@@ -459,7 +461,7 @@ immutable legacy-baseline import。
 同一规则适用于所有被 `tasks.md` 声明的 verif-harness modes：
 
 ```text
-TASK -> reviewed MODE -> speckit.implement 自动分发一次
+TASK -> reviewed MODE -> persistent task runner 逐项分发
      -> ARTIFACT/EVIDENCE/VALIDATION postcondition -> converge
 ```
 
@@ -499,7 +501,7 @@ task contract 使用。
 doctor                                # Skill：只读检查初始项目状态
   -> spec-kit bootstrap               # Skill：初始化 Codex/Kimi integration 与 RTL preset
   -> spec-kit stage --stage 0         # Skill：生成并审阅 Stage 0 spec/plan/tasks
-       -> speckit.implement            # Skill：自动调度以下已授权 task mode
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task mode
           -> init                      # Skill：生成 harness 治理资产及规格派生视图
           -> audit-traceability        # Skill：审计计划与实现的结构追踪关系
        -> speckit.converge             # Skill：校验 task outputs/evidence/validation
@@ -515,7 +517,7 @@ Provisional 和 open questions。Stage 0 不允许生成 TB 源码。
 ```text
 doctor                                # Skill：确认 Stage 1 入口状态
   -> spec-kit stage --stage 1         # Skill：审阅 Stage 1 spec/plan/tasks 并授权执行
-       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
           -> add-interface             # Skill：生成协议 interface 与 modport
           -> add-shared-pkg            # Skill：生成公共类型及 pack/unpack helper
           -> add-uvc-skeleton          # Skill：生成 driver/monitor/agent class 骨架
@@ -547,7 +549,7 @@ latency、hang、残留数据和 X/Z 传播。信号、时窗、预期事件和�
 ```text
 doctor                                # Skill：确认 Stage 2 入口状态
   -> spec-kit stage --stage 2         # Skill：审阅 Stage 2 spec/plan/tasks 并授权执行
-       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
           -> add-refmodel-bridge       # Skill：生成 Golden/Syscan/DPI 结构适配层
           -> complete-scoreboard       # Skill：仅为明确 FIFO alignment 生成比较器
           -> add-testcase              # Skill：生成 Golden engagement/compare 测试
@@ -573,7 +575,7 @@ entry，并检查 FSDB 中 DUT/Golden 的第一个不同值。WavePeek 的
 ```text
 doctor                                # Skill：确认 Stage 3 入口状态
   -> spec-kit stage --stage 3         # Skill：审阅 Stage 3 spec/plan/tasks 并授权执行
-       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
           -> add-coverage-skeleton     # Skill：从已评审合约生成 coverage model
           -> add-assertion-skeleton    # Skill：从已评审 property 生成 SVA/bind
           -> add-testcase              # Skill：生成 coverage/assertion focused 测试
@@ -598,7 +600,7 @@ bin 已命中。coverage denominator、property 意图、vacuity 和 waiver 仍�
 ```text
 doctor                                # Skill：确认 Stage 4 入口状态
   -> spec-kit stage --stage 4         # Skill：审阅 Stage 4 spec/plan/tasks 并授权执行
-       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
           -> add-testcase              # Skill：补随机、边界和稳定性 candidate 测试
           -> add-regression-runner     # Skill：已有完整 runner 时只复用、不覆盖
           -> add-ci-hook               # Skill：生成待人工合并的 CI job fragment
@@ -624,7 +626,7 @@ same-seed rerun 一起交给 `regression-triage`；root cause 分类和 testcase
 ```text
 doctor                                # Skill：确认 Stage 5 入口与剩余 blocker
   -> spec-kit stage --stage 5         # Skill：审阅 Stage 5 closure spec/plan/tasks
-       -> speckit.implement            # Skill：自动调度以下已授权 task modes
+       -> persistent task runner       # Wrapper：逐项调度以下已授权 task modes
           -> add-performance-gate      # Skill：按已评审公式/阈值检查性能合同
           -> add-testcase              # Skill：只补剩余 hole/corner/closure case
           -> required regression rounds # 项目动作：需独立 EDA 权限
@@ -680,7 +682,7 @@ Stage 0 只允许安装、`probe` 和把工具证据要求写入计划，不使�
 immutable imported baseline。
 
 新项目的正常路径中，Stage 0 `tasks.md` 必须声明一次 `verif-harness mode: init`；
-execution gate 批准后由 `speckit.implement` 自动调度。下方直接调用只用于有记录的
+execution gate 批准后由 persistent task runner 自动调度。下方直接调用只用于有记录的
 recovery 或 legacy import，不是 workflow 成功后的重复步骤。
 
 **输入**：
@@ -1492,15 +1494,15 @@ Codex CLI 启动后，setup 会通过 interactive initial prompt 自动创建一
 $verif-harness probe
 $verif-harness bootstrap
 $verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-$verif-harness workflow-status
-$verif-harness workflow-resume <run-id> --verdict approve
+$verif-harness status
+$verif-harness resume <run-id> --verdict approve
 
 # Kimi Code
 /skill:verif-harness probe
 /skill:verif-harness bootstrap
 /skill:verif-harness stage --stage 2 --objective "接入 reference model 并建立可追踪功能对拍"
-/skill:verif-harness workflow-status
-/skill:verif-harness workflow-resume <run-id> --verdict approve
+/skill:verif-harness status
+/skill:verif-harness resume <run-id> --verdict approve
 ```
 
 如果没有 Agent CLI，才使用 `python3 scripts/verif_harness.py ...` 作为底层
@@ -1510,9 +1512,9 @@ $verif-harness workflow-resume <run-id> --verdict approve
 $verif-harness probe                                      # Skill：校验固定版本规格工具
 $verif-harness bootstrap                                  # Skill：初始化规格 runtime 与 preset
 $verif-harness stage --stage 2 --objective "..."          # Skill：运行一个 Stage 的规格驱动 workflow
-$verif-harness workflow-status [run-id]                   # Skill：查看 workflow 状态
-$verif-harness workflow-resume <run-id> --verdict approve # Skill：显式处理当前 gate 后恢复
-$verif-harness workflow-recover <run-id> --confirm-stale  # Skill：修复确认中断的 running run
+$verif-harness status [run-id]                   # Skill：查看 workflow 状态
+$verif-harness resume <run-id> --verdict approve # Skill：显式处理当前 gate 后恢复
+$verif-harness recover <run-id> --confirm-stale  # Skill：修复确认中断的 running run
 ```
 
 `bootstrap` 拒绝覆盖已有 `.specify/`。`stage` 使用不含 shell step 的
@@ -1523,11 +1525,11 @@ Stage 0 only: constitution -> review
   -> specify -> review -> clarify -> review -> plan -> review
   -> checklist -> review -> tasks -> review
   -> analyze -> authorize execution
-  -> implement through verif-harness modes -> review -> converge -> review
+  -> persistent task runner -> implementation review -> converge -> review
 ```
 
 `tasks.md` 中每个 task 必须声明 mode、input contract、owned output、evidence、
-validation 和 Human gate。execution gate 批准后，`speckit.implement` 自动调度每个
+validation 和 Human gate。execution gate 批准后，persistent task runner 只调度当前
 task 对应的 mode 一次；用户不需要按照 task list 再手动逐个调用。该规则覆盖全部
 被 task 声明的生成、工具委派、回归、审计和 closure modes。
 
@@ -1544,8 +1546,9 @@ Human approval、sign-off/freeze 授权不属于普通 implementation task 自�
 完成该工件的实际 review 后再用 `resume <run-id> --verdict approve|reject` 继续。
 wrapper 不读取 PTY 菜单输入，且一次 verdict 只作用于当前 gate；`resume` 不能跳过
 review，也不会把 gate verdict 提升成 Stage approval。
-checklist、tasks 和 implementation 之后也分别暂停，因此一次 verdict 后最多执行一个
-可能耗时的 Agent command。
+checklist、tasks 和 task execution 之后也分别保留 review boundary。task execution
+内部按 `current_task_id` 逐项执行；遇到 Human/authority/specification 问题时写入
+`BLOCKED` 并终止该子 Agent，而不是等待终端输入。
 
 preset 会把以下字段追加到标准 Spec Kit 工件：DUT 只读边界、规格权威、
 REQ/VF/TC/COV/ASRT ID、verif-harness mode、owned artifact、validation、evidence、

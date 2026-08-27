@@ -196,9 +196,12 @@ setup 已把 CLI 启动目录和 runtime marker 固定到所选 workspace；正�
 重复填写 `--project-root .` 或 `--integration`。只有跨项目自动化、恢复流程或 marker
 歧义时才显式覆盖。
 
-这些是短命令别名：`probe/bootstrap/stage` 内部路由到 Spec Kit，`evidence`
-路由到 xverif，`waveform` 路由到 WavePeek。显式的 `spec-kit`、`xverif` 和
-`wavepeek` 形式仍保留给高级诊断。
+常用 workflow 命令使用短别名：`probe/bootstrap/stage/status/resume/recover/docs`
+内部路由到 Spec Kit，旧的 `workflow-status/workflow-resume/workflow-recover`
+继续兼容。`evidence` 路由到 xverif，`waveform` 路由到 WavePeek。其他常用模式也有
+`test/coverage/regression/trace/gate/signoff/freeze` 等一词别名；运行
+`$verif-harness help` 查看完整清单。显式的长模式名以及 `spec-kit`、`xverif` 和
+`wavepeek` 形式仍保留给自动化、已有 task 和高级诊断。
 
 Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
 入口。
@@ -214,9 +217,9 @@ RTL 根目录、DUT top 文件和验证目录；setup 阶段不绑定 RTL 路径
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
 control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
 xverif, WavePeek, and simulators produce bounded evidence. After execution
-authorization, `speckit.implement` dispatches each reviewed task's named mode
-exactly once; convergence requires its owned outputs, evidence paths, and
-validation command, so successful workflows need no duplicate manual calls.
+authorization, the persistent task runner dispatches only `current_task_id`,
+persists `READY/RUNNING/DONE/BLOCKED`, and validates owned outputs, evidence,
+and the reviewed command before marking `[x]`; `DONE` tasks are never replayed.
 Human reviewers keep
 semantic decisions, waivers, gates, sign-off, and freeze authority. See
 [integrations/spec-kit/README.md](integrations/spec-kit/README.md).
@@ -394,7 +397,7 @@ with specialized behavior has its own mandatory implementation contract:
 
 | Document | Contents |
 | --- | --- |
-| [`speckit.implement` command](integrations/spec-kit/preset/rtl-verification/commands/speckit.implement.md) | Reviewed task dispatch and convergence command contract. |
+| [Task runner boundary](integrations/spec-kit/preset/rtl-verification/commands/speckit.implement.md) | Fail-closed replacement for monolithic implementation; execution lives in the wrapper. |
 | [Constitution template](integrations/spec-kit/preset/rtl-verification/templates/constitution-template.md) | Verification governance and immutable authority principles. |
 | [Specification template](integrations/spec-kit/preset/rtl-verification/templates/spec-template.md) | Stage-scoped requirements, decisions, risks, and evidence expectations. |
 | [Plan template](integrations/spec-kit/preset/rtl-verification/templates/plan-template.md) | Technical context, design structure, and validation planning. |

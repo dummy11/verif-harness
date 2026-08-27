@@ -13,6 +13,14 @@ the catalog below is the Codex spelling of the same runtime-neutral mode.
 Write modes read repository instructions and refuse to modify the configured
 DUT RTL root. Review and approval remain Human responsibilities.
 
+Use short aliases for interactive work; canonical names remain stable for
+existing specifications and automation. Common examples are `test` →
+`add-testcase`, `coverage` → `add-coverage-skeleton`, `trace` →
+`audit-traceability`, `gate 4` → `stage-gate-review 4`, and `signoff 5` →
+`signoff-audit 5`. Workflow control uses `status`, `resume`, `recover`, and
+`docs`; the older `workflow-*` spellings remain compatible. Run
+`$verif-harness help [name]` for the exact mapping and authority boundary.
+
 <!-- markdownlint-disable MD013 -->
 
 | Mode | Purpose | Typical use | Example |
@@ -56,10 +64,10 @@ DUT RTL root. Review and approval remain Human responsibilities.
 ```text
 spec-kit bootstrap
   -> Stage 0 specification / tasks / execution authorization
-  -> speckit.implement auto-dispatches reviewed modes, including init
+  -> persistent task runner dispatches reviewed modes, including init
   -> Human Stage 0 review
   -> each Stage specification / tasks / execution authorization
-  -> speckit.implement auto-dispatches all reviewed generation/tool/audit modes
+  -> persistent task runner dispatches all reviewed generation/tool/audit modes
   -> speckit.converge verifies owned outputs, evidence, and validation
   -> separate stage-gate-review / signoff-audit / freeze authorization flow
   -> Human freeze approval and separately authorized tag/push
@@ -67,8 +75,8 @@ spec-kit bootstrap
 
 At every Stage, the Spec Kit lifecycle creates and reviews the specification,
 plan, checklist, and tasks before verif-harness dispatches implementation modes;
-`speckit.implement` automatically dispatches each approved task's named mode
-exactly once, so the successful path does not require duplicate manual calls.
+The persistent task runner dispatches only the approved `current_task_id`,
+records `READY/RUNNING/DONE/BLOCKED`, and never replays `DONE` tasks.
 It then converges artifacts and evidence back to the specification. New
 projects keep `specs/` as the sole editable requirements authority. Spec Kit is
 agentic: its command and review-gate success is not simulation evidence or
@@ -84,6 +92,11 @@ For the normal user surface, the tool namespaces can be shortened:
 $verif-harness probe                         # spec-kit probe
 $verif-harness bootstrap                     # spec-kit bootstrap
 $verif-harness stage --stage 0 --objective "..."  # spec-kit stage
+$verif-harness status [run-id]                     # spec-kit status
+$verif-harness resume <run-id> --verdict approve  # spec-kit resume
+$verif-harness resume <run-id> --answer "..."     # resume current BLOCKED task only
+$verif-harness recover <run-id> --confirm-stale   # confirmed stale run only
+$verif-harness docs                                # refresh Chinese mirror
 $verif-harness evidence probe --tool xbit     # xverif probe
 $verif-harness waveform probe                # wavepeek probe
 ```

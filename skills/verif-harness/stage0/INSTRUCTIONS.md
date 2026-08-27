@@ -4,7 +4,7 @@
 
 **Dispatch contract**: For a new Spec Kit project, Stage 0 `tasks.md` names this
 mode and its owned outputs explicitly. Once the execution gate approves that
-task, `speckit.implement` auto-dispatches this mode. Do not ask the user to invoke
+task, the persistent task runner auto-dispatches this mode. Do not ask the user to invoke
 `init` again after a successful dispatch. Direct manual invocation is limited to
 an approved recovery path or an immutable legacy-baseline import.
 

@@ -163,31 +163,36 @@ closure/audit mode，再由 `stage-gate-review` 生成 packet 交 Human 决策�
 
 ## Agent 后台任务在 600 秒超时，workflow 一直显示 running
 
-新版 runtime-native launcher 不再等待整个 `stage` 或 `workflow-resume`：它会返回
-run ID、worker PID 和 `verif-harness-worker.log`，Agent 应用 `workflow-status
+新版 runtime-native launcher 不再等待整个 `stage` 或 `resume`：它会返回
+run ID、worker PID 和 `verif-harness-worker.log`，Agent 应用 `status
 <run-id>` 轮询。不要再在外层创建固定 600 秒 bash task，也不要重复启动 Stage。
 
 对于旧 run，先检查该 run 的 log、PID 和系统进程。只有确认 worker 已被外层 timeout
 终止且状态超过安全等待时间仍为 `running`，才执行：
 
 ```text
-$verif-harness workflow-recover <run-id> --confirm-stale
-$verif-harness workflow-resume <run-id>
+$verif-harness recover <run-id> --confirm-stale
+$verif-harness resume <run-id>
 ```
 
 recovery 保留 current step、已完成结果和证据，只把状态改为可恢复的 `failed`；resume
 会重试 current step。检测到活 worker、run 尚新或 run 已 paused/completed/aborted 时
 都会拒绝，不能用 recovery 越过 review gate。
 
-## tasks 已声明 mode，但 implement 后没有对应产物
+task runner 中断时，recover 会先按 reviewed outputs/evidence/validation 做 reconciliation。
+postconditions 已满足则记为 `DONE` 且不重放；否则记为 `BLOCKED`，由 resume 只重试
+该 `current_task_id`。
+
+## task runner 报告 BLOCKED 或没有对应产物
 
 不要在 workflow 外静默手动调用该 mode。先按 task contract 核对：mode 名称、input
 contract、owned output/evidence path、validation command 和 Human gate。只要任一
-输出缺失或 validation 失败，该 task 就是 incomplete，即使 `speckit.implement`
-进程本身成功退出。
+输出缺失或 validation 失败时，runner 会把 `current_task_id` 持久化为 `BLOCKED`，
+不会因 Agent 进程返回 0 而假装完成。
 
 让 `converge` 记录 dispatch deviation，并保留原 run ID、task ID、已有产物和日志。
-修正规格、task 或执行环境后，按项目批准的 recovery 路径重试同一个 task；重试
+取得问题对应的回答/authority，或修正 task/执行环境后，用
+`resume <run-id> --answer "..."` 重试同一个 task；重试
 必须留痕且不得覆盖先前 evidence。该规则适用于 `init`、所有生成模式、xverif、
 WavePeek、回归/审计/closure 模式，不允许把重复手动调用当作正常流程。
 

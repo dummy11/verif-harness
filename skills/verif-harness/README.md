@@ -32,27 +32,50 @@ $verif-harness stage-gate-review 4
 $verif-harness bootstrap          # 内部：spec-kit bootstrap
 $verif-harness probe              # 内部：spec-kit probe
 $verif-harness stage --stage 0 --objective "建立 Stage 0 规格基线" # 内部：spec-kit stage
-$verif-harness workflow-status    # 内部：spec-kit status
-$verif-harness workflow-resume <run-id> --verdict approve  # 每次只恢复当前 gate
-$verif-harness workflow-recover <run-id> --confirm-stale    # 仅恢复确认已中断的 running run
+$verif-harness status [run-id]                    # 内部：spec-kit status
+$verif-harness resume <run-id> --verdict approve # 每次只恢复当前 gate
+$verif-harness resume <run-id> --answer "..."    # 只恢复当前 BLOCKED task
+$verif-harness recover <run-id> --confirm-stale  # 仅恢复确认已中断的 running run
+$verif-harness docs                               # 刷新中文阅读镜像
 $verif-harness evidence probe --tool xbit  # 内部：xverif probe
 $verif-harness waveform probe             # 内部：wavepeek probe
 ```
 
 显式 `spec-kit` 形式仍保留给高级诊断和底层调试。
 
-通过 Codex/Kimi launcher 调用时，`stage` 和 `workflow-resume` 会在独立 worker 中运行
-并立即返回 run ID 与日志路径；用 `workflow-status` 轮询，不要用固定 600 秒后台 bash
-任务包裹。只有确认旧 worker 已退出后，才可显式运行 `workflow-recover
+通过 Codex/Kimi launcher 调用时，`stage` 和 `resume` 会在独立 worker 中运行
+并立即返回 run ID 与日志路径；用 `status` 轮询，不要用固定 600 秒后台 bash
+任务包裹。只有确认旧 worker 已退出后，才可显式运行 `recover
 <run-id> --confirm-stale`，然后恢复同一个 run。
 
 未指定模式时：
 
 - 存在 `.harness-config.json`：执行只读 `doctor`。
 - 不存在 `.harness-config.json` 且无 `.specify/`：从 `spec-kit bootstrap` 开始。
-- 已有 `.specify/`：由 reviewed Stage 0 task 在 `speckit.implement` 中自动调度
+- 已有 `.specify/`：由 reviewed Stage 0 task 在 persistent task runner 中自动调度
   `init`；不要绕过 gate 直接开始。
 - 状态不明确时只报告冲突，不自动执行写模式。
+
+## 常用短命令
+
+长模式名继续兼容；日常调用优先使用下面这些可直接猜到的短别名：
+
+```text
+$verif-harness interface       # add-interface
+$verif-harness uvc input       # add-uvc-skeleton input
+$verif-harness test            # add-testcase
+$verif-harness coverage        # add-coverage-skeleton
+$verif-harness regression      # add-regression-runner
+$verif-harness trace           # audit-traceability
+$verif-harness gate 4          # stage-gate-review 4
+$verif-harness signoff 5       # signoff-audit 5
+$verif-harness freeze          # freeze-baseline
+$verif-harness release         # oss-readiness，只做 readiness audit
+$verif-harness help [name]     # 查看短命令、输入和权限边界
+```
+
+别名采用精确匹配并保留后续参数，不使用前缀或模糊匹配。完整映射由
+[SKILL.md](SKILL.md) 的 Dispatch 表定义。
 
 ## 31 个模式
 
@@ -115,15 +138,15 @@ xverif / WavePeek / EDA 证据面
 Human 权限面
 ```
 
-Spec Kit 管理 constitution、spec、plan、checklist、tasks、analyze、implement
-dispatch 和 converge；verif-harness 仍负责 Stage policy、能力选择、traceability
+Spec Kit 管理 constitution、spec、plan、checklist、tasks、analyze 和 converge；
+verif-harness task runner 负责 implementation dispatch、Stage policy、能力选择、traceability
 和权限边界。新项目以 `specs/` 为唯一可编辑规格事实源；已批准项目作为不可变
 baseline 导入。Spec Kit workflow success 不是仿真证据或审批。
 
 reviewed task 必须声明 verif-harness mode、owned outputs、evidence 和
 validation。Codex 以 `$verif-harness` 调用，Kimi Code 以
-`/skill:verif-harness` 调用。execution gate 后，`speckit.implement` 自动分发
-每个 task mode 一次；
+`/skill:verif-harness` 调用。execution gate 后，persistent task runner 每次只分发
+`current_task_id`；
 正常路径不需要用户重复手动调用。缺少产物或 validation 失败时，task 保持
 incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声明的 mode，不只
 适用于 `init`；workflow control 和 Human authority 命令仍遵守各自独立边界。

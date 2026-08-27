@@ -3,7 +3,7 @@ schema_version: "1.0"
 preset:
   id: "verif-harness-rtl"
   name: "verif-harness RTL Verification"
-  version: "0.2.0"
+  version: "0.3.0"
   description: "Adds Simplified Chinese RTL verification governance, traceability, and execution boundaries to Spec Kit"
   author: "verif-harness contributors"
   repository: "https://github.com/dummy11/verif-harness"
@@ -52,9 +52,9 @@ provides:
     - type: "command"
       name: "speckit.implement"
       file: "commands/speckit.implement.md"
-      description: "Prepend verif-harness execution and approval guardrails"
+      description: "Disable monolithic implementation; verif-harness task runner owns execution"
       replaces: "speckit.implement"
-      strategy: "prepend"
+      strategy: "replace"
 
 tags:
   - "rtl-verification"

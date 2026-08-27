@@ -29,18 +29,24 @@ Spec Kit owns the editable specification lifecycle.
   material remain unchanged. Upstream `.specify/` infrastructure files remain
   in their distribution language. For a new Stage 0 project without
   `.harness-config.json`, the reviewed task set must contain exactly one
-  `verif-harness mode: init` task. After execution authorization,
-  `speckit.implement` dispatches that mode; no separate successful-path manual
-  `init` call follows the workflow.
+  `verif-harness mode: init` task. After execution authorization, the persistent
+  task runner dispatches that mode; no separate successful-path manual `init`
+  call follows the workflow.
 - `status`: inspect one run or list all workflow run states.
 - `resume`: resume a paused run with an explicit `--verdict approve|reject` for
   its current review gate. A reviewer must inspect the named artifact before
   choosing the verdict; one verdict never carries into the next gate, and
-  resuming does not approve the Stage.
+  resuming does not approve the Stage. When the task runner is `BLOCKED`, use
+  `--answer` instead; it retries only `current_task_id`.
+- `block`: while one task is `RUNNING`, persist its concrete Human, authority,
+  specification, or execution question. The runner observes the state and
+  terminates that task's Agent process instead of waiting for terminal input.
 - `recover`: after a fixed-duration outer task killed a worker, convert a
   confirmed stale `running` run to resumable `failed` state while preserving
-  its current step and evidence. Require `--confirm-stale`, refuse a live
-  worker, and resume the same run; never start a replacement run silently.
+  its current step and evidence. For an interrupted task, reconcile reviewed
+  postconditions first: mark it `DONE` without replay when they pass, otherwise
+  persist `BLOCKED`. Require `--confirm-stale`, refuse a live worker, and resume
+  the same run; never start a replacement run silently.
 - `docs-zh`: refresh `.specify/docs/zh-CN/`, a non-executable Simplified
   Chinese reading mirror. Its manifest records source/translation hashes and
   `full|source-is-chinese|summary|pending` status. The mirror is never a
@@ -59,9 +65,9 @@ $verif-harness bootstrap
 /skill:verif-harness bootstrap
 ```
 
-The runtime-native launcher detaches `stage` and `workflow-resume`, records a
+The runtime-native launcher detaches `stage` and `resume`, records a
 per-run worker PID and log, and returns immediately. Poll with
-`workflow-status <run-id>`. Do not place these commands inside a 600-second (or
+`status <run-id>`. Do not place these commands inside a 600-second (or
 other fixed-duration) background shell task, and do not submit a duplicate
 stage while the worker is active. Direct Python automation remains foreground
 unless it explicitly passes `--detach`.
@@ -106,13 +112,15 @@ cross-project, automation, recovery, or ambiguous-marker case.
 
 Do not drive a workflow review gate by opening a PTY and feeding a numeric menu
 choice. The wrapper deliberately gives the Spec Kit workflow no interactive
-stdin so every gate persists `paused`; inspect it with `workflow-status`, then
+stdin so every gate persists `paused`; inspect it with `status`, then
 resume with the explicit verdict option. EOF must never become an implicit
 rejection.
 
 The lifecycle pauses after checklist generation, task generation, analysis,
-implementation, and convergence. Consequently one approved gate dispatches at
-most one potentially long Agent command before the next review boundary.
+task execution, and convergence. Execution uses the project-managed task runner,
+not the monolithic upstream `speckit.implement` command. Each task has persisted
+`READY/RUNNING/DONE/BLOCKED` state; `status` exposes the exact current task and
+block question, and resume never replays `DONE` tasks.
 
 ## Source-of-truth policy
 
@@ -127,6 +135,12 @@ most one potentially long Agent command before the next review boundary.
   decisions, approval dates, evidence, or provenance.
 - Every executable task must map
   `REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`.
+- Keep executable tasks `interaction: none`. Record Human answers, new authority,
+  or unresolved semantics as `OPEN B###`; do not approve task review while any
+  such blocker remains.
+- Bind `review-tasks` approval to the compact contract hash. Refuse execution
+  authorization if analyze or any later action changes task semantics; checkbox
+  changes made by the runner do not change that hash.
 
 ## Boundaries
 

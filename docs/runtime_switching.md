@@ -114,7 +114,7 @@ selecting K3 inside Kimi Code leaves the runtime key as `kimi`.
 Use this sequence:
 
 1. Stop at a Spec Kit review gate; do not change models during a running step.
-2. Record the workflow run ID and inspect `workflow-status`.
+2. Record the workflow run ID and inspect `status`.
 3. Select the new model through the Agent runtime's documented configuration.
 4. Run `runtime status` and `$verif-harness doctor` or
    `/skill:verif-harness doctor`.
@@ -132,7 +132,7 @@ Use setup once for the target runtime, then switch only from a stable review
 gate with no command step running:
 
 ```bash
-python3 scripts/verif_harness.py workflow-status
+python3 scripts/verif_harness.py status
 python3 scripts/verif_harness.py runtime status
 python3 scripts/verif_harness.py runtime switch --to kimi
 python3 scripts/verif_harness.py runtime status

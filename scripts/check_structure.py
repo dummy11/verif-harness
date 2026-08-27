@@ -185,6 +185,38 @@ def main() -> int:
     for mode in modes:
         if f"`{mode}" not in skill_text:
             failures.append(f"bundled skill lacks mode: {mode}")
+    aliases = {
+        "interface": "add-interface",
+        "package": "add-shared-pkg",
+        "uvc [name]": "add-uvc-skeleton [name]",
+        "harness": "add-harness-layer",
+        "env": "add-env-layer",
+        "build": "finalize-filelist-and-make",
+        "regression": "add-regression-runner",
+        "simulator": "add-simulator-profile",
+        "test": "add-testcase",
+        "coverage": "add-coverage-skeleton",
+        "assertion": "add-assertion-skeleton",
+        "refmodel": "add-refmodel-bridge",
+        "uvc-complete": "complete-uvc",
+        "scoreboard": "complete-scoreboard",
+        "ci": "add-ci-hook",
+        "performance": "add-performance-gate",
+        "triage": "regression-triage",
+        "coverage-audit": "coverage-closure",
+        "assertion-audit": "assertion-closure",
+        "trace": "audit-traceability",
+        "change": "change-control",
+        "gate <stage>": "stage-gate-review <stage>",
+        "signoff <stage>": "signoff-audit <stage>",
+        "freeze": "freeze-baseline",
+        "release": "oss-readiness",
+        "pattern [topic]": "patterns [topic]",
+    }
+    for alias, mode in aliases.items():
+        mapping = f"| `{alias}` | `{mode}` |"
+        if mapping not in skill_text:
+            failures.append(f"bundled skill lacks exact alias mapping: {mapping}")
     for mode in (
         "add-simulator-profile", "complete-uvc", "complete-scoreboard",
         "regression-triage", "coverage-closure", "assertion-closure",
