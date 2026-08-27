@@ -54,7 +54,6 @@ def stage_docs(config: dict) -> list[Path]:
 
     docs = [
         Path("AGENTS.md"),
-        docs_root / "plan.md",
         docs_root / "roadmap.md",
         docs_root / "harness_style_methodology.md",
         docs_root / gov_sub / "verification_workflow.md",

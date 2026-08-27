@@ -30,7 +30,6 @@ DOC_FILENAMES = {
 }
 
 DOCS_ROOT_FILENAMES = {
-    "plan": "plan.md",
     "roadmap": "roadmap.md",
     "harness_style_methodology": "harness_style_methodology.md",
 }

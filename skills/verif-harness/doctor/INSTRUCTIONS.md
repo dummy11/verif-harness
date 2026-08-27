@@ -35,3 +35,8 @@ Run this mode before choosing a write mode or when project state is unclear.
 The audit intentionally reports legacy `.claude/` and `CLAUDE.md` artifacts
 when Codex `AGENTS.md` is also present. Legacy files may remain for
 compatibility, but they must not be the active source of truth.
+
+An existing `<docs-root>/plan.md` is likewise an optional legacy derived view:
+report it for migration awareness, but do not require or delete it. In Spec Kit
+projects, the current `specs/<feature>/plan.md` is the authoritative Stage plan;
+new `init` runs do not generate the legacy file.

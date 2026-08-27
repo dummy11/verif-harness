@@ -12,7 +12,7 @@ an approved recovery path or an immutable legacy-baseline import.
 below the verif-harness control plane. For new projects, Spec Kit `specs/` is the
 sole editable specification authority. This mode produces operational governance
 views and evidence/review structures; it does not create a second requirements source.
-Produces: `.harness-config.json` + `.harness/` + `AGENTS.md` + 11 Stage 0
+Produces: `.harness-config.json` + `.harness/` + `AGENTS.md` + 9 or 10 Stage 0
 derived/governance docs + Stage 0 review packet. Codex projects also receive
 the optional `.codex/agents/` helper configurations; Kimi Code projects do not
 receive Codex-only TOML assets.
@@ -238,7 +238,6 @@ Placeholder table (compute values from `.harness-config.json`):
 | `{{DUT_TOP_FILE}}` | config.rtl.top_file |
 | `{{VERIF_ROOT}}` | config.verif.root |
 | `{{DOCS_ROOT}}` | config.verif.docs_root |
-| `{{PLAN_PATH}}` | docs_root + "plan.md" |
 | `{{ROADMAP_PATH}}` | docs_root + "roadmap.md" |
 | `{{METHODOLOGY_PATH}}` | docs_root + "harness_style_methodology.md" |
 | `{{WORKFLOW_PATH}}` | docs_root + "governance/verification_workflow.md" |
@@ -294,19 +293,18 @@ the derived document.
 Docs to generate (order matters — later docs may cite earlier ones):
 
 1. `<docs_root>/governance/verification_workflow.md`
-2. `<docs_root>/plan.md`
-3. `<docs_root>/roadmap.md`
-4. `<docs_root>/harness_style_methodology.md`
-5. `<docs_root>/verification/verification_plan.md`
-6. `<docs_root>/verification/feature_matrix.md`
-7. `<docs_root>/verification/tb_architecture.md`
-8. `<docs_root>/verification/assertion_plan.md`
-9. `<docs_root>/verification/coverage_plan.md`
-10. `<docs_root>/verification/testcase_list.md`
-11. `<docs_root>/verification/reference_model_spec.md` (only if
+2. `<docs_root>/roadmap.md`
+3. `<docs_root>/harness_style_methodology.md`
+4. `<docs_root>/verification/verification_plan.md`
+5. `<docs_root>/verification/feature_matrix.md`
+6. `<docs_root>/verification/tb_architecture.md`
+7. `<docs_root>/verification/assertion_plan.md`
+8. `<docs_root>/verification/coverage_plan.md`
+9. `<docs_root>/verification/testcase_list.md`
+10. `<docs_root>/verification/reference_model_spec.md` (only if
     `reference_model.enabled` is true)
 
-Before writing #5-#11, read the DUT top file at `config.rtl.top_file` and
+Before writing #4-#10, read the DUT top file at `config.rtl.top_file` and
 grep its submodule dependencies to build feature/interface understanding.
 If `design_docs.root` is non-null, read those design docs for
 supplementary context.
@@ -342,7 +340,7 @@ python3 .harness/check_ai_workflow.py --fix
 Create `<docs_root>/stage0_review_packet.md` following
 `<skill-dir>/assets/stage_review_packet_template.md`.
 The packet aggregates all Human Decisions + Provisional decisions + open
-questions across the 11 docs into a single reviewer-friendly checklist.
+questions across the 9 or 10 docs into a single reviewer-friendly checklist.
 
 Content overview (see template for full structure):
 
@@ -376,7 +374,7 @@ Installed:
   AGENTS.md
 
 Docs generated (all in Draft / Pending status):
-  <list of 10 or 11 docs>
+  <list of 9 or 10 docs>
 
 Review packet generated:
   <docs_root>/stage0_review_packet.md

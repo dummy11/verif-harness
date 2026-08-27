@@ -85,7 +85,7 @@ Pending human review.
 
 Use for docs whose content is frozen at Stage N approval (architecture
 docs like `verification_workflow.md`, `verification_plan.md`,
-`tb_architecture.md`, `plan.md`, `roadmap.md`, `assertion_plan.md`,
+`tb_architecture.md`, `roadmap.md`, `assertion_plan.md`,
 `harness_style_methodology.md`, `AGENTS.md`). Post-approval changes to
 `Frozen Sections` require change request.
 

@@ -298,7 +298,7 @@ scaffold。Stage 0 不是完整 testbench 实现阶段。Spec Kit 规格文档�
 - `AGENTS.md`；
 - `.harness/` 控制与 review 资产；
 - Spec Kit 权威文档：`specs/<feature>/spec.md`、`plan.md`、`tasks.md`、checklists；
-- init 派生文档：`<docs_root>/plan.md`、roadmap、verification plan、feature matrix、
+- init 派生文档：roadmap、verification plan、feature matrix、
   TB architecture、coverage/assertion plan、testcase list 和 review packet；
 - 必需的 harness/UVM 目录骨架。
 
@@ -628,7 +628,6 @@ specs/<feature>/
 <docs_root>/
 ├── governance/
 │   └── verification_workflow.md
-├── plan.md
 ├── roadmap.md
 ├── harness_style_methodology.md
 ├── stage0_review_packet.md
@@ -645,7 +644,6 @@ specs/<feature>/
 | init 文档 | 用途 |
 | --- | --- |
 | `verification_workflow.md` | review gate、change request 和治理规则 |
-| `<docs_root>/plan.md` | Stage 0 工程落地执行视图 |
 | `roadmap.md` | Stage 0–5 项目演进路线 |
 | `harness_style_methodology.md` | 当前项目怎样应用 harness-style 方法 |
 | `verification_plan.md` | 总体验证范围、策略和 sign-off 候选标准 |
@@ -661,7 +659,7 @@ specs/<feature>/
 如果发现权威规格缺少必要信息，必须先在 Spec Kit 中增加问题或决定，再从派生文档
 链接过去；不能只在 `<docs_root>` 中静默补充语义。
 
-#### 4.3.4 同名 `plan.md` 的区别
+#### 4.3.4 Stage plan 与总体验证计划
 
 ```text
 specs/<feature>/plan.md
@@ -670,11 +668,18 @@ specs/<feature>/plan.md
 是权威 Stage 计划，定义 VF 如何映射到 mode、artifact、evidence 和 gate。
 
 ```text
-<docs_root>/plan.md
+<docs_root>/verification/verification_plan.md
 ```
 
-是 init 生成的 Stage 0 工程执行视图，只能派生自前者。讨论、review 和 task contract
-必须使用完整路径，不能只写模糊的“plan.md”。
+是 init 生成并随项目演进维护的总体验证策略，覆盖所有 Stage 的范围、方法和 sign-off
+候选标准；`<docs_root>/roadmap.md` 则定义 Stage 0–5 的成熟度路线。两者都不是某个
+Stage 的可执行计划，也不能替代 `specs/<feature>/plan.md`。
+
+新项目不再生成 `<docs_root>/plan.md`，因为它与上述三类文档重复且容易形成双重权威。
+旧项目已有的 `<docs_root>/plan.md` 只是可选 legacy 派生视图：可以保留供历史追溯，
+但不得作为新 task、review 或 Stage gate 的权威输入。没有 Spec Kit 元数据的纯旧项目，
+Stage gate 工具仍允许把它作为兼容性回退；一旦存在 `.specify/`，必须使用当前
+`specs/<feature>/plan.md`。
 
 #### 4.3.5 修改与回写规则
 

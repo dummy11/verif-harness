@@ -155,7 +155,6 @@ After batch upgrade + workflow check:
 - [ ] `python3 .harness/check_ai_workflow.py --skip-markdownlint` exit 0
 - [ ] Git commit: `freeze Stage <N> baseline: all <count> docs approved`
 - [ ] (Optional) Push to remote
-- [ ] Update `sim/docs/plan.md § Deliverables` status if applicable
 - [ ] (Optional) markdownlint full pass
 
 ## Post-Review Deliverable

@@ -118,7 +118,6 @@ class Audit:
         gsub = verif.get("governance_subdir", "governance")
         paths = [
             docs / gsub / "verification_workflow.md",
-            docs / "plan.md",
             docs / "roadmap.md",
             docs / "harness_style_methodology.md",
             docs / vsub / "verification_plan.md",
@@ -148,6 +147,14 @@ class Audit:
         if statuses:
             summary = ", ".join(f"{key}={value}" for key, value in sorted(statuses.items()))
             self.add("INFO", "DOC_STATUS", f"Document review metadata: {summary}")
+        docs_value = self.config.get("verif", {}).get("docs_root")
+        if docs_value and (self.path(docs_value) / "plan.md").is_file():
+            self.add(
+                "INFO",
+                "LEGACY_DERIVED_PLAN",
+                "Optional legacy docs_root/plan.md remains; current Stage plans under "
+                "specs/ are authoritative and new init runs do not generate this file.",
+            )
 
     def check_workflow_tool(self) -> None:
         checker = self.root / ".harness" / "check_ai_workflow.py"

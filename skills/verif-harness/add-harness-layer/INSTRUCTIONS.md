@@ -18,7 +18,8 @@ Before proceeding, verify ALL of the following. If any check fails, STOP and
 report to the user.
 
 1. `.harness-config.json` exists in project root
-2. All 12 Stage 0 docs at `Approved` (grep `Review Metadata` block in each doc
+2. All 10 or 11 Stage 0 docs at `Approved` (depending on whether the optional
+   reference-model document exists; grep `Review Metadata` in each doc
    under `<verif_root>/docs/`)
 3. `<verif_root>/testbench/top/harness/dut_harness/` empty or missing
 4. Protocol interfaces already scaffolded at `<verif_root>/testbench/top/if/`

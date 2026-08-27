@@ -65,7 +65,9 @@ def bullet_items(body: str) -> list[str]:
     return items
 
 
-def due_provisionals(path: Path, completed_stage: int) -> list[tuple[str, str]]:
+def due_provisionals(
+    path: Path, completed_stage: int, source: str | None = None
+) -> list[tuple[str, str]]:
     body = section(read(path), r"## 暂定决策 \(Provisional\)|## Provisional Decisions")
     result: list[tuple[str, str]] = []
     for item in bullet_items(body):
@@ -76,11 +78,11 @@ def due_provisionals(path: Path, completed_stage: int) -> list[tuple[str, str]]:
             continue
         stages = [int(value) for value in re.findall(r"(?:Stage|stage)\s*(\d+)", item)]
         if stages and min(stages) <= completed_stage:
-            result.append((path.name, item))
+            result.append((source or path.name, item))
     return result
 
 
-def open_questions(path: Path) -> list[tuple[str, str]]:
+def open_questions(path: Path, source: str | None = None) -> list[tuple[str, str]]:
     body = section(read(path), r"## 开放问题|## Open Questions")
     if not body or re.fullmatch(r"-\s*(None|无)[.]?", body.strip(), re.IGNORECASE):
         return []
@@ -91,8 +93,57 @@ def open_questions(path: Path) -> list[tuple[str, str]]:
             continue
         if re.search(r"\bClosed\b|已关闭", item, re.IGNORECASE):
             continue
-        result.append((path.name, item))
+        result.append((source or path.name, item))
     return result
+
+
+def authoritative_stage_plan(root: Path, docs_root: Path, stage: int) -> Path:
+    """Resolve the reviewed Spec Kit plan, with legacy-only fallback."""
+    specify = root / ".specify"
+    if not specify.exists():
+        legacy = docs_root / "plan.md"
+        if legacy.is_file():
+            return legacy
+        raise ValueError(
+            "no Spec Kit project or legacy docs_root/plan.md was found for the gate"
+        )
+
+    feature_state = specify / "feature.json"
+    try:
+        payload = json.loads(read(feature_state))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"cannot parse {feature_state.relative_to(root)}: {exc}") from exc
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("feature_directory"), str
+    ):
+        raise ValueError(
+            ".specify/feature.json must identify the current feature_directory"
+        )
+
+    feature = Path(payload["feature_directory"])
+    candidate = feature if feature.is_absolute() else root / feature
+    candidate = candidate.resolve()
+    specs_root = (root / "specs").resolve()
+    try:
+        candidate.relative_to(specs_root)
+    except ValueError as exc:
+        raise ValueError("current Spec Kit feature must remain below project specs/") from exc
+
+    plan = candidate / "plan.md"
+    spec = candidate / "spec.md"
+    if not plan.is_file() or not spec.is_file():
+        raise ValueError(
+            f"current Spec Kit feature lacks spec.md or plan.md: {candidate.relative_to(root)}"
+        )
+    if not (
+        re.search(rf"\bStage\s*{stage}\b", read(spec), re.IGNORECASE)
+        or re.search(rf"(?:^|[-_])stage[-_]?{stage}(?:[-_]|$)", candidate.name, re.IGNORECASE)
+    ):
+        raise ValueError(
+            f"current Spec Kit feature does not identify completed Stage {stage}: "
+            f"{candidate.relative_to(root)}"
+        )
+    return plan
 
 
 def markdown(root: Path, config: dict, stage: int, final_gate: bool) -> str:
@@ -100,8 +151,9 @@ def markdown(root: Path, config: dict, stage: int, final_gate: bool) -> str:
     docs_root = root / verif["docs_root"]
     vsub = verif.get("verification_subdir", "verification")
     gsub = verif.get("governance_subdir", "governance")
+    stage_plan = authoritative_stage_plan(root, docs_root, stage)
     sources = [
-        docs_root / "plan.md",
+        stage_plan,
         docs_root / "roadmap.md",
         docs_root / "harness_style_methodology.md",
         docs_root / gsub / "verification_workflow.md",
@@ -119,8 +171,9 @@ def markdown(root: Path, config: dict, stage: int, final_gate: bool) -> str:
     provisionals: list[tuple[str, str]] = []
     questions: list[tuple[str, str]] = []
     for path in sources:
-        provisionals.extend(due_provisionals(path, stage))
-        questions.extend(open_questions(path))
+        source = str(path.relative_to(root))
+        provisionals.extend(due_provisionals(path, stage, source))
+        questions.extend(open_questions(path, source))
 
     roadmap = read(docs_root / "roadmap.md")
     completed = stage_block(roadmap, stage)
@@ -140,6 +193,7 @@ def markdown(root: Path, config: dict, stage: int, final_gate: bool) -> str:
         "- **Reviewer**: TBD",
         "- **Review date**: TBD",
         f"- **Stage gate**: {transition}",
+        f"- **Authoritative Stage plan**: `{stage_plan.relative_to(root)}`",
         "- **Evidence boundary**: repository evidence only; add Human-confirmed",
         "  evidence explicitly when raw artifacts are unavailable.",
         "",
@@ -235,7 +289,11 @@ def main() -> int:
     if out.exists() and not args.force:
         raise SystemExit(f"ERROR: refusing to overwrite existing packet: {out}")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(markdown(root, config, args.completed_stage, args.final), encoding="utf-8")
+    try:
+        content = markdown(root, config, args.completed_stage, args.final)
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
+    out.write_text(content, encoding="utf-8")
     print(out)
     return 0
 

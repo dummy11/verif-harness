@@ -16,11 +16,6 @@ conventions. `.harness/check_ai_workflow.py` enforces the mechanical parts.
 
 ## Per-doc guidance
 
-### `<verif_root>/docs/plan.md`
-
-- Purpose: define Stage 0 execution plan for verification bootstrap.
-- Body sections: Scope, Deliverables, Assumptions, Out of scope.
-
 ### `<verif_root>/docs/roadmap.md`
 
 - Purpose: list stages from Stage 0 (docs) → Stage 5 (coverage closure).
@@ -134,12 +129,12 @@ section 内容为 `- None` 也保留占位）：
 | **Living** | 已 baseline review，明确会随 Stage 演进增长 | Approved | 内容增改无需 CR，Frozen Sections 里的项需 CR |
 | **Frozen** | 完全冻结基线 | Frozen | Frozen Sections 项需 CR |
 
-Doc 类型建议（skill 生成的 12 份 Stage 0 文档）：
+Doc 类型建议（skill 生成的 10 或 11 份 Stage 0 文档，包含 `AGENTS.md`）：
 
 | Doc 特性 | 推荐 lifecycle 目标 |
 |--------|------------------|
 | 架构基线（tb_architecture / verification_plan / verification_workflow / AGENTS） | **Approved** |
-| 计划类（plan / roadmap / methodology / assertion_plan） | **Approved** |
+| 计划类（roadmap / methodology / assertion_plan） | **Approved** |
 | 天然增长（coverage_plan / testcase_list / feature_matrix） | **Living** |
 | 上游依赖（reference_model_spec） | **Living** |
 

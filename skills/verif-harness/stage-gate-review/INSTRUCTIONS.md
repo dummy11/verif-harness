@@ -6,8 +6,14 @@ enter Stage N+1.
 ## Preconditions
 
 - Pass `<completed-stage>` explicitly.
-- Read project `AGENTS.md`, workflow, roadmap, methodology, verification plan,
-  and all verification planning documents.
+- In a Spec Kit project, resolve the current `specs/<feature>/plan.md` from
+  `.specify/feature.json` and confirm that its specification identifies the
+  completed Stage. This is the authoritative Stage plan.
+- Read project `AGENTS.md`, the authoritative Stage plan, workflow, roadmap,
+  methodology, master verification plan, and all verification planning
+  documents.
+- Only a project without `.specify/` may fall back to the optional legacy
+  `<docs-root>/plan.md`. New `init` runs do not generate that derived view.
 - Treat run logs and machine-generated reports as stronger evidence than
   prose. Label user-confirmed evidence when raw artifacts are unavailable.
 
