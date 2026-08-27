@@ -262,7 +262,7 @@ def main() -> int:
                 failures.append(f"skill user guide lacks Stage {stage} command")
         for term in (
             "stage", "req", "vf", "plan", "task", "mode", "artifact",
-            "evidence", "gate",
+            "evidence", "gate", "document-systems", "decision-lifecycle",
         ):
             if f'<a id="term-{term}"></a>' not in guide_text:
                 failures.append(f"skill user guide lacks term anchor: {term}")

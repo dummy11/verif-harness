@@ -268,7 +268,8 @@ $verif-harness release
 **目标**
 
 建立唯一规格事实源、项目治理合同、DUT 只读边界、目录 ownership 和最小 M1.1
-scaffold。Stage 0 不是完整 testbench 实现阶段。
+scaffold。Stage 0 不是完整 testbench 实现阶段。Spec Kit 规格文档与 init 派生文档的
+职责和使用方式见[两套文档体系](#term-document-systems)。
 
 **进入条件**
 
@@ -280,7 +281,8 @@ scaffold。Stage 0 不是完整 testbench 实现阶段。
 **步骤**
 
 1. Spec Kit 建立或同步 constitution。
-2. 在 `specs/` 中定义 [REQ](#term-req)、[VF](#term-vf)、Human Decision 和 open question。
+2. 在 `specs/` 中定义 [REQ](#term-req)、[VF](#term-vf)，并按
+   [Stage 0 决策生命周期](#term-decision-lifecycle)，记录 Human Decision 和 Open Question。
 3. 评审 spec，不能由 Agent 自行批准未知语义。
 4. clarify 未决的接口、reset、时序、reference-model 和工具约束。
 5. 生成 [PLAN](#term-plan)、checklist 和精简 [TASK](#term-task) 合同。
@@ -295,8 +297,10 @@ scaffold。Stage 0 不是完整 testbench 实现阶段。
 - `.harness-config.json`；
 - `AGENTS.md`；
 - `.harness/` 控制与 review 资产；
-- `specs/<feature>/spec.md`、`plan.md`、`tasks.md`、checklists；
-- 必需的 harness/UVM 目录骨架和派生治理视图。
+- Spec Kit 权威文档：`specs/<feature>/spec.md`、`plan.md`、`tasks.md`、checklists；
+- init 派生文档：`<docs_root>/plan.md`、roadmap、verification plan、feature matrix、
+  TB architecture、coverage/assertion plan、testcase list 和 review packet；
+- 必需的 harness/UVM 目录骨架。
 
 **最低 Evidence**
 
@@ -558,7 +562,146 @@ Spec Kit 管理规格生命周期，但不拥有验证证据和 Human approval�
 `sim/docs/`、review packet、evidence index 和 `.specify/docs/zh-CN/` 都不是第二个可编辑
 需求权威。已有批准项目应作为 `immutable imported baseline` 导入，不重写历史决定。
 
-### 4.3 一个 Stage 的完整 lifecycle
+<a id="term-document-systems"></a>
+
+### 4.3 Spec Kit 文档与 init 派生文档
+
+两套文档处于同一追踪链的不同层级：
+
+```text
+用户目标 / 上游规格
+        ↓
+Spec Kit 文档：定义并评审验证意图
+spec.md -> plan.md -> tasks.md
+        ↓ review + execution authorization
+TASK: mode init
+        ↓
+init 文档：映射为当前项目的工程与治理视图
+.harness-config.json + AGENTS.md + <docs_root>/*
+        ↓
+实现、Evidence、Converge、Stage Gate
+```
+
+#### 4.3.1 职责对照
+
+| 对比项 | Spec Kit 文档 | `init` 生成的文档 |
+| --- | --- | --- |
+| 主要位置 | `specs/<feature>/` | `<docs_root>/`，通常是 `sim/docs/` |
+| 核心性质 | 唯一可编辑规格事实源 | 派生的工程与治理视图 |
+| 回答的问题 | 验证什么、为什么、验收标准是什么 | 当前项目怎样组织、实现、评审和维护 |
+| 生成时间 | 每个 Stage 的 Spec Kit workflow | Stage 0 execution gate 后由 `mode: init` task 生成 |
+| 主要输入 | 用户目标、上游规格、Human Decisions | 已评审 Spec Kit 文档、RTL 结构和项目配置 |
+| 修改权限 | 可以定义或修改 REQ、VF、计划和 task | 不得独立定义新的需求语义 |
+| 评审方式 | spec/plan/tasks 等 workflow review gate | task postconditions、review packet、convergence 和 Stage gate |
+| 后续演进 | 每个 Stage 持续更新 | 随工程演进，但必须保持对 `specs/` 的追踪 |
+
+#### 4.3.2 Spec Kit 文档的使用方式
+
+`specs/<feature>/` 通常包含：
+
+```text
+specs/<feature>/
+├── spec.md
+├── plan.md
+├── research.md            # 适用时
+├── data-model.md          # 适用时
+├── quickstart.md          # 适用时
+├── contracts/             # 适用时
+├── checklists/
+└── tasks.md
+```
+
+- `spec.md` 定义 REQ、VF、场景、边界、成功标准、决策和开放问题；
+- `plan.md` 定义架构、owner、Stage、mode、artifact、evidence 和 Human gate；
+- `tasks.md` 定义经过评审、可执行和可恢复的 task contract；
+- `checklists/` 检查规格质量、歧义、边界与可验证性。
+
+需要改变 DUT 行为理解、协议/reset 语义、reference-model 语义或验收条件时，必须先
+更新这套文档并重新经过相应 review gate。
+
+#### 4.3.3 init 文档的使用方式
+
+`init` 除了生成 `.harness-config.json`、`.harness/` 和 `AGENTS.md`，还会在
+`<docs_root>` 生成：
+
+```text
+<docs_root>/
+├── governance/
+│   └── verification_workflow.md
+├── plan.md
+├── roadmap.md
+├── harness_style_methodology.md
+├── stage0_review_packet.md
+└── verification/
+    ├── verification_plan.md
+    ├── feature_matrix.md
+    ├── tb_architecture.md
+    ├── assertion_plan.md
+    ├── coverage_plan.md
+    ├── testcase_list.md
+    └── reference_model_spec.md    # 启用 reference model 时
+```
+
+| init 文档 | 用途 |
+| --- | --- |
+| `verification_workflow.md` | review gate、change request 和治理规则 |
+| `<docs_root>/plan.md` | Stage 0 工程落地执行视图 |
+| `roadmap.md` | Stage 0–5 项目演进路线 |
+| `harness_style_methodology.md` | 当前项目怎样应用 harness-style 方法 |
+| `verification_plan.md` | 总体验证范围、策略和 sign-off 候选标准 |
+| `feature_matrix.md` | VF、RTL、test、coverage 和 assertion 的项目映射 |
+| `tb_architecture.md` | interface、UVC、env、harness 和 scoreboard 数据流 |
+| `assertion_plan.md` | ASRT ID、property、位置和证据规划 |
+| `coverage_plan.md` | COV ID、bin、cross、目标和 closure 策略 |
+| `testcase_list.md` | TC ID、目标、优先级和 VF 映射 |
+| `reference_model_spec.md` | 当前项目使用的上游 reference-model 语义镜像 |
+| `stage0_review_packet.md` | 汇总决策和问题，供 Human 集中评审 |
+
+这些文档必须带 provenance、REQ/VF 追踪、RTL `<file>:<line>` 引用和统一 review block。
+如果发现权威规格缺少必要信息，必须先在 Spec Kit 中增加问题或决定，再从派生文档
+链接过去；不能只在 `<docs_root>` 中静默补充语义。
+
+#### 4.3.4 同名 `plan.md` 的区别
+
+```text
+specs/<feature>/plan.md
+```
+
+是权威 Stage 计划，定义 VF 如何映射到 mode、artifact、evidence 和 gate。
+
+```text
+<docs_root>/plan.md
+```
+
+是 init 生成的 Stage 0 工程执行视图，只能派生自前者。讨论、review 和 task contract
+必须使用完整路径，不能只写模糊的“plan.md”。
+
+#### 4.3.5 修改与回写规则
+
+规格或语义变更：
+
+```text
+更新 specs/<feature>/spec.md
+  -> review / clarify
+  -> 更新权威 plan/tasks
+  -> 刷新 init 派生文档和追踪关系
+```
+
+不改变规格语义的工程细节，例如实际路径、UVC owner、test 名称或 collector 位置，
+可以更新对应 init 文档并记录 Revision Log；如果影响 Frozen Sections、Human Decision
+或已批准架构基线，仍需 change request。
+
+`stage0_review_packet.md` 是集中评审入口，不是事实源。Human 作出决定后，结果必须
+回写到对应的 `specs/` 权威文档或受控 init 源文档，再刷新 review packet。
+
+#### 4.3.6 不要把 `.specify/` 当成项目规格
+
+`.specify/` 主要保存 Spec Kit 模板、命令、workflow、run state 和 integration
+基础设施；`.specify/docs/zh-CN/` 只是中文阅读镜像。二者都不是项目的可编辑规格事实源。
+
+项目规格权威始终位于 `specs/`。
+
+### 4.4 一个 Stage 的完整 lifecycle
 
 ```text
 establish-constitution
@@ -585,7 +728,7 @@ establish-constitution
 其中每个 review gate 都会持久化 `paused`，等待 Human 检查对应工件。一次 verdict 只
 绑定当前 gate，不会自动带入下一 gate，也不会提升为 Stage approval。
 
-### 4.4 文档生成与评审
+### 4.5 文档生成与评审
 
 1. `specify` 生成或更新 [REQ](#term-req)、[VF](#term-vf) 和场景。
 2. `clarify` 显式处理歧义，不允许 Agent 猜测 DUT、协议或 Human Decision。
@@ -597,7 +740,7 @@ establish-constitution
 
 文档由 Agent 生成时只是 review candidate。生成成功不等于语义正确或已获批准。
 
-### 4.5 Task contract 与 persistent runner
+### 4.6 Task contract 与 persistent runner
 
 一个 executable task 使用一行摘要和三行合同：
 
@@ -626,7 +769,7 @@ READY -> RUNNING -> DONE
 需要 Human 回答、额外 authority 或规格决策的内容必须成为 `OPEN B###` 或运行时
 `BLOCKED`，不能写成假装可自动执行的 task，也不能让 Agent 等待 terminal input。
 
-### 4.6 Workflow 状态机
+### 4.7 Workflow 状态机
 
 | 状态 | `resume_allowed` | 正确动作 |
 | --- | --- | --- |
@@ -640,7 +783,7 @@ READY -> RUNNING -> DONE
 用户命令不能绕过状态前置条件。尤其不能在 live worker 正在运行时因用户已经输入
 `approve` 就再次调用 resume。
 
-### 4.7 追踪治理链
+### 4.8 追踪治理链
 
 每个可执行工作必须保持：
 
@@ -658,7 +801,7 @@ REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 - 反向回答“这个 PASS 属于哪个 artifact、task、VF 和 requirement”；
 - 在 gate 前发现孤立需求、无证据实现、未追踪测试和重复权威。
 
-### 4.8 Converge 与独立 Stage gate
+### 4.9 Converge 与独立 Stage gate
 
 `converge` 对照已评审规格核对每个 task 的 output、evidence 和 validation，把缺失内容
 记录为 incomplete task、deviation 或 change request。它不能通过重复运行未追踪 mode
@@ -667,7 +810,7 @@ REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE
 workflow 内的 `review-convergence` 只评审规格漂移和证据完整性。随后运行的
 `stage-gate-review` 才生成独立 Draft gate packet；两者都不能自行批准 Stage。
 
-### 4.9 中文阅读镜像
+### 4.10 中文阅读镜像
 
 项目规格 `spec.md`、`plan.md`、`tasks.md` 和 checklist 默认使用简体中文；代码、命令、
 路径、配置键、协议名、稳定 ID 和原始引用保持原文。上游 `.specify/` 基础设施保留其
@@ -814,7 +957,90 @@ Stage 通过 ≠ sign-off/freeze 自动批准
 Agent、Spec Kit、xverif、WavePeek 和 simulator 都不能代替 Human 批准 decision、waiver、
 Stage、sign-off、freeze、commit、push 或 release。
 
-### 5.10 完整追踪示例
+<a id="term-decision-lifecycle"></a>
+
+### 5.10 Stage 0 决策生命周期
+
+Stage 0 文档把不确定性和决定分为四类。分类取决于“谁能决定”和“决定是否已经
+稳定”，不能把所有未知内容都写成 Open Question。
+
+| 类型 | 含义 | 典型位置 | 标识与要求 |
+| --- | --- | --- | --- |
+| Human Decision | Human 已明确批准的语义或架构决定 | 权威 `spec.md`；派生文档 review block 中的 `### Human Decisions` | `HD-n`；进入 Frozen Section 后修改需 CR |
+| Provisional Decision | 项目已选定方向，但证据不足，需要在后续 Stage 复审 | 受影响文档的 `## 暂定决策 (Provisional)` | `Pn`；记录依据、目标复审、影响和日期 |
+| 待 Human Review 的假设 | 本项目 Human 应决定但尚未拍板，Agent 暂按此推理 | 受影响文档的 `## 待 Human Review 的假设` | 明确是假设，不得写成已批准事实 |
+| Open Question | 依赖上游团队、第三方规格或项目外部输入，本项目内部无法决定 | 权威 `spec.md` 和相关派生文档的 `## 开放问题` | `OQn`；记录 Depends on、Blocks、Status/owner |
+
+#### Human Decision
+
+Human Decision 用于已经明确批准、会影响规格语义或架构基线的决定。例如 reset 后首个
+transaction 是否有效、overflow 的规定行为、reference-model rounding 语义。Agent
+不得推断或自行标记批准。已冻结 Human Decision 的修改必须通过 change request。
+
+#### Provisional Decision
+
+当项目已经需要一个工作方向、但证据要到后续 Stage 才充分时，使用 Provisional：
+
+```text
+- **P1**: sign-off functional coverage 暂定不低于 98%
+  - **依据**: 当前项目风险和 module-level 目标
+  - **目标复审**: Stage 4 gate
+  - **影响**: coverage plan 与 sign-off candidate
+  - **Provisional since**: YYYY-MM-DD
+```
+
+到目标 Stage gate 时必须选择保持 Provisional、升级为 Human Decision，或降级为 Open
+Question/假设，不能无限期遗忘。
+
+#### 待 Human Review 的假设
+
+假设表示本项目有 authority 作决定，但当前还没有正式结果。它允许 Agent 暂时分析，
+不允许 Agent 把假设写入 RTL/TB 实现并声称语义已经确认。会阻塞执行时，应同时形成
+`OPEN B###`。
+
+#### Open Question
+
+Open Question 只用于真实外部依赖：
+
+```text
+- **OQ1**: 上游是否保证 reset deassert 后第一个 cycle 的 output 无效？
+  - **Depends on**: upstream design/spec owner
+  - **Blocks**: VF-003、Stage 2 reset recovery testcase
+  - **Status**: owner assigned，等待规格更新
+```
+
+当 init 派生文档发现缺失语义时，先把问题加入权威 Spec Kit 文档，再在派生文档中引用
+OQ ID、影响范围和目标 gate；不能只在 `verification_plan.md` 或 `tb_architecture.md`
+新增一条独立语义。
+
+#### Task Blocker
+
+如果决定或问题阻止 task 非交互执行，在 `tasks.md` 的“阻塞项”记录：
+
+```text
+- B001 [OPEN] [等待上游确认 reset 后首个 transaction 是否有效；关联 OQ1]
+```
+
+`B###` 不是 executable `T###`。review-tasks 和 authorize-execution 在存在未解决 blocker
+时不得批准；运行中的 task 遇到同类问题必须进入 `BLOCKED`，由
+`resume <run-id> --answer "..."` 只恢复当前 task。
+
+#### Review packet 与回写
+
+`<docs_root>/stage0_review_packet.md` 汇总所有 Human Decisions、Provisional Decisions
+和 Open Questions，方便 Human 集中评审，但它不是事实源。正确流程是：
+
+```text
+在 specs/ 或受控源文档记录决定/问题
+  -> 派生文档记录影响和追踪链接
+  -> stage0_review_packet.md 汇总评审
+  -> Human 决定后回写源文档
+  -> 刷新派生文档和 review packet
+```
+
+完整格式规范见 [doc-conventions.md](../assets/doc-conventions.md) 的“决策生命周期约定”。
+
+### 5.11 完整追踪示例
 
 ```text
 REQ-001
@@ -852,7 +1078,7 @@ Human 审查映射、实现和证据后决定 approve/reject
 
 <a id="term-runtime"></a>
 
-### 5.11 Agent runtime 与模型
+### 5.12 Agent runtime 与模型
 
 runtime 指 Codex 或 Kimi Code 的 integration、Skill 目录和启动方式；模型是同一 runtime
 内部选择的推理模型。更换模型不等于切换 runtime。`.specify/integration.json` 是项目
@@ -860,7 +1086,7 @@ runtime 的唯一事实源，runtime switch 必须在稳定 review gate 执行�
 
 <a id="term-baseline"></a>
 
-### 5.12 Baseline、Change Control、Sign-off 与 Freeze
+### 5.13 Baseline、Change Control、Sign-off 与 Freeze
 
 - baseline：经评审、可追溯的起点；
 - change control：baseline 后变更必须有 CR、影响分析和证据；
@@ -868,7 +1094,7 @@ runtime 的唯一事实源，runtime switch 必须在稳定 review gate 执行�
 - freeze candidate：把 clean commit 和 artifacts 固定为 hash manifest；
 - Human freeze approval：独立权限决定，不由工具产生。
 
-### 5.13 Spec Kit、xverif 与 WavePeek
+### 5.14 Spec Kit、xverif 与 WavePeek
 
 - Spec Kit：agentic specification lifecycle，不是 simulator 或证据工具；
 - xverif：把一个已评审 request 委托给固定版本 native 工具并保存不可变证据；
