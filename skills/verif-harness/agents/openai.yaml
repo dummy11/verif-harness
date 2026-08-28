@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Harness"
-  short_description: "Govern spec-driven RTL verification from Stage 0 to freeze"
-  default_prompt: "Use $verif-harness as the top-level control plane, manage specifications through pinned GitHub Spec Kit, dispatch reviewed tasks to the appropriate verification mode, and keep xverif, WavePeek, EDA evidence, and Human approval boundaries explicit."
+  short_description: "Govern continuous RTL verification from VPlan to closure"
+  default_prompt: "Use $verif-harness as the v1 control plane: design re-entrant Workstream desired state with VPlan, query VModel read-only, record facts through structured ingress, reconcile automatically with VCheck/VClosure, use VReason only for ambiguity, and keep DUT, evidence, and Human approval boundaries explicit."

@@ -12,9 +12,9 @@ these two).
 
 ## Pre-conditions
 
-1. `.harness-config.json` exists
-2. All Stage 0 docs `Approved`
-3. `<verif_root>/testbench/pkg/` directory exists (created by `init` Step 4b)
+1. The project is bootstrapped and VPlan has an approved action for shared packages
+2. `.harness-config.json` exists
+3. `<verif_root>/testbench/pkg/` is writable; create it additively if missing
 4. `<verif_root>/docs/verification/harness-spec.yaml` has interface
    `parameters:` + `local_params:` (for tb_pkg constants) and, if any wide
    packed data buses need pack helpers, a `pack_pattern:` block per relevant

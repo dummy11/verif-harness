@@ -125,7 +125,6 @@ class SetupScriptTest(unittest.TestCase):
         source = SETUP.read_text(encoding="utf-8")
         self.assertIn('setup_xverif.py" --project-root', source)
         self.assertIn('setup_wavepeek.py" --project-root', source)
-        self.assertIn('setup_spec_kit.py" --project-root', source)
         self.assertIn('--project-root "$package_root"', source)
         self.assertIn("-c 'import mcp'", source)
         self.assertIn("from mcp.server.fastmcp import FastMCP", source)

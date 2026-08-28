@@ -15,7 +15,7 @@ interface <PREFIX>_harness_if (
   // Status signals (DUT / harness → env, aggregated in <PREFIX>_dut_harness)
   logic dut_compute_done;
   logic dut_output_drained;
-  logic dut_hung;          // Stage 2+ optional; M1.1 ties 1'b0
+  logic dut_hung;          // optional VCHK signal; skeleton ties 1'b0
 
   // ---- Cycle-accurate tasks (Milestone 1.1: signatures + body; refinement in 1.2+) ----
 

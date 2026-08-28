@@ -35,7 +35,7 @@ class RuntimeVersionsTest(unittest.TestCase):
         for component in (
             "Managed CPython", "MCP Python SDK", "Python package lock",
             "xverif", "xverif MCP API", "POSIX bootstrap tools", "WavePeek",
-            "WavePeek glibc", "WavePeek private libgcc_s", "GitHub Spec Kit",
+            "WavePeek glibc", "WavePeek private libgcc_s",
             "Bash", "Git",
             "HTTPS downloader", "SHA-256 tool", "Verilator", "Synopsys VCS",
             "LSF bsub", "Verdi/NPI SDK", "UVM", "Codex CLI", "Kimi CLI",

@@ -1,417 +1,67 @@
-# verif-harness
+# verif-harness v1
 
-**verif-harness is an agent-neutral RTL verification control plane and a
-reusable SystemVerilog/UVM DUT integration framework. Codex and Kimi Code are
-its supported agent runtimes; the deterministic core remains usable through
-CLI and CI workflows without an agent.**
-
-It keeps structural integration in one place: clocks and resets, protocol
-interfaces, DUT instantiation, tie-offs, adapters, assertions, bind targets,
-and virtual-interface publication. Tests and UVM environments stay above that
-boundary; DUT RTL stays read-only.
-
-## Why?
-
-Verification projects often scatter DUT wiring across `tb_top`, tests,
-packages, and simulator scripts. That makes compile order fragile and creates
-hidden dependencies. verif-harness defines a narrow, reviewable integration
-layer and provides templates, checks, an executable FIFO example, and an Agent
-Skill that applies the same rules consistently.
-
-## Architecture
+verif-harness 是持续闭环的 RTL 验证工程控制面。它把验证计划、实现事实、
+变更失效、证据和 Human review 放进同一个可追溯模型，而不是执行一份冻结的
+大型任务文档。
 
 ```text
-                     +-------------------+
-                     |      UVM Test     |
-                     +---------+---------+
-                               |
-                     +---------v---------+
-                     |      UVM Env      |
-                     +---------+---------+
-                               |
-                    config_db / virtual IF
-                               |
-+------------------------------------------------+
-|                verif-harness                   |
-|                                                |
-|  clock/reset       protocol interfaces         |
-|  DUT instance      tie-offs and adapters       |
-|  SVA / bind        config_db publishing        |
-+-----------------------+------------------------+
-                        |
-                 +------v------+
-                 |     DUT     |
-                 +-------------+
+VPlan -> VModel -> VCheck -> VClosure -> act / verify / review
+   ^                                           |
+   +-------------------------------------------+
+                         VReason 仅处理歧义
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership and compile-order rules.
-
-## Agent and runtime model
-
-verif-harness is not a standalone AI agent. It supplies the verification
-policy, staged workflow, mode contracts, generators, checks, and tool adapters
-that an agent or a Human operator executes. Codex and Kimi Code use the same
-Skill and verification contracts through runtime-specific invocation syntax.
-
-The agent-neutral core includes contracts, generators, validation scripts, CLI
-adapters, and CI workflows. These components can be invoked manually or by
-automation without an Agent. Spec Kit artifacts are portable files, while the
-current reviewed-task-to-mode automatic dispatch is implemented by the
-verif-harness Skill. Another agent runtime can integrate through an adapter
-that preserves the same mode inputs, outputs, evidence, and Human approval
-boundaries, but no other runtime is claimed as supported until that adapter is
-implemented and validated.
-
-```text
-Human authority
-      |
-      v
-Codex or Kimi Code Agent
-      |
-      v
-verif-harness Skill / control plane
-      |
-      +--> Spec Kit specification and task workflow
-      +--> deterministic CLI, generators, checks, and CI
-      +--> xverif / WavePeek / simulators / EDA tools
-```
-
-## Features
-
-- Thin `tb_top` and explicit harness ownership.
-- Reusable DUT-integration templates and an additive generator.
-- Interface, SVA, bind, filelist, and smoke-test patterns.
-- A license-free `simple_fifo` example for Verilator.
-- Simulator-independent Python structure and public-release checks.
-- A bundled 31-mode Agent Skill for Stage 0 through verification freeze.
-- A pinned GitHub Spec Kit specification plane governed by the verif-harness
-  top-level control plane.
-- A fail-closed CLI adapter for deterministic tools from
-  `https://github.com/BLANK2077/xverif.git`.
-- Commit-pinned WavePeek integration for bounded VCD/FST inspection.
-- GitHub CI, documentation deployment, and tagged-release automation.
-
-## Requirements
-
-- Standard POSIX userland, Bash, Git, tar, one HTTPS downloader (`curl` or
-  `wget`), and one SHA-256 command (`sha256sum` or `shasum`) for the managed
-  bootstrap.
-- GNU Make 3.81+ for contributor targets; default setup does not require it
-  unless an old Linux host must build the private WavePeek glibc.
-- Verilator 5.x for the open-source example.
-- A UVM-capable commercial simulator for full UVM regressions.
-
-Commercial simulator licenses, scheduler configuration, and private wrappers
-are intentionally not included.
-
-## Install and initialize a verification workspace
+## 快速开始
 
 ```bash
-git clone https://github.com/dummy11/verif-harness.git ~/tools/verif-harness
-mkdir -p ~/workspaces/my-dut-verification
-cd ~/tools/verif-harness
-./scripts/setup --isolation managed --runtime codex \
-  --workspace-root ~/workspaces/my-dut-verification
+./scripts/setup --runtime codex --workspace-root /path/to/project
 ```
 
-Kimi Code 使用：
+进入项目后：
+
+```text
+$verif-harness bootstrap --rtl-root rtl --docs-root docs
+$verif-harness plan design --workstream VDOC
+$verif-harness plan review --workstream VDOC --verdict approve \
+  --reviewer alice --reason "文档 desired state 已评审"
+$verif-harness closure evaluate --workstream VDOC
+```
+
+CLI 默认输出结构化 JSON；`.verif-harness/model.md` 与各 Workstream 的 `plan.md`
+用于人工阅读，SQLite 数据库是机器事实源。
+
+## 五个核心子系统
+
+- **VPlan**：以详细通用模板、当前 VModel 和人工交互设计/修订 Workstream desired state。
+- **VModel**：保存 typed node、relation、provenance、confidence、evidence 与 validity。
+- **VCheck**：检测结构问题，并沿关系传播 `STALE` 与
+  `REVALIDATION_REQUIRED`。
+- **VClosure**：比较 desired state 与当前事实，只返回最小下一动作集。
+- **VReason**：为无法确定性解决的歧义生成后端无关结构化请求。
+
+`VDOC/VSTIM/VCHK/VCOV/VCASE/VREG` 是可并行、可重入的工作上下文，不是
+DOC→激励→对比→覆盖→case→回归的流水线。每个 Workstream 内部也会反复
+plan/act/observe/replan；VClosure 根据实时 gap 在它们之间跳转。
+
+机器规划真相只有 VModel 与 revisioned desired state；Markdown 是投影，避免
+同时维护另一套规划真相。
+
+## 底层能力
+
+xverif、WavePeek、RTL/UVM 生成器、回归、覆盖率、断言、traceability 和发布审计
+仍作为可复用能力存在。VClosure 推荐何时调用它们，但不会静默执行写操作。
+
+DUT RTL 永远只读；工具成功不等于验证通过；Agent 不得代替 Human 审批。
+
+详细用法见 [用户指南](skills/verif-harness/docs/user_guide.md) 和
+[架构说明](ARCHITECTURE.md)。
+
+## 开发检查
 
 ```bash
-./scripts/setup --isolation managed --runtime kimi \
-  --workspace-root ~/workspaces/my-dut-verification
+make check
+make release-check
 ```
 
-`setup` 默认安装所有 commit-pinned integrations。依赖保留在 Git 忽略的
-verif-harness 安装目录 `.deps/` 下，仍然属于独立的上游项目，不会被 vendored
-进工作空间或 RTL 目录。runtime 配置和 Skill 链接安装到 `--workspace-root` 指定的
-工作空间：
-`--runtime codex` 创建/使用 `.codex/`，`--runtime kimi` 创建/使用
-`.kimi-code/` 并以 Kimi 原生 `--yolo` 启动。setup 不修改 `~/.codex` 或
-`~/.kimi-code` 下的全局配置，也不把 verif-harness 仓库 clone 到 RTL 工程内。
-Skill 内置 launcher 会解析该项目链接，返回原安装目录中的完整 checkout；Agent
-不得仅因工作空间根目录没有 `scripts/`、`deps/` 或 `integrations/` 就误报安装缺失，
-也不应要求在工作空间内再次 clone。
-runtime 明确时还会生成无凭据的 xverif MCP profile/launcher，并注册到工作区的
-`.codex/config.toml` 或 `.kimi-code/mcp.json`；已有同名冲突配置会阻断 setup。
-安装包括：
-
-- 固定版本、固定平台归档哈希的 managed CPython 及 hash-locked MCP 环境；
-- Spec Kit 规格工作流；
-- xverif CLI 和 `xverif_mcp` 源码/launcher；
-- Python `mcp[cli]` SDK；
-- VCD/FST-only WavePeek binary；旧 Linux glibc 主机使用隔离的私有 glibc 2.34。
-
-`managed` 是当前唯一实现的 isolation backend，也是默认值。它不读取宿主
-`python3`、`pip` 或 Python alias；运行时位于 `.deps/runtime/`。Apptainer、Docker
-和 Podman 名称预留给后续显式后端，当前传入这些值会 fail closed，不会静默降级。
-
-每次 setup 在启动 Agent 前都会打印依赖版本清单，包括锁定版本、当前实际版本、
-状态和来源路径。也可以随时单独运行：
-
-```bash
-./scripts/runtime-versions           # 人类可读表格
-./scripts/runtime-versions --verbose # 同时显示解析到的路径
-./scripts/runtime-versions --json    # CI/自动化输入
-```
-
-必需依赖不满足时命令返回非零；条件依赖仅在对应路径启用时成为 blocker，
-例如旧 Linux 主机需要构建私有 glibc 2.34。Verilator、VCS、LSF、Verdi 和
-未选择的 Agent CLI 会列出，但缺失不会阻断只安装 managed 依赖的路径。
-
-默认 setup 不覆盖已有的受管 checkout、runtime 配置或 Skill 文件；如果检测到
-dirty、错误 commit、错误 license 或冲突的 Skill 路径，会 fail closed。只安装
-依赖而不启动 Agent 时使用 `--no-agent`；若还要配置目标工程，应同时显式传入
-`--runtime codex|kimi --workspace-root <path>`。
-
-默认安装完成后，setup 会直接进入所选 Agent CLI。若使用了 `--no-agent`，或之后
-需要重新进入已经配置好的工作空间，先切换到工作空间目录，再启动对应 CLI：
-
-```bash
-cd ~/workspaces/my-dut-verification
-codex                  # Codex runtime
-# 或
-kimi --yolo            # Kimi Code runtime
-```
-
-Codex 启动 CLI 后会通过 interactive initial prompt 自动创建一轮只读清单，列出
-当前会话实际可用的 Skills、MCP servers 和 tools。Kimi 0.38 的 `--prompt` 是阻塞的
-非交互请求，且当前没有带 initial prompt 进入 TUI 的稳定参数，因此 setup 不再为
-Kimi 执行前置模型清单，避免启动卡住；Kimi TUI ready 后使用原生 `/skills` 和
-`/mcp` 查看完整实时视图。
-
-进入 CLI 后，不要回到 shell 执行下面的 Python wrapper；在 CLI 内调用对应的
-Skill：
-
-```text
-# Codex CLI
-$verif-harness probe
-$verif-harness bootstrap
-
-# Kimi Code CLI
-/skill:verif-harness probe
-/skill:verif-harness bootstrap
-```
-
-setup 已把 CLI 启动目录和 runtime marker 固定到所选 workspace；正常交互命令不再
-重复填写 `--project-root .` 或 `--integration`。只有跨项目自动化、恢复流程或 marker
-歧义时才显式覆盖。
-
-常用 workflow 命令使用短别名：
-`probe/bootstrap/stage/status/resume/revise-tasks/recover/docs`
-内部路由到 Spec Kit，旧的 `workflow-status/workflow-resume/workflow-recover`
-继续兼容。`evidence` 路由到 xverif，`waveform` 路由到 WavePeek。其他常用模式也有
-`test/coverage/regression/trace/gate/signoff/freeze` 等一词别名；运行
-`$verif-harness help` 查看完整清单。显式的长模式名以及 `spec-kit`、`xverif` 和
-`wavepeek` 形式仍保留给自动化、已有 task 和高级诊断。
-
-Python wrapper 仍可用于 CI 或无 Agent 的自动化路径；这不是 setup 后的正常交互
-入口。
-
-进入工作空间后，请直接阅读并按用户指南操作。Stage 0 会在工作空间内询问并记录
-RTL 根目录、DUT top 文件和验证目录；setup 阶段不绑定 RTL 路径：
-
-[verif-harness 用户指南](skills/verif-harness/docs/user_guide.md)
-
-该指南覆盖从 Stage 0 初始化、规格评审、验证工程生成到回归、签核和 freeze 的
-完整流程。普通用户不需要直接调用 Spec Kit、xverif 或 WavePeek 的底层命令。
-
-verif-harness remains the top-level policy, Stage, dispatch, and traceability
-control plane. Spec Kit manages constitution/spec/plan/tasks and the built-in
-requirements checklist; custom checklists are reviewer-requested optional artifacts.
-xverif, WavePeek, and simulators produce bounded evidence. After execution
-authorization, the persistent task runner dispatches only `current_task_id`,
-persists `READY/RUNNING/DONE/BLOCKED`, and validates owned outputs, evidence,
-and the reviewed command before marking `[x]`; `DONE` tasks are never replayed.
-Human reviewers keep
-semantic decisions, waivers, gates, sign-off, and freeze authority. See
-[integrations/spec-kit/README.md](integrations/spec-kit/README.md).
-
-## Simulator support
-
-| Simulator | Scope | Status |
-| --- | --- | --- |
-| Verilator 5.x | Non-UVM example, lint, assertions | Open CI target |
-| Synopsys VCS | Full SystemVerilog/UVM flow | Local/commercial integration |
-| Questa | Full SystemVerilog/UVM flow | Community validation wanted |
-| Xcelium | Full SystemVerilog/UVM flow | Community validation wanted |
-
-CI success proves the open-source checks and example only. It does not claim a
-commercial-simulator regression passed. See
-[docs/simulator_support.md](docs/simulator_support.md).
-
-## Repository structure
-
-```text
-docs/                    Design and integration documentation
-examples/simple_fifo/    License-free executable example
-filelists/               Shared simulator option guidance
-scripts/                 Generator, checks, and runner wrappers
-skills/verif-harness/    Reusable Codex/Kimi Code Skill
-templates/dut/           Standalone DUT integration templates
-tests/                   Python and structural tests
-.github/                 CI, Pages, release, issue, and PR automation
-deps/                    Reviewed optional-dependency locks and schemas
-.deps/                   Git-ignored managed dependency checkouts
-```
-
-## Supported agent runtimes
-
-The reusable Skill is under `skills/verif-harness/`. Follow
-[Install and initialize a verification workspace](#install-and-initialize-a-verification-workspace)
-to expose the Skill at the workspace runtime path.
-
-Codex:
-
-```text
-$verif-harness Integrate this DUT into a verification environment.
-```
-
-Kimi Code:
-
-```text
-/skill:verif-harness Integrate this DUT into a verification environment.
-```
-
-The Skill reads repository instructions and RTL ports, but preserves the rule
-that DUT RTL and Human approval decisions are outside agent authority. Codex
-and Kimi Code are supported Agent runtimes, not dependencies of the
-deterministic CLI and CI core. Integrations for additional Agent runtimes must
-retain the same contracts and authority boundaries.
-The bundled Chinese [skill README](skills/verif-harness/README.md) provides the
-quick-start catalog, while its
-[complete user guide](skills/verif-harness/docs/user_guide.md) documents every
-mode's inputs, outputs, usage, scenarios, and Human review points.
-See [docs/skill_modes.md](docs/skill_modes.md) for every mode, its purpose,
-usage, and recommended lifecycle position.
-
-## Documentation
-
-Start at the [documentation home](docs/index.md). The MkDocs configuration
-builds the published `docs/` content as a documentation site. The catalog below
-links every maintained Markdown document in the repository except this README.
-
-### Architecture, integration, and operation
-
-| Document | Contents |
-| --- | --- |
-| [Canonical architecture](ARCHITECTURE.md) | Ownership boundaries, compile order, lifecycle planes, and public project structure. |
-| [Architecture summary](docs/architecture.md) | Short introduction to harness ownership and the read-only DUT boundary. |
-| [Harness design](docs/harness_design.md) | Thin-top rule and structural versus behavioral responsibilities. |
-| [DUT integration](docs/dut_integration.md) | Required DUT inputs, additive generation, review checklist, and smoke validation. |
-| [Interface guidelines](docs/interface_guidelines.md) | Interface declaration, modport, naming, sampling, and layering rules. |
-| [Bind and SVA](docs/bind_and_sva.md) | Assertion identity, clocks, reset semantics, bind order, engagement, and closure evidence. |
-| [UVM integration](docs/uvm_integration.md) | Virtual interfaces, UVM component layering, config publication, and full-simulator boundary. |
-| [Compile flow](docs/compile_flow.md) | Canonical dependency order and repository-relative filelist expectations. |
-| [Simulator support](docs/simulator_support.md) | Tested public scope and commercial/community simulator status. |
-| [Tool versions](docs/tool_versions.md) | Supported tool baselines and installation guidance. |
-| [Agent runtime and model switching](docs/runtime_switching.md) | Bootstrap detection, Codex/Kimi Code selection, K3 model changes, and runtime migration. |
-| [Runtime permissions](docs/runtime_permissions.md) | Shared command policy and Codex/Kimi sandbox and approval boundaries. |
-| [Coding style](docs/coding_style.md) | SystemVerilog, Python, shell, and documentation conventions. |
-| [Troubleshooting](docs/troubleshooting.md) | Setup, dependency, simulator, example, and public-audit recovery. |
-| [Roadmap](docs/roadmap.md) | Planned framework releases and capability evolution. |
-| [Public release checklist](docs/public_release_checklist.md) | Human-reviewed security, licensing, reproducibility, and release requirements. |
-
-### Skill, lifecycle, tools, and examples
-
-| Document | Contents |
-| --- | --- |
-| [Skill mode catalog](docs/skill_modes.md) | All 31 public modes, purposes, lifecycle positions, and example invocations. |
-| [Chinese Skill quick start](skills/verif-harness/README.md) | 中文模式目录、快速用法和权限边界。 |
-| [Chinese complete user guide](skills/verif-harness/docs/user_guide.md) | 中文 Stage 0→freeze 流程及每个模式的输入、输出、用法、场景和人工检查点。 |
-| [Chinese Skill architecture](skills/verif-harness/docs/architecture.md) | 中文控制面、规格面、能力面、证据面和人工权限模型。 |
-| [Chinese Skill troubleshooting](skills/verif-harness/docs/troubleshooting.md) | 中文 false-green 风险、常见故障和恢复方式。 |
-| [Spec Kit integration](integrations/spec-kit/README.md) | Spec authority, bootstrap/stage/resume/status commands, task dispatch, convergence, and Human gates. |
-| [Spec Kit bundle](integrations/spec-kit/bundle/README.md) | Local RTL bundle composition and pre-catalog publication boundary. |
-| [xverif integration](docs/xverif_integration.md) | Managed CLI/MCP dependency, install/configure/use contract, provenance, evidence, and ownership split. |
-| [WavePeek integration](docs/wavepeek_integration.md) | Managed VCD/FST CLI, bounded query contract, provenance, and FSDB boundary. |
-| [simple_fifo example](examples/simple_fifo/README.md) | License-free executable harness example and expected smoke result. |
-
-### Project governance and community
-
-| Document | Contents |
-| --- | --- |
-| [Repository Agent instructions](AGENTS.md) | Public-data restrictions, architecture rules, optional-dependency boundaries, and required checks. |
-| [Contributing](CONTRIBUTING.md) | Contribution workflow, validation, dependency-upgrade rules, and PR expectations. |
-| [Governance](GOVERNANCE.md) | Maintainer authority and decisions requiring explicit review. |
-| [Code of Conduct](CODE_OF_CONDUCT.md) | Expected community behavior and enforcement process. |
-| [Security policy](SECURITY.md) | Supported versions and private vulnerability/disclosure reporting. |
-| [Support](SUPPORT.md) | Supported public channels and out-of-scope commercial EDA support. |
-| [Changelog](CHANGELOG.md) | Released and unreleased user-visible changes. |
-| [Third-party notices](THIRD_PARTY_NOTICES.md) | Spec Kit, xverif, WavePeek, toolchain, license, and ownership notices. |
-| [Apache-2.0 License](LICENSE) | Project copyright and redistribution terms. |
-| [Pull request template](.github/pull_request_template.md) | Required change summary, validation, security, and review-boundary checklist. |
-
-### Skill implementation contracts
-
-The [top-level Skill contract](skills/verif-harness/SKILL.md) defines dispatch,
-global invariants, resources, and the complete authority boundary. Each mode
-with specialized behavior has its own mandatory implementation contract:
-
-| Mode contract | Contents |
-| --- | --- |
-| [`init`](skills/verif-harness/stage0/INSTRUCTIONS.md) | Stage 0 governance bootstrap and M1.1 scaffold. |
-| [`add-interface`](skills/verif-harness/add-interface/INSTRUCTIONS.md) | Protocol interface and UVC landing-directory generation. |
-| [`add-shared-pkg`](skills/verif-harness/add-shared-pkg/INSTRUCTIONS.md) | Shared typedef, enum, and pack/unpack packages. |
-| [`add-uvc-skeleton`](skills/verif-harness/add-uvc-skeleton/INSTRUCTIONS.md) | Layered UVC class skeletons. |
-| [`add-harness-layer`](skills/verif-harness/add-harness-layer/INSTRUCTIONS.md) | DUT/TB harness and SVA structural stubs. |
-| [`add-env-layer`](skills/verif-harness/add-env-layer/INSTRUCTIONS.md) | Environment, scoreboard, coverage, base test, and top skeletons. |
-| [`finalize-filelist-and-make`](skills/verif-harness/finalize-filelist-and-make/INSTRUCTIONS.md) | Canonical filelists and compile-only target. |
-| [`doctor`](skills/verif-harness/doctor/INSTRUCTIONS.md) | Read-only project health audit. |
-| [`spec-kit`](skills/verif-harness/spec-kit/INSTRUCTIONS.md) | Specification workflow, task dispatch, convergence, and authority rules. |
-| [`xverif`](skills/verif-harness/xverif/INSTRUCTIONS.md) | Allowlisted deterministic xverif CLI plus MCP source/profile lifecycle. |
-| [`wavepeek`](skills/verif-harness/wavepeek/INSTRUCTIONS.md) | Bounded deterministic waveform query execution. |
-| [`add-regression-runner`](skills/verif-harness/add-regression-runner/INSTRUCTIONS.md) | Isolated regression launch, collection, and same-seed rerun. |
-| [`add-simulator-profile`](skills/verif-harness/add-simulator-profile/INSTRUCTIONS.md) | Reviewed simulator profile generation. |
-| [`add-testcase`](skills/verif-harness/add-testcase/INSTRUCTIONS.md) | Additive test/vseq skeleton and candidate registration. |
-| [`add-coverage-skeleton`](skills/verif-harness/add-coverage-skeleton/INSTRUCTIONS.md) | Explicit-contract coverpoints, bins, and crosses. |
-| [`add-assertion-skeleton`](skills/verif-harness/add-assertion-skeleton/INSTRUCTIONS.md) | Explicit-contract SVA checker and optional bind. |
-| [`add-refmodel-bridge`](skills/verif-harness/add-refmodel-bridge/INSTRUCTIONS.md) | Structural Syscan or DPI-C reference-model bridge. |
-| [`complete-uvc`](skills/verif-harness/complete-uvc/INSTRUCTIONS.md) | Reviewed ready/valid driver and monitor behavior. |
-| [`complete-scoreboard`](skills/verif-harness/complete-scoreboard/INSTRUCTIONS.md) | FIFO alignment and explicit comparison policies. |
-| [`add-ci-hook`](skills/verif-harness/add-ci-hook/INSTRUCTIONS.md) | GitLab CI or Jenkins fragment generation. |
-| [`add-performance-gate`](skills/verif-harness/add-performance-gate/INSTRUCTIONS.md) | Deterministic performance-contract evaluation. |
-| [`regression-triage`](skills/verif-harness/regression-triage/INSTRUCTIONS.md) | Signature grouping and same-seed failure evidence. |
-| [`coverage-closure`](skills/verif-harness/coverage-closure/INSTRUCTIONS.md) | Coverage-plan, hit, exclusion, waiver, and database audit. |
-| [`assertion-closure`](skills/verif-harness/assertion-closure/INSTRUCTIONS.md) | Compile, bind, attempt, failure, vacuity, and waiver audit. |
-| [`audit-traceability`](skills/verif-harness/audit-traceability/INSTRUCTIONS.md) | Manifest, test, plan-ID, and feature traceability audit. |
-| [`change-control`](skills/verif-harness/change-control/INSTRUCTIONS.md) | Post-baseline change-request evidence audit. |
-| [`stage-gate-review`](skills/verif-harness/stage-gate-review/INSTRUCTIONS.md) | Draft Stage gate packet construction. |
-| [`signoff-audit`](skills/verif-harness/signoff-audit/INSTRUCTIONS.md) | Sign-off packet, manifest, approval metadata, and RTL-scope audit. |
-| [`freeze-baseline`](skills/verif-harness/freeze-baseline/INSTRUCTIONS.md) | Clean-commit, hash-anchored freeze candidate manifest. |
-| [`oss-readiness`](skills/verif-harness/oss-readiness/INSTRUCTIONS.md) | Public structure, reproducibility, and sensitive-data audit. |
-
-### Skill reference and template documents
-
-| Document | Contents |
-| --- | --- |
-| [Stage 1 patterns](skills/verif-harness/references/stage1-patterns.md) | Compile order, layering, bind, packaging, and M1.1 conventions. |
-| [Implementation patterns](skills/verif-harness/references/implementation-patterns.md) | Explicit contracts for Stage 2+ generation and evidence. |
-| [Regression patterns](skills/verif-harness/references/regression-patterns.md) | Result records, seeds, isolation, reruns, and evidence rules. |
-| [Lifecycle patterns](skills/verif-harness/references/lifecycle-patterns.md) | Traceability, change control, gates, sign-off, and freeze rules. |
-| [xverif adapter contract](skills/verif-harness/references/xverif-adapter-contract.md) | Request/result schema, native outputs, provenance, and fail-closed behavior. |
-| [WavePeek adapter contract](skills/verif-harness/references/wavepeek-adapter-contract.md) | JSON/JSONL integrity, provenance, bounded paths, and authority boundary. |
-| [Document conventions](skills/verif-harness/assets/doc-conventions.md) | Lifecycle headings and review-block conventions for generated documents. |
-| [Review block](skills/verif-harness/assets/review-block.md) | Reusable Human review metadata template. |
-| [Stage gate re-review template](skills/verif-harness/assets/stage_gate_re_review_template.md) | Provisional-decision and open-question re-review structure. |
-| [Stage review packet template](skills/verif-harness/assets/stage_review_packet_template.md) | Stage deliverable, evidence, finding, and approval packet structure. |
-
-### Spec Kit command and authoring templates
-
-| Document | Contents |
-| --- | --- |
-| [Task runner boundary](integrations/spec-kit/preset/rtl-verification/commands/speckit.implement.md) | Fail-closed replacement for monolithic implementation; execution lives in the wrapper. |
-| [Constitution template](integrations/spec-kit/preset/rtl-verification/templates/constitution-template.md) | Verification governance and immutable authority principles. |
-| [Specification template](integrations/spec-kit/preset/rtl-verification/templates/spec-template.md) | Stage-scoped requirements, decisions, risks, and evidence expectations. |
-| [Plan template](integrations/spec-kit/preset/rtl-verification/templates/plan-template.md) | Technical context, design structure, and validation planning. |
-| [Tasks template](integrations/spec-kit/preset/rtl-verification/templates/tasks-template.md) | Mode-owned tasks, outputs, validation commands, and evidence paths. |
-| [Checklist template](integrations/spec-kit/preset/rtl-verification/templates/checklist-template.md) | Optional reviewer-requested domain checklist; the default lifecycle uses `checklists/requirements.md`. |
-
-## Contributing
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Contributions must use neutral example
-names and pass the public-release audit; never submit proprietary RTL, logs,
-URLs, license configuration, or specifications.
-
-## License
-
-Licensed under Apache License 2.0. See [LICENSE](LICENSE).
+`make release-check` 只用于公开发布候选。不要把 proprietary RTL、规格、日志、
+波形、license 配置或调度器配置提交到本仓库。

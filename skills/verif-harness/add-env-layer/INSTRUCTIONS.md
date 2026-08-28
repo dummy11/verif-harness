@@ -13,10 +13,10 @@ type reference — usually `add-harness-layer` first).
 
 ## Pre-conditions
 
-1. `.harness-config.json` exists
-2. All Stage 0 docs `Approved`
-3. `<verif_root>/testbench/env/` and `<verif_root>/testbench/test/`
-   directories exist (from `init` Step 4b)
+1. The project is bootstrapped and VPlan has an approved env-layer action
+2. `.harness-config.json` exists
+3. `<verif_root>/testbench/env/` and `<verif_root>/testbench/test/` are
+   writable; create them additively if missing
 4. `<verif_root>/testbench/pkg/<prefix>_tb_pkg.sv` exists
    (from `add-shared-pkg`)
 5. UVC packages exist under `<verif_root>/testbench/uvc/*/` (from
@@ -155,7 +155,7 @@ Then: make -C <verif_root>/regress compile
 
 ## Do not
 
-- Do not put logic in scoreboard/cov_collector write bodies (M1.5+ / Stage 3)
+- Do not put logic in scoreboard/cov_collector write bodies until selected by VCHK/VCOV.
 - Do not connect analysis ports in env's connect_phase (M1.5+)
 - Do not add UVM_TESTNAME default — leave that to user's runtime command
 - Do not add anything to tb_top beyond the 4 responsibilities (see

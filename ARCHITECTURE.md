@@ -1,120 +1,78 @@
 # Architecture
 
-## Design goal
+## Purpose
 
-verif-harness makes DUT integration a first-class structural layer. The layer
-is intentionally smaller than a verification environment and contains no test
-intent, reference-model policy, or Human decisions.
+verif-harness v1 is an AI-native verification engineering control plane. Its
+unit of control is a live desired-state model, not a one-shot workflow run.
 
-## Ownership
+## Control loop
 
-At project-lifecycle level, verif-harness is the control plane. The optional
-GitHub Spec Kit integration is the specification plane; existing verif-harness
-modes are the capability plane; xverif, WavePeek, and simulators are the
-evidence plane; Human reviewers are the authority plane. New projects keep one
-editable specification source under `specs/` and trace
-`REQ -> VF -> PLAN -> TASK -> MODE -> ARTIFACT -> EVIDENCE -> GATE`.
+```text
+Human intent
+    |
+    v
+ VPlan ----review----> Workstream desired state
+    |                         |
+    v                         v
+ VModel <----evidence---- capability tools / simulators
+    |
+    +----> VCheck ----> validity + causal findings
+    |                         |
+    +----> VClosure <---------+
+               |
+               +---- deterministic next actions
+               +---- VReason request when ambiguity remains
+```
 
-Spec Kit is agentic and cannot turn workflow success into deterministic
-verification evidence or approval. Existing approved projects are imported as
-immutable baselines instead of rewriting their historical decisions.
+The global loop is `VModel -> VCheck -> VClosure -> selected gap -> local
+Workstream loop -> evidence -> VModel`. Each local loop is `DESIRED -> PLAN ->
+ACT -> OBSERVE -> EVALUATE -> REPLAN`. Workstreams can be active concurrently
+and may route to one another; they are not lifecycle states.
 
-`tb_top` owns only top-level elaboration and test startup. The harness owns:
+## Project state
 
-- clock and reset generation;
-- protocol-interface instances;
-- DUT instantiation and port mapping;
-- explicit tie-offs, straps, and adapters;
-- assertion modules and bind placement;
-- virtual-interface publication for UVM consumers.
+`.verif-harness/model.sqlite3` is the machine source of truth. It stores:
 
-The UVM environment owns stimulus, monitoring, scoreboarding, coverage, and
-test control. DUT RTL remains an external read-only asset.
+- typed nodes for intent, desired state, implementation, artifacts, and evidence;
+- typed edges with `explicit`, `inferred`, or `runtime` origin and confidence;
+- Workstream revisions and Human review records;
+- change events, causal findings, validity, and closure actions.
 
-## Dependency direction
+`project.json`, `inventory.json`, `model.md`, and Workstream `plan.md` files are
+review projections. Editing a projection does not mutate authority.
+
+Validity is explicit: `VALID`, `STALE`, `INVALID`, `REVIEW_REQUIRED`,
+`REVALIDATION_REQUIRED`, `BLOCKED`, `WAIVED`, or `UNKNOWN`.
+
+## Subsystem boundaries
+
+- VPlan owns Workstream templates, desired state, and review revisions.
+- VModel owns persisted facts and provenance.
+- VCheck owns deterministic reconciliation and invalidation propagation.
+- VClosure owns global gap calculation, Workstream routing, and minimum next-action selection.
+- VReason owns structured proposals for ambiguous cases, not execution or approval.
+- Capability tools own bounded implementation/evidence operations.
+- Human reviewers own semantic approval, modification, waiver, and freeze.
+
+## RTL architecture boundary
+
+`tb_top` owns elaboration and test startup. The harness owns clock/reset,
+interfaces, DUT instantiation, tie-offs/adapters, bind, and virtual-interface
+publication. UVM owns stimulus, monitors, scoreboards, coverage, and test
+control. DUT RTL remains external and read-only.
 
 ```text
 tests -> env -> agents -> virtual interfaces
                            |
                            v
-                       harness -> DUT
+                       harness -> DUT (read-only)
                            |
                            +-> SVA / bind
 ```
 
-No DUT-specific hierarchical path may leak into a test or reusable UVC when a
-harness API or interface can express the dependency.
+## Tool boundary
 
-## Compile-order contract
-
-Use this order unless a reviewed tool-specific exception is documented:
-
-```text
-defines
--> packages
--> interfaces
--> RTL
--> assertions
--> bind
--> UVM packages/classes
--> harness
--> tb_top
-```
-
-Filelists are explicit, project-root-relative, and reviewed as source code.
-
-## Extension points
-
-- Interfaces define stable protocol boundaries.
-- Harness adapters isolate DUT-specific reshaping and tie-offs.
-- Bind modules attach non-invasive assertions.
-- The Codex/Kimi Code Skill generates structure from reviewed contracts.
-- Simulator wrappers translate the canonical filelist into tool commands.
-- The xverif CLI adapter translates one reviewed request into a native xverif
-  tool invocation and immutable evidence; it does not own verification policy.
-
-## Deterministic tool delegation
-
-```text
-Codex or Kimi Code Agent
-   |
-   v
-verif-harness Skill/framework
-   |  stage policy, project semantics, Human boundaries
-   v
-validated CLI adapter
-   |  allowlisted argv, controlled environment, timeout, evidence hashes
-   v
-BLANK2077/xverif tools/<selected-tool>
-   |  xbit | xdebug | xcov | xentry | xloc | xsva | xwaveform
-   v
-native JSON / XOUT / text evidence
-```
-
-The adapter pins tool provenance with the checkout Git commit and wrapper
-SHA-256. It never invents a unified `xverif` executable, changes native action
-semantics, reverse-parses XOUT, or silently falls back between CLI/MCP,
-local/LSF, output formats, backends, or data sources.
-
-The default xverif implementation is a separately owned, commit-pinned source
-checkout under `.deps/xverif`. `deps/xverif.lock.json` is the dependency
-contract; setup validates repository, commit, clean state, MIT License hash,
-and wrapper inventory before the adapter can consume it. The checkout is
-Git-ignored and excluded from verif-harness source archives.
-
-WavePeek follows the same ownership boundary with a separate deterministic
-waveform path:
-
-```text
-reviewed WavePeek request
-  -> verif-harness WavePeek adapter
-  -> .deps/wavepeek-bin/wavepeek
-  -> bounded VCD/FST JSON, JSONL, or text evidence
-```
-
-`deps/wavepeek.lock.json` pins source commit, version, Apache-2.0 License,
-Cargo.lock, and an empty feature set. Source and binary stay under `.deps/`.
-The managed build omits proprietary FSDB support. Query PASS is execution
-evidence and never changes verification approval state.
-
-See [docs/harness_design.md](docs/harness_design.md) for implementation rules.
+xverif, WavePeek, simulators, waveform viewers, regression systems, and EDA
+providers are capability adapters. The core depends on declared capabilities
+and recorded evidence, not vendor command syntax. Tool success is provenance,
+not Human approval or semantic sign-off.

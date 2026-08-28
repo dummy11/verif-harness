@@ -1,43 +1,12 @@
-# doctor — read-only project health audit
+# doctor mode
 
-Run this mode before choosing a write mode or when project state is unclear.
+Run the native read-only v1 health audit:
 
-## Preconditions
+```text
+$verif-harness doctor
+```
 
-- Start at the project root.
-- Do not require EDA tools.
-- Do not modify project files.
-
-## Procedure
-
-1. Read `AGENTS.md` when present.
-2. Run through the runtime-native launcher so the managed Python and reviewed
-   package checkout are used:
-
-   ```bash
-   <runtime-skill-link>/scripts/verif-harness doctor
-   ```
-
-3. If machine-readable output is useful, add `--json`.
-4. Report every ERROR and WARNING plus the active Agent runtime when managed by
-   Spec Kit. A CLI-only/legacy project without `.specify/` remains valid; an
-   existing `.specify/` with missing, corrupt, or unsupported integration state
-   is an ERROR.
-5. Recommend the next explicit mode printed by the tool. Ask before invoking a
-   write mode.
-
-## Interpretation
-
-- ERROR means the harness state is structurally unsafe or incomplete.
-- WARNING means migration debt, ambiguous state, or a non-blocking gap.
-- INFO records discovered state.
-- A clean exit does not prove simulation correctness or Stage approval.
-
-The audit intentionally reports legacy `.claude/` and `CLAUDE.md` artifacts
-when Codex `AGENTS.md` is also present. Legacy files may remain for
-compatibility, but they must not be the active source of truth.
-
-An existing `<docs-root>/plan.md` is likewise an optional legacy derived view:
-report it for migration awareness, but do not require or delete it. In Spec Kit
-projects, the current `specs/<feature>/plan.md` is the authoritative Stage plan;
-new `init` runs do not generate the legacy file.
+If the project is not bootstrapped, report `bootstrap` as the next mode. If the
+model contains missing artifacts or open findings, inspect VModel and run
+VClosure. Doctor never edits DUT RTL, approves a Workstream, repairs evidence, or
+silently creates project state.

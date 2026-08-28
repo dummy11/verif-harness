@@ -41,7 +41,7 @@ def git_output(root: Path, *args: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def audit(root: Path, stage: int, packet_arg: Path | None,
+def audit(root: Path, packet_arg: Path | None,
           manifest_arg: Path | None) -> tuple[dict, list[Finding]]:
     root = root.resolve()
     findings: list[Finding] = []
@@ -51,7 +51,7 @@ def audit(root: Path, stage: int, packet_arg: Path | None,
     config = json.loads(read(config_path))
     docs_root = resolve(root, Path(config["verif"]["docs_root"]))
     rtl_root = Path(config["rtl"]["root"])
-    packet = resolve(root, packet_arg) if packet_arg else docs_root / f"stage{stage}_gate_re_review.md"
+    packet = resolve(root, packet_arg) if packet_arg else docs_root / "final_signoff.md"
     manifest = resolve(root, manifest_arg) if manifest_arg else docs_root / "caselist" / "default_regression.caselist"
     if not packet.is_file():
         findings.append(Finding("ERROR", "PACKET_MISSING", f"Sign-off packet missing: {packet}"))
@@ -117,7 +117,6 @@ def audit(root: Path, stage: int, packet_arg: Path | None,
         state = "READY_FOR_HUMAN_REVIEW"
     summary = {
         "state": state,
-        "stage": stage,
         "packet": str(packet),
         "packet_status": status,
         "reviewer": reviewer,
@@ -136,7 +135,6 @@ def markdown(summary: dict, findings: list[Finding]) -> str:
     if summary:
         lines.extend([
             f"- State: **{summary['state']}**",
-            f"- Stage: {summary['stage']}",
             f"- Packet status: `{summary['packet_status']}`",
             f"- Reviewer/date: `{summary['reviewer']}` / `{summary['decision_date']}`",
             f"- Manifest: {summary['manifest_entries']} entries / {summary['unique_manifest_entries']} unique",
@@ -155,14 +153,13 @@ def markdown(summary: dict, findings: list[Finding]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
-    parser.add_argument("--stage", type=int, required=True)
     parser.add_argument("--packet", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args()
-    summary, findings = audit(args.project_root, args.stage, args.packet, args.manifest)
+    summary, findings = audit(args.project_root, args.packet, args.manifest)
     payload = (json.dumps({"summary": summary, "findings": [asdict(item) for item in findings]}, indent=2) + "\n"
                if args.json else markdown(summary, findings))
     if args.out:

@@ -12,12 +12,12 @@ compile` runs cleanly at M1.1 exit.
 
 ## Pre-conditions
 
-1. `.harness-config.json` exists
-2. All Stage 0 docs `Approved`
+1. The project is bootstrapped and VPlan has an approved build-finalization action
+2. `.harness-config.json` exists
 3. Every source file referenced by the filelist templates actually exists
    on disk (skill audits before writing filelist)
-4. `<verif_root>/filelist/` and `<verif_root>/regress/` directories exist
-   (from `init` Step 4b)
+4. `<verif_root>/filelist/` and `<verif_root>/regress/` are writable; create
+   them additively if missing
 
 ## Required reading
 
@@ -169,4 +169,4 @@ If warnings appear:
 
 - Do not include files that don't exist on disk — skill audits first
 - Do not hard-code project paths (use `<verif_root>` throughout)
-- Do not add `run`, `regress`, `cov` targets — those come in Stage 4+
+- Do not add `run`, `regress`, `cov` targets unless selected by VREG/VCOV.

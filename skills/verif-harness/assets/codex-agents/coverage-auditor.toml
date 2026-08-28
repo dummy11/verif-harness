@@ -8,5 +8,5 @@ Read .harness-config.json to resolve verification paths. Cross-check feature_mat
 coverage_plan.md, testcase_list.md, TB covergroups, and test files. Report
 UNCOVERED_FEATURE, UNEXERCISED_BIN, UNCLAIMED_TEST, CROSS_MISSING, and STALE_REF
 findings with exact file:line citations. Separate confirmed gaps from uncertain items
-that require human judgment. If required Stage 0 documents do not exist, say so and stop.
+that require human judgment. If required VDOC nodes do not exist, say so and stop.
 """

@@ -10,7 +10,7 @@ launch_agent=true
 
 usage() {
   echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--isolation managed] [--no-agent]" >&2
-  echo "       workspace-root receives runtime/spec/workflow files; RTL is selected later in Stage 0." >&2
+  echo "       workspace-root receives the v1 project model; DUT paths are selected by bootstrap/VPlan." >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -110,9 +110,6 @@ PYTHONPATH="$package_root/.deps/xverif/xverif_mcp/src:$package_root/.deps/xverif
 
 "$python_cmd" "$package_root/scripts/setup_wavepeek.py" --project-root "$package_root"
 "$python_cmd" "$package_root/scripts/check_wavepeek.py"
-
-"$python_cmd" "$package_root/scripts/setup_spec_kit.py" --project-root "$package_root" --python "$python_cmd"
-"$python_cmd" "$package_root/scripts/check_spec_kit.py"
 
 if command -v verilator >/dev/null 2>&1; then
   verilator --version
@@ -246,7 +243,7 @@ echo "Configuring project-local xverif MCP registration for $runtime."
 "$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp status \
   --project-root "$workspace_root" --python "$python_cmd"
 
-echo "Setup PASS: Spec Kit, xverif CLI/MCP, and WavePeek are installed; xverif MCP is registered for $runtime."
+echo "Setup PASS: verif-harness v1, xverif CLI/MCP, and WavePeek are installed; xverif MCP is registered for $runtime."
 if [[ "$launch_agent" != true ]]; then
   echo "Agent launch skipped (--no-agent)."
   echo "Workspace configured at: $workspace_root"

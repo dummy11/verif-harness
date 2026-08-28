@@ -1,5 +1,5 @@
 // <verif_root>/testbench/env/<PREFIX>_cov_collector.svh
-// Env-level coverage collector. M1.1 skeleton; Stage 3 fills covergroups
+// Env-level coverage collector skeleton; a VCOV action fills covergroups.
 // per coverage_plan.md.
 //
 // Suffix convention (per stage1-patterns.md § 7): use `_cov_<name>` prefix
@@ -23,5 +23,5 @@ class <PREFIX>_cov_collector extends uvm_component;
   endfunction
 
 // >>> GENERATED_WRITE_BODIES <<<
-// One empty write function per suffix. Stage 3 fills with covergroup sample().
+// One empty write function per suffix. A VCOV action may add covergroup sample().
 endclass

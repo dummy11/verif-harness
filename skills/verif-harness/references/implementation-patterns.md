@@ -1,4 +1,4 @@
-# Stage 2+ implementation patterns
+# Verification capability implementation patterns
 
 ## Explicit contracts
 

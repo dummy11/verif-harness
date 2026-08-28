@@ -10,12 +10,13 @@ Run:
 
 ```bash
 python3 <skill-dir>/signoff-audit/scripts/audit_signoff.py \
-  --stage <N>
+  [--packet <path>]
 ```
 
 Options:
 
-- `--packet <path>` selects a nonstandard sign-off packet.
+- `--packet <path>` selects a nonstandard sign-off packet; the default is
+  `<docs_root>/final_signoff.md`.
 - `--manifest <path>` selects the authoritative regression manifest.
 - `--json` emits machine-readable output.
 - `--out <path>` writes the report.

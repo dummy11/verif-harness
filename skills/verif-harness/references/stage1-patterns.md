@@ -1,7 +1,7 @@
-# Stage 1+ TB Code Patterns
+# Harness and TB Code Patterns
 
 Reference document consumed by the `add-harness-layer` mode of `verif-harness`
-(and by any future Stage 1+ code-generation modes). Encodes the hard rules
+(and by future code-generation capability modes). Encodes the hard rules
 learned from harness-style TB bootstrap, so downstream code generation stays
 consistent across projects and does not repeat classic pitfalls (bind syntax,
 compile ordering, multi-driver races, ...).
@@ -92,7 +92,7 @@ package will include, including `seq/` sub-directories under each UVC.
 
 ```text
 # <verif_root>/filelist/tb.f
-# Compile-order for Stage 1+ TB (see stage1-patterns.md §1.3).
+# Compile-order for the generated TB (see this document §1.3).
 
 # +incdir: every dir containing .svh a package will include
 +incdir+<verif_root>/testbench/uvc/<name1>_agent
@@ -376,7 +376,7 @@ body:
 ```systemverilog
 // sim/testbench/top/sva/<prefix>_ctrl_checker.sv
 module <prefix>_ctrl_checker ();
-  // Stage 3+ will add assertion bodies here.
+  // A later VCHK action may add reviewed assertion bodies here.
   // Reachable signals: everything declared in <prefix>_ctrl_if
   // (bind places this module inside the interface's scope).
 endmodule
@@ -387,7 +387,7 @@ endmodule
 bind <prefix>_ctrl_if <prefix>_ctrl_checker u_ctrl_chk ();
 ```
 
-In Stage 3, checker bodies can refer to `clk`, `rst_n`, and every other
+When VCHK adds checker bodies, they can refer to `clk`, `rst_n`, and every other
 signal declared inside `<prefix>_ctrl_if` as if declared locally — bind
 places the module in the interface's scope. No port passing required.
 
@@ -529,7 +529,7 @@ hierarchical paths inside the RTL, and only apply to the RTL variant.
 
 ## Consumer notes
 
-For skill developers (`add-harness-layer` and future Stage 1 modes):
+For skill developers (`add-harness-layer` and future capability modes):
 
 - Read this file **before** generating any SV code
 - Use §1.5 filelist template as the exact ordering; do not reorder to "look nicer"

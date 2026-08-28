@@ -268,14 +268,6 @@ def managed_rows(root: Path, runtime_lock: dict[str, Any]) -> tuple[list[Version
             "informational", "WavePeek glibc", "Linux only", "not applicable", "N/A",
         ))
 
-    spec_kit = json_probe(root, "setup_spec_kit.py")
-    spec_lock = json.loads((root / "deps/spec-kit.lock.json").read_text(encoding="utf-8"))
-    observed_spec = str(spec_kit.get("version") or "unavailable")
-    rows.append(VersionRow(
-        "required", "GitHub Spec Kit", spec_lock["version"], observed_spec,
-        "PASS" if spec_kit.get("state") in READY_STATES and spec_lock["version"] in observed_spec else "FAIL",
-        spec_kit.get("environment"),
-    ))
     return rows, wavepeek
 
 

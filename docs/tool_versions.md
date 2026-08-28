@@ -2,7 +2,7 @@
 
 | Tool | Supported baseline | Purpose |
 | --- | --- | --- |
-| Managed CPython | 3.12.11 / python-build-standalone 20251007 | Default setup, Spec Kit, xverif MCP, generators, audits, tests |
+| Managed CPython | 3.12.11 / python-build-standalone 20251007 | Default setup, v1 control plane, xverif MCP, generators, audits, tests |
 | MCP Python package set | `mcp[cli]` 1.29.1 plus hash-locked transitive dependencies | xverif MCP runtime; last reviewed 1.x API with `mcp.server.fastmcp` |
 | GNU Make | 3.81+ for contributor targets; 4.0+ for a conditional private glibc build | Command entry points and old-host WavePeek compatibility build |
 | Verilator | 5.x | Open example compile and run |

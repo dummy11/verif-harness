@@ -6,7 +6,7 @@ class <PREFIX>_harness_api;
   <PREFIX>_reset_api  reset;
   <PREFIX>_status_api status;
   <PREFIX>_strap_api  strap;
-  // <PREFIX>_debug_api debug;  // Stage 2+ reserved
+  // <PREFIX>_debug_api debug;  // optional VCHK/VREG debug API
 
   function new(virtual <PREFIX>_harness_if vif);
     reset  = new(vif);

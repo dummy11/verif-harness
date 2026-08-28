@@ -33,7 +33,7 @@ cd /path/to/verif-harness
 
 The package checkout owns the managed `.deps/xverif` source and launcher. The
 verification workspace owns `.harness/`, MCP profiles, requests, and evidence;
-Stage 0 records the RTL directory separately.
+project bootstrap records the RTL directory separately.
 
 Equivalent focused commands are:
 

@@ -7,8 +7,8 @@ managed_python="$package_root/scripts/managed-python"
 wrapper="$package_root/scripts/verif_harness.py"
 
 if [[ ! -x "$managed_python" || ! -f "$wrapper" || \
-      ! -f "$package_root/deps/spec-kit.lock.json" || \
-      ! -d "$package_root/integrations/spec-kit" ]]; then
+      ! -f "$package_root/verif_harness/__init__.py" || \
+      ! -f "$package_root/verif_harness/store.py" ]]; then
   echo "ERROR: runtime Skill link does not resolve to a complete verif-harness checkout: $package_root" >&2
   echo "       Rerun setup from the reviewed verif-harness package checkout; do not clone into the workspace." >&2
   exit 2

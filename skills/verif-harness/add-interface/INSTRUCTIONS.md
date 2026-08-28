@@ -2,7 +2,7 @@
 
 **Mode**: `/verif-harness add-interface`
 
-**Purpose**: Generate Stage 1 M1.1 protocol interface `.sv` files from a
+**Purpose**: Generate protocol interface `.sv` files for a VSTIM/VCHK action from a
 harness-spec.yaml, plus create matching `uvc/<name>_agent/seq/` subdirectory
 skeleton per interface. Precedes `add-harness-layer` mode.
 
@@ -13,10 +13,9 @@ class files (that's for future `add-uvc-agent` mode).
 
 Before proceeding, verify ALL:
 
-1. `.harness-config.json` exists in project root
-2. All Stage 0 docs at `Approved` (grep `Review Metadata` block in each doc)
-3. `<verif_root>/testbench/top/if/` directory exists (created by `init` mode
-   Step 4b, or created here if missing)
+1. The project is bootstrapped and VPlan has an approved action for interface generation
+2. `.harness-config.json` exists in project root
+3. `<verif_root>/testbench/top/if/` is absent/empty or contains only reviewed additive targets
 4. `<verif_root>/docs/verification/harness-spec.yaml` exists with at least
    one interface entry that has BOTH `signals:` and `dir` roles on each
    signal — OR user is prepared to write it interactively

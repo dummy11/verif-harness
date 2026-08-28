@@ -5,7 +5,7 @@ generates infrastructure; it does not run EDA simulations unless the user asks.
 
 ## Preconditions
 
-- Stage 1 runnable TB and a base test/report-phase result banner exist.
+- A runnable TB and a base test/report-phase result banner exist.
 - Read project `AGENTS.md`, roadmap, verification plan, testcase list,
   architecture, coding guide, and the existing regression Makefile/scripts.
 - Read `../references/regression-patterns.md` completely.

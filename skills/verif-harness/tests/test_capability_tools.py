@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for verif-harness Stage 2+ contract tools."""
+"""Tests for lower-level verif-harness capability contracts."""
 
 from __future__ import annotations
 
@@ -128,8 +128,8 @@ class Stage2PlusToolsTest(unittest.TestCase):
             (root / ".harness-config.json").write_text(json.dumps(config()), encoding="utf-8")
             docs = root / "sim/docs"
             docs.mkdir(parents=True)
-            (docs / "stage5_gate_re_review.md").write_text(
-                "# Stage 5 sign-off\n\n"
+            (docs / "final_signoff.md").write_text(
+                "# Final sign-off\n\n"
                 "- **Status**: Approved\n- **Reviewer**: Human\n"
                 "- **Decision date**: 2026-08-13\n\n"
                 "Regression, functional coverage, assertion, CI, Open Question, and "
@@ -139,7 +139,7 @@ class Stage2PlusToolsTest(unittest.TestCase):
             manifest = docs / "caselist/default_regression.caselist"
             manifest.parent.mkdir()
             manifest.write_text("smoke_test\nfeature_test\n", encoding="utf-8")
-            result = run(SIGNOFF, "--project-root", root, "--stage", "5", "--json")
+            result = run(SIGNOFF, "--project-root", root, "--json")
             payload = json.loads(result.stdout)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(payload["summary"]["state"], "APPROVED_RECORDED")

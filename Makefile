@@ -1,4 +1,4 @@
-.PHONY: setup setup-managed check-managed runtime-versions setup-xverif check-xverif setup-wavepeek check-wavepeek setup-spec-kit check-spec-kit test structure format sanitize example check release-check docs
+.PHONY: setup setup-managed check-managed runtime-versions setup-xverif check-xverif setup-wavepeek check-wavepeek test structure format sanitize example check release-check docs
 
 setup:
 	./scripts/setup
@@ -24,17 +24,10 @@ setup-wavepeek:
 check-wavepeek:
 	python3 scripts/check_wavepeek.py
 
-setup-spec-kit:
-	python3 scripts/setup_spec_kit.py
-
-check-spec-kit:
-	python3 scripts/check_spec_kit.py
-
 test:
 	python3 -m unittest discover -s tests -p 'test_*.py'
-	python3 skills/verif-harness/tests/test_lifecycle_tools.py
 	python3 skills/verif-harness/add-regression-runner/scripts/test_regression_tools.py
-	python3 skills/verif-harness/tests/test_stage2plus_tools.py
+	python3 skills/verif-harness/tests/test_capability_tools.py
 	python3 skills/verif-harness/tests/test_freeze_tools.py
 
 structure:

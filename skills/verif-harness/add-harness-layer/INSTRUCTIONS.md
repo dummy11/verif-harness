@@ -2,8 +2,8 @@
 
 **Mode**: `/verif-harness add-harness-layer`
 
-**Purpose**: Generate Stage 1 Milestone 1.1 harness-integration-layer scaffolding
-for an existing verif-harness project (Stage 0 already approved). Produces 15
+**Purpose**: Generate harness-integration-layer scaffolding for a reviewed
+VClosure action in an existing verif-harness project. Produces 15
 files: 3 `dut_harness/` modules + 7 `tb_harness/` files + 5 SVA checker stubs,
 plus a filelist snippet.
 
@@ -17,10 +17,8 @@ bundle them.
 Before proceeding, verify ALL of the following. If any check fails, STOP and
 report to the user.
 
-1. `.harness-config.json` exists in project root
-2. All 10 or 11 Stage 0 docs at `Approved` (depending on whether the optional
-   reference-model document exists; grep `Review Metadata` in each doc
-   under `<verif_root>/docs/`)
+1. The project is bootstrapped and VPlan has an approved harness-layer action
+2. `.harness-config.json` exists in project root
 3. `<verif_root>/testbench/top/harness/dut_harness/` empty or missing
 4. Protocol interfaces already scaffolded at `<verif_root>/testbench/top/if/`
    (at least one `*_if.sv` file exists there). If missing, direct the user to
@@ -314,6 +312,6 @@ runs.
 - Do not touch existing `.sv` / `.svh` files in the target project (this mode
   only ADDS files)
 - Do not deviate from the file naming / directory layout in `tb_architecture.md`
-- Do not add assertion bodies to the emitted checker stubs (that's Stage 3+
-  scope)
+- Do not add assertion bodies to emitted checker stubs unless selected by a
+  VCHK action.
 - Do not add UVC / env / test / tb_top files (out of this mode's scope)

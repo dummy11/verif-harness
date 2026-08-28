@@ -17,11 +17,6 @@ This repository contains public, reusable verification infrastructure.
 - Keep optional WavePeek source and binaries under Git-ignored `.deps/`; pin
   source, Cargo.lock, license, and version, keep FSDB disabled by default, and
   preserve WavePeek's separate Apache-2.0 ownership and release boundary.
-- Keep optional GitHub Spec Kit source and its Python environment under
-  Git-ignored `.deps/`; pin its tag, full commit, and reviewed file hashes,
-  and preserve separate MIT ownership. verif-harness remains the top-level
-  control plane; Spec Kit owns specification artifacts, not verification
-  evidence or Human approval.
 
 ## Required checks
 

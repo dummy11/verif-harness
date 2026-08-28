@@ -16,11 +16,10 @@ generate all UVCs listed in harness-spec.yaml.
 
 ## Pre-conditions
 
-1. `.harness-config.json` exists
-2. All Stage 0 docs `Approved`
-3. `<verif_root>/testbench/uvc/<name>_agent/` directory exists (created by
-   `add-interface` per interface — strip trailing `_if` from interface name
-   and append `_agent`, e.g. `ctrl_if` → `ctrl_agent/`)
+1. The project is bootstrapped and VPlan has an approved UVC action
+2. `.harness-config.json` exists
+3. `<verif_root>/testbench/uvc/<name>_agent/` is absent/empty or contains only
+   reviewed additive targets (derive the directory from the interface name)
 4. `<verif_root>/testbench/pkg/<prefix>_tb_pkg.sv` exists (needed by UVC pkg
    imports — run `/verif-harness add-shared-pkg` first if missing)
 5. Interface `.sv` files exist under `<verif_root>/testbench/top/if/` (needed

@@ -16,20 +16,6 @@ retain their own ownership and licenses. Review those installed distributions
 before redistributing a populated `.deps/runtime`; verif-harness distributes
 only dependency identities and hashes.
 
-## GitHub Spec Kit
-
-verif-harness can optionally install a release- and commit-pinned checkout of
-[GitHub Spec Kit](https://github.com/github/spec-kit). Source and its Python
-environment are stored under Git-ignored `.deps/` paths and are not copied into
-verif-harness source archives or releases.
-
-Spec Kit is separately owned and licensed under the MIT License. The reviewed
-release tag, full commit, license hash, and `pyproject.toml` hash are recorded
-in `deps/spec-kit.lock.json`. Spec Kit is an agentic specification framework;
-its command or workflow success is not deterministic RTL verification evidence
-or Human approval. Its Python transitive dependencies retain their own
-licenses and must be reviewed for the intended distribution environment.
-
 ## WavePeek
 
 verif-harness can optionally download and build a commit-pinned source checkout

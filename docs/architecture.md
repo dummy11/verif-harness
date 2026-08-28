@@ -14,3 +14,8 @@ UVM test and environment
 ```
 
 The canonical architecture contract is in the root-level `ARCHITECTURE.md`.
+
+At control-plane level, VPlan defines desired state, VModel stores facts,
+VCheck propagates change invalidation, VClosure selects minimum next actions,
+and VReason handles only ambiguity. Workstreams are parallel, re-entrant
+governance contexts rather than lifecycle stages.

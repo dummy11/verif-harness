@@ -6,13 +6,17 @@ Before integration, collect the approved DUT top, port list, reset semantics,
 clock requirements, protocol specifications, required parameters, legal
 tie-offs, and assertion targets. Record ambiguity rather than guessing.
 
-## Generate the structure
+## Establish the reviewed action
 
 ```bash
-python3 scripts/verif_harness.py init demo_dut --output ./work
+$verif-harness bootstrap --rtl-root rtl --docs-root docs
+$verif-harness plan design --workstream VDOC --objective "Integrate the DUT read-only" \
+  --desired "Harness maps every reviewed DUT port"
+$verif-harness closure evaluate --workstream VDOC
 ```
 
-The generator is additive and refuses to overwrite existing files.
+After Human review, use the lower-level interface/harness modes selected by
+VClosure. Those generators are additive and refuse to overwrite existing files.
 
 ## Complete the integration
 

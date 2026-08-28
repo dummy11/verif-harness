@@ -28,9 +28,10 @@ class SkillLauncherTest(unittest.TestCase):
         )
         managed_python.chmod(0o755)
         (scripts / "verif_harness.py").touch()
-        (package / "deps").mkdir()
-        (package / "deps/spec-kit.lock.json").write_text("{}\n", encoding="utf-8")
-        (package / "integrations/spec-kit").mkdir(parents=True)
+        core = package / "verif_harness"
+        core.mkdir()
+        (core / "__init__.py").touch()
+        (core / "store.py").touch()
         return package
 
     def test_kimi_workspace_link_resolves_complete_package(self) -> None:
@@ -50,7 +51,7 @@ class SkillLauncherTest(unittest.TestCase):
                     "bootstrap",
                     "--project-root",
                     ".",
-                    "--integration",
+                    "--runtime",
                     "kimi",
                 ],
                 cwd=workspace,
@@ -68,7 +69,7 @@ class SkillLauncherTest(unittest.TestCase):
                     "arg=bootstrap",
                     "arg=--project-root",
                     "arg=.",
-                    "arg=--integration",
+                    "arg=--runtime",
                     "arg=kimi",
                 ],
             )
@@ -77,7 +78,7 @@ class SkillLauncherTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             package = self.make_package(root)
-            (package / "deps/spec-kit.lock.json").unlink()
+            (package / "verif_harness/store.py").unlink()
 
             result = subprocess.run(
                 [str(package / "skills/verif-harness/scripts/verif-harness"), "probe"],

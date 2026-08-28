@@ -14,7 +14,7 @@ nav:
   - Compile flow: compile_flow.md
   - Simulator support: simulator_support.md
   - Agent Skill modes: skill_modes.md
-  - Runtime and model switching: runtime_switching.md
+  - V1 control plane: control_plane.md
   - xverif integration: xverif_integration.md
   - WavePeek integration: wavepeek_integration.md
   - Tool versions: tool_versions.md

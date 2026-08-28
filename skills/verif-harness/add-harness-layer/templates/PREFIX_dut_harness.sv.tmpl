@@ -45,7 +45,7 @@ module <PREFIX>_dut_harness (
   );
 
   // ---- External protocol checkers (type-level bind per § 5.2 / § 5.5) ----
-  // Checker modules are portless empty stubs in M1.1; Stage 3 adds assertion bodies.
+  // Checker modules are portless empty stubs; a VCHK action adds assertion bodies.
   // Type-level bind covers all instances of a parameterized interface (e.g. sram_if
   // WIDTH=352 and WIDTH=256 are both matched by a single bind).
   // >>> GENERATED_BINDS <<<

@@ -95,9 +95,9 @@ Choose the workspace and runtime explicitly:
 ./scripts/setup --runtime kimi --workspace-root /path/to/verification-workspace
 ```
 
-The setup workspace is not the RTL root. Stage 0 asks for and records the RTL
-root and DUT top file in `.harness-config.json`; those paths may be workspace
-relative or explicitly reviewed external paths.
+The setup workspace is not automatically the RTL root. Project `bootstrap`
+records explicitly selected RTL/document roots in `.verif-harness/project.json`;
+VPlan then establishes reviewed verification semantics.
 
 The selected runtime determines both the project configuration and launch
 arguments: Codex requires `.codex/config.toml` and starts without extra flags;
@@ -108,6 +108,6 @@ user-level configuration file. Setup also installs the project xverif MCP
 registration in `.codex/config.toml` or `.kimi-code/mcp.json`, backed by a
 generated `.harness/mcp/xverif-mcp` launcher that contains no credentials.
 
-Use `--no-agent` for dependency-only CI setup. Runtime switching is performed
-at a stable review gate and is recorded by Spec Kit; it does not copy private
-host configuration between Codex and Kimi.
+Use `--no-agent` for dependency-only CI setup. Runtime selection is recorded in
+the v1 project manifest; changing it does not copy private host configuration
+between Codex and Kimi and never changes verification approval state.
