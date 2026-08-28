@@ -166,6 +166,9 @@ closure/audit mode，再由 `stage-gate-review` 生成 packet 交 Human 决策�
 新版 runtime-native launcher 不再等待整个 `stage` 或 `resume`：它会返回
 run ID、worker PID 和 `verif-harness-worker.log`，Agent 应用 `status
 <run-id>` 轮询。不要再在外层创建固定 600 秒 bash task，也不要重复启动 Stage。
+每次只运行一个 `status <run-id>`，或使用
+`status <run-id> --wait-seconds 30` 做一次有界等待。不要使用包含多次 `sleep` 的
+shell loop、`watch`、`tail -f` 或 `grep` JSON；仍在运行时先返回进度，再单独轮询。
 
 对于旧 run，先检查该 run 的 log、PID 和系统进程。只有确认 worker 已被外层 timeout
 终止且状态超过安全等待时间仍为 `running`，才执行：
@@ -193,10 +196,22 @@ contract、owned output/evidence path、validation command 和 Human gate。只�
 让 `converge` 记录 dispatch deviation，并保留原 run ID、task ID、已有产物和日志。
 若合同正确，只是缺少 Human 回答或执行环境已修复，用
 `resume <run-id> --answer "..."` 重试同一个 task。
+对于 `execution` blocker 不需要伪造 `--answer`：直接 `resume <run-id>`。runner 会先
+重新检查 reviewed outputs、evidence 和 validation；全部满足时直接标记 DONE，不会
+再次分发 Agent，只有 postconditions 仍不满足时才重试当前 task。
 
-若根因是旧版生成的 task contract 本身错误，例如 `validate` 是自然语言或
-`outputs` 用分号分隔，在没有任何 DONE task 且 workflow 暂停于
-`review-implementation` 时：
+若旧 workflow 在 analyze 后才发现 task contract 错误，并已暂停于
+`authorize-execution`，先修正 `tasks.md`、人工检查 diff，然后重新绑定；该动作不等于
+执行授权：
+
+```text
+$verif-harness revise-tasks <run-id> --verdict approve \
+  --reason "修正 analyze 发现的 validation 与只读边界问题"
+$verif-harness resume <run-id> --verdict approve|reject
+```
+
+若根因在 implementation 阶段才暴露，例如旧版 `validate` 是自然语言或 `outputs`
+使用分号，在没有任何 DONE task 且 workflow 暂停于 `review-implementation` 时：
 
 ```text
 # 先修正 tasks.md，并人工评审 diff

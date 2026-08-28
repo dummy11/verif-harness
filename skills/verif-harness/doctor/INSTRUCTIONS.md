@@ -11,10 +11,11 @@ Run this mode before choosing a write mode or when project state is unclear.
 ## Procedure
 
 1. Read `AGENTS.md` when present.
-2. Run:
+2. Run through the runtime-native launcher so the managed Python and reviewed
+   package checkout are used:
 
    ```bash
-   python3 <skill-dir>/doctor/scripts/doctor.py
+   <runtime-skill-link>/scripts/verif-harness doctor
    ```
 
 3. If machine-readable output is useful, add `--json`.

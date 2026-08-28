@@ -22,6 +22,33 @@ SPEC.loader.exec_module(CLI)
 
 
 class CliAliasTest(unittest.TestCase):
+    def test_status_wait_is_bounded(self) -> None:
+        self.assertEqual(CLI.bounded_wait_seconds("30"), 30)
+        for value in ("0", "51", "not-a-number"):
+            with self.assertRaises(CLI.argparse.ArgumentTypeError):
+                CLI.bounded_wait_seconds(value)
+
+    def test_doctor_is_a_native_read_only_wrapper_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/verif_harness.py"),
+                    "doctor",
+                    "--project-root",
+                    directory,
+                    "--json",
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            payload = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(payload["next_mode"], "init")
+            self.assertEqual(payload["findings"][0]["code"], "CONFIG_ABSENT")
+
     def test_public_short_aliases_map_to_spec_kit_commands(self) -> None:
         self.assertEqual(CLI.COMMAND_ALIASES["probe"], ("spec-kit", "probe"))
         self.assertEqual(CLI.COMMAND_ALIASES["bootstrap"], ("spec-kit", "bootstrap"))

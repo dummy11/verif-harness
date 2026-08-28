@@ -37,7 +37,13 @@ description: "精简、可阻塞恢复的 RTL 验证 Stage 任务清单"
 - `outputs`、`evidence` 和 `needs` 有多项时只用英文逗号分隔；分号只分隔 metadata
   字段，不能分隔路径。
 - `validate` 必须是可由 `/bin/sh` 非交互执行的真实命令，例如 `make compile` 或
-  `python3 scripts/check.py`；不能填写自然语言完成条件、Agent 指令或占位符。
+  `python3 scripts/check.py`；不能填写自然语言完成条件、Agent 指令、占位符或
+  `--fix`、`--write`、`--update`、`--in-place` 等修改选项。需要修复的动作属于
+  task 的 mode，不属于 validation。
+- 调用 `doctor` 的 validation 必须直接保留它的退出码，不能通过 pipeline、
+  `|| true` 或其他兜底命令掩盖 ERROR。
+- Stage 和 owner 由 workflow 与 `plan.md` 的 REQ/VF 映射统一定义，不在每个紧凑
+  task 中重复；analyze 不应把它们当作 task metadata 缺失。
 - `review-tasks` 批准前，runner 会检查路径列表、shell 语法和首个可执行命令；检查
   不通过时必须修改 task contract 后重新评审。
 
@@ -47,7 +53,6 @@ description: "精简、可阻塞恢复的 RTL 验证 Stage 任务清单"
   - outputs: `tb/interfaces/dut_if.sv`; evidence: `evidence/T001.json`
   - validate: `make compile`; needs: `none`; interaction: `none`
 ```
-
 <!-- 实际任务：只保留适用的 REQ/VF/TC/COV/ASRT IDs，不复制 plan.md 的大段说明。 -->
 
 - [ ] T001 [VF-001] [清晰动作与交付结果]

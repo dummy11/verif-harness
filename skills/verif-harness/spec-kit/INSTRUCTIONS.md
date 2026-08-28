@@ -11,7 +11,9 @@ Spec Kit owns the editable specification lifecycle.
    scripts, locks, or integrations below a separate verification workspace.
 3. Read `integrations/spec-kit/README.md` from that resolved checkout.
 4. Read the current Spec Kit constitution, program/stage spec, plan, tasks, and
-   checklist before dispatching an execution mode.
+   the `specify`/`clarify`-maintained `checklists/requirements.md` before
+   dispatching an execution mode. Read custom checklists only when the reviewer
+   explicitly requested them.
 5. Read the requested verif-harness mode instructions before writing.
 
 ## Supported operations
@@ -35,7 +37,9 @@ Spec Kit owns the editable specification lifecycle.
   `verif-harness mode: init` task. After execution authorization, the persistent
   task runner dispatches that mode; no separate successful-path manual `init`
   call follows the workflow.
-- `status`: inspect one run or list all workflow run states.
+- `status`: inspect one run or list all workflow run states. For a delayed
+  recheck, use one bounded `status <run-id> --wait-seconds 30` call. Never
+  create a shell polling loop or parse status JSON with `grep`.
 - `resume`: resume a paused run with an explicit `--verdict approve|reject` for
   its current review gate. A reviewer must inspect the named artifact before
   choosing the verdict; one verdict never carries into the next gate, and
@@ -48,6 +52,11 @@ Spec Kit owns the editable specification lifecycle.
 - `block`: while one task is `RUNNING`, persist its concrete Human, authority,
   specification, or execution question. The runner observes the state and
   terminates that task's Agent process instead of waiting for terminal input.
+- `revise-tasks`: with explicit Human `--verdict approve --reason`, rebind a
+  corrected contract for a legacy run paused at `authorize-execution` after
+  analyze, or for an implementation-blocked run with no DONE task. A
+  pre-execution revision does not authorize execution; review that gate
+  separately afterward.
 - `recover`: after a fixed-duration outer task killed a worker, convert a
   confirmed stale `running` run to resumable `failed` state while preserving
   its current step and evidence. For an interrupted task, reconcile reviewed
@@ -78,6 +87,10 @@ per-run worker PID and log, and returns immediately. Poll with
 other fixed-duration) background shell task, and do not submit a duplicate
 stage while the worker is active. Direct Python automation remains foreground
 unless it explicitly passes `--detach`.
+Each polling command must be independently bounded: use plain `status` or one
+`--wait-seconds` value from 1 to 50. Do not use `for`/`while`, repeated `sleep`,
+`watch`, `tail -f`, or `grep`-based JSON parsing. Report `wait-for-worker`
+progress before issuing another poll.
 
 The repository Python wrapper remains available for CI, automation, or hosts
 without an Agent CLI:
@@ -123,9 +136,15 @@ stdin so every gate persists `paused`; inspect it with `status`, then
 resume with the explicit verdict option. EOF must never become an implicit
 rejection.
 
-The lifecycle pauses after checklist generation, task generation, analysis,
-task execution, and convergence. Execution uses the project-managed task runner,
-not the monolithic upstream `speckit.implement` command. Each task has persisted
+The default lifecycle does not invoke the optional, generic
+`speckit.checklist` command. `specify` and `clarify` maintain
+`checklists/requirements.md`, whose quality result is reviewed together with
+the analyze report and task contract at `review-tasks`. Analyze runs before
+that gate so findings cannot arrive after the contract is approved. Generate a custom checklist only when a
+reviewer explicitly requests a domain-specific question set. The lifecycle
+pauses after task generation, analysis, task execution, and convergence.
+Execution uses the project-managed task runner, not the monolithic upstream
+`speckit.implement` command. Each task has persisted
 `READY/RUNNING/DONE/BLOCKED` state; `status` exposes the exact current task and
 block question, and resume never replays `DONE` tasks.
 
@@ -147,9 +166,12 @@ block question, and resume never replays `DONE` tasks.
   such blocker remains.
 - Separate multiple `outputs`, `evidence`, and `needs` values with commas.
   Require `validate` to be a real noninteractive `/bin/sh` command, never a
-  natural-language completion condition, Agent instruction, or placeholder.
+  natural-language completion condition, Agent instruction, placeholder, or
+  mutating `--fix|--write|--update|--in-place` invocation. Doctor validation
+  must preserve the direct doctor exit code. Owned output/evidence paths must
+  stay project-relative and outside the configured read-only RTL root.
 - Bind `review-tasks` approval to the compact contract hash. Refuse execution
-  authorization if analyze or any later action changes task semantics; checkbox
+  authorization if any later action changes task semantics; checkbox
   changes made by the runner do not change that hash.
 
 ## Boundaries

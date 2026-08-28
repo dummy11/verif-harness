@@ -26,15 +26,16 @@ class SpecKitAssetsTest(unittest.TestCase):
         self.assertNotIn("type: shell", workflow)
         for command in (
             "speckit.constitution", "speckit.specify", "speckit.clarify", "speckit.plan",
-            "speckit.checklist", "speckit.tasks", "speckit.analyze",
-            "speckit.converge",
+            "speckit.tasks", "speckit.analyze", "speckit.converge",
         ):
             self.assertIn(f"command: {command}", workflow)
+        self.assertNotIn("command: speckit.checklist", workflow)
+        self.assertIn("checklists/requirements.md", workflow)
         self.assertNotIn("command: speckit.implement", workflow)
         self.assertIn("authorize-execution", workflow)
         self.assertIn("inputs.stage == '0'", workflow)
         self.assertIn("review-convergence", workflow)
-        self.assertIn('version: "0.5.0"', workflow)
+        self.assertIn('version: "0.6.0"', workflow)
         self.assertIn('any: ["codex", "kimi"]', workflow)
         self.assertIn('enum: ["codex", "kimi"]', workflow)
         verdict_inputs = (
@@ -42,7 +43,6 @@ class SpecKitAssetsTest(unittest.TestCase):
             "review_spec_verdict",
             "review_clarification_verdict",
             "review_plan_verdict",
-            "review_checklist_verdict",
             "review_tasks_verdict",
             "authorize_execution_verdict",
             "review_implementation_verdict",
@@ -56,11 +56,9 @@ class SpecKitAssetsTest(unittest.TestCase):
             self.assertEqual(workflow.count(f"verdict_input: {verdict_input}"), 1)
         review_sequence = (
             "review-plan",
-            "checklist",
-            "review-checklist",
             "tasks",
-            "review-tasks",
             "analyze",
+            "review-tasks",
             "authorize-execution",
             "review-implementation",
             "converge",
@@ -68,12 +66,15 @@ class SpecKitAssetsTest(unittest.TestCase):
         )
         positions = [workflow.index(f"  - id: {step_id}\n") for step_id in review_sequence]
         self.assertEqual(positions, sorted(positions))
+        self.assertIn("不得因单个 task 没有重复 stage/owner 字段而报缺陷", workflow)
+        self.assertIn("--fix/--write/--update/--in-place", workflow)
         wrapper = (ROOT / "scripts/verif_harness.py").read_text(encoding="utf-8")
         self.assertIn('["preset", "add", "constitution-sync"', wrapper)
         self.assertIn("configure_spec_kit_chinese_docs.py", wrapper)
         self.assertIn('"docs-zh"', wrapper)
         self.assertIn("stdin=subprocess.DEVNULL if noninteractive else None", wrapper)
         self.assertIn("run_task_execution", wrapper)
+        self.assertIn('"review-checklist": "review_checklist_verdict"', wrapper)
 
     def test_tasks_template_is_compact_and_has_real_block_contract(self) -> None:
         template = (
@@ -111,7 +112,8 @@ class SpecKitAssetsTest(unittest.TestCase):
         workflow = (
             INTEGRATION / "workflows/verif-stage-lifecycle.yml"
         ).read_text(encoding="utf-8")
-        self.assertGreaterEqual(workflow.count("使用简体中文"), 8)
+        # Every command retained in the default lifecycle requests Chinese.
+        self.assertEqual(workflow.count("使用简体中文"), 7)
         self.assertIn(".specify/", (
             ROOT / "integrations/spec-kit/README.md"
         ).read_text(encoding="utf-8"))

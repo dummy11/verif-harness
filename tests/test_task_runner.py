@@ -51,6 +51,26 @@ def task_text(*, checked: bool = False, blocker: str = "") -> str:
 
 
 class TaskRunnerTest(unittest.TestCase):
+    def test_agent_prompt_requires_shell_safe_rtl_discovery(self) -> None:
+        prompt = RUNNER._prompt(
+            "abc12345",
+            {
+                "task_id": "T001",
+                "description": "Initialize Stage 0",
+                "trace": "VF-001",
+                "mode": "init",
+                "outputs": [".harness-config.json"],
+                "evidence": [".harness/review/stage0_review_packet.md"],
+                "validate": "test -f .harness-config.json",
+            },
+            "$verif-harness",
+        )
+
+        self.assertIn("rg/rg --files", prompt)
+        self.assertIn("反引号", prompt)
+        self.assertIn("必须放在单引号", prompt)
+        self.assertIn("禁止用分号拼接", prompt)
+
     def test_compact_parser_keeps_only_execution_contract(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "tasks.md"
@@ -74,6 +94,42 @@ class TaskRunnerTest(unittest.TestCase):
             path.write_text(source, encoding="utf-8")
             with self.assertRaisesRegex(RUNNER.TaskRunnerError, "not available"):
                 RUNNER.parse_tasks(path)
+
+    def test_parser_rejects_mutating_validation_options(self) -> None:
+        for option in ("--fix", "--write", "--update", "--in-place"):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "tasks.md"
+                source = task_text().replace(
+                    "`test -f out/one.txt; true`",
+                    f"`python3 scripts/check.py {option}`",
+                    1,
+                )
+                path.write_text(source, encoding="utf-8")
+                with self.assertRaisesRegex(RUNNER.TaskRunnerError, "must be check-only"):
+                    RUNNER.parse_tasks(path)
+
+    def test_doctor_validation_must_preserve_direct_exit_code(self) -> None:
+        for command in ("true", "$verif-harness doctor | tee doctor.log", "$verif-harness doctor; true"):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "tasks.md"
+                source = task_text().replace("mode: `interface`", "mode: `doctor`", 1)
+                source = source.replace("`test -f out/one.txt; true`", f"`{command}`", 1)
+                path.write_text(source, encoding="utf-8")
+                with self.assertRaisesRegex(
+                    RUNNER.TaskRunnerError,
+                    "doctor validation must (invoke doctor directly|preserve its direct exit code)",
+                ):
+                    RUNNER.parse_tasks(path)
+
+    def test_review_rejects_owned_paths_inside_configured_rtl(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            write_project(project, task_text().replace("out/one.txt", "rtl/generated.txt"))
+            (project / ".harness-config.json").write_text(
+                json.dumps({"rtl": {"root": "rtl/"}}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RUNNER.TaskRunnerError, "read-only DUT RTL"):
+                RUNNER.validate_document(project)
 
     def test_parser_rejects_semicolon_separated_output_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -201,6 +257,46 @@ class TaskRunnerTest(unittest.TestCase):
             self.assertEqual(done["tasks"][1]["attempts"], 2)
             self.assertIn("- [x] T002", tasks_path.read_text(encoding="utf-8"))
 
+    def test_execution_blocker_reconciles_before_agent_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            tasks_path, run_dir = write_project(project, task_text())
+            state = RUNNER.initialize_state(project, run_dir, "abc12345", "codex")
+            state["status"] = "BLOCKED"
+            state["current_task_id"] = "T001"
+            state["tasks"][0]["status"] = "BLOCKED"
+            state["tasks"][0]["attempts"] = 1
+            state["tasks"][0]["blocker"] = {
+                "kind": "execution",
+                "question": "doctor command was unavailable",
+            }
+            RUNNER.atomic_write_json(RUNNER.state_path(run_dir), state)
+            (project / "out").mkdir()
+            (project / "evidence").mkdir()
+            (project / "out/one.txt").write_text("ok", encoding="utf-8")
+            (project / "evidence/one.json").write_text("{}", encoding="utf-8")
+            prompts: list[str] = []
+
+            def finish_second(_runtime: str, prompt: str) -> list[str]:
+                prompts.append(prompt)
+                code = (
+                    "from pathlib import Path;"
+                    "Path('out/two.txt').write_text('ok');"
+                    "Path('evidence/two.json').write_text('{}')"
+                )
+                return [sys.executable, "-c", code]
+
+            done = RUNNER.run_tasks(
+                project, run_dir, "abc12345", "codex", "$verif-harness", finish_second
+            )
+
+            self.assertEqual(done["status"], "DONE")
+            self.assertEqual(len(prompts), 1)
+            self.assertNotIn("T001", prompts[0])
+            self.assertIn("T002", prompts[0])
+            self.assertEqual(done["tasks"][0]["attempts"], 1)
+            self.assertIn("- [x] T001", tasks_path.read_text(encoding="utf-8"))
+
     def test_contract_drift_after_authorization_requires_new_review(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -295,6 +391,37 @@ class TaskRunnerTest(unittest.TestCase):
                 (run_dir / RUNNER.TASK_REVIEW_FILE).read_text(encoding="utf-8")
             )
             self.assertEqual(review["review_kind"], "task-contract-revision")
+
+    def test_pre_execution_revision_rebinds_without_creating_task_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            tasks_path, run_dir = write_project(project, task_text())
+            original = RUNNER.record_reviewed_contract(
+                project, run_dir, "abc12345"
+            )
+            tasks_path.write_text(
+                tasks_path.read_text(encoding="utf-8").replace(
+                    "test -f out/two.txt", "test -s out/two.txt", 1
+                ),
+                encoding="utf-8",
+            )
+
+            result = RUNNER.approve_pre_execution_revision(
+                project, run_dir, "abc12345", "analyze 后修正 T002 validation"
+            )
+
+            self.assertIsNone(RUNNER.read_state(run_dir))
+            revision = result["revision"]
+            self.assertEqual(revision["review_kind"], "pre-execution-task-contract-revision")
+            self.assertEqual(
+                revision["old_task_contract_sha256"],
+                original["task_contract_sha256"],
+            )
+            self.assertNotEqual(
+                revision["new_task_contract_sha256"],
+                original["task_contract_sha256"],
+            )
+            RUNNER.require_reviewed_contract(project, run_dir, "abc12345")
 
     def test_contract_revision_refuses_to_rewrite_completed_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

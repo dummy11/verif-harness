@@ -4,7 +4,7 @@
 
 ```text
 verif-harness（顶层控制面）
-  -> Spec Kit（规格面：constitution/spec/plan/tasks/checklist）
+  -> Spec Kit（规格面：constitution/spec/plan/tasks/requirements checklist）
   -> verif-harness modes（执行能力面）
   -> xverif / WavePeek / simulator（证据面）
   -> Human（审批与语义决策面）
@@ -91,8 +91,9 @@ Spec Kit 的非空目录确认；已有 `.specify/` 的项目仍会被硬拒绝�
 工作流位于 `workflows/verif-stage-lifecycle.yml`，只包含 Spec Kit command、
 Stage 0 constitution conditional 和 review gate，不包含 shell step。preset 位于
 `preset/rtl-verification/`，以完整的 RTL 专用中文模板替换五个标准项目工件模板，
-并在 implement 命令前加入执行护栏。`specs/`、constitution、plan、tasks、checklist
-等面向项目评审的 Markdown 默认使用简体中文；代码、命令、路径、配置键、协议名、
+并在 implement 命令前加入执行护栏。`specs/`、constitution、plan、tasks、内建
+requirements checklist 及显式请求的 custom checklist 等面向项目评审的 Markdown
+默认使用简体中文；代码、命令、路径、配置键、协议名、
 标准标识符和原始引用保持原文。`.specify/` 中的上游内部命令和运行文件继续保留其
 发行语言，不作为项目规格交付物翻译。
 bootstrap 随后启用上游自带的 `constitution-sync`，把尚未人工编辑的初始
@@ -110,12 +111,16 @@ verif-harness mode、owned outputs、evidence、validation、dependencies，且
 `interaction: none`。人工回答、额外 authority 和规格决策必须写成 `OPEN B###`，
 不得伪装成 executable task；存在 OPEN blocker 时 wrapper 会拒绝批准
 `review-tasks` 或 `authorize-execution`。
-`review-tasks` 批准时 wrapper 记录不含 checkbox 的 contract SHA-256；analyze 或其他
-步骤若改动 mode/outputs/evidence/validation/dependencies，execution authorization
-会失败并要求重新评审。
+`analyze` 在 `review-tasks` 前运行；Human 必须结合其报告检查规格冲突、DUT 只读
+边界和 traceability，再批准任务合同。`review-tasks` 批准时 wrapper 记录不含
+checkbox 的 contract SHA-256；任何后续步骤若改动
+mode/outputs/evidence/validation/dependencies，execution authorization 会失败并要求
+重新评审。
 同时会机械校验：多值 `outputs`/`evidence`/`needs` 只能使用英文逗号，`validate`
-必须具有合法 `/bin/sh` 语法且从当前环境可识别的命令开始。自然语言 validation 和
-分号分隔的路径不能进入执行阶段。
+必须具有合法 `/bin/sh` 语法且从当前环境可识别的命令开始，不能包含
+`--fix`、`--write`、`--update` 或 `--in-place`。自然语言 validation、分号分隔的
+路径、吞掉 doctor 退出码的命令和进入配置中 DUT RTL root 的 owned path 不能进入
+执行阶段。
 
 execution gate 批准后，wrapper 的独立 task runner 持久化
 `READY/RUNNING/DONE/BLOCKED`，每次只把 `current_task_id` 分发给 Codex 的
@@ -138,16 +143,23 @@ push、waiver、Stage approval、freeze authority 或规格歧义时，Agent 必
 `block <run-id> <task-id> --kind ... --question ...`。wrapper 观察到持久化
 `BLOCKED` 后会终止当前子 Agent；`status` 显示问题，取得回答后用
 `resume <run-id> --answer "..."` 只重试该 task。
-若旧 run 的合同本身错误且尚无 DONE task，可在修正并人工评审 `tasks.md` 后使用
-`revise-tasks <run-id> --verdict approve --reason "..."` 重新绑定；工具保存旧/新
-hash 和 reconciliation 记录，不能改写已完成历史。
+若旧 run 在 analyze 后、execution authorization 前才发现合同错误，可在修正并人工
+评审 `tasks.md` 后使用 `revise-tasks <run-id> --verdict approve --reason "..."`
+重新绑定，再单独评审 execution authorization。implementation 已开始时仅允许在没有
+DONE task 且当前 task BLOCKED 的情形修订。工具保存旧/新 hash 和 reconciliation
+记录，不能改写已完成历史。
 
 每个 gate 会让 run 进入 paused 状态。wrapper 对 workflow 子进程关闭交互 stdin，
 因此即使 Agent 使用 PTY，也不会用一次数字输入穿过当前 gate 后在下一 gate 因 EOF
 默认拒绝。先用 `status` 确认 gate 和工件，完成对应 review 后再用
 `resume <run-id> --verdict approve|reject` 继续。每次 resume 只绑定当前 gate；下一
 gate 会再次暂停。这里的 verdict 只属于该文档/执行授权 gate，不是 Stage approval。
-工作流在 checklist、tasks、analyze、task execution 和 converge 之间设置独立边界。
+默认工作流由 `specify/clarify` 维护 `checklists/requirements.md`，先运行 analyze，
+再由 `review-tasks` 将 analyze 报告、requirements checklist 与 task contract 一并
+评审；不再额外运行通用的
+`speckit.checklist` 或设置 `review-checklist` gate，避免重复的 Agent 生成与人工暂停。
+领域专用 custom checklist 仍可由 reviewer 显式请求，但不进入默认 Stage 路径。
+工作流在 tasks、analyze、review-tasks、task execution 和 converge 之间设置独立边界。
 task execution 不再调用上游 monolithic `speckit.implement`；preset 将该命令替换为
 fail-closed 说明，防止脱离 run identity 后执行整份 task set。
 

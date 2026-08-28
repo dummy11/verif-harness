@@ -99,6 +99,15 @@ $verif-harness resume <run-id> --verdict reject
 
 当 `running` 且 `worker_active: true` 时，`resume_allowed` 为 false。即使用户之前已经
 写了 `--verdict approve`，也不能调用 resume，只能等待并执行返回的 `next_action`。
+需要等待后复查时，每次只执行一个有界调用：
+
+```text
+$verif-harness status <run-id> --wait-seconds 30
+```
+
+单次等待限制为 1–50 秒。禁止用 `for/while + sleep`、`watch` 或 `tail -f` 长时间占用
+一个终端命令，也不要用 `grep` 解析 status JSON；仍为 `wait-for-worker` 时先报告进度，
+再进行下一次独立轮询。
 
 当 task runner 报告 [TASK](#term-task) 为 `BLOCKED` 时，取得 Human 回答或 authority
 引用后只恢复当前 task：
@@ -285,9 +294,11 @@ scaffold。Stage 0 不是完整 testbench 实现阶段。Spec Kit 规格文档�
    [Stage 0 决策生命周期](#term-decision-lifecycle)，记录 Human Decision 和 Open Question。
 3. 评审 spec，不能由 Agent 自行批准未知语义。
 4. clarify 未决的接口、reset、时序、reference-model 和工具约束。
-5. 生成 [PLAN](#term-plan)、checklist 和精简 [TASK](#term-task) 合同。
-6. `review-tasks` 确认 mode、owned outputs、validation、evidence 和 dependencies。
-7. `analyze` 检查歧义、重复权威和 traceability gap。
+5. 生成 [PLAN](#term-plan) 和精简 [TASK](#term-task) 合同；`specify/clarify`
+   同步维护 `checklists/requirements.md`。
+6. `analyze` 在合同绑定前检查歧义、重复权威、DUT 只读边界和 traceability gap。
+7. `review-tasks` 结合 analyze 报告确认 requirements checklist、mode、owned outputs、
+   validation、evidence 和 dependencies。
 8. `authorize-execution` 后，task runner 自动分发唯一的 `mode: init` task。
 9. `converge` 对照规格复核产物、证据与 validation。
 10. 单独生成 Stage 0 gate packet，交由 Human 评审。
@@ -541,7 +552,7 @@ freeze、tag、push 和公开发布；这些 authority 不能由 Agent 或 workf
 ```text
 verif-harness 控制面：Stage policy / dispatch / traceability / authority boundary
           |
-          +-> Spec Kit 规格面：constitution / spec / plan / checklist / tasks
+          +-> Spec Kit 规格面：constitution / spec / plan / requirements / tasks
           +-> verif-harness 能力面：受控 mode 与 persistent task runner
           +-> xverif / WavePeek / EDA 证据面：确定性工具输出
           +-> Human 权限面：decision / waiver / gate / sign-off / freeze
@@ -557,7 +568,8 @@ Spec Kit 管理规格生命周期，但不拥有验证证据和 Human approval�
 - `spec.md`：需求、Verification Features、场景、边界和成功标准；
 - `plan.md`：架构、owner、Stage、mode、artifact、evidence 和 gate 映射；
 - `tasks.md`：精简、可执行、可恢复的 task contracts；
-- `checklists/`：规格质量与可验证性检查。
+- `checklists/requirements.md`：由 `specify/clarify` 维护的内建规格质量检查；
+- `checklists/` 中的其他文件：reviewer 显式请求时生成的可选领域 checklist。
 
 `sim/docs/`、review packet、evidence index 和 `.specify/docs/zh-CN/` 都不是第二个可编辑
 需求权威。已有批准项目应作为 `immutable imported baseline` 导入，不重写历史决定。
@@ -608,13 +620,15 @@ specs/<feature>/
 ├── quickstart.md          # 适用时
 ├── contracts/             # 适用时
 ├── checklists/
+│   └── requirements.md   # 默认需求质量检查；其他 checklist 显式可选
 └── tasks.md
 ```
 
 - `spec.md` 定义 REQ、VF、场景、边界、成功标准、决策和开放问题；
 - `plan.md` 定义架构、owner、Stage、mode、artifact、evidence 和 Human gate；
 - `tasks.md` 定义经过评审、可执行和可恢复的 task contract；
-- `checklists/` 检查规格质量、歧义、边界与可验证性。
+- `checklists/requirements.md` 检查规格质量、歧义、边界与可验证性；其他 checklist
+  是 reviewer 显式请求的可选补充。
 
 需要改变 DUT 行为理解、协议/reset 语义、reference-model 语义或验收条件时，必须先
 更新这套文档并重新经过相应 review gate。
@@ -717,11 +731,9 @@ establish-constitution
   -> review-clarification
   -> plan
   -> review-plan
-  -> checklist
-  -> review-checklist
   -> tasks
-  -> review-tasks
   -> analyze
+  -> review-tasks
   -> authorize-execution
   -> persistent task runner
   -> review-implementation
@@ -735,13 +747,22 @@ establish-constitution
 
 ### 4.5 文档生成与评审
 
-1. `specify` 生成或更新 [REQ](#term-req)、[VF](#term-vf) 和场景。
-2. `clarify` 显式处理歧义，不允许 Agent 猜测 DUT、协议或 Human Decision。
+1. `specify` 生成或更新 [REQ](#term-req)、[VF](#term-vf) 和场景，并建立
+   `checklists/requirements.md` 做需求质量自检。
+2. `clarify` 显式处理歧义，不允许 Agent 猜测 DUT、协议或 Human Decision，
+   同时重新校验 requirements checklist。
 3. `plan` 把 VF 映射到 [MODE](#term-mode)、[ARTIFACT](#term-artifact)、
    [EVIDENCE](#term-evidence) 和 [GATE](#term-gate)。
-4. `checklist` 检查需求质量、完整性、边界和可验证性。
-5. `tasks` 把计划压缩为可执行合同，不复制 `plan.md` 的长篇叙述。
-6. `analyze` 在执行前检查冲突、歧义、重复权威和 traceability gap。
+4. `tasks` 把计划压缩为可执行合同，不复制 `plan.md` 的长篇叙述。
+5. `analyze` 在合同绑定前检查冲突、歧义、重复权威、DUT 只读边界和
+   traceability gap；Stage/owner 从 workflow/plan 读取，不要求每个 task 重复填写。
+6. `review-tasks` 将 analyze 报告、requirements checklist 与 task contract 一并评审。
+   未解决 CRITICAL/HIGH，以及合同、validation、DUT 只读边界类 MEDIUM 必须 reject。
+
+`speckit.checklist` 生成的自定义 checklist 是显式可选步骤，只适合 reviewer
+要求特定领域问题集时使用；它不再属于默认 Stage lifecycle，也不会额外插入
+`review-checklist` gate。自定义 checklist 仍是 review candidate，不能替代
+`checklists/requirements.md`、执行证据或 Human approval。
 
 文档由 Agent 生成时只是 review candidate。生成成功不等于语义正确或已获批准。
 
@@ -761,6 +782,12 @@ establish-constitution
 真实命令。`review-tasks` 批准时会先检查路径列表、shell 语法和首个可执行命令；例如
 “analyze 输出无关键项”会被当场拒绝，而不会等到 implementation 阶段以退出码 127
 阻塞。
+
+validation 必须是 check-only 命令；`--fix`、`--write`、`--update`、`--in-place`
+等修改选项属于 task 执行动作，不能出现在 validation。`mode: doctor` 必须直接保留
+doctor 的退出码，不能通过 pipeline、分号续命令或兜底命令吞掉 ERROR。task 的
+outputs/evidence 必须是项目内相对路径；已有 `.harness-config.json` 时，
+`review-tasks` 会机械拒绝进入配置中只读 RTL root 的 owned path。
 
 runner 每次只执行 `current_task_id`，状态为：
 
@@ -786,6 +813,7 @@ READY -> RUNNING -> DONE
 | --- | --- | --- |
 | `starting/running`，worker live | false | 等待并轮询 `status` |
 | `paused`，review gate | true | 评审工件后提交一个 verdict |
+| 旧 run 在 `authorize-execution` 前发现合同错误 | true（但不得批准） | 修正并人工评审后用 `revise-tasks` 重新绑定，再单独提交授权 verdict |
 | task `BLOCKED` | true | 取得回答后用 `--answer` 恢复当前 task |
 | task `BLOCKED`，且已评审合同有误 | false | 修正并人工评审后用 `revise-tasks --verdict approve --reason ...` 重新绑定 |
 | `running`，无 live worker | false | 检查日志，确认 stale 后执行 `recover` |
@@ -796,8 +824,10 @@ READY -> RUNNING -> DONE
 `approve` 就再次调用 resume。
 
 `revise-tasks` 是旧 run 的受控修订通道，不会回写或伪造原 `review-tasks` gate。
-它只允许尚无 DONE task、workflow 已暂停在 `review-implementation`、当前 task 已
-BLOCKED 的情形，并记录旧/新 contract hash、Human 理由和 reconciliation 结果。
+它允许两种情况：旧 workflow 在 analyze 后暂停于 `authorize-execution` 且尚未创建
+task execution state；或 workflow 暂停于 `review-implementation`、当前 task 已
+BLOCKED 且没有 DONE task。两种情况都记录旧/新 contract hash 和 Human 理由；后者
+额外记录 postcondition reconciliation。重新绑定不授予 execution authority。
 
 ### 4.8 追踪治理链
 

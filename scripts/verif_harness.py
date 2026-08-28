@@ -68,6 +68,7 @@ GATE_VERDICT_INPUTS = {
     "review-spec": "review_spec_verdict",
     "review-clarification": "review_clarification_verdict",
     "review-plan": "review_plan_verdict",
+    # Compatibility for workflow 0.5 runs already paused at this removed gate.
     "review-checklist": "review_checklist_verdict",
     "review-tasks": "review_tasks_verdict",
     "authorize-execution": "authorize_execution_verdict",
@@ -82,6 +83,17 @@ STALE_RUN_MIN_AGE_SECONDS = 30
 
 class RuntimeSelectionError(ValueError):
     """Raised when the project runtime cannot be resolved safely."""
+
+
+def bounded_wait_seconds(value: str) -> int:
+    """Parse one bounded status wait without permitting long-lived shell polling."""
+    try:
+        seconds = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("wait seconds must be an integer") from exc
+    if not 1 <= seconds <= 50:
+        raise argparse.ArgumentTypeError("wait seconds must be between 1 and 50")
+    return seconds
 
 
 def read_runtime_state(project_root: Path) -> dict[str, object] | None:
@@ -740,6 +752,11 @@ def main() -> int:
     init.add_argument("--templates", type=Path,
                       default=Path(__file__).resolve().parents[1] / "templates/dut")
     init.add_argument("--dry-run", action="store_true")
+    doctor = subparsers.add_parser(
+        "doctor", help="run the read-only verif-harness project health audit"
+    )
+    doctor.add_argument("--project-root", type=Path, default=Path.cwd())
+    doctor.add_argument("--json", action="store_true")
     xverif = subparsers.add_parser(
         "xverif", help="delegate a reviewed request through the deterministic xverif adapter"
     )
@@ -807,6 +824,11 @@ def main() -> int:
     )
     status.add_argument("run_id", nargs="?")
     status.add_argument("--project-root", type=Path, default=Path.cwd())
+    status.add_argument(
+        "--wait-seconds",
+        type=bounded_wait_seconds,
+        help="wait once for 1-50 seconds before reading one run status",
+    )
     recover = spec_subparsers.add_parser(
         "recover",
         help="make a confirmed externally interrupted 'running' run resumable",
@@ -827,7 +849,7 @@ def main() -> int:
     block.add_argument("--question", required=True)
     revise_tasks = spec_subparsers.add_parser(
         "revise-tasks",
-        help="approve and rebind a corrected task contract for a blocked run",
+        help="approve and rebind a corrected task contract before or during execution",
     )
     revise_tasks.add_argument("run_id")
     revise_tasks.add_argument("--project-root", type=Path, default=Path.cwd())
@@ -854,6 +876,17 @@ def main() -> int:
     if raw_arguments and raw_arguments[0] in COMMAND_ALIASES:
         raw_arguments = [*COMMAND_ALIASES[raw_arguments[0]], *raw_arguments[1:]]
     args = parser.parse_args(raw_arguments)
+    if args.command == "doctor":
+        doctor_script = ROOT / "skills/verif-harness/doctor/scripts/doctor.py"
+        doctor_arguments = [
+            sys.executable,
+            str(doctor_script),
+            "--project-root",
+            str(args.project_root.resolve()),
+        ]
+        if args.json:
+            doctor_arguments.append("--json")
+        return subprocess.run(doctor_arguments, check=False).returncode
     if args.command == "xverif":
         if not args.adapter_args:
             parser.error("xverif requires adapter arguments; use 'xverif probe', 'xverif run', or 'xverif mcp ...'")
@@ -988,21 +1021,24 @@ def main() -> int:
             try:
                 workflow_state = spec_kit_run_status(args.run_id, project_root)
                 gate = workflow_state.get("gate")
+                gate_step = gate.get("step_id") if isinstance(gate, dict) else None
                 if (
                     workflow_state.get("status") != "paused"
-                    or not isinstance(gate, dict)
-                    or gate.get("step_id") != "review-implementation"
+                    or gate_step not in {"authorize-execution", "review-implementation"}
                 ):
                     parser.error(
                         "task contract revision requires a run paused at "
-                        "review-implementation"
+                        "authorize-execution or review-implementation"
                     )
-                revised = task_runner.approve_revised_contract(
-                    project_root,
-                    workflow_run_dir(project_root, args.run_id),
-                    args.run_id,
-                    args.reason,
-                )
+                run_dir = workflow_run_dir(project_root, args.run_id)
+                if gate_step == "authorize-execution":
+                    revised = task_runner.approve_pre_execution_revision(
+                        project_root, run_dir, args.run_id, args.reason
+                    )
+                else:
+                    revised = task_runner.approve_revised_contract(
+                        project_root, run_dir, args.run_id, args.reason
+                    )
             except (RuntimeSelectionError, task_runner.TaskRunnerError) as exc:
                 parser.error(str(exc))
             print(json.dumps(revised, indent=2, sort_keys=True, ensure_ascii=False))
@@ -1013,8 +1049,14 @@ def main() -> int:
                     f"{args.run_id} --verdict approve|reject",
                     file=sys.stderr,
                 )
-            else:
+            elif isinstance(task_execution, dict):
                 print(f"NEXT: resume {args.run_id}", file=sys.stderr)
+            else:
+                print(
+                    f"NEXT: inspect authorization, then resume {args.run_id} "
+                    "--verdict approve|reject",
+                    file=sys.stderr,
+                )
             return 0
         if args.spec_command == "recover":
             try:
@@ -1169,6 +1211,10 @@ def main() -> int:
                 return refresh_spec_kit_chinese_docs(project_root)
             return resumed
         if args.spec_command == "status":
+            if args.wait_seconds is not None:
+                if not args.run_id:
+                    parser.error("--wait-seconds requires one run ID")
+                time.sleep(args.wait_seconds)
             if args.run_id:
                 try:
                     state_path = workflow_run_dir(project_root, args.run_id) / "state.json"

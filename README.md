@@ -216,7 +216,8 @@ RTL 根目录、DUT top 文件和验证目录；setup 阶段不绑定 RTL 路径
 完整流程。普通用户不需要直接调用 Spec Kit、xverif 或 WavePeek 的底层命令。
 
 verif-harness remains the top-level policy, Stage, dispatch, and traceability
-control plane. Spec Kit manages constitution/spec/plan/tasks/checklist artifacts;
+control plane. Spec Kit manages constitution/spec/plan/tasks and the built-in
+requirements checklist; custom checklists are reviewer-requested optional artifacts.
 xverif, WavePeek, and simulators produce bounded evidence. After execution
 authorization, the persistent task runner dispatches only `current_task_id`,
 persists `READY/RUNNING/DONE/BLOCKED`, and validates owned outputs, evidence,
@@ -403,7 +404,7 @@ with specialized behavior has its own mandatory implementation contract:
 | [Specification template](integrations/spec-kit/preset/rtl-verification/templates/spec-template.md) | Stage-scoped requirements, decisions, risks, and evidence expectations. |
 | [Plan template](integrations/spec-kit/preset/rtl-verification/templates/plan-template.md) | Technical context, design structure, and validation planning. |
 | [Tasks template](integrations/spec-kit/preset/rtl-verification/templates/tasks-template.md) | Mode-owned tasks, outputs, validation commands, and evidence paths. |
-| [Checklist template](integrations/spec-kit/preset/rtl-verification/templates/checklist-template.md) | Requirement-quality checks before implementation dispatch. |
+| [Checklist template](integrations/spec-kit/preset/rtl-verification/templates/checklist-template.md) | Optional reviewer-requested domain checklist; the default lifecycle uses `checklists/requirements.md`. |
 
 ## Contributing
 

@@ -90,8 +90,8 @@ Workflow and tool aliases are also supported:
 - `block <run-id> <task-id> --kind <...> --question <text>` → persist a real
   task-level blocker from the running Agent
 - `revise-tasks <run-id> --verdict approve --reason <text>` → explicitly review
-  and rebind a corrected contract for an implementation-blocked run with no
-  completed tasks
+  and rebind a corrected contract for a legacy run paused at execution
+  authorization, or an implementation-blocked run with no completed tasks
 - `recover <run-id> --confirm-stale` → internal `spec-kit recover` for a
   confirmed externally interrupted run only
 - `docs` → internal `spec-kit docs-zh`
@@ -170,6 +170,14 @@ log and process state first. Only after confirming that no worker remains may
 the user authorize `recover <run-id> --confirm-stale`; then resume the
 same run so its current step is retried. Never recover a live process.
 
+Polling must remain bounded and observable. Run one plain `status <run-id>` or
+one `status <run-id> --wait-seconds 30` per tool call. Never build a shell
+`for`/`while` loop around status, never use repeated `sleep`, `watch`, or
+`tail -f`, and never parse the JSON with `grep`. Read the returned JSON
+directly. A single wait is capped at 50 seconds; if the result still says
+`wait-for-worker`, give the user a concise progress update before the next
+poll instead of occupying one terminal command for several minutes.
+
 Workflow state preconditions override the requested command. Before every
 `resume`, read `status <run-id>` and obey its machine-readable guidance. If it
 reports `resume_allowed: false`, do not invoke `resume`, even when the user's
@@ -209,6 +217,12 @@ Apply these rules in every mode:
    check and review any formatter changes.
 10. Report all generated files and validation results. Do not commit, push,
     modify CI state, or run an EDA simulation unless the user separately asks.
+11. For read-only source discovery, prefer `rg` and `rg --files`, and run one
+    focused probe per command. A shell regex containing a Verilog backtick must
+    be single-quoted, never double-quoted, because Bash treats a backtick inside
+    double quotes as command substitution. Put paths after `--` and quote them
+    separately. Do not join `grep`, `ls`, `head`, or similar probes into one
+    semicolon-delimited command.
 
 ## Bootstrap and M1.1 modes
 
@@ -289,10 +303,12 @@ lists, shell syntax, or initial executable are invalid.
 
 ### `doctor`
 
-Read `doctor/INSTRUCTIONS.md`, then run `doctor/scripts/doctor.py` against the
-project root. This mode is read-only. Report errors, warnings, discovered
-stage state, legacy Claude artifacts, RTL dirtiness, and a recommended next
-mode. Do not repair findings unless the user asks.
+Read `doctor/INSTRUCTIONS.md`, then run the runtime-native launcher with
+`doctor` against the project root. The wrapper delegates to
+`doctor/scripts/doctor.py` using managed Python. This mode is read-only. Report
+errors, warnings, discovered stage state, legacy Claude artifacts, RTL
+dirtiness, and a recommended next mode. Do not repair findings unless the user
+asks.
 
 ### `xverif`
 

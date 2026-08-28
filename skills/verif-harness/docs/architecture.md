@@ -10,7 +10,7 @@ verif-harness 顶层控制面（policy / stage / dispatch / traceability）
              v                 v                    v
       Spec Kit 规格面     verif-harness 模式     Human 权限面
  constitution/spec/plan   生成器/执行器/审计器   决策/waiver/gate
- checklist/tasks/analyze        |
+ requirements/tasks/analyze    |
              \                 v
               \        xverif/WavePeek/EDA 证据面
                \               |
@@ -24,8 +24,10 @@ verif-harness 顶层控制面（policy / stage / dispatch / traceability）
 - `spec-kit`
 
 verif-harness 决定 Stage、策略、能力分发和追踪规则；Spec Kit 负责
-constitution、program/stage spec、clarify、plan、checklist、tasks、analyze、
-implement-dispatch 与 converge。新项目以 `specs/` 为唯一可编辑规格事实源；其他
+constitution、program/stage spec、clarify、plan、tasks、analyze、
+implement-dispatch 与 converge。`specify/clarify` 维护内建 requirements checklist；
+自定义 checklist 是显式可选的 reviewer 工件，不在默认 lifecycle 中。新项目以
+`specs/` 为唯一可编辑规格事实源；其他
 文档树只保存治理、生成视图、证据索引和 review packet。已批准的存量项目以不可变
 baseline 导入，不重写历史审批。
 

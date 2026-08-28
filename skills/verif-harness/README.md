@@ -139,7 +139,9 @@ xverif / WavePeek / EDA 证据面
 Human 权限面
 ```
 
-Spec Kit 管理 constitution、spec、plan、checklist、tasks、analyze 和 converge；
+Spec Kit 管理 constitution、spec、plan、tasks、analyze 和 converge；`specify/clarify`
+维护内建的 `checklists/requirements.md`，自定义 checklist 仅在 reviewer 明确要求时
+显式生成，不进入默认 Stage lifecycle；
 verif-harness task runner 负责 implementation dispatch、Stage policy、能力选择、traceability
 和权限边界。新项目以 `specs/` 为唯一可编辑规格事实源；已批准项目作为不可变
 baseline 导入。Spec Kit workflow success 不是仿真证据或审批。
@@ -154,8 +156,10 @@ incomplete 并由 `converge` 记录偏差。该规则适用于所有被 task 声
 
 若旧 run 因已评审 task contract 本身有误而在 implementation 阶段阻塞，先修正
 `tasks.md`，再由 Human 使用 `revise-tasks ... --verdict approve --reason "..."`
-重新绑定合同。该命令只接受尚无 DONE task、暂停在 `review-implementation` 的 run，
-并保留旧/新 hash、理由和 reconciliation 结果；不能伪造原 `review-tasks` provenance。
+重新绑定合同。旧 workflow 若在 analyze 后、execution authorization 前才发现合同
+问题，也可以在 `authorize-execution` gate 使用该命令重新绑定，再单独决定是否授权。
+命令保留旧/新 hash、理由和 reconciliation 结果；一旦已有 DONE task 就拒绝改写，
+也不能伪造原 `review-tasks` provenance。
 
 完整仓库中使用固定版本：
 

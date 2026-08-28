@@ -26,8 +26,10 @@ Before starting:
   reviewed path explicitly.
 - `.harness-config.json` does NOT already exist. If it does, stop and ask
   the user whether to re-bootstrap (destructive) or exit.
-- For a new project, `.specify/` exists and the Stage 0 Spec Kit specification,
-  plan, tasks, checklist, and analysis have passed their document review gates.
+- For a new project, `.specify/` exists; the Stage 0 Spec Kit specification,
+  plan, and tasks have passed their document review gates; the
+  `specify`/`clarify`-maintained requirements checklist has no unresolved
+  quality blocker; and analysis has passed its execution-authorization review.
 - `.specify/integration.json` records `codex` or `kimi` as the active runtime.
   Missing, corrupt, unsupported, or ambiguous runtime state is a blocking open
   question; do not infer it from the model name.
@@ -77,6 +79,19 @@ ls -d ~/workspace/*SystemC* ~/workspace/*SystemCModel 2>/dev/null
 Do not overthink discovery. If a probe returns nothing, present sensible
 default text (e.g., `sim/`, `rtl/`) as an option in Step 2 anyway.
 
+Keep every read-only probe shell-safe and independent. Prefer `rg`/`rg --files`
+over `grep`/`find` when possible, place paths after `--`, and quote paths
+separately. In particular, never put a Verilog compiler-directive backtick in
+a double-quoted pattern: Bash treats it as command substitution. For example:
+
+```bash
+rg -n '^(\s*module\b|\s*`[A-Za-z_])' -- "<top_file>"
+```
+
+Do not concatenate a source probe, directory listing, and spec lookup with
+semicolons. A failed heuristic probe is not an `init` failure; fix or replace
+that one probe and continue with the other discovery evidence.
+
 ### Step 2 — Interactive Q&A
 
 Batch 1 — ask these four together using the available user-input mechanism:
@@ -97,7 +112,8 @@ name (a third batch or a follow-up), because file name ≠ module name.
 
 If the user picks a top file where the module name equals the file basename
 (no extension), auto-populate `rtl.top_module` and skip the extra question.
-Otherwise, run `grep -E '^\s*module\s+\w+' <top_file>` to detect the module
+Otherwise, run `rg -n '^\s*module\s+[A-Za-z_][A-Za-z0-9_$]*' -- "<top_file>"`
+to detect the module
 name and confirm with the user.
 
 ### Step 3 — Write `.harness-config.json`
@@ -304,8 +320,9 @@ Docs to generate (order matters — later docs may cite earlier ones):
 10. `<docs_root>/verification/reference_model_spec.md` (only if
     `reference_model.enabled` is true)
 
-Before writing #4-#10, read the DUT top file at `config.rtl.top_file` and
-grep its submodule dependencies to build feature/interface understanding.
+Before writing #4-#10, read the DUT top file at `config.rtl.top_file` and use
+shell-safe `rg` probes for its submodule dependencies to build
+feature/interface understanding.
 If `design_docs.root` is non-null, read those design docs for
 supplementary context.
 

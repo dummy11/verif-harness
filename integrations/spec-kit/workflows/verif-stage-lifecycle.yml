@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: "verif-stage-lifecycle"
   name: "verif-harness Stage Lifecycle"
-  version: "0.5.0"
+  version: "0.6.0"
   author: "verif-harness contributors"
   description: "以简体中文规格工件驱动一个 RTL 验证 Stage 的评审、执行与收敛"
 
@@ -38,10 +38,6 @@ inputs:
     default: ""
     enum: ["", approve, reject]
   review_plan_verdict:
-    type: string
-    default: ""
-    enum: ["", approve, reject]
-  review_checklist_verdict:
     type: string
     default: ""
     enum: ["", approve, reject]
@@ -97,7 +93,7 @@ steps:
     command: speckit.clarify
     integration: "{{ inputs.integration }}"
     input:
-      args: "使用简体中文更新面向项目评审的 Markdown；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。只解决可以回答的歧义；把语义或权限问题记录给 Human review，不得静默假设。"
+      args: "使用简体中文更新面向项目评审的 Markdown；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。只解决可以回答的歧义；把语义或权限问题记录给 Human review，不得静默假设。Human Decision 解决开放问题后，必须同步修订目标、非目标、DUT 边界、需求和成功标准中的冲突文字，不能只追加决定而保留自相矛盾的旧约束。"
 
   - id: review-clarification
     type: gate
@@ -119,37 +115,24 @@ steps:
     on_reject: abort
     verdict_input: review_plan_verdict
 
-  - id: checklist
-    command: speckit.checklist
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "使用简体中文创建 RTL 验证规格质量 checklist；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。不要创建实现测试列表。"
-
-  - id: review-checklist
-    type: gate
-    message: "评审 checklist 是否覆盖规格质量、歧义和可验证性；本 gate 不批准实现或 Stage。"
-    options: [approve, reject]
-    on_reject: abort
-    verdict_input: review_checklist_verdict
-
   - id: tasks
     command: speckit.tasks
     integration: "{{ inputs.integration }}"
     input:
-      args: "使用简体中文创建精简、可人工阅读的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。严格采用一行任务加紧邻紧凑元数据的模板。T### 只表示 interaction: none 的可执行工作；需要人工回答、额外权限或规格决策的内容必须写成 OPEN B### 阻塞项，不得伪装成 task。每个 task 只包含适用的追踪 IDs、mode、owned outputs、evidence、validation 和 dependencies。outputs/evidence/needs 多项只用英文逗号分隔；validate 必须填写可由 /bin/sh 非交互执行的真实命令，禁止自然语言完成条件、Agent 指令和占位符。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 postconditions。"
-
-  - id: review-tasks
-    type: gate
-    message: "评审精简 task contract、traceability、owned outputs、validation 和 evidence。outputs/evidence/needs 必须用英文逗号分隔；validation 必须是可由 /bin/sh 非交互执行的真实命令而非自然语言。存在 OPEN B###、无效合同或 interaction 不为 none 时不得批准；本 gate 不授权执行。"
-    options: [approve, reject]
-    on_reject: abort
-    verdict_input: review_tasks_verdict
+      args: "使用简体中文创建精简、可人工阅读的 Stage {{ inputs.stage }} tasks；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。严格采用一行任务加紧邻紧凑元数据的模板。T### 只表示 interaction: none 的可执行工作；需要人工回答、额外权限或规格决策的内容必须写成 OPEN B### 阻塞项，不得伪装成 task。每个 task 只包含适用的追踪 IDs、mode、owned outputs、evidence、validation 和 dependencies；Stage 与 owner 已由 workflow/plan 定义，不得为迎合通用格式重复添加。outputs/evidence/needs 多项只用英文逗号分隔；validate 必须填写可由 /bin/sh 非交互执行的真实检查命令，禁止自然语言完成条件、Agent 指令、占位符和 --fix/--write/--update/--in-place 等修改选项。doctor validation 必须直接依赖 doctor 的退出码，不能用管道或兜底命令吞掉失败。对于没有 .harness-config.json 的新 Stage 0 项目，必须恰好包含一个 verif-harness init task，并给出完整 postconditions。"
 
   - id: analyze
     command: speckit.analyze
     integration: "{{ inputs.integration }}"
     input:
-      args: "使用简体中文报告执行前的一致性、覆盖、歧义、重复权威和 task traceability 检查结果；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。"
+      args: "使用简体中文报告执行前的一致性、覆盖、歧义、重复权威、DUT 只读边界和 task traceability 检查结果；代码、命令、路径、配置键、协议名、标准标识符和原始引用保持原文。采用 verif-harness 精简 task schema：trace IDs、mode、outputs、evidence、validate、needs、interaction；Stage 与 owner 的权威在 workflow/plan，不得因单个 task 没有重复 stage/owner 字段而报缺陷。不得要求 rtl-spec.md 或其他未被当前 spec/plan 明确声明的通用文件。把含修改选项的 validation、吞掉 doctor 非零退出码、输出写入 DUT RTL、Human Decision 与目标/非目标冲突、未映射 REQ/SC 视为 review-tasks 前必须解决的问题。"
+
+  - id: review-tasks
+    type: gate
+    message: "结合刚完成的 analyze 报告，评审 specify/clarify 维护的 checklists/requirements.md、精简 task contract、traceability、owned outputs、validation、evidence 和 DUT 只读边界。存在未解决 CRITICAL/HIGH、合同/validation/read-only 类 MEDIUM、requirements checklist 未通过、OPEN B###、无效合同或 interaction 不为 none 时必须 reject；本 gate 不授权执行。"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_tasks_verdict
 
   - id: authorize-execution
     type: gate
