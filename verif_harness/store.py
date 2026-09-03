@@ -44,11 +44,11 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "name": "Verification Documentation",
         "objective": "形成并持续维护可评审的验证定义、架构、策略和退出标准",
         "desired": [
-            ("scope", "验证范围、目标、优先级和 deferred scope 明确", "vplan"),
-            ("dut-understanding", "DUT 行为、接口、配置、reset 与异常语义可追溯", "vplan"),
-            ("feature-model", "feature、scenario、risk、open question 与 Human Decision 已结构化", "vplan"),
-            ("strategy", "stimulus、checking、coverage、case、regression 策略已定义", "vplan"),
-            ("architecture", "verification environment 与 reference-model 边界已定义", "vplan"),
+            ("scope", "验证范围、目标、优先级和 deferred scope 明确", "plan"),
+            ("dut-understanding", "DUT 行为、接口、配置、reset 与异常语义可追溯", "plan"),
+            ("feature-model", "feature、scenario、risk、open question 与 Human Decision 已结构化", "plan"),
+            ("strategy", "stimulus、checking、coverage、case、regression 策略已定义", "plan"),
+            ("architecture", "verification environment 与 reference-model 边界已定义", "plan"),
         ],
         "exit": ["required 文档节点为 VALID 或 Human WAIVED", "无未处置 CRITICAL open decision"],
     },
@@ -56,7 +56,7 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "name": "Stimulus",
         "objective": "实现可复现、可组合并覆盖目标场景的激励能力",
         "desired": [
-            ("transaction-contract", "transaction、sequence 与 constraint 合同明确", "vplan"),
+            ("transaction-contract", "transaction、sequence 与 constraint 合同明确", "plan"),
             ("stimulus-implementation", "required feature 有可复现 stimulus 实现", "add-uvc-skeleton"),
             ("corner-scenarios", "边界、错误、并发与 backpressure 场景可生成", "add-testcase"),
             ("stimulus-evidence", "targeted run 证明 stimulus 可达且行为确定", "xverif"),
@@ -67,7 +67,7 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "name": "Checking",
         "objective": "建立可信的 comparison、reference model、scoreboard 与 assertion",
         "desired": [
-            ("compare-policy", "数值、时序、顺序、异常与容差策略明确", "vplan"),
+            ("compare-policy", "数值、时序、顺序、异常与容差策略明确", "plan"),
             ("reference-model", "reference-model adapter 与 DUT 边界可验证", "add-refmodel-bridge"),
             ("scoreboard", "scoreboard/checker 对 required feature 生效", "complete-scoreboard"),
             ("assertions", "协议与关键不变量有 assertion 和非空洞证据", "add-assertion-skeleton"),
@@ -88,7 +88,7 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "name": "Testcase",
         "objective": "把 verification feature 组合成可重复执行、可诊断的 testcase",
         "desired": [
-            ("case-matrix", "feature/scenario 到 testcase 的映射完整", "vplan"),
+            ("case-matrix", "feature/scenario 到 testcase 的映射完整", "plan"),
             ("case-implementation", "required testcase 与 virtual sequence 已实现", "add-testcase"),
             ("targeted-evidence", "新增 testcase 通过 targeted run", "xverif"),
         ],
@@ -100,7 +100,7 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "desired": [
             ("regression-policy", "smoke/nightly/full、seed、timeout、rerun 与 known-fail policy 明确", "add-regression-runner"),
             ("execution", "required regression 可确定性执行并保留 revision 信息", "xverif"),
-            ("triage", "失败已聚类，语义歧义才路由到 VReason", "regression-triage"),
+            ("triage", "失败已聚类，语义歧义才路由到 Verification Reasoning Engine", "regression-triage"),
             ("fresh-evidence", "required verification node 关联当前 revision 的新鲜 evidence", "xverif"),
         ],
         "exit": ["无未处置 P0/P1 failure", "required evidence 与当前 revision 一致"],
@@ -365,7 +365,7 @@ class ProjectStore:
         template = WORKSTREAM_TEMPLATES[name]
         objective_value = objective.strip() if objective and objective.strip() else template["objective"]
         desired_specs = (
-            [(f"custom-{index:03d}", title, "vreason") for index, title in enumerate(desired, 1)]
+            [(f"custom-{index:03d}", title, "reason") for index, title in enumerate(desired, 1)]
             if desired else list(template["desired"])
         )
         exit_values = exit_criteria or list(template["exit"])
@@ -460,7 +460,7 @@ class ProjectStore:
         if plan["lifecycle"] not in {"ACTIVE", "SATISFIED"}:
             raise HarnessError("Workstream 必须先由 Human approve，才能 freeze")
         if closure["actions"]:
-            raise HarnessError("Workstream desired state 尚未满足；先处理 VClosure actions")
+            raise HarnessError("Workstream desired state 尚未满足；先处理 closure actions")
         payload = self._baseline_payload(name, reviewer, reason)
         canonical = json_text(payload).encode("utf-8")
         digest = hashlib.sha256(canonical).hexdigest()
@@ -632,7 +632,8 @@ class ProjectStore:
         self.write_model_projection()
         for name in names:
             self.write_workstream_projection(name)
-        return {"event_id": event_id, "subject": subject, "affected": affected, "auto_closure": self.reconcile()}
+        return {"event_id": event_id, "kind": kind, "subject": subject, "revision": revision,
+                "affected": affected, "auto_closure": self.reconcile()}
 
     def scan(self) -> dict[str, Any]:
         self.require()
@@ -679,10 +680,10 @@ class ProjectStore:
                                     "suggested_mode": desired.get("suggested_mode"), "reason": f"required desired-state 当前为 {status}"})
             for row in connection.execute("SELECT subject,severity,details FROM findings WHERE status='OPEN' AND subject IN (SELECT id FROM nodes WHERE workstream=?)", (name,)):
                 actions.append({"kind": "RESOLVE_FINDING", "target": row["subject"], "priority": 5,
-                                "executor": "reasoning", "suggested_mode": "vreason", "reason": row["details"]})
+                                "executor": "reasoning", "suggested_mode": "reason", "reason": row["details"]})
             if plan["lifecycle"] in {"REVIEW", "REVISE"}:
                 actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
-                                "executor": "human", "suggested_mode": "vplan", "reason": f"lifecycle 为 {plan['lifecycle']}"})
+                                "executor": "human", "suggested_mode": "plan", "reason": f"lifecycle 为 {plan['lifecycle']}"})
             actions.sort(key=lambda item: (item["priority"], item["target"], item["kind"]))
             for action in actions:
                 stable = json_text({"workstream": name, **action})
@@ -770,7 +771,7 @@ class ProjectStore:
         if not self.initialized:
             return
         model = self.model()
-        lines = ["# Verification Model", "", "> VModel 生成的只读投影；SQLite 是机器事实源。", "", "## Nodes", ""]
+        lines = ["# Verification Knowledge Model", "", "> Verification Knowledge Model 生成的只读投影；SQLite 是机器事实源。", "", "## Nodes", ""]
         lines.extend(f"- `{item['id']}` · {item['type']} · **{item['status']}** · {item['title']}" for item in model["nodes"])
         if not model["nodes"]: lines.append("- 无")
         lines.extend(["", "## Relations", ""])
@@ -788,9 +789,9 @@ class ProjectStore:
         directory.mkdir(parents=True, exist_ok=True)
         atomic_json(directory / "desired-state.json", plan)
         lines = [f"# {plan['workstream']} · {plan['display_name']}", "",
-                 "> VPlan 阅读投影；请通过结构化 CLI 记录修改。", "",
+                 "> Verification Planner 阅读投影；请通过结构化 CLI 记录修改。", "",
                  f"- 生命周期：**{plan['lifecycle']}**", f"- 修订：**{plan['revision']}**",
-                 f"- 目标：{plan['objective']}", "", "## Current Verification Model Context", "",
+                 f"- 目标：{plan['objective']}", "", "## Current Verification Knowledge Model Context", "",
                  f"- Project: `{plan['planning_context']['project']}`",
                  f"- Model nodes: {plan['planning_context']['model_summary']['node_count']}",
                  f"- Open findings: {plan['planning_context']['model_summary']['open_findings']}",

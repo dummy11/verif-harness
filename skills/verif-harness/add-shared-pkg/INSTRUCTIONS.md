@@ -12,7 +12,7 @@ these two).
 
 ## Pre-conditions
 
-1. The project is bootstrapped and VPlan has an approved action for shared packages
+1. The project is bootstrapped and the Verification Planner has an approved action for shared packages
 2. `.harness-config.json` exists
 3. `<verif_root>/testbench/pkg/` is writable; create it additively if missing
 4. `<verif_root>/docs/verification/harness-spec.yaml` has interface

@@ -12,7 +12,7 @@ compile` runs cleanly at M1.1 exit.
 
 ## Pre-conditions
 
-1. The project is bootstrapped and VPlan has an approved build-finalization action
+1. The project is bootstrapped and the Verification Planner has an approved build-finalization action
 2. `.harness-config.json` exists
 3. Every source file referenced by the filelist templates actually exists
    on disk (skill audits before writing filelist)

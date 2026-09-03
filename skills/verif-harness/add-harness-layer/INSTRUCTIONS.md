@@ -3,7 +3,7 @@
 **Mode**: `/verif-harness add-harness-layer`
 
 **Purpose**: Generate harness-integration-layer scaffolding for a reviewed
-VClosure action in an existing verif-harness project. Produces 15
+Verification Closure Engine action in an existing verif-harness project. Produces 15
 files: 3 `dut_harness/` modules + 7 `tb_harness/` files + 5 SVA checker stubs,
 plus a filelist snippet.
 
@@ -17,7 +17,7 @@ bundle them.
 Before proceeding, verify ALL of the following. If any check fails, STOP and
 report to the user.
 
-1. The project is bootstrapped and VPlan has an approved harness-layer action
+1. The project is bootstrapped and the Verification Planner has an approved harness-layer action
 2. `.harness-config.json` exists in project root
 3. `<verif_root>/testbench/top/harness/dut_harness/` empty or missing
 4. Protocol interfaces already scaffolded at `<verif_root>/testbench/top/if/`

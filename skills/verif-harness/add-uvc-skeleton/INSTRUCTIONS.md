@@ -16,7 +16,7 @@ generate all UVCs listed in harness-spec.yaml.
 
 ## Pre-conditions
 
-1. The project is bootstrapped and VPlan has an approved UVC action
+1. The project is bootstrapped and the Verification Planner has an approved UVC action
 2. `.harness-config.json` exists
 3. `<verif_root>/testbench/uvc/<name>_agent/` is absent/empty or contains only
    reviewed additive targets (derive the directory from the interface name)

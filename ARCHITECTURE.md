@@ -11,21 +11,22 @@ unit of control is a live desired-state model, not a one-shot workflow run.
 Human intent
     |
     v
- VPlan ----review----> Workstream desired state
+ Verification Planner ----review----> Workstream desired state
     |                         |
     v                         v
- VModel <----evidence---- capability tools / simulators
+ Verification Knowledge Model <----evidence---- capability tools / simulators
     |
-    +----> VCheck ----> validity + causal findings
+    +----> Verification Consistency Engine ----> validity + causal findings
     |                         |
-    +----> VClosure <---------+
+    +----> Verification Closure Engine <---------+
                |
                +---- deterministic next actions
-               +---- VReason request when ambiguity remains
+               +---- Verification Reasoning Engine request when ambiguity remains
 ```
 
-The global loop is `VModel -> VCheck -> VClosure -> selected gap -> local
-Workstream loop -> evidence -> VModel`. Each local loop is `DESIRED -> PLAN ->
+The global loop is `Verification Knowledge Model -> Verification Consistency
+Engine -> Verification Closure Engine -> selected gap -> local Workstream loop
+-> evidence -> Verification Knowledge Model`. Each local loop is `DESIRED -> PLAN ->
 ACT -> OBSERVE -> EVALUATE -> REPLAN`. Workstreams can be active concurrently
 and may route to one another; they are not lifecycle states.
 
@@ -46,11 +47,11 @@ Validity is explicit: `VALID`, `STALE`, `INVALID`, `REVIEW_REQUIRED`,
 
 ## Subsystem boundaries
 
-- VPlan owns Workstream templates, desired state, and review revisions.
-- VModel owns persisted facts and provenance.
-- VCheck owns deterministic reconciliation and invalidation propagation.
-- VClosure owns global gap calculation, Workstream routing, and minimum next-action selection.
-- VReason owns structured proposals for ambiguous cases, not execution or approval.
+- Verification Planner owns Workstream templates, desired state, and review revisions.
+- Verification Knowledge Model owns persisted facts and provenance.
+- Verification Consistency Engine owns deterministic reconciliation and invalidation propagation.
+- Verification Closure Engine owns global gap calculation, Workstream routing, and minimum next-action selection.
+- Verification Reasoning Engine owns structured proposals for ambiguous cases, not execution or approval.
 - Capability tools own bounded implementation/evidence operations.
 - Human reviewers own semantic approval, modification, waiver, and freeze.
 

@@ -1,4 +1,4 @@
 interface:
   display_name: "Verification Harness"
-  short_description: "Govern continuous RTL verification from VPlan to closure"
-  default_prompt: "Use $verif-harness as the v1 control plane: design re-entrant Workstream desired state with VPlan, query VModel read-only, record facts through structured ingress, reconcile automatically with VCheck/VClosure, use VReason only for ambiguity, and keep DUT, evidence, and Human approval boundaries explicit."
+  short_description: "Govern continuous RTL verification from desired state to closure"
+  default_prompt: "Use $verif-harness as the v1 control plane: design re-entrant Workstream desired state with the Verification Planner, query the Verification Knowledge Model through inspect/trace/impact, record facts through structured ingress, reconcile automatically with the Verification Consistency Engine and Verification Closure Engine, use the Verification Reasoning Engine only for ambiguity, and keep DUT, evidence, and Human approval boundaries explicit."

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ from .store import HarnessError, ProjectStore, Validity, WORKSTREAM_TEMPLATES, c
 ALIASES = {
     "vplan": "plan", "vmodel": "model", "vcheck": "check",
     "vclosure": "closure", "vreason": "reason",
-    "evidence": "xverif", "waveform": "wavepeek",
+    "waveform": "wavepeek",
 }
 ROLES = (
     "VerificationArchitect", "EnvironmentEngineer", "TestEngineer",
@@ -34,14 +35,60 @@ def workstream_argument(parser: argparse.ArgumentParser, required: bool = True) 
     parser.add_argument("--workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper, required=required)
 
 
+def reviewer_identity(root: Path, explicit: str | None) -> str:
+    if explicit and explicit.strip():
+        return explicit.strip()
+    configured = subprocess.run(
+        ["git", "-C", str(root), "config", "user.name"], check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+    ).stdout.strip()
+    identity = configured or os.environ.get("GIT_AUTHOR_NAME", "").strip() or os.environ.get("USER", "").strip()
+    if not identity:
+        raise HarnessError("无法推导 reviewer；请配置 git user.name 或显式传 --reviewer")
+    return identity
+
+
+def infer_workstream(store: ProjectStore, explicit: str | None, operation: str) -> str:
+    if explicit:
+        return explicit
+    plans = store.workstreams()
+    if operation == "review":
+        candidates = [item["workstream"] for item in plans if item["lifecycle"] in {"REVIEW", "REVISE"}]
+    else:
+        candidates = [
+            item["workstream"] for item in plans
+            if item["lifecycle"] in {"ACTIVE", "SATISFIED"}
+            and store.evaluate_closure(item["workstream"], persist=False)["ready"]
+        ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise HarnessError(f"没有可执行 {operation} 的 Workstream")
+    raise HarnessError(f"存在多个候选 Workstream：{', '.join(candidates)}；请显式指定")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="verif-harness",
-        description="以 Verification Model 为事实源的持续 RTL verification control plane",
+        description="以 Verification Knowledge Model 为事实源的持续 RTL verification control plane",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""常用命令：
+  verif-harness bootstrap
+  verif-harness plan VDOC
+  verif-harness review [VDOC]
+  verif-harness status [VDOC]
+  verif-harness inspect [NODE]
+  verif-harness trace NODE
+  verif-harness impact NODE
+  verif-harness prove NODE FILE
+  verif-harness changed PATH
+  verif-harness freeze VDOC|final
+
+完整操作与参数见 skills/verif-harness/docs/user_guide.md。""",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    bootstrap = commands.add_parser("bootstrap", help="发现项目并建立最小 VModel；不生成验证语义")
+    bootstrap = commands.add_parser("bootstrap", help="发现项目并建立最小 Verification Knowledge Model；不生成验证语义")
     project_argument(bootstrap)
     bootstrap.add_argument("--project-name")
     bootstrap.add_argument("--runtime", choices=("auto", "codex", "kimi", "claude", "none"), default="auto")
@@ -54,8 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")
     project_argument(status)
+    status.add_argument("workstream", nargs="?", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
 
-    plan = commands.add_parser("plan", help="VPlan：模板 + 当前 VModel + Human dialogue → desired state")
+    plan = commands.add_parser("plan", help="Verification Planner：使用 plan WORKSTREAM 形成/修订 desired state")
     plan_commands = plan.add_subparsers(dest="plan_command", required=True)
     design = plan_commands.add_parser("design", help="设计或修订一个可重入 Workstream")
     project_argument(design); workstream_argument(design)
@@ -66,21 +114,22 @@ def build_parser() -> argparse.ArgumentParser:
     show = plan_commands.add_parser("show", help="显示当前 Workstream plan")
     project_argument(show); workstream_argument(show)
     review = plan_commands.add_parser("review", help="记录 Human 对当前 revision 的判定")
-    project_argument(review); workstream_argument(review)
-    review.add_argument("--verdict", choices=("approve", "reject", "modify", "clarify"), required=True)
-    review.add_argument("--reviewer", required=True); review.add_argument("--reason", required=True)
+    project_argument(review); workstream_argument(review, required=False)
+    review.add_argument("--verdict", choices=("approve", "reject", "modify", "clarify"), default="approve")
+    review.add_argument("--reviewer"); review.add_argument("--reason")
     freeze = plan_commands.add_parser("freeze", help="冻结 Workstream 或最终不可变 baseline")
     project_argument(freeze); workstream_argument(freeze, required=False)
     freeze.add_argument("--final", action="store_true")
-    freeze.add_argument("--reviewer", required=True); freeze.add_argument("--reason", required=True)
+    freeze.add_argument("--reviewer"); freeze.add_argument("--reason")
 
-    model = commands.add_parser("model", help="VModel：只读查询事实、关系、影响与证据")
-    model_commands = model.add_subparsers(dest="model_command", required=True)
-    model_show = model_commands.add_parser("show"); project_argument(model_show); model_show.add_argument("node_id", nargs="?")
-    trace = model_commands.add_parser("trace"); project_argument(trace); trace.add_argument("node_id")
-    impact = model_commands.add_parser("impact"); project_argument(impact); impact.add_argument("node_id")
+    inspect = commands.add_parser("inspect", help="查看全部验证知识或一个 node")
+    project_argument(inspect); inspect.add_argument("node_id", nargs="?")
+    direct_trace = commands.add_parser("trace", help="查看 node 的依赖、finding 与 evidence")
+    project_argument(direct_trace); direct_trace.add_argument("node_id")
+    direct_impact = commands.add_parser("impact", help="查看 node 的下游依赖影响")
+    project_argument(direct_impact); direct_impact.add_argument("node_id")
 
-    record = commands.add_parser("record", help="结构化事实入口；写入后自动运行 VCheck/VClosure")
+    record = commands.add_parser("record", help="结构化事实入口；写入后自动运行 consistency/closure engines")
     record_commands = record.add_subparsers(dest="record_command", required=True)
     node = record_commands.add_parser("node"); project_argument(node)
     node.add_argument("node_id"); node.add_argument("--type", dest="node_type", required=True)
@@ -103,15 +152,34 @@ def build_parser() -> argparse.ArgumentParser:
     waive = record_commands.add_parser("waive"); project_argument(waive)
     waive.add_argument("node_id"); waive.add_argument("--reviewer", required=True); waive.add_argument("--reason", required=True)
 
-    check = commands.add_parser("check", help="VCheck：自动执行，也可显式扫描确定性事实")
+    prove = commands.add_parser("prove", help="把一个真实文件记录为 node 的通过/失败证据")
+    project_argument(prove)
+    prove.add_argument("subject", help="status/closure 输出中的目标 node ID")
+    prove.add_argument("source", help="项目内 evidence 文件")
+    prove.add_argument("--kind", default="verification", help="证据类型，默认 verification")
+    prove.add_argument("--fail", action="store_true", help="记录失败证据；默认通过")
+
+    changed = commands.add_parser("changed", help="记录文件变化并自动传播失效")
+    project_argument(changed)
+    changed.add_argument("path", help="项目内发生变化的文件")
+    changed.add_argument("--kind", choices=("auto", "add", "modify", "delete", "rename", "spec-change", "rtl-change"), default="auto")
+    changed.add_argument("--revision")
+
+    simple_waive = commands.add_parser("waive", help="记录 Human waiver")
+    project_argument(simple_waive)
+    simple_waive.add_argument("node_id")
+    simple_waive.add_argument("--reason", required=True)
+    simple_waive.add_argument("--reviewer")
+
+    check = commands.add_parser("check", help="Verification Consistency Engine：自动执行，也可显式扫描确定性事实")
     check_commands = check.add_subparsers(dest="check_command", required=True)
     scan = check_commands.add_parser("scan"); project_argument(scan)
 
-    closure = commands.add_parser("closure", help="VClosure：自动执行，也可显式查看全局或局部动作")
+    closure = commands.add_parser("closure", help="Verification Closure Engine：自动执行，也可显式查看全局或局部动作")
     closure_commands = closure.add_subparsers(dest="closure_command", required=True)
     evaluate = closure_commands.add_parser("evaluate"); project_argument(evaluate); workstream_argument(evaluate, required=False)
 
-    reason = commands.add_parser("reason", help="VReason：Role × Backend 的语义不确定性边界")
+    reason = commands.add_parser("reason", help="Verification Reasoning Engine：Role × Backend 的语义不确定性边界")
     reason_commands = reason.add_subparsers(dest="reason_command", required=True)
     reason_caps = reason_commands.add_parser("capabilities"); project_argument(reason_caps)
     request = reason_commands.add_parser("request"); project_argument(request)
@@ -133,21 +201,40 @@ def build_parser() -> argparse.ArgumentParser:
 def normalize(arguments: list[str]) -> list[str]:
     if not arguments:
         return arguments
-    first = arguments[0].lower()
+    first_original = arguments[0].lower()
+    values = [ALIASES.get(first_original, first_original), *arguments[1:]]
+    first = values[0]
+    second = values[1] if len(values) > 1 else None
     if first == "review":
-        return ["plan", "review", *arguments[1:]]
-    if first == "freeze":
-        return ["plan", "freeze", *arguments[1:]]
-    if first == "stage":
-        return ["plan", "design", *arguments[1:]]
-    if first in ALIASES:
-        normalized = [ALIASES[first], *arguments[1:]]
-        if first == "vcheck" and (len(arguments) == 1 or arguments[1].startswith("-")):
-            normalized.insert(1, "scan")
-        if first == "vclosure" and (len(arguments) == 1 or arguments[1].startswith("-")):
-            normalized.insert(1, "evaluate")
-        return normalized
-    return arguments
+        values = ["plan", "review", *values[1:]]
+    elif first == "freeze":
+        values = ["plan", "freeze", *values[1:]]
+    elif first == "plan" and second and second.upper() in WORKSTREAM_TEMPLATES:
+        values = ["plan", "design", "--workstream", second.upper(), *values[2:]]
+    elif first == "model":
+        if second == "show":
+            values = ["inspect", *values[2:]]
+        elif second in {"trace", "impact"}:
+            values = [second, *values[2:]]
+        else:
+            values = ["inspect", *values[1:]]
+    elif first == "check" and (second is None or second.startswith("-")):
+        values.insert(1, "scan")
+    elif first == "closure" and (second is None or second.startswith("-")):
+        values.insert(1, "evaluate")
+    elif first == "reason" and second in ROLES:
+        if len(values) < 3:
+            return values
+        values = ["reason", "request", "--role", second, "--purpose", values[2], *values[3:]]
+
+    if values[:2] == ["plan", "review"] and len(values) > 2 and values[2].upper() in WORKSTREAM_TEMPLATES:
+        values = ["plan", "review", "--workstream", values[2].upper(), *values[3:]]
+    if values[:2] == ["plan", "freeze"] and len(values) > 2:
+        if values[2].lower() == "final":
+            values = ["plan", "freeze", "--final", *values[3:]]
+        elif values[2].upper() in WORKSTREAM_TEMPLATES:
+            values = ["plan", "freeze", "--workstream", values[2].upper(), *values[3:]]
+    return values
 
 
 def run_adapter(name: str, arguments: list[str], parser: argparse.ArgumentParser) -> int:
@@ -171,14 +258,14 @@ def main(arguments: list[str] | None = None) -> int:
         if args.command == "reason":
             backends = capabilities()["reasoning"]
             if args.reason_command == "capabilities":
-                emit({"interface": "VReason/2", "separation": "Role x Backend", "roles": ROLES,
+                emit({"interface": "VerificationReasoningEngine/2", "separation": "Role x Backend", "roles": ROLES,
                       "backends": backends, "execution": "explicit-adapter-required"})
             else:
                 selected = args.backend
                 if selected == "auto":
                     available = [name for name, value in backends.items() if value["available"]]
                     selected = available[0] if len(available) == 1 else "unselected"
-                emit({"schema": "VReasonRequest/2", "purpose": args.purpose, "context": args.context,
+                emit({"schema": "VerificationReasoningRequest/2", "purpose": args.purpose, "context": args.context,
                       "role": args.role, "operation": args.operation, "backend": selected,
                       "required_response": ["diagnosis", "confidence", "proposed_actions", "risk", "human_review", "evidence_requirements"],
                       "executed": False})
@@ -187,7 +274,8 @@ def main(arguments: list[str] | None = None) -> int:
         if args.command == "bootstrap":
             emit(store.bootstrap(args.project_name, args.runtime, args.rtl_root, args.docs_root,
                                  args.verif_root, args.dut_top, args.dut_top_file, args.refresh))
-        elif args.command == "status": emit(store.status())
+        elif args.command == "status":
+            emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
         elif args.command == "doctor":
             if not store.initialized:
                 emit({"status": "INFO", "code": "BOOTSTRAP_REQUIRED", "next": "bootstrap", "project_root": str(store.root)})
@@ -201,17 +289,22 @@ def main(arguments: list[str] | None = None) -> int:
             if args.plan_command == "design":
                 emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria, args.decision))
             elif args.plan_command == "show": emit(store.workstream(args.workstream))
-            elif args.plan_command == "review": emit(store.review_workstream(args.workstream, args.verdict, args.reviewer, args.reason))
+            elif args.plan_command == "review":
+                workstream = infer_workstream(store, args.workstream, "review")
+                reviewer = reviewer_identity(store.root, args.reviewer)
+                if args.verdict != "approve" and not args.reason:
+                    raise HarnessError("reject/modify/clarify 必须提供 --reason")
+                reason = args.reason or "Human approved the current desired-state revision"
+                emit(store.review_workstream(workstream, args.verdict, reviewer, reason))
             elif args.final:
                 if args.workstream: raise HarnessError("--final 与 --workstream 不能同时使用")
-                emit(store.freeze_final(args.reviewer, args.reason))
+                emit(store.freeze_final(reviewer_identity(store.root, args.reviewer), args.reason or "Human approved final verification freeze"))
             else:
-                if not args.workstream: raise HarnessError("freeze 需要 --workstream 或 --final")
-                emit(store.freeze_workstream(args.workstream, args.reviewer, args.reason))
-        elif args.command == "model":
-            if args.model_command == "show": emit(store.model(args.node_id))
-            elif args.model_command == "trace": emit(store.trace(args.node_id))
-            else: emit(store.impact(args.node_id))
+                workstream = infer_workstream(store, args.workstream, "freeze")
+                emit(store.freeze_workstream(workstream, reviewer_identity(store.root, args.reviewer), args.reason or "Closure ready; Human requested immutable freeze"))
+        elif args.command == "inspect": emit(store.model(args.node_id))
+        elif args.command == "trace": emit(store.trace(args.node_id))
+        elif args.command == "impact": emit(store.impact(args.node_id))
         elif args.command == "record":
             if args.record_command == "node": emit(store.add_node(args.node_id, args.node_type, args.title, args.workstream, Validity(args.status)))
             elif args.record_command == "edge": emit(store.add_edge(args.source, args.target, args.relation, args.origin, args.confidence))
@@ -219,6 +312,16 @@ def main(arguments: list[str] | None = None) -> int:
             elif args.record_command == "evidence": emit(store.add_evidence(args.subject, args.kind, args.source, args.verdict))
             elif args.record_command == "change": emit(store.record_change(args.path, args.kind, args.revision))
             else: emit(store.waive_node(args.node_id, args.reviewer, args.reason))
+        elif args.command == "prove":
+            emit(store.add_evidence(args.subject, args.kind, args.source, "fail" if args.fail else "pass"))
+        elif args.command == "changed":
+            kind = args.kind
+            if kind == "auto":
+                suffix = Path(args.path).suffix.lower()
+                kind = "rtl-change" if suffix in {".v", ".sv", ".svh", ".vhd", ".vhdl"} else "spec-change" if suffix in {".md", ".rst", ".txt", ".pdf"} else "modify"
+            emit(store.record_change(args.path, kind, args.revision))
+        elif args.command == "waive":
+            emit(store.waive_node(args.node_id, reviewer_identity(store.root, args.reviewer), args.reason))
         elif args.command == "check": emit(store.scan())
         elif args.command == "closure":
             emit(store.evaluate_closure(args.workstream) if args.workstream else store.reconcile())

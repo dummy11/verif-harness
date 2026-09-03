@@ -13,7 +13,7 @@ type reference — usually `add-harness-layer` first).
 
 ## Pre-conditions
 
-1. The project is bootstrapped and VPlan has an approved env-layer action
+1. The project is bootstrapped and the Verification Planner has an approved env-layer action
 2. `.harness-config.json` exists
 3. `<verif_root>/testbench/env/` and `<verif_root>/testbench/test/` are
    writable; create them additively if missing

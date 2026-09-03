@@ -39,7 +39,7 @@ def main() -> int:
                     {"severity": "ERROR", "code": "MODEL_FILE_MISSING", "message": item}
                     for item in scan["missing_files"]
                 ],
-                "next_mode": "vclosure" if scan["open_findings"] else "vplan",
+                "next_mode": "closure" if scan["open_findings"] else "plan",
                 "summary": store.status(),
             }
         except HarnessError as exc:

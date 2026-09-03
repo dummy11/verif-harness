@@ -1,6 +1,6 @@
 ---
 name: verif-harness
-description: Govern continuous RTL verification engineering with VPlan, VModel, VCheck, VClosure, and VReason. Use for project bootstrap, interactive Workstream desired-state design, traceability, change invalidation, closure actions, UVM/harness generation, deterministic evidence, and Human review/freeze. Never modify DUT RTL or approve Human Decisions.
+description: Govern continuous RTL verification engineering with the Verification Planner, Verification Knowledge Model, Verification Consistency Engine, Verification Closure Engine, and Verification Reasoning Engine. Use for project bootstrap, interactive Workstream desired-state design, traceability, change invalidation, closure actions, UVM/harness generation, deterministic evidence, and Human review/freeze. Never modify DUT RTL or approve Human Decisions.
 ---
 
 # verif-harness v1
@@ -12,8 +12,10 @@ editing projections or by claiming that an Agent/tool command is evidence.
 The control loop is continuous:
 
 ```text
-VPlan -> VModel -> VCheck -> VClosure -> act/verify/review -> VModel
-                                      \-> VReason only for ambiguity
+Verification Planner -> Verification Knowledge Model
+  -> Verification Consistency Engine -> Verification Closure Engine
+  -> act/verify/review -> Verification Knowledge Model
+  \-> Verification Reasoning Engine only for ambiguity
 ```
 
 `VDOC`, `VSTIM`, `VCHK`, `VCOV`, `VCASE`, and `VREG` are parallel, re-entrant
@@ -25,29 +27,32 @@ Workstream. Project lifecycle is separate.
 
 - `bootstrap`: inventory a project and create the minimal model shell. It does
   not make verification decisions or generate a monolithic plan.
-- `vplan`: combine a detailed Workstream template, current VModel, project
+- Verification Planner (`plan`): combine a detailed Workstream template, current
+  Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
   `vplan/INSTRUCTIONS.md`.
-- `vmodel`: read-only `show/trace/impact` access to typed facts.
+- Verification Knowledge Model: read-only `inspect/trace/impact` access to typed facts.
   Read `vmodel/INSTRUCTIONS.md`.
 - `record`: structured ingress for facts, relations, evidence, changes, and
-  Human waivers. It automatically reconciles VCheck and VClosure.
-- `vcheck`: scan model facts and propagate change invalidation. Read
+  Human waivers. It automatically reconciles the consistency and closure engines.
+- Verification Consistency Engine (`check`): scan model facts and propagate change invalidation. Read
   `vcheck/INSTRUCTIONS.md`.
-- `vclosure`: compute the smallest next actions across Workstreams. Read
+- Verification Closure Engine (`closure`): compute the smallest next actions across Workstreams. Read
   `vclosure/INSTRUCTIONS.md`.
-- `vreason`: prepare backend-neutral reasoning requests only when deterministic
+- Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 
-The CLI accepts `plan/model/check/closure/reason` as canonical automation
-spellings and `vplan/vmodel/vcheck/vclosure/vreason` as exact aliases. It also
-accepts `review` as `plan review` and `freeze` as `plan freeze`. There is no
-detached worker, task-resume protocol, linear Stage 0–5 state machine, or
-legacy project initialization command.
+Prefer the human-facing spellings in interactive work: `plan VDOC`, `review
+[VDOC]`, `status [VDOC]`, `prove NODE FILE`, `changed PATH`, `waive NODE
+--reason ...`, and `freeze VDOC|final`. Use the expanded `plan
+design|review|freeze` and `record ...` forms only when automation needs explicit
+fields. The older `model` and `v*` spellings are compatibility-only and must not
+be presented as the interactive interface. There is no detached worker,
+task-resume protocol, linear Stage 0–5 state machine, or legacy project initialization command.
 
 ## Capability dispatch
 
-These lower-level modes remain available to implement a VClosure action:
+These lower-level modes remain available to implement a closure action:
 
 - `doctor`
 - `add-interface`
@@ -83,10 +88,10 @@ files are review candidates. DUT RTL and Human approval remain out of bounds.
 ## Authority boundaries
 
 - Bootstrap may inventory paths, tools, revisions, and file metadata only.
-- VPlan may propose; only a named Human review changes a Workstream to `ACTIVE` or
+- The Verification Planner may propose; only a named Human review changes a Workstream to `ACTIVE` or
   `BASELINED`.
-- VCheck may mark facts stale/invalid but may not waive them.
-- VClosure recommends actions; it does not silently execute write modes.
-- VReason returns structured diagnosis/proposals and never grants approval.
+- The Verification Consistency Engine may mark facts stale/invalid but may not waive them.
+- The Verification Closure Engine recommends actions; it does not silently execute write modes.
+- The Verification Reasoning Engine returns structured diagnosis/proposals and never grants approval.
 - xverif, WavePeek, simulation, regression, and coverage outputs become
   evidence only when recorded with provenance and verdict.

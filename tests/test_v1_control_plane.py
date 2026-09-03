@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -24,9 +25,12 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def invoke(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
         return subprocess.run(
             [sys.executable, str(CLI), *arguments, "--project-root", str(self.root)],
-            check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
         )
 
     def run_cli(self, *arguments: str, expected: int = 0) -> dict:
@@ -67,7 +71,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(payload["dut"]["top_module"], "dut")
         self.assertEqual(config["rtl"]["top_file"], "rtl/dut.sv")
 
-    def test_vplan_uses_detailed_template_and_current_model_context(self) -> None:
+    def test_planner_uses_detailed_template_and_current_knowledge_context(self) -> None:
         self.bootstrap()
         plan = self.design("VCHK")
         self.assertEqual(plan["workstream"], "VCHK")
@@ -121,7 +125,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(states[check], "REVALIDATION_REQUIRED")
         self.assertEqual({item["workstream"] for item in event["auto_closure"]["workstreams"]}, {"VSTIM", "VCHK"})
 
-    def test_vmodel_public_surface_is_read_only(self) -> None:
+    def test_knowledge_query_surface_is_read_only(self) -> None:
         self.bootstrap()
         result = self.invoke("model", "add-node", "x")
         self.assertEqual(result.returncode, 2)
@@ -133,7 +137,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(invalid.returncode, 2)
         self.assertIn("evidence", invalid.stderr)
 
-    def test_explicit_vcheck_and_vclosure_aliases(self) -> None:
+    def test_legacy_engine_aliases_remain_compatible(self) -> None:
         self.bootstrap(); self.design("VCOV")
         self.assertEqual(self.run_cli("vcheck")["status"], "PASS")
         payload = self.run_cli("vclosure")
@@ -158,7 +162,7 @@ class V1ControlPlaneTest(unittest.TestCase):
     def test_reason_request_separates_role_and_backend(self) -> None:
         payload = self.run_cli("reason", "request", "--purpose", "triage ambiguity", "--context", "two causes",
                                "--role", "DebugEngineer", "--backend", "codex")
-        self.assertEqual(payload["schema"], "VReasonRequest/2")
+        self.assertEqual(payload["schema"], "VerificationReasoningRequest/2")
         self.assertEqual(payload["role"], "DebugEngineer")
         self.assertEqual(payload["backend"], "codex")
         self.assertFalse(payload["executed"])
@@ -176,6 +180,68 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.bootstrap()
         result = self.invoke("plan", "design", "--stage", "0")
         self.assertEqual(result.returncode, 2)
+
+    def test_short_plan_review_status_and_model_commands(self) -> None:
+        self.bootstrap()
+        plan = self.run_cli("plan", "VDOC", "--desired", "requirements reviewed")
+        desired = plan["desired_state"][0]["id"]
+        reviewed = self.run_cli("review")
+        self.assertEqual(reviewed["workstream"], "VDOC")
+        self.assertEqual(reviewed["verdict"], "APPROVE")
+        self.assertEqual(self.run_cli("status", "VDOC")["plan"]["lifecycle"], "ACTIVE")
+        self.assertEqual(self.run_cli("model", desired)["nodes"][0]["id"], desired)
+        self.assertEqual(self.run_cli("inspect", desired)["nodes"][0]["id"], desired)
+        self.assertEqual(self.run_cli("trace", desired)["node"]["id"], desired)
+        self.assertEqual(self.run_cli("impact", desired)["source"], desired)
+
+    def test_review_inference_fails_closed_when_ambiguous(self) -> None:
+        self.bootstrap()
+        self.run_cli("plan", "VDOC")
+        self.run_cli("plan", "VSTIM")
+        result = self.invoke("review")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("VDOC", result.stderr)
+        self.assertIn("VSTIM", result.stderr)
+
+    def test_non_approval_review_requires_reason(self) -> None:
+        self.bootstrap()
+        self.run_cli("plan", "VDOC")
+        result = self.invoke("review", "VDOC", "--verdict", "reject")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--reason", result.stderr)
+
+    def test_prove_changed_and_short_freeze(self) -> None:
+        self.bootstrap()
+        plan = self.run_cli("plan", "VDOC", "--desired", "requirements reviewed")
+        desired = plan["desired_state"][0]["id"]
+        self.run_cli("review")
+        evidence = self.root / "review.json"
+        evidence.write_text('{"reviewed": true}\n', encoding="utf-8")
+        proved = self.run_cli("prove", desired, "review.json", "--kind", "review")
+        self.assertEqual(proved["verdict"], "PASS")
+        frozen = self.run_cli("freeze", "VDOC")
+        self.assertEqual(frozen["lifecycle"], "BASELINED")
+        changed = self.run_cli("changed", "rtl/dut.sv")
+        self.assertEqual(changed["kind"], "rtl-change")
+
+    def test_final_freeze_short_spelling_is_supported(self) -> None:
+        self.bootstrap()
+        result = self.invoke("freeze", "final")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("missing=", result.stderr)
+
+    def test_short_commands_cover_bootstrap_through_final_freeze(self) -> None:
+        self.bootstrap()
+        evidence = self.root / "evidence.json"
+        evidence.write_text('{"verified": true}\n', encoding="utf-8")
+        for workstream in ("VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
+            plan = self.run_cli("plan", workstream, "--desired", f"{workstream} verified")
+            self.run_cli("review", workstream)
+            self.run_cli("prove", plan["desired_state"][0]["id"], "evidence.json")
+            self.assertEqual(self.run_cli("freeze", workstream)["lifecycle"], "BASELINED")
+        final = self.run_cli("freeze", "final")
+        self.assertEqual(final["kind"], "FINAL")
+        self.assertTrue((self.root / ".verif-harness" / final["path"]).is_file())
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ refresh non-semantic inventory/capabilities.
 3. Run `$verif-harness bootstrap [--rtl-root PATH] [--docs-root PATH]
    [--verif-root PATH] [--dut-top NAME --dut-top-file PATH]`.
 4. Review `.verif-harness/project.json` and `inventory.json`.
-5. Continue with `vplan`; bootstrap must not decide coverage, tests, interfaces,
+5. Continue with `plan WORKSTREAM`; bootstrap must not decide coverage, tests, interfaces,
    reference models, acceptance criteria, or Human Decisions.
 
 When DUT identity is complete, bootstrap also writes the lower-level capability

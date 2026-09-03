@@ -13,7 +13,7 @@ class files (that's for future `add-uvc-agent` mode).
 
 Before proceeding, verify ALL:
 
-1. The project is bootstrapped and VPlan has an approved action for interface generation
+1. The project is bootstrapped and the Verification Planner has an approved action for interface generation
 2. `.harness-config.json` exists in project root
 3. `<verif_root>/testbench/top/if/` is absent/empty or contains only reviewed additive targets
 4. `<verif_root>/docs/verification/harness-spec.yaml` exists with at least
