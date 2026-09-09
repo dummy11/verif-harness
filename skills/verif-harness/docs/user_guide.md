@@ -7,10 +7,15 @@
 
 ### 1.1 在 Agent 会话中使用（推荐）
 
-完成 setup 后，在项目目录启动 Agent：
+setup 成功后会自动切换到指定 workspace，并启动选定的 Agent，无需再次手动启动。
+进入会话后，激活 Skill 并说明目标：
 
 - Codex：对话中输入 `$verif-harness`，再说明目标；
 - Kimi：对话中输入 `/skill:verif-harness`，再说明目标。
+
+首次使用时可输入 `$verif-harness bootstrap`（Codex）或
+`/skill:verif-harness bootstrap`（Kimi），建立项目知识模型。
+只有传入 `--no-agent` 时 setup 才跳过启动；之后重新运行不带该参数的 setup 即可进入会话。
 
 例如：“`$verif-harness 规划 VDOC，并只询问模型无法确定的决策`”。Agent 会读取
 Skill 约束，再调用项目级 CLI。Human review、waiver 和 freeze 必须由用户明确要求，
