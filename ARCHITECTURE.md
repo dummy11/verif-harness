@@ -2,6 +2,10 @@
 
 ## Purpose
 
+For an implementation-grounded walkthrough in Chinese, read
+[工作机制](skills/verif-harness/docs/mechanism.md) and
+[术语表](skills/verif-harness/docs/glossary.md).
+
 verif-harness v1 is an AI-native verification engineering control plane. Its
 unit of control is a live desired-state model, not a one-shot workflow run.
 
@@ -39,8 +43,10 @@ and may route to one another; they are not lifecycle states.
 - Workstream revisions and Human review records;
 - change events, causal findings, validity, and closure actions.
 
-`project.json`, `inventory.json`, `model.md`, and Workstream `plan.md` files are
-review projections. Editing a projection does not mutate authority.
+`project.json` stores project configuration consumed by the CLI; `inventory.json`
+records the bootstrap inventory. `model.md` and Workstream `plan.md` are reading
+projections. Editing a reading projection does not update the database. Use the
+CLI to change state rather than editing configuration or projections manually.
 
 Validity is explicit: `VALID`, `STALE`, `INVALID`, `REVIEW_REQUIRED`,
 `REVALIDATION_REQUIRED`, `BLOCKED`, `WAIVED`, or `UNKNOWN`.

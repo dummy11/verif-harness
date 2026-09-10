@@ -2,6 +2,8 @@
 
 本文只讲安装和操作。项目定位、适用对象与治理理念见仓库
 [README](../../../README.md)，内部边界见[架构说明](../../../ARCHITECTURE.md)。
+理解一次操作如何推动状态变化，请先读[工作机制](mechanism.md)；不熟悉的名词可查
+[术语表](glossary.md)。
 
 ## 1. 两种入口
 
@@ -140,8 +142,9 @@ verif-harness plan VDOC
 verif-harness status VDOC
 ```
 
-Verification Planner 合并 VDOC 通用模板、当前知识模型与项目清单，产生 proposal 和真正需要人工确认的
-`questions_for_human`。在 Agent 会话回答这些问题；需要修改时再次运行 `plan VDOC`，
+Verification Planner 提供 VDOC 通用模板、当前知识模型与项目上下文，产生 proposal 和
+`questions_for_human`。Agent 结合项目事实筛选、解释问题，在当前会话收集用户回答；
+CLI 本身不会自动完成语义澄清。需要修改时再次运行 `plan VDOC`，
 形成新 revision。
 
 确认 proposal 后，由 Human 明确执行：
@@ -219,7 +222,8 @@ verif-harness prove NODE results/failure.json --fail --kind simulation
 kind 和 verdict。默认是通过证据，因为命令本身明确表达“证明”；失败用 `--fail`。
 
 新 artifact、关系等高级事实通过 `record` 写入，见[命令参考](#6-完整命令参考)。
-每次结构化写入后都会自动执行 Verification Consistency Engine 和 Verification Closure Engine。
+证据与变更等结构化写入会更新相关节点状态并重算 closure；这不意味着每次都执行完整
+文件扫描。扫描使用 `check`，动作与失效传播规则见[工作机制](mechanism.md)。
 
 ### 步骤 5：处理变化和失效
 
@@ -292,6 +296,14 @@ waiver 只允许用于已规划 Workstream node，必须提供理由，reviewer 
 
 ## 5. 状态、文件与治理边界
 
+这里的状态来自 [Verification Knowledge Model](glossary.md#subsystems)。
+[Desired/current state](glossary.md#desired-current) 的差距形成
+[gap、finding 和 action](glossary.md#gap-action)；动作产生的
+[artifact/evidence](glossary.md#evidence) 经登记后改变节点
+[validity](glossary.md#validity)。工作域达到条件后，经过
+[Human gate](glossary.md#human-gate) 创建 [baseline](glossary.md#baseline)。
+完整事件示例见[从工程动作到证据](mechanism.md#4-工程动作怎样成为证据)。
+
 ### 5.1 Validity
 
 | 状态 | 含义 |
@@ -317,7 +329,7 @@ change 可进入 `PARTIALLY_STALE`，reject/modify/clarify 可进入 `REVISE`。
 
 ```text
 .verif-harness/
-├── model.sqlite3                 # 唯一机器事实源
+├── model.sqlite3                 # 验证知识状态：节点、关系、评审等
 ├── project.json                  # bootstrap manifest
 ├── inventory.json                # 文件清单投影
 ├── model.md                      # 人工阅读投影
@@ -329,7 +341,9 @@ change 可进入 `PARTIALLY_STALE`，reject/modify/clarify 可进入 `REVISE`。
     └── final/<id>/manifest.json
 ```
 
-不要通过编辑 Markdown/JSON 投影改变机器状态；所有 mutation 必须走 CLI。
+不要通过编辑阅读投影改变机器状态；所有 mutation 必须走 CLI。
+`project.json` 也被 CLI 用来读取项目身份和 runtime，属于配置清单；它与纯阅读投影
+的区别见[Source of truth、Projection、Manifest](glossary.md#authority)。
 
 ## 6. 完整命令参考
 
