@@ -10,20 +10,36 @@
 ### 1.1 在 Agent 会话中使用（推荐）
 
 setup 成功后会自动切换到指定 workspace，并启动选定的 Agent，无需再次手动启动。
-进入会话后，激活 Skill 并说明目标：
+进入会话后，Human 只需激活 Skill 并用自然语言说明目标：
 
 - Codex：对话中输入 `$verif-harness`，再说明目标；
 - Kimi：对话中输入 `/skill:verif-harness`，再说明目标。
 
-首次使用时可输入 `$verif-harness bootstrap`（Codex）或
-`/skill:verif-harness bootstrap`（Kimi），建立项目知识模型。
+Human 不需要直接运行 `verif-harness plan/review/prove/freeze` 等底层命令，也不需要记忆
+它们的参数。Skill 激活后，Agent 先读取当前状态、提出需要 Human 回答的问题；Human
+通过对话给出目标、工程决定或审批结论；Agent 再自行调用底层 CLI，将结果持久化到
+Knowledge Model。标准交互关系是：
+
+```text
+Human：激活 Skill，并用自然语言说明目标
+  ↓
+Agent：读取状态，调用 CLI，生成 proposal 或 Draft
+  ↓
+Human：回答问题，作出 approve/modify/clarify/reject 等决定
+  ↓
+Agent：根据明确回答继续调用 CLI 并报告结果
+```
+
+首次使用时，Human 可输入“`$verif-harness 为当前项目开始验证治理`”（Codex）或
+“`/skill:verif-harness 为当前项目开始验证治理`”（Kimi）。Agent 发现项目尚未
+bootstrap 后，会询问必填 DUT 信息，并自行调用 `bootstrap` 建立项目知识模型。
 只有传入 `--no-agent` 时 setup 才跳过启动；之后重新运行不带该参数的 setup 即可进入会话。
 
 例如：“`$verif-harness 规划 VDOC，并只询问模型无法确定的决策`”。Agent 会读取
 Skill 约束，再调用项目级 CLI。Human review、waiver 和 freeze 必须由用户明确要求，
 Agent 不得自行批准。
 
-### 1.2 直接调用 CLI
+### 1.2 底层 CLI（Agent/CI 接口）
 
 下文命令统一写成：
 
@@ -48,7 +64,10 @@ scripts/managed-python scripts/verif_harness.py COMMAND
 ```
 
 CLI 输出结构化 JSON，适合 Agent 和 CI；人工通常只需关注 `status`、`actions`、
-`questions_for_human`、`findings`、`evidence` 与 `baseline`。
+`questions_for_human`、`findings`、`evidence` 与 `baseline`。用户指南保留命令块是为了
+解释 Agent 实际执行了什么，以及方便 CI/高级诊断；它们不是要求 Human 在正常对话流程中
+手工输入。Human 也可以在终端直接调用 CLI，但直接调用表示调用者自行承担参数、项目范围
+和授权语义，不能让 Agent 把 CLI 的默认值当作 Human 决定。
 
 ## 2. 安装、runtime、依赖与 MCP
 
@@ -147,14 +166,22 @@ Verification Planner 提供 VDOC 通用模板、当前知识模型与项目上�
 CLI 本身不会自动完成语义澄清。需要修改时再次运行 `plan VDOC`，
 形成新 revision。
 
-确认 proposal 后，由 Human 明确执行：
+Agent 展示 proposal 后，Human 在对话中明确表达评审结论，例如：
 
 ```text
-verif-harness review
+批准当前 VDOC 范围。
 ```
 
-当且仅当只有一个 Workstream 等待评审时，目标可省略；默认 verdict 是 `approve`，
-reviewer 从 `git user.name` 推导。拒绝或要求修改必须说明原因：
+Agent 收到这条明确授权后，才自行执行底层命令并持久化结论：
+
+```text
+verif-harness review VDOC --verdict approve
+```
+
+当且仅当只有一个 Workstream 等待评审时，Agent 才可以在底层调用中省略目标；默认
+verdict 是 `approve`，reviewer 从 `git user.name` 推导。CLI 默认值不是 Human 授权，
+Agent 仍必须先取得明确结论。Human 拒绝或要求修改时，在对话中说明原因；例如 Human 说
+“需要修改，接口 reset 语义仍不清楚”，Agent 转换为：
 
 ```text
 verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不清楚"
@@ -192,6 +219,83 @@ Agent 将每份输出的文件节点以 `AFFECTS` 关系关联对应 desired 节
 `changed` 使消费者重新验证。计划批准不等于文档内容批准；文件存在、模板已复制也不
 等于目标通过。只有真实内容经过用户评审后才登记相应 review evidence。
 `--desired` 自定义目标仍替代默认七项，需要 Agent 显式关联实际文档。
+
+### VDOC 完整执行步骤与角色
+
+VDOC 使用三类责任标记：
+
+- **Human**：提供工程判断、范围决定、内容批准、waiver 和 freeze 授权；
+- **Agent**：当前 Codex/Kimi 会话，负责只读分析、提问、起草、执行已授权命令和解释结果；
+- **Engine**：verif-harness CLI 的确定性部分，负责持久化、状态计算、证据摘要、失效传播和
+  closure。Engine 不作工程判断。
+
+| 步骤 | 责任主体 | 操作与结果 |
+| --- | --- | --- |
+| 0. 建立项目事实 | Human + Agent + Engine | Human 提供 DUT 信息；Agent 只读校验；Engine 通过 `bootstrap` 建立最小知识模型 |
+| 1. 读取当前状态 | Agent + Engine | Agent 调用 `status VDOC`、`inspect`；Engine 返回当前模型、历史决策和缺口 |
+| 2. 建立 proposal | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、七个默认文档 desired node、退出条件和待答问题 |
+| 3. 确认输出目录 | Agent；有歧义时 Human | Agent 沿用已有验证文档目录或提议 `<verif-root>/docs/verification`；与只读输入重叠或有多个候选时由 Human 选择 |
+| 4. 读取输入与模板 | Agent | 只读分析 RTL、spec、已有验证文档、Knowledge Model 和本轮所需模板，不搜索或替换用户未指定的 DUT 输入 |
+| 5. 形成初始草案 | Agent | 先提出 scope 和 Feature/VF 分解，再补充策略、架构、reference model、coverage、assertion 和 testcase 候选内容 |
+| 6. 解决开放决策 | Human + Agent | Agent 只询问事实无法确定的问题；Human 作出工程选择；Agent 将答案及其影响目标写入新 revision |
+| 7. 审批 desired scope | Human | Human 对本轮目标和退出条件作出 `approve/reject/modify/clarify` 决定；Agent 不得代批 |
+| 8. 记录规划审批 | Agent + Engine | 收到 Human 明确决定后，Agent 调用 `review VDOC`；Engine 将 revision 更新为 `ACTIVE` 或 `REVISE` |
+| 9. 生成文档 Draft | Agent | 在可写的验证输出目录创建或增量修改所需文档；所有 RTL 和原始 spec 保持只读 |
+| 10. 登记追踪关系 | Agent + Engine | Agent 登记或复用文件节点和 `AFFECTS`/跨工作域依赖；Engine 写入 Knowledge Model |
+| 11. 检查一致性 | Engine + Agent | Engine 通过 `check` 扫描已登记事实并传播状态；Agent 解释冲突、缺失链接和开放问题 |
+| 12. 评审文档内容 | Human + Agent | Agent 展示正文、来源、差异和遗留问题；Human 判断内容能否作为当前验证基线 |
+| 13. 登记评审证据 | Agent + Engine | Human 明确接受后，Agent 通过 `prove` 登记真实 review evidence；Engine 校验文件、计算摘要并更新目标有效性 |
+| 14. 计算下一动作 | Engine + Agent | Engine 通过 `closure` 给出最小未闭合动作；Agent 向 Human 解释，不静默执行写操作 |
+| 15. 冻结 VDOC | Human + Agent + Engine | Human 明确授权；Agent 调用 `freeze VDOC`；Engine 检查条件并生成不可覆盖的 baseline |
+| 16. 后续修订 | Agent + Engine + Human | Agent 登记 `changed`；Engine 传播 `STALE`/`REVALIDATION_REQUIRED`；Agent 只修订受影响内容，Human 重新评审 |
+
+VDOC 的典型命令顺序如下。命令由 Agent 在当前会话执行；表中标为 Human 的决定必须先
+由用户明确给出：
+
+```text
+# Agent + Engine：建立 proposal
+verif-harness status VDOC
+verif-harness plan VDOC
+
+# Human：回答 questions_for_human，确认 desired scope
+# Agent + Engine：仅在收到明确 verdict 后记录规划审批
+verif-harness review VDOC --verdict approve --reviewer <human-name>
+
+# Agent：生成 Draft，并登记文档节点和依赖关系
+# Agent + Engine：检查一致性和未闭合动作
+verif-harness check
+verif-harness status VDOC
+verif-harness closure
+
+# Human：评审具体文档内容
+# Agent + Engine：仅在 Human 明确接受后登记真实评审证据
+verif-harness prove <VDOC-DESIRED-NODE> <REVIEW-EVIDENCE-FILE> \
+  --kind human-review
+
+# Human：明确授权冻结
+# Agent + Engine：验证条件并冻结当前 revision
+verif-harness freeze VDOC --reviewer <human-name> \
+  --reason "VDOC revision reviewed and accepted"
+```
+
+这里存在两个不能合并的 Human gate：
+
+1. **规划审批**：`review VDOC` 只批准 desired scope、交付范围与退出条件，允许 Agent
+   按此开展文档工作；
+2. **内容审批**：Human 逐份检查实际文档后，Agent 才能登记 review evidence。文档存在、
+   模板已复制或 Agent 自检通过都不是内容批准。
+
+职责边界可以概括为：
+
+```text
+Agent：读取、分析、提问、提出方案、生成 Draft、登记关系、执行检查
+Human：工程取舍、范围确认、内容批准、waiver、freeze
+Engine：持久化、状态计算、证据摘要、失效传播、closure、冻结条件检查
+```
+
+即使由 Agent 在终端输入了 `review`、`prove` 或 `freeze`，授权来源仍必须是当前 Human。
+Agent 生成七份 Markdown 也不表示 VDOC 完成；只有对应 desired node 获得真实评审证据，
+并满足本轮退出条件后，VDOC 才能进入 baseline。
 
 ### 步骤 2：规划实现类 Workstream
 
