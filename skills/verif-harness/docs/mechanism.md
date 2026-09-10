@@ -32,7 +32,9 @@ flowchart TD
 
 bootstrap 时，用户明确提供 `rtl root`、`dut top`、`dut top file`，`spec` 可选。
 Skill 不搜索候选路径；必填信息未齐前先对话补齐。CLI 收到这些值后记录项目身份、
-文件清单和工具能力。所有 RTL、RTL spec 都是只读输入。
+文件清单和工具能力，并创建或增量更新项目根 `AGENTS.md` 中唯一的 verif-harness
+managed block。该区块先建立只读边界、事实源、交互授权和 VDOC fail-closed 路由；
+项目已有说明保留在区块之外。所有 RTL、RTL spec 都是只读输入。
 
 随后用户选择一个 [Workstream](glossary.md#workstream)，例如 VCHK（检查能力），
 希望实现“输出事务在 backpressure 下仍正确匹配”。Verification Planner 的底层操作：
@@ -43,12 +45,14 @@ Skill 不搜索候选路径；必填信息未齐前先对话补齐。CLI 收到�
 4. 返回 proposal 和供对话使用的问题。
 
 具体项目分析和问题筛选由当前 Agent 完成。CLI 本身提供模板和上下文，不自动理解 RTL，
-也不自行对话。Human 确认后执行 review，审批记录绑定该 Workstream 的当前 revision。
-approve 表示接受目标，尚不代表目标已实现。
+也不自行对话。Human 在会话中确认后，Agent 执行 review，审批记录绑定该 Workstream
+的当前 revision。approve 表示接受目标，尚不代表目标已实现。
 
-VDOC 默认目标逐份关联七个正式验证文档及其通用模板；当前 Agent 按
+VDOC 默认目标逐份关联八个正式验证文档及其通用模板，包括一份不含 Stage/Spec Kit
+语义的 `verification_workflow.md` 文档治理合同；当前 Agent 按
 [文档产出规则](../vplan/vdoc.md)进行对话填充。CLI 的 `plan.md` 仅列目标，
 正式验证计划、验证点矩阵和各专题设计是独立产物，文件节点需关联对应 desired。
+VDOC 规划还会把确认的文档根和八份路由写回同一个 `AGENTS.md` managed block。
 后续 VCHK、VCOV 等工作域按影响范围修订文档，不要求首次规划时全部完成。
 
 ## 3. 如何决定下一步

@@ -7,7 +7,7 @@ conversation. Persist accepted answers as revisioned structured state and a
 Markdown projection.
 
 For VDOC, read [document delivery instructions](vdoc.md) and the templates for
-the documents being drafted. Default VDOC goals name seven engineering documents;
+the documents being drafted. Default VDOC goals name eight engineering documents;
 fill them through Human dialogue in the project's verification output directory.
 The CLI's desired-state/plan projections are not those deliverables.
 

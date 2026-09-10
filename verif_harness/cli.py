@@ -111,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument("--desired", action="append", default=[])
     design.add_argument("--exit", dest="exit_criteria", action="append", default=[])
     design.add_argument("--decision", action="append", default=[])
+    design.add_argument("--document-root", help="VDOC 文档输出目录；由 Agent 在对话确认后传入")
     show = plan_commands.add_parser("show", help="显示当前 Workstream plan")
     project_argument(show); workstream_argument(show)
     review = plan_commands.add_parser("review", help="记录 Human 对当前 revision 的判定")
@@ -287,7 +288,8 @@ def main(arguments: list[str] | None = None) -> int:
             emit({"runtime": manifest.get("runtime"), "source": f"{store.state.name}/project.json"})
         elif args.command == "plan":
             if args.plan_command == "design":
-                emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria, args.decision))
+                emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria,
+                                             args.decision, args.document_root))
             elif args.plan_command == "show": emit(store.workstream(args.workstream))
             elif args.plan_command == "review":
                 workstream = infer_workstream(store, args.workstream, "review")

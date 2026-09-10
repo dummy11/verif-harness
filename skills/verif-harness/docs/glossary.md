@@ -108,8 +108,17 @@ REVIEW_REQUIRED 需要评审，BLOCKED 无法继续，WAIVED 已被人工豁免�
 <a id="human-gate"></a>
 ## Open question、Decision、Review、Waiver、Gate
 
-**Open question（待明确问题）**是缺少的事实或尚未确定的工程语义，例如数值容差。
-**Human Decision（人工决策）**是用户明确给出的选择；Agent 可提出选项、记录回答。
+文档治理把决策内容区分为四类：
+
+- **Human Decision（人工决策）**：用户已明确批准的工程基线；Agent 可提出选项和记录回答；
+- **Provisional（暂定决策）**：已有可执行方向，但保留基于日期、milestone、新 evidence
+  或 closure 状态的复审触发器；
+- **Assumption（待 Human Review 的假设）**：应由 Human 决定但尚未确认，不得写成事实；
+- **External Open Question（外部开放问题）**：依赖项目外输入，需记录 owner、依赖、
+  阻塞目标和状态。
+
+v1 不使用 Stage gate 作为决策生命周期。一般的 **Open question（待明确问题）** 可以是
+缺少事实或尚未确定的工程语义，例如数值容差；Agent 应按上述四类进一步归属。
 **Review（评审）**对当前 desired revision 作 approve/reject/modify/clarify 判定。
 批准目标与证明实现是两个步骤。
 

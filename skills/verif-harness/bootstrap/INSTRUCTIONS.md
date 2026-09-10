@@ -17,12 +17,19 @@ refresh non-semantic inventory/capabilities.
    Run the Skill launcher with `bootstrap --rtl-root PATH --dut-top NAME
    --dut-top-file PATH`. If spec was supplied, pass its exact path through the
    existing `--docs-root PATH` input; do not infer another documentation root.
-4. Review `.verif-harness/project.json` and `inventory.json`.
-5. Continue with `plan WORKSTREAM`; bootstrap must not decide coverage, tests, interfaces,
+4. Create or refresh the marked verif-harness managed block in the project-root
+   `AGENTS.md`. Preserve all content outside the markers. The block records DUT
+   identity, read-only input boundaries, the machine fact source, Human/Agent/Engine
+   authority, and a fail-closed route to VDOC while document contracts are pending.
+5. Review `.verif-harness/project.json`, `inventory.json`, and the generated
+   `AGENTS.md` block.
+6. Continue with `plan WORKSTREAM`; bootstrap must not decide coverage, tests, interfaces,
    reference models, acceptance criteria, or Human Decisions.
 
 When DUT identity is complete, bootstrap also writes the lower-level capability
-projection `.harness-config.json` without overwriting an existing file.
+projection `.harness-config.json` without overwriting an existing file. VDOC later
+refreshes the same managed `AGENTS.md` block with its actual document root and
+document routes; it must not create a competing instruction file.
 Never overwrite existing state implicitly. Use `--refresh` only after checking
 that the project identity and root are unchanged.
 

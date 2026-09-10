@@ -152,7 +152,10 @@ verif-harness bootstrap \
 
 所有 RTL 和 RTL spec 均为当前 Agent 的只读输入，不允许编辑、生成覆盖、删除、移动或
 格式化，也不得通过工具间接更改。发现输入问题时报告用户处理；验证产物必须放在独立路径。
-初始化后可用 `status` 和 `doctor` 检查项目状态。
+bootstrap 同时创建或增量更新项目根目录 `AGENTS.md` 的 verif-harness managed block，
+写入 DUT 身份、只读边界、Human/Agent/Engine 权限和“文档未就绪时返回 VDOC”的规则。
+已有项目说明保留在 managed markers 之外，不会被覆盖。初始化后可用 `status` 和
+`doctor` 检查项目状态。
 
 ### 步骤 1：形成 VDOC desired state
 
@@ -189,12 +192,13 @@ verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不�
 
 ### VDOC 正式文档产出
 
-默认 `plan VDOC` 建立七个文档目标。每个 desired 节点带 `document` 合同，包含文件名、
+默认 `plan VDOC` 建立八个文档目标。每个 desired 节点带 `document` 合同，包含文件名、
 Skill 模板路径及后续维护工作域。Agent 使用这些模板在项目的独立验证文档目录中，
 结合只读输入和用户对话写出草稿。CLI 本身只生成计划投影，不自动写出下表正文。
 
 | 正式文档 | 内容 | 后续维护 |
 | --- | --- | --- |
+| `verification_workflow.md` | 文档治理、角色授权、决策分类、评审、失效与重新基线 | VDOC |
 | `verification_plan.md` | 范围、总体策略、风险和验收条件 | VDOC，面向整个验证工程 |
 | `feature_matrix.md` | 验证点、来源、场景与检查/覆盖/用例映射 | 全部工作域 |
 | `tb_architecture.md` | 接口、组件分层、数据流、构建与诊断 | VSTIM/VCHK/VREG |
@@ -205,6 +209,16 @@ Skill 模板路径及后续维护工作域。Agent 使用这些模板在项目�
 
 `code_coverage_waiver_manifest.md` 仅出现具体豁免候选时按需建立，由 VCOV 维护，
 不是初始 VDOC 的必需产物。所有模板见[VDOC 产出与模板索引](../vplan/vdoc.md)。
+
+`verification_workflow.md` 只借鉴既有项目中可复用的文档优先、Human review、决策分类、
+变更影响和交叉文档同步机制。v1 不生成或引用 Stage 0–5、Spec Kit `spec/plan/tasks`、
+Stage gate review packet 或后台 task runner；对应控制由 Workstream desired state、
+Knowledge Model、`check`、`closure` 和 Human freeze 完成。
+
+VDOC 规划时，Agent 将对话确认的输出目录通过内部参数 `--document-root` 传给 CLI；Engine
+随后补全同一个 `AGENTS.md` managed block 中的八份文档路由。Human 无需手工输入该参数。
+如果 capability 需要的文档尚不存在或未经评审，Agent 必须返回 VDOC/closure，不得自行
+补写项目语义后继续实现。
 
 `.verif-harness/workstreams/vdoc/plan.md` 表达“本轮准备完成哪些文档目标”，上表文件
 承载实际验证设计，不能相互替代。输出目录优先沿用项目验证文档布局，否则采用
@@ -218,7 +232,7 @@ open question 并注明影响；不适用项写明原因和用户确认的替代
 Agent 将每份输出的文件节点以 `AFFECTS` 关系关联对应 desired 节点，后续修改通过
 `changed` 使消费者重新验证。计划批准不等于文档内容批准；文件存在、模板已复制也不
 等于目标通过。只有真实内容经过用户评审后才登记相应 review evidence。
-`--desired` 自定义目标仍替代默认七项，需要 Agent 显式关联实际文档。
+`--desired` 自定义目标仍替代默认八项，需要 Agent 显式关联实际文档。
 
 ### VDOC 完整执行步骤与角色
 
@@ -233,7 +247,7 @@ VDOC 使用三类责任标记：
 | --- | --- | --- |
 | 0. 建立项目事实 | Human + Agent + Engine | Human 提供 DUT 信息；Agent 只读校验；Engine 通过 `bootstrap` 建立最小知识模型 |
 | 1. 读取当前状态 | Agent + Engine | Agent 调用 `status VDOC`、`inspect`；Engine 返回当前模型、历史决策和缺口 |
-| 2. 建立 proposal | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、七个默认文档 desired node、退出条件和待答问题 |
+| 2. 建立 proposal | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、八个默认文档 desired node、退出条件和待答问题 |
 | 3. 确认输出目录 | Agent；有歧义时 Human | Agent 沿用已有验证文档目录或提议 `<verif-root>/docs/verification`；与只读输入重叠或有多个候选时由 Human 选择 |
 | 4. 读取输入与模板 | Agent | 只读分析 RTL、spec、已有验证文档、Knowledge Model 和本轮所需模板，不搜索或替换用户未指定的 DUT 输入 |
 | 5. 形成初始草案 | Agent | 先提出 scope 和 Feature/VF 分解，再补充策略、架构、reference model、coverage、assertion 和 testcase 候选内容 |
@@ -294,7 +308,7 @@ Engine：持久化、状态计算、证据摘要、失效传播、closure、冻�
 ```
 
 即使由 Agent 在终端输入了 `review`、`prove` 或 `freeze`，授权来源仍必须是当前 Human。
-Agent 生成七份 Markdown 也不表示 VDOC 完成；只有对应 desired node 获得真实评审证据，
+Agent 生成八份 Markdown 也不表示 VDOC 完成；只有对应 desired node 获得真实评审证据，
 并满足本轮退出条件后，VDOC 才能进入 baseline。
 
 ### 步骤 2：规划实现类 Workstream
@@ -498,7 +512,7 @@ verif-harness bootstrap [OPTIONS]
 | `--project-name NAME` | 覆盖默认目录名 |
 | `--runtime auto\|codex\|kimi\|claude\|none` | 记录项目推理 runtime；setup 后通常无需指定 |
 | `--rtl-root PATH` | 声明 RTL 根目录；可重复 |
-| `--docs-root PATH` | 声明文档根目录；可重复 |
+| `--docs-root PATH` | 声明只读 RTL spec 文件或目录；可重复 |
 | `--verif-root PATH` | 声明验证资产根目录 |
 | `--dut-top MODULE` | 明确 DUT top；不会自动猜测 |
 | `--dut-top-file PATH` | 明确 DUT top 文件 |
@@ -528,6 +542,7 @@ verif-harness plan VCHK [--objective TEXT] [--desired TEXT] \
 | `--desired TEXT` | 自定义 required desired state；可重复；一旦提供则替代模板 desired 列表 |
 | `--exit TEXT` | 自定义退出标准；可重复；省略时用模板 |
 | `--decision TEXT` | 记录已确认决策；可重复 |
+| `--document-root PATH` | 仅用于 VDOC；Agent 将对话确认的验证文档输出目录传给 Engine，Human 通常不直接填写 |
 
 高级查询当前 plan：`plan show --workstream WORKSTREAM`。
 

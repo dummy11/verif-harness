@@ -48,6 +48,13 @@ records the bootstrap inventory. `model.md` and Workstream `plan.md` are reading
 projections. Editing a reading projection does not update the database. Use the
 CLI to change state rather than editing configuration or projections manually.
 
+Bootstrap also creates or refreshes only a marked verif-harness block in the
+project-root `AGENTS.md`. The block is a routing and authority projection, not a
+fact database: bootstrap writes DUT/read-only boundaries, and VDOC planning adds
+the confirmed document root and contract routes. Existing project instructions
+outside the markers are preserved. Stage and Spec Kit workflow state are not
+reintroduced through this projection.
+
 Validity is explicit: `VALID`, `STALE`, `INVALID`, `REVIEW_REQUIRED`,
 `REVALIDATION_REQUIRED`, `BLOCKED`, `WAIVED`, or `UNKNOWN`.
 

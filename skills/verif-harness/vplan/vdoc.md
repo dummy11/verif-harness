@@ -7,6 +7,7 @@ document. Template paths are relative to the installed Skill root.
 
 | Document | Template | Continued maintenance |
 | --- | --- | --- |
+| verification_workflow.md | [template](../assets/vdoc/verification_workflow.md) | VDOC; document governance and Human gates |
 | verification_plan.md | [template](../assets/vdoc/verification_plan.md) | VDOC; project-wide scope/acceptance |
 | feature_matrix.md | [template](../assets/vdoc/feature_matrix.md) | all Workstreams; stable trace IDs |
 | tb_architecture.md | [template](../assets/vdoc/tb_architecture.md) | VSTIM/VCHK/VREG |
@@ -18,7 +19,7 @@ document. Template paths are relative to the installed Skill root.
 
 The CLI's default VDOC desired nodes contain document contracts (filename,
 template, maintained_by). `plan.md` under `.verif-harness/workstreams/vdoc/`
-remains the planning projection; the seven deliverables are separate engineering
+remains the planning projection; the eight deliverables are separate engineering
 documents. The CLI does not materialize them or approve their content.
 
 ## Dialogue and writing
@@ -28,6 +29,9 @@ documents. The CLI does not materialize them or approve their content.
    or propose `<verif-root>/docs/verification`. Confirm if the destination is
    ambiguous. Never write into RTL/spec inputs, overwrite an input specification,
    or copy private project material into the public Skill package.
+   Pass the confirmed project-relative directory as `--document-root` when it
+   differs from the recorded/default path. VDOC planning then refreshes only the
+   marked verif-harness block in project-root `AGENTS.md` with the eight routes.
 2. Read the relevant template before filling that document. Reuse existing
    verification documents and their stable IDs; inspect and edit them in place
    only within authorized verification output paths, never blindly overwrite.
@@ -38,7 +42,11 @@ documents. The CLI does not materialize them or approve their content.
    the live conversation. Persist explicit answers with decision references;
    leave unresolved items visible with their affected goals. No guessed thresholds,
    fake source references, pre-approved waivers, or invented simulator evidence.
-4. Populate useful current content and label drafts. Do not demand that all seven
+4. Populate useful current content and label drafts. Base document governance on
+   `verification_workflow.md`: document-first work, separate plan/content Human
+   reviews, explicit decision types, evidence-backed validity, and incremental
+   invalidation. Do not introduce Stage gates, Spec Kit authority, monolithic
+   tasks, or a detached worker. Do not demand that all eight
    documents be complete before other Workstreams can start. An inapplicable topic
    needs a reason and an agreed alternative, not silently omitted requirements.
    The optional waiver manifest is not a default required VDOC deliverable.

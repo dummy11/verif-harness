@@ -39,7 +39,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         return json.loads(result.stdout) if result.stdout else {}
 
     def bootstrap(self) -> dict:
-        return self.run_cli("bootstrap", "--runtime", "none", "--rtl-root", "rtl")
+        return self.run_cli(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+        )
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
@@ -50,11 +53,32 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(payload["rtl_roots"], ["rtl"])
         self.assertTrue((state / "model.sqlite3").is_file())
         self.assertTrue((state / "model.md").is_file())
+        instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("verif-harness 项目合同", instructions)
+        self.assertIn("DUT top: `dut`", instructions)
+        self.assertIn("VDOC 文档路由尚未建立", instructions)
+        self.assertIn("不采用 Stage 或 Spec Kit", instructions)
         with sqlite3.connect(state / "model.sqlite3") as connection:
             version = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
             workstreams = connection.execute("SELECT COUNT(*) FROM workstreams").fetchone()[0]
         self.assertEqual(version, "2")
         self.assertEqual(workstreams, 0)
+
+    def test_bootstrap_requires_explicit_dut_identity(self) -> None:
+        result = self.invoke("bootstrap", "--runtime", "none", "--rtl-root", "rtl")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("rtl root、dut top 和 dut top file", result.stderr)
+
+    def test_bootstrap_preserves_existing_agents_content_and_refresh_is_idempotent(self) -> None:
+        instructions = self.root / "AGENTS.md"
+        instructions.write_text("# Team policy\n\nKeep this.\n", encoding="utf-8")
+        self.bootstrap()
+        self.run_cli("bootstrap", "--refresh")
+        source = instructions.read_text(encoding="utf-8")
+        self.assertIn("# Team policy", source)
+        self.assertIn("Keep this.", source)
+        self.assertEqual(source.count("BEGIN verif-harness managed project instructions"), 1)
+        self.assertEqual(source.count("END verif-harness managed project instructions"), 1)
 
     def test_bootstrap_refuses_implicit_overwrite(self) -> None:
         self.bootstrap()
@@ -70,6 +94,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         config = json.loads((self.root / ".harness-config.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["dut"]["top_module"], "dut")
         self.assertEqual(config["rtl"]["top_file"], "rtl/dut.sv")
+        self.assertEqual(config["verif"]["docs_root"], "verification/docs")
 
     def test_planner_uses_detailed_template_and_current_knowledge_context(self) -> None:
         self.bootstrap()
@@ -100,7 +125,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         original = readonly_source.read_bytes()
         plan = self.run_cli("plan", "VDOC")
         restored = self.run_cli("status", "VDOC")["plan"]
-        expected = {"verification_plan.md", "feature_matrix.md", "tb_architecture.md",
+        expected = {"verification_workflow.md", "verification_plan.md", "feature_matrix.md", "tb_architecture.md",
                     "reference_model_spec.md", "coverage_plan.md", "assertion_plan.md", "testcase_list.md"}
         self.assertEqual({row["document"]["filename"] for row in restored["desired_state"]}, expected)
         for row in restored["desired_state"]:
@@ -110,9 +135,25 @@ class V1ControlPlaneTest(unittest.TestCase):
         optional = plan["document_guidance"]["optional_documents"][0]
         self.assertNotIn(optional["filename"], expected)
         self.assertTrue((ROOT / "skills/verif-harness" / optional["template"]).is_file())
+        self.assertEqual(plan["document_guidance"]["document_root"], "verification/docs/verification")
+        instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("VDOC 文档根目录：`verification/docs/verification`", instructions)
+        self.assertIn("verification_workflow.md", instructions)
         self.assertFalse((self.root / "docs/verification").exists())
         self.assertEqual(readonly_source.read_bytes(), original)
         self.assertEqual(self.invoke("freeze", "VDOC").returncode, 2)
+
+    def test_vdoc_document_root_is_agent_supplied_and_cannot_overlap_readonly_input(self) -> None:
+        self.bootstrap()
+        plan = self.run_cli("plan", "VDOC", "--document-root", "verification/contracts")
+        self.assertEqual(plan["planning_context"]["document_root"], "verification/contracts")
+        self.assertIn(
+            "VDOC 文档根目录：`verification/contracts`",
+            (self.root / "AGENTS.md").read_text(encoding="utf-8"),
+        )
+        result = self.invoke("plan", "VDOC", "--document-root", "rtl/docs")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("不得位于只读输入内", result.stderr)
 
     def test_custom_vdoc_goal_is_not_mislabelled_as_default_document(self) -> None:
         self.bootstrap()

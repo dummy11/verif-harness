@@ -21,6 +21,8 @@ STATE_DIR = ".verif-harness"
 IGNORED_PARTS = {".git", ".deps", STATE_DIR, "__pycache__"}
 RTL_SUFFIXES = {".v", ".sv", ".svh", ".vhd", ".vhdl"}
 DOC_SUFFIXES = {".md", ".rst", ".txt", ".pdf"}
+AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
+AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
 
 class HarnessError(ValueError):
@@ -40,6 +42,7 @@ class Validity(str, Enum):
 
 WORKSTREAM_STATES = {"REVIEW", "ACTIVE", "SATISFIED", "BASELINED", "PARTIALLY_STALE", "REVISE"}
 VDOC_DOCUMENTS = {
+    "verification-workflow": ("verification_workflow.md", "文档治理、评审、决策和变更失效机制已定义并评审", ["VDOC"]),
     "verification-plan": ("verification_plan.md", "验证范围、策略、风险和验收条件已定义并评审", ["VDOC"]),
     "feature-matrix": ("feature_matrix.md", "验证点、来源及检查/覆盖/用例映射可追溯", ["VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
     "tb-architecture": ("tb_architecture.md", "验证组件职责、接口、数据流和构建边界已定义", ["VDOC", "VSTIM", "VCHK", "VREG"]),
@@ -132,6 +135,99 @@ def atomic_json(path: Path, value: Any) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     temporary.replace(path)
+
+
+def atomic_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(value, encoding="utf-8")
+    temporary.replace(path)
+
+
+def default_vdoc_document_root(manifest: dict[str, Any]) -> str:
+    verif_root = str(manifest.get("verif_root") or ".").rstrip("/")
+    return "docs/verification" if verif_root in {"", "."} else f"{verif_root}/docs/verification"
+
+
+def project_agents_block(manifest: dict[str, Any], document_root: str | None = None) -> str:
+    rtl_roots = manifest.get("rtl_roots") or []
+    docs_roots = manifest.get("docs_roots") or []
+    dut = manifest.get("dut") if isinstance(manifest.get("dut"), dict) else {}
+    lines = [
+        AGENTS_MANAGED_BEGIN,
+        "## verif-harness 项目合同（受管）",
+        "",
+        "本区块由 verif-harness 维护。项目自有说明必须保留在 markers 之外；",
+        "仅通过 bootstrap 或 VDOC planning 刷新本区块。",
+        "",
+        "### 项目标识与边界",
+        "",
+        f"- 项目：`{manifest.get('project_name') or 'unknown'}`",
+        f"- RTL roots（只读）：{', '.join(f'`{item}`' for item in rtl_roots) or '`未记录`'}",
+        f"- DUT top: `{dut.get('top_module') or 'not recorded'}`",
+        f"- DUT top file（只读）：`{dut.get('top_file') or 'not recorded'}`",
+        f"- RTL specification 输入（只读）：{', '.join(f'`{item}`' for item in docs_roots) or '`未提供`'}",
+        f"- Verification 输出根目录：`{manifest.get('verif_root') or '.'}`",
+        "- 机器事实源：`.verif-harness/model.sqlite3`",
+        "",
+        "所有 RTL 和 RTL specification 都是只读输入。禁止编辑、创建、覆盖、删除、",
+        "重命名、格式化这些输入，也禁止向其中生成文件。验证产物必须放在 verification",
+        "输出根目录；发现输入缺陷时交由 Human 处理。",
+        "",
+        "### 交互与权限",
+        "",
+        "- Human 在 Agent 对话中说明目标、回答工程问题，并明确决定 review、waiver、",
+        "  freeze 等 gate。",
+        "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
+        "- 生成文件只是 review candidate。文件存在、模板已复制或 Agent 自检通过，",
+        "  都不等于语义已批准或 evidence 已通过。",
+        "- capability 写入验证资产前，必须读取本文件，查询当前 `status`/`closure`，",
+        "  并读取下列与当前动作相关且已经评审的合同。",
+        "- 所需合同缺失或未解决时，返回 VDOC 或负责该目标的 Workstream；不得猜测后继续。",
+        "- 本项目不采用 Stage 或 Spec Kit；不得创建 `spec/plan/tasks` 流水线或按阶段阻塞工作域。",
+        "",
+        "### 必读上下文路由",
+        "",
+    ]
+    if document_root is None:
+        lines.extend([
+            "VDOC 文档路由尚未建立。执行实现类 capability 前，必须通过 `plan VDOC`",
+            "和 Human 对话建立经过评审的文档集。",
+        ])
+    else:
+        lines.append(f"VDOC 文档根目录：`{document_root}`")
+        lines.append("")
+        for filename, _title, workstreams in VDOC_DOCUMENTS.values():
+            owners = ", ".join(workstreams)
+            lines.append(f"- `{document_root}/{filename}` — 维护者：{owners}")
+        lines.extend([
+            "",
+            "只读取当前动作需要的合同。列出的文档尚不存在或未经评审时，将依赖视为",
+            "pending 并返回 VDOC/closure，不得虚构项目语义。",
+        ])
+    lines.extend(["", AGENTS_MANAGED_END])
+    return "\n".join(lines)
+
+
+def update_project_agents(path: Path, block: str) -> None:
+    if path.is_symlink():
+        raise HarnessError(f"拒绝跟随项目指令符号链接: {path}")
+    if path.exists() and not path.is_file():
+        raise HarnessError(f"项目指令路径不是普通文件: {path}")
+    source = path.read_text(encoding="utf-8") if path.exists() else ""
+    begin_count = source.count(AGENTS_MANAGED_BEGIN)
+    end_count = source.count(AGENTS_MANAGED_END)
+    if (begin_count != end_count or begin_count > 1
+            or (begin_count == 1 and source.find(AGENTS_MANAGED_BEGIN) > source.find(AGENTS_MANAGED_END))):
+        raise HarnessError(f"AGENTS.md 中的 verif-harness managed block 损坏: {path}")
+    if begin_count == 1:
+        prefix, remainder = source.split(AGENTS_MANAGED_BEGIN, 1)
+        _managed, suffix = remainder.split(AGENTS_MANAGED_END, 1)
+        rendered = f"{prefix}{block}{suffix}"
+    else:
+        separator = "\n\n" if source and not source.endswith("\n\n") else ""
+        rendered = f"{source}{separator}{block}\n"
+    atomic_text(path, rendered)
 
 
 def git_revision(root: Path) -> str | None:
@@ -282,7 +378,6 @@ class ProjectStore:
         previous: dict[str, Any] = {}
         if self.initialized:
             previous = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
-        inventory = source_inventory(self.root)
         caps = capabilities()
         reasoning = caps["reasoning"]
         detected = [name for name in ("codex", "kimi", "claude") if reasoning[name]["available"]]
@@ -295,25 +390,43 @@ class ProjectStore:
         previous_dut = previous.get("dut", {}) if isinstance(previous.get("dut"), dict) else {}
         dut_top = dut_top or previous_dut.get("top_module")
         dut_top_file = dut_top_file or previous_dut.get("top_file")
+        if not rtl_values or not dut_top or not dut_top_file:
+            raise HarnessError("bootstrap 必须明确提供 rtl root、dut top 和 dut top file")
+        for value in rtl_values:
+            if not (self.root / value).is_dir():
+                raise HarnessError(f"RTL root 不是项目内目录: {value}")
+        top_file_value = relative_path(self.root, dut_top_file)
+        if not (self.root / top_file_value).is_file():
+            raise HarnessError(f"DUT top file 不是项目内文件: {top_file_value}")
+        for value in docs_values:
+            if not (self.root / value).exists():
+                raise HarnessError(f"RTL specification 输入不存在: {value}")
+        vdoc_document_root = previous.get("vdoc_document_root")
         manifest = {
             "schema_version": SCHEMA_VERSION,
             "project_name": project_name or previous.get("project_name") or self.root.name,
             "project_root": str(self.root), "runtime": selected,
             "baseline_revision": git_revision(self.root), "rtl_roots": rtl_values,
             "docs_roots": docs_values, "verif_root": verif_value,
-            "dut": {"top_module": dut_top, "top_file": relative_path(self.root, dut_top_file) if dut_top_file else None},
-            "inventory_count": len(inventory), "capabilities": caps, "updated_at": now(),
+            "dut": {"top_module": dut_top, "top_file": top_file_value},
+            "vdoc_document_root": vdoc_document_root,
+            "project_instructions": {"path": "AGENTS.md", "managed_by": ["bootstrap", "VDOC"]},
+            "inventory_count": 0, "capabilities": caps, "updated_at": now(),
         }
-        atomic_json(self.state / "project.json", manifest)
-        atomic_json(self.state / "inventory.json", inventory)
+        update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, vdoc_document_root))
         capability_config = self.root / ".harness-config.json"
-        if not capability_config.exists() and rtl_values and dut_top and dut_top_file:
+        if not capability_config.exists():
+            docs_output = "docs" if verif_value in {"", "."} else f"{verif_value.rstrip('/')}/docs"
             atomic_json(capability_config, {
                 "project_name": manifest["project_name"],
                 "rtl": {"root": rtl_values[0], "top_module": dut_top, "top_file": manifest["dut"]["top_file"]},
-                "verif": {"root": verif_value, "docs_root": docs_values[0] if docs_values else f"{verif_value.rstrip('/')}/docs",
+                "verif": {"root": verif_value, "docs_root": docs_output,
                           "verification_subdir": "verification", "governance_subdir": "governance"},
             })
+        inventory = source_inventory(self.root)
+        manifest["inventory_count"] = len(inventory)
+        atomic_json(self.state / "project.json", manifest)
+        atomic_json(self.state / "inventory.json", inventory)
         with self.connect() as connection:
             for item in inventory:
                 node_type = "implementation" if item["kind"] == "rtl" else item["kind"]
@@ -369,10 +482,12 @@ class ProjectStore:
 
     def design_workstream(
         self, workstream: str, objective: str | None, desired: list[str],
-        exit_criteria: list[str], decisions: list[str],
+        exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
     ) -> dict[str, Any]:
         self.require()
         name = self.normalize_workstream(workstream)
+        if document_root is not None and name != "VDOC":
+            raise HarnessError("--document-root 只适用于 VDOC")
         template = WORKSTREAM_TEMPLATES[name]
         objective_value = objective.strip() if objective and objective.strip() else template["objective"]
         desired_specs = (
@@ -381,6 +496,25 @@ class ProjectStore:
         )
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        document_root_value: str | None = None
+        if name == "VDOC":
+            document_root_value = (
+                relative_path(self.root, document_root)
+                if document_root is not None
+                else str(manifest.get("vdoc_document_root") or default_vdoc_document_root(manifest))
+            )
+            output_path = (self.root / document_root_value).resolve()
+            if output_path.exists() and not output_path.is_dir():
+                raise HarnessError(f"VDOC document root 不是目录: {document_root_value}")
+            readonly_inputs = [*manifest.get("rtl_roots", []), *manifest.get("docs_roots", [])]
+            for value in readonly_inputs:
+                source = (self.root / value).resolve()
+                if source.is_dir() and (output_path == source or source in output_path.parents):
+                    raise HarnessError(f"VDOC document root 不得位于只读输入内: {document_root_value}")
+                if source.is_file() and output_path == source:
+                    raise HarnessError(f"VDOC document root 与只读输入冲突: {document_root_value}")
+            context["document_root"] = document_root_value
         with self.connect() as connection:
             observed = connection.execute("SELECT revision FROM workstreams WHERE name=?", (name,)).fetchone()
             revision = int(observed["revision"]) + 1 if observed else 1
@@ -403,6 +537,11 @@ class ProjectStore:
             """, (name, "REVIEW", revision, objective_value, json_text(desired_rows), json_text(exit_values),
                   json_text(decisions), json_text(context), now()))
         self.write_workstream_projection(name)
+        if name == "VDOC":
+            manifest["vdoc_document_root"] = document_root_value
+            manifest["updated_at"] = now()
+            atomic_json(self.state / "project.json", manifest)
+            update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, document_root_value))
         result = self.workstream(name)
         result["template"] = {"name": template["name"], "topics": [item[0] for item in template["desired"]]}
         if name == "VDOC":
@@ -410,6 +549,8 @@ class ProjectStore:
                 "instructions": "vplan/vdoc.md",
                 "templates_relative_to": "skill-root",
                 "materialization": "agent-dialogue-required",
+                "document_root": document_root_value,
+                "project_instructions": "AGENTS.md",
                 "optional_documents": [{"filename": "code_coverage_waiver_manifest.md",
                                         "template": "assets/vdoc/code_coverage_waiver_manifest.md",
                                         "when": "specific-code-coverage-waiver-candidate", "maintained_by": ["VCOV"]}],

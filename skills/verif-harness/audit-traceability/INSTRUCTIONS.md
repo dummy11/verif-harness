@@ -1,6 +1,7 @@
 # audit-traceability — read-only verification mapping audit
 
-Use this mode after tests or plans change and before a stage gate.
+Use this mode after tests or desired-state contracts change and before a
+Workstream freeze or final sign-off review.
 
 ## Preconditions
 

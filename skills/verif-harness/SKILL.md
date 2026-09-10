@@ -29,7 +29,9 @@ Workstream. Project lifecycle is separate.
   not make verification decisions or generate a monolithic plan. Read
   `bootstrap/INSTRUCTIONS.md`; require conversational user input for `rtl root`,
   `dut top`, and `dut top file`, with optional `spec`. Never discover candidates
-  or run initialization while mandatory inputs are missing.
+  or run initialization while mandatory inputs are missing. After validation,
+  create or refresh only the marked verif-harness block in the project-root
+  `AGENTS.md`; preserve all project-owned instructions outside it.
 - Verification Planner (`plan`): combine a detailed Workstream template, current
   Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
