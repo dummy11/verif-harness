@@ -46,6 +46,11 @@ Skill 不搜索候选路径；必填信息未齐前先对话补齐。CLI 收到�
 也不自行对话。Human 确认后执行 review，审批记录绑定该 Workstream 的当前 revision。
 approve 表示接受目标，尚不代表目标已实现。
 
+VDOC 默认目标逐份关联七个正式验证文档及其通用模板；当前 Agent 按
+[文档产出规则](../vplan/vdoc.md)进行对话填充。CLI 的 `plan.md` 仅列目标，
+正式验证计划、验证点矩阵和各专题设计是独立产物，文件节点需关联对应 desired。
+后续 VCHK、VCOV 等工作域按影响范围修订文档，不要求首次规划时全部完成。
+
 ## 3. 如何决定下一步
 
 [Current state](glossary.md#desired-current) 来自节点有效性与 finding；

@@ -34,6 +34,8 @@ Workstream. Project lifecycle is separate.
   Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
   `vplan/INSTRUCTIONS.md`.
+  For VDOC document drafting and cross-Workstream document revisions, read
+  `vplan/vdoc.md` and the selected templates under `assets/vdoc/`.
 - Verification Knowledge Model: read-only `inspect/trace/impact` access to typed facts.
   Read `vmodel/INSTRUCTIONS.md`.
 - `record`: structured ingress for facts, relations, evidence, changes, and

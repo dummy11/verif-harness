@@ -39,17 +39,28 @@ class Validity(str, Enum):
 
 
 WORKSTREAM_STATES = {"REVIEW", "ACTIVE", "SATISFIED", "BASELINED", "PARTIALLY_STALE", "REVISE"}
+VDOC_DOCUMENTS = {
+    "verification-plan": ("verification_plan.md", "验证范围、策略、风险和验收条件已定义并评审", ["VDOC"]),
+    "feature-matrix": ("feature_matrix.md", "验证点、来源及检查/覆盖/用例映射可追溯", ["VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
+    "tb-architecture": ("tb_architecture.md", "验证组件职责、接口、数据流和构建边界已定义", ["VDOC", "VSTIM", "VCHK", "VREG"]),
+    "reference-model": ("reference_model_spec.md", "参考模型适用性、接入与比较合同或替代检查策略已评审", ["VDOC", "VCHK"]),
+    "coverage-plan": ("coverage_plan.md", "覆盖目标、采样语义、映射和补洞规则已评审", ["VDOC", "VCOV"]),
+    "assertion-plan": ("assertion_plan.md", "断言性质、挂接和非空洞验证要求已评审", ["VDOC", "VCHK", "VCOV"]),
+    "testcase-list": ("testcase_list.md", "用例目标、场景、检查方法和执行映射已定义", ["VDOC", "VCASE", "VREG"]),
+}
+
+
+def vdoc_document_contract(key: str) -> dict[str, Any]:
+    filename, _title, workstreams = VDOC_DOCUMENTS[key]
+    return {"filename": filename, "template": f"assets/vdoc/{filename}",
+            "maintained_by": workstreams, "completion": "reviewed-content-not-file-existence"}
+
+
 WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
     "VDOC": {
         "name": "Verification Documentation",
         "objective": "形成并持续维护可评审的验证定义、架构、策略和退出标准",
-        "desired": [
-            ("scope", "验证范围、目标、优先级和 deferred scope 明确", "plan"),
-            ("dut-understanding", "DUT 行为、接口、配置、reset 与异常语义可追溯", "plan"),
-            ("feature-model", "feature、scenario、risk、open question 与 Human Decision 已结构化", "plan"),
-            ("strategy", "stimulus、checking、coverage、case、regression 策略已定义", "plan"),
-            ("architecture", "verification environment 与 reference-model 边界已定义", "plan"),
-        ],
+        "desired": [(key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()],
         "exit": ["required 文档节点为 VALID 或 Human WAIVED", "无未处置 CRITICAL open decision"],
     },
     "VSTIM": {
@@ -379,6 +390,8 @@ class ProjectStore:
             for key, title, suggested_mode in desired_specs:
                 node_id = f"workstream:{name}:r{revision}:desired:{key}"
                 row = {"id": node_id, "key": key, "title": title, "required": True, "suggested_mode": suggested_mode}
+                if name == "VDOC" and not desired:
+                    row["document"] = vdoc_document_contract(key)
                 desired_rows.append(row)
                 self.upsert_node(connection, node_id, "desired-state", title, Validity.UNKNOWN, name, row)
             connection.execute("""
@@ -392,6 +405,15 @@ class ProjectStore:
         self.write_workstream_projection(name)
         result = self.workstream(name)
         result["template"] = {"name": template["name"], "topics": [item[0] for item in template["desired"]]}
+        if name == "VDOC":
+            result["document_guidance"] = {
+                "instructions": "vplan/vdoc.md",
+                "templates_relative_to": "skill-root",
+                "materialization": "agent-dialogue-required",
+                "optional_documents": [{"filename": "code_coverage_waiver_manifest.md",
+                                        "template": "assets/vdoc/code_coverage_waiver_manifest.md",
+                                        "when": "specific-code-coverage-waiver-candidate", "maintained_by": ["VCOV"]}],
+            }
         result["decision_log"] = decisions
         result["questions_for_human"] = [
             f"请确认 `{key}`：{title}" for key, title, _mode in desired_specs
@@ -797,6 +819,13 @@ class ProjectStore:
                  f"- Open findings: {plan['planning_context']['model_summary']['open_findings']}",
                  "", "## Desired State", ""]
         lines.extend(f"- [ ] `{item['key']}` {item['title']}" for item in plan["desired_state"])
+        documents = [item for item in plan["desired_state"] if item.get("document")]
+        if documents:
+            lines.extend(["", "## Document Deliverables", "",
+                          "模板相对 Skill 根目录；由 Agent 在独立验证文档目录中对话填充，文件存在不代表目标通过。", "",
+                          "| Desired ID | 文档 | 模板 | 维护工作域 |", "| --- | --- | --- | --- |"])
+            lines.extend(f"| `{item['id']}` | `{item['document']['filename']}` | `{item['document']['template']}` | {', '.join(item['document']['maintained_by'])} |"
+                         for item in documents)
         lines.extend(["", "## Exit Criteria", ""])
         lines.extend(f"- [ ] {item}" for item in plan["exit_criteria"])
         lines.extend(["", "## Human Decisions", ""])

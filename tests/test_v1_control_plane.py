@@ -94,6 +94,32 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(status[first["desired_state"][0]["id"]], "STALE")
         self.assertEqual(status[second["desired_state"][0]["id"]], "UNKNOWN")
 
+    def test_vdoc_deliverables_persist_without_creating_or_approving_documents(self) -> None:
+        self.bootstrap()
+        readonly_source = self.root / "rtl/dut.sv"
+        original = readonly_source.read_bytes()
+        plan = self.run_cli("plan", "VDOC")
+        restored = self.run_cli("status", "VDOC")["plan"]
+        expected = {"verification_plan.md", "feature_matrix.md", "tb_architecture.md",
+                    "reference_model_spec.md", "coverage_plan.md", "assertion_plan.md", "testcase_list.md"}
+        self.assertEqual({row["document"]["filename"] for row in restored["desired_state"]}, expected)
+        for row in restored["desired_state"]:
+            self.assertTrue((ROOT / "skills/verif-harness" / row["document"]["template"]).is_file())
+            self.assertEqual(self.run_cli("inspect", row["id"])["nodes"][0]["status"], "UNKNOWN")
+        self.assertEqual(restored["desired_state"], plan["desired_state"])
+        optional = plan["document_guidance"]["optional_documents"][0]
+        self.assertNotIn(optional["filename"], expected)
+        self.assertTrue((ROOT / "skills/verif-harness" / optional["template"]).is_file())
+        self.assertFalse((self.root / "docs/verification").exists())
+        self.assertEqual(readonly_source.read_bytes(), original)
+        self.assertEqual(self.invoke("freeze", "VDOC").returncode, 2)
+
+    def test_custom_vdoc_goal_is_not_mislabelled_as_default_document(self) -> None:
+        self.bootstrap()
+        plan = self.run_cli("plan", "VDOC", "--desired", "审查新增接口的 reset 语义")
+        self.assertEqual(len(plan["desired_state"]), 1)
+        self.assertNotIn("document", plan["desired_state"][0])
+
     def test_review_evidence_auto_closure_and_immutable_freeze(self) -> None:
         self.bootstrap()
         plan = self.design("VDOC", "--desired", "requirements reviewed")

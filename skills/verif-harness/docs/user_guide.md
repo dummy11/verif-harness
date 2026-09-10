@@ -160,6 +160,39 @@ reviewer 从 `git user.name` 推导。拒绝或要求修改必须说明原因：
 verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不清楚"
 ```
 
+### VDOC 正式文档产出
+
+默认 `plan VDOC` 建立七个文档目标。每个 desired 节点带 `document` 合同，包含文件名、
+Skill 模板路径及后续维护工作域。Agent 使用这些模板在项目的独立验证文档目录中，
+结合只读输入和用户对话写出草稿。CLI 本身只生成计划投影，不自动写出下表正文。
+
+| 正式文档 | 内容 | 后续维护 |
+| --- | --- | --- |
+| `verification_plan.md` | 范围、总体策略、风险和验收条件 | VDOC，面向整个验证工程 |
+| `feature_matrix.md` | 验证点、来源、场景与检查/覆盖/用例映射 | 全部工作域 |
+| `tb_architecture.md` | 接口、组件分层、数据流、构建与诊断 | VSTIM/VCHK/VREG |
+| `reference_model_spec.md` | 验证侧模型接入、支持范围、比较合同或替代方案 | VCHK |
+| `coverage_plan.md` | 采样、bins/cross、可达性与收敛口径 | VCOV |
+| `assertion_plan.md` | property、挂接、失败处理与非空洞要求 | VCHK/VCOV |
+| `testcase_list.md` | 用例目标、优先级、检查方式、实现与证据映射 | VCASE/VREG |
+
+`code_coverage_waiver_manifest.md` 仅出现具体豁免候选时按需建立，由 VCOV 维护，
+不是初始 VDOC 的必需产物。所有模板见[VDOC 产出与模板索引](../vplan/vdoc.md)。
+
+`.verif-harness/workstreams/vdoc/plan.md` 表达“本轮准备完成哪些文档目标”，上表文件
+承载实际验证设计，不能相互替代。输出目录优先沿用项目验证文档布局，否则采用
+`<verif-root>/docs/verification`；与 RTL/spec 输入重叠时必须选择独立位置。
+验证侧 `reference_model_spec.md` 的命名不会使同名原始 spec 变成可写文件。
+
+VDOC 先形成可讨论的初版，允许其他工作域在其尚未全部完成时推进。未定内容标为
+open question 并注明影响；不适用项写明原因和用户确认的替代策略。正文只保留当前设计，
+评审、决策和历史运行通过记录 ID/证据链接引用。已有文档按需修订，不整套覆盖重建。
+
+Agent 将每份输出的文件节点以 `AFFECTS` 关系关联对应 desired 节点，后续修改通过
+`changed` 使消费者重新验证。计划批准不等于文档内容批准；文件存在、模板已复制也不
+等于目标通过。只有真实内容经过用户评审后才登记相应 review evidence。
+`--desired` 自定义目标仍替代默认七项，需要 Agent 显式关联实际文档。
+
 ### 步骤 2：规划实现类 Workstream
 
 根据项目情况规划所需工作域：
