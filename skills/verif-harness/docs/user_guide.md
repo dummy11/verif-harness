@@ -103,22 +103,35 @@ verif-harness doctor
 
 ### 步骤 0：建立项目模型
 
-进入 setup 指定的 workspace：
+setup 已自动进入 workspace 并启动 Agent。在会话中发起 bootstrap：
 
 ```text
-verif-harness bootstrap
-verif-harness status
-verif-harness doctor
+$verif-harness bootstrap
+# Kimi 使用 /skill:verif-harness bootstrap
 ```
 
-`bootstrap` 自动清点项目内 RTL、文档和元数据并建立最小 Verification Knowledge Model；它不会生成验证语义、
-不会猜 DUT top，也不会创建总 `plan.md/tasks.md`。常见目录无法表达项目边界时才覆盖：
+Agent 必须通过对话要求用户明确提供以下输入，不搜索候选目录、不猜测或自行选择 DUT：
+
+| 对话输入 | 是否必填 | 含义 |
+| --- | --- | --- |
+| `rtl root` | 必填 | RTL 根目录 |
+| `dut top` | 必填 | DUT 顶层模块名 |
+| `dut top file` | 必填 | DUT 顶层源文件路径 |
+| `spec` | 可选 | RTL 规格文件或目录；可以不提供 |
+
+本次对话已明确提供的字段不重复询问；缺失必填字段时先等待用户补齐，不执行初始化。
+Agent 只读校验用户给定的路径，然后将回答转为底层 CLI 参数。以下是 Agent 的执行示例，
+用户无需手动拼接参数；可选 spec 使用现有 `--docs-root` 接口传入：
 
 ```text
 verif-harness bootstrap \
   --rtl-root rtl --docs-root docs --verif-root verification \
   --dut-top dut --dut-top-file rtl/dut.sv
 ```
+
+所有 RTL 和 RTL spec 均为当前 Agent 的只读输入，不允许编辑、生成覆盖、删除、移动或
+格式化，也不得通过工具间接更改。发现输入问题时报告用户处理；验证产物必须放在独立路径。
+初始化后可用 `status` 和 `doctor` 检查项目状态。
 
 ### 步骤 1：形成 VDOC desired state
 
@@ -341,6 +354,8 @@ verif-harness bootstrap [OPTIONS]
 | `--refresh` | 刷新非语义 inventory；保留已存在语义状态 |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。
+上述参数属于底层自动化接口；Skill 首次初始化必须先在对话中收齐三个必填 DUT 字段。
+用户提供的可选 spec 路径映射到 `--docs-root`，未提供时不推导或补填。
 
 ### `status [WORKSTREAM]`
 

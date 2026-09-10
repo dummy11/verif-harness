@@ -26,7 +26,10 @@ Workstream. Project lifecycle is separate.
 ## Core dispatch
 
 - `bootstrap`: inventory a project and create the minimal model shell. It does
-  not make verification decisions or generate a monolithic plan.
+  not make verification decisions or generate a monolithic plan. Read
+  `bootstrap/INSTRUCTIONS.md`; require conversational user input for `rtl root`,
+  `dut top`, and `dut top file`, with optional `spec`. Never discover candidates
+  or run initialization while mandatory inputs are missing.
 - Verification Planner (`plan`): combine a detailed Workstream template, current
   Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
@@ -87,6 +90,10 @@ files are review candidates. DUT RTL and Human approval remain out of bounds.
 
 ## Authority boundaries
 
+- All RTL and RTL specifications are read-only for the current Agent in every
+  mode. Never edit, create, overwrite, delete, rename, format, or generate into
+  those inputs, including through adapters or subprocesses. Report defects for
+  the user to resolve; keep verification outputs in separate paths.
 - Bootstrap may inventory paths, tools, revisions, and file metadata only.
 - The Verification Planner may propose; only a named Human review changes a Workstream to `ACTIVE` or
   `BASELINED`.
