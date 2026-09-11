@@ -167,10 +167,10 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "### 项目标识与边界",
         "",
         f"- 项目：`{manifest.get('project_name') or 'unknown'}`",
-        f"- RTL roots（只读）：{', '.join(f'`{item}`' for item in rtl_roots) or '`未记录`'}",
+        f"- RTL roots（只读，可位于项目外）：{', '.join(f'`{item}`' for item in rtl_roots) or '`未记录`'}",
         f"- DUT top: `{dut.get('top_module') or 'not recorded'}`",
         f"- DUT top file（只读）：`{dut.get('top_file') or 'not recorded'}`",
-        f"- RTL specification 输入（只读）：{', '.join(f'`{item}`' for item in docs_roots) or '`未提供`'}",
+        f"- RTL specification 输入（只读，可位于项目外）：{', '.join(f'`{item}`' for item in docs_roots) or '`未提供`'}",
         f"- Verification 输出根目录：`{manifest.get('verif_root') or '.'}`",
         "- 治理状态事实源：`.verif-harness/model.sqlite3`",
         "",
@@ -257,20 +257,57 @@ def relative_path(root: Path, value: str | Path) -> str:
     return relative.as_posix() or "."
 
 
-def source_inventory(root: Path, limit: int = 10000) -> list[dict[str, Any]]:
+def input_path(root: Path, value: str | Path) -> str:
+    """Keep project-local inputs relative and explicit external inputs absolute."""
+    candidate = Path(value)
+    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    try:
+        return resolved.relative_to(root.resolve()).as_posix() or "."
+    except ValueError:
+        return str(resolved)
+
+
+def resolved_path(root: Path, value: str | Path) -> Path:
+    candidate = Path(value)
+    return candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+
+
+def path_is_within(path: Path, parent: Path) -> bool:
+    return path == parent or parent in path.parents
+
+
+def source_inventory(
+    root: Path, additional_inputs: Iterable[str] = (), limit: int = 10000,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if any(part in IGNORED_PARTS for part in relative.parts) or path.is_symlink() or not path.is_file():
-            continue
-        suffix = path.suffix.lower()
-        if suffix not in RTL_SUFFIXES | DOC_SUFFIXES | {".json", ".yaml", ".yml", ".toml", ".f"}:
-            continue
-        stat = path.stat()
-        kind = "rtl" if suffix in RTL_SUFFIXES else "document" if suffix in DOC_SUFFIXES else "metadata"
-        rows.append({"path": relative.as_posix(), "kind": kind, "size": stat.st_size})
-        if len(rows) >= limit:
-            break
+    visited: set[Path] = set()
+    roots: list[Path] = []
+    seen_roots: set[Path] = set()
+    for value in additional_inputs:
+        source = resolved_path(root, value)
+        if source not in seen_roots:
+            roots.append(source)
+            seen_roots.add(source)
+    if root.resolve() not in seen_roots:
+        roots.append(root.resolve())
+    for source in roots:
+        candidates = [source] if source.is_file() else sorted(source.rglob("*"))
+        for path in candidates:
+            canonical = path.resolve()
+            if canonical in visited or path.is_symlink() or not path.is_file():
+                continue
+            visited.add(canonical)
+            relative_to_source = Path(path.name) if source.is_file() else path.relative_to(source)
+            if any(part in IGNORED_PARTS for part in relative_to_source.parts):
+                continue
+            suffix = path.suffix.lower()
+            if suffix not in RTL_SUFFIXES | DOC_SUFFIXES | {".json", ".yaml", ".yml", ".toml", ".f"}:
+                continue
+            stat = path.stat()
+            kind = "rtl" if suffix in RTL_SUFFIXES else "document" if suffix in DOC_SUFFIXES else "metadata"
+            rows.append({"path": input_path(root, path), "kind": kind, "size": stat.st_size})
+            if len(rows) >= limit:
+                return rows
     return rows
 
 
@@ -411,8 +448,8 @@ class ProjectStore:
         selected = runtime
         if runtime == "auto":
             selected = str(previous.get("runtime") or (detected[0] if len(detected) == 1 else "unselected"))
-        rtl_values = [relative_path(self.root, item) for item in rtl_roots] or list(previous.get("rtl_roots", []))
-        docs_values = [relative_path(self.root, item) for item in docs_roots] or list(previous.get("docs_roots", []))
+        rtl_values = [input_path(self.root, item) for item in rtl_roots] or list(previous.get("rtl_roots", []))
+        docs_values = [input_path(self.root, item) for item in docs_roots] or list(previous.get("docs_roots", []))
         verif_value = relative_path(self.root, verif_root) if verif_root is not None else str(previous.get("verif_root", "."))
         previous_dut = previous.get("dut", {}) if isinstance(previous.get("dut"), dict) else {}
         dut_top = dut_top or previous_dut.get("top_module")
@@ -420,13 +457,16 @@ class ProjectStore:
         if not rtl_values or not dut_top or not dut_top_file:
             raise HarnessError("bootstrap 必须明确提供 rtl root、dut top 和 dut top file")
         for value in rtl_values:
-            if not (self.root / value).is_dir():
-                raise HarnessError(f"RTL root 不是项目内目录: {value}")
-        top_file_value = relative_path(self.root, dut_top_file)
-        if not (self.root / top_file_value).is_file():
-            raise HarnessError(f"DUT top file 不是项目内文件: {top_file_value}")
+            if not resolved_path(self.root, value).is_dir():
+                raise HarnessError(f"RTL root 不是目录: {value}")
+        top_file_value = input_path(self.root, dut_top_file)
+        top_file_path = resolved_path(self.root, top_file_value)
+        if not top_file_path.is_file():
+            raise HarnessError(f"DUT top file 不是文件: {top_file_value}")
+        if not any(path_is_within(top_file_path, resolved_path(self.root, value)) for value in rtl_values):
+            raise HarnessError("DUT top file 必须位于某个已声明的 RTL root 内")
         for value in docs_values:
-            if not (self.root / value).exists():
+            if not resolved_path(self.root, value).exists():
                 raise HarnessError(f"RTL specification 输入不存在: {value}")
         vdoc_document_root = previous.get("vdoc_document_root")
         manifest = {
@@ -450,7 +490,7 @@ class ProjectStore:
                 "verif": {"root": verif_value, "docs_root": docs_output,
                           "verification_subdir": "verification", "governance_subdir": "governance"},
             })
-        inventory = source_inventory(self.root)
+        inventory = source_inventory(self.root, [*rtl_values, *docs_values])
         manifest["inventory_count"] = len(inventory)
         atomic_json(self.state / "project.json", manifest)
         atomic_json(self.state / "inventory.json", inventory)
@@ -511,11 +551,21 @@ class ProjectStore:
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
         target = (self.root / relative).resolve()
         for value in [*manifest.get("rtl_roots", []), *manifest.get("docs_roots", [])]:
-            source = (self.root / value).resolve()
+            source = resolved_path(self.root, value)
             if source.is_dir() and (target == source or source in target.parents):
                 raise HarnessError(f"文档输出不得位于只读 RTL/spec 输入内: {relative}")
             if source.is_file() and target == source:
                 raise HarnessError(f"文档输出与只读 RTL/spec 输入冲突: {relative}")
+
+    def _project_or_declared_input_path(self, value: str | Path) -> str:
+        candidate = resolved_path(self.root, value)
+        if path_is_within(candidate, self.root):
+            return candidate.relative_to(self.root).as_posix() or "."
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        declared = [*manifest.get("rtl_roots", []), *manifest.get("docs_roots", [])]
+        if any(path_is_within(candidate, resolved_path(self.root, item)) for item in declared):
+            return str(candidate)
+        raise HarnessError(f"项目外路径必须位于已声明的只读 RTL/spec 输入内: {value}")
 
     @staticmethod
     def _digest(path: Path) -> str:
@@ -642,7 +692,7 @@ class ProjectStore:
                 raise HarnessError(f"VDOC document root 不是目录: {document_root_value}")
             readonly_inputs = [*manifest.get("rtl_roots", []), *manifest.get("docs_roots", [])]
             for value in readonly_inputs:
-                source = (self.root / value).resolve()
+                source = resolved_path(self.root, value)
                 if source.is_dir() and (output_path == source or source in output_path.parents):
                     raise HarnessError(f"VDOC document root 不得位于只读输入内: {document_root_value}")
                 if source.is_file() and output_path == source:
@@ -1162,7 +1212,7 @@ class ProjectStore:
 
     def record_change(self, path: str, kind: str, revision: str | None = None) -> dict[str, Any]:
         self.require()
-        relative = relative_path(self.root, path)
+        relative = self._project_or_declared_input_path(path)
         subject = f"file:{relative}"
         event_id = f"event:{uuid.uuid4().hex[:12]}"
         initial = Validity.INVALID if kind == "delete" else Validity.STALE

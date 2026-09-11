@@ -96,6 +96,57 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(config["rtl"]["top_file"], "rtl/dut.sv")
         self.assertEqual(config["verif"]["docs_root"], "verification/docs")
 
+    def test_bootstrap_accepts_explicit_external_readonly_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as external_directory:
+            external = Path(external_directory)
+            rtl = external / "rtl"
+            rtl.mkdir()
+            top = rtl / "external_dut.sv"
+            top.write_text("module external_dut; endmodule\n", encoding="utf-8")
+            specification = external / "spec.md"
+            specification.write_text("# External read-only specification\n", encoding="utf-8")
+            original_top = top.read_bytes()
+            original_specification = specification.read_bytes()
+            payload = self.run_cli(
+                "bootstrap", "--runtime", "none", "--rtl-root", str(rtl),
+                "--docs-root", str(specification), "--verif-root", "verification",
+                "--dut-top", "external_dut", "--dut-top-file", str(top),
+            )
+            self.assertEqual(payload["rtl_roots"], [str(rtl.resolve())])
+            self.assertEqual(payload["docs_roots"], [str(specification.resolve())])
+            self.assertEqual(payload["dut"]["top_file"], str(top.resolve()))
+            inventory = json.loads((self.root / ".verif-harness/inventory.json").read_text(encoding="utf-8"))
+            self.assertIn(str(top.resolve()), {item["path"] for item in inventory})
+            self.assertIn(str(specification.resolve()), {item["path"] for item in inventory})
+            config = json.loads((self.root / ".harness-config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["rtl"]["root"], str(rtl.resolve()))
+            refreshed = self.run_cli("bootstrap", "--refresh")
+            self.assertEqual(refreshed["rtl_roots"], [str(rtl.resolve())])
+            changed = self.run_cli("changed", str(top))
+            self.assertEqual(changed["subject"], f"file:{top.resolve()}")
+            unrelated = external / "unrelated.txt"
+            unrelated.write_text("not declared\n", encoding="utf-8")
+            refused = self.invoke("changed", str(unrelated))
+            self.assertEqual(refused.returncode, 2)
+            self.assertIn("已声明的只读 RTL/spec 输入", refused.stderr)
+            external_output = self.invoke("plan", "VDOC", "--document-root", str(external / "generated"))
+            self.assertEqual(external_output.returncode, 2)
+            self.assertIn("路径必须位于项目内", external_output.stderr)
+            self.assertEqual(top.read_bytes(), original_top)
+            self.assertEqual(specification.read_bytes(), original_specification)
+
+    def test_bootstrap_requires_top_file_to_belong_to_declared_rtl_root(self) -> None:
+        with tempfile.TemporaryDirectory() as external_directory:
+            top = Path(external_directory) / "other.sv"
+            top.write_text("module other; endmodule\n", encoding="utf-8")
+            result = self.invoke(
+                "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+                "--verif-root", "verification", "--dut-top", "other",
+                "--dut-top-file", str(top),
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("某个已声明的 RTL root", result.stderr)
+
     def test_planner_uses_detailed_template_and_current_knowledge_context(self) -> None:
         self.bootstrap()
         plan = self.design("VCHK")

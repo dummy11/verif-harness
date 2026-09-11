@@ -14,6 +14,10 @@ refresh non-semantic inventory/capabilities.
 3. Validate only the supplied paths read-only. If a path is missing, ambiguous,
    or unsupported by the CLI, explain the issue and ask the user to correct it;
    do not search for substitutes or copy inputs into the public repository.
+   RTL roots, the top file, and optional specification inputs may be outside the
+   project root when explicitly supplied. The top file must belong to one of the
+   declared RTL roots. Keep external paths as read-only absolute input identities;
+   all generated verification output and control state remain inside the project.
    Run the Skill launcher with `bootstrap --rtl-root PATH --dut-top NAME
    --dut-top-file PATH`. If spec was supplied, pass its exact path through the
    existing `--docs-root PATH` input; do not infer another documentation root.

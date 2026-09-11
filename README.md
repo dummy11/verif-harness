@@ -107,6 +107,7 @@ Capability tools 负责实际工程动作；Human 负责语义批准、拒绝、
 - `VALID` 必须由真实 evidence 建立；`WAIVED` 必须由 Human 明确给出理由。
 - Workstream freeze 和 final freeze 生成不可覆盖的内容寻址基线。
 - 所有 RTL 和 RTL spec 始终只读，当前 Agent 不得直接或通过工具更改；输入问题由用户处理。
+  显式输入可以位于项目目录之外，但控制状态和所有生成产物必须保留在项目内。
   Agent 不得代替 Human 审批，也不得把工具退出码冒充 sign-off。
 - proprietary RTL、规格、日志、向量、URL、license 和调度器配置不得进入公共仓库。
 

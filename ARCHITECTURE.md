@@ -62,6 +62,9 @@ from the same database state.
 records the bootstrap inventory. `model.md` and Workstream `plan.md` are reading
 projections. Editing a reading projection does not update the database. Use the
 CLI to change state rather than editing configuration or projections manually.
+Explicit RTL roots, DUT top files, and specification inputs may live outside the
+project root and are stored as absolute read-only identities. Control state,
+verification outputs, and generated projections remain inside the project root.
 
 Bootstrap also creates or refreshes only a marked verif-harness block in the
 project-root `AGENTS.md`. The block is a routing and authority projection, not a

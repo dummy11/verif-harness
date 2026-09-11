@@ -103,7 +103,9 @@ files are review candidates. DUT RTL and Human approval remain out of bounds.
 - All RTL and RTL specifications are read-only for the current Agent in every
   mode. Never edit, create, overwrite, delete, rename, format, or generate into
   those inputs, including through adapters or subprocesses. Report defects for
-  the user to resolve; keep verification outputs in separate paths.
+  the user to resolve; keep verification outputs in separate paths. Explicit
+  RTL/spec inputs may be outside the project root, but control state and every
+  generated verification output must remain inside it.
 - Bootstrap may inventory paths, tools, revisions, and file metadata only.
 - The Verification Planner may propose; only a named Human review changes a Workstream to `ACTIVE` or
   `BASELINED`.

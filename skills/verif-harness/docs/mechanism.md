@@ -35,6 +35,8 @@ Skill 不搜索候选路径；必填信息未齐前先对话补齐。CLI 收到�
 文件清单和工具能力，并创建或增量更新项目根 `AGENTS.md` 中唯一的 verif-harness
 managed block。该区块先建立只读边界、事实源、交互授权和 VDOC fail-closed 路由；
 项目已有说明保留在区块之外。所有 RTL、RTL spec 都是只读输入。
+显式 RTL root、DUT top file 和 spec 可以位于 project root 外，届时以规范化绝对路径
+登记并纳入只读 inventory；状态数据库、VDOC 文档和所有生成产物仍限制在项目内。
 
 随后用户选择一个 [Workstream](glossary.md#workstream)，例如 VCHK（检查能力），
 希望实现“输出事务在 backpressure 下仍正确匹配”。Verification Planner 的底层操作：

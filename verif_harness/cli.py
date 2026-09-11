@@ -93,15 +93,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    bootstrap = commands.add_parser("bootstrap", help="发现项目并建立最小 Verification Knowledge Model；不生成验证语义")
+    bootstrap = commands.add_parser("bootstrap", help="根据显式 DUT 输入建立最小 Verification Knowledge Model；不生成验证语义")
     project_argument(bootstrap)
     bootstrap.add_argument("--project-name")
     bootstrap.add_argument("--runtime", choices=("auto", "codex", "kimi", "claude", "none"), default="auto")
-    bootstrap.add_argument("--rtl-root", action="append", default=[])
-    bootstrap.add_argument("--docs-root", action="append", default=[])
-    bootstrap.add_argument("--verif-root")
+    bootstrap.add_argument("--rtl-root", action="append", default=[],
+                           help="只读 RTL 根目录；可重复，也可显式位于 project root 外")
+    bootstrap.add_argument("--docs-root", action="append", default=[],
+                           help="可选只读 RTL spec 文件或目录；可重复，也可位于 project root 外")
+    bootstrap.add_argument("--verif-root", help="project root 内的验证资产输出根目录")
     bootstrap.add_argument("--dut-top")
-    bootstrap.add_argument("--dut-top-file")
+    bootstrap.add_argument("--dut-top-file", help="属于某个 --rtl-root 的 DUT top 文件")
     bootstrap.add_argument("--refresh", action="store_true")
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")

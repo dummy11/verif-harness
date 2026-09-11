@@ -150,6 +150,11 @@ verif-harness bootstrap \
   --dut-top dut --dut-top-file rtl/dut.sv
 ```
 
+RTL root、DUT top file 和 spec 不要求位于 workspace/project root；用户显式给出的项目外
+路径会以规范化绝对路径记录。DUT top file 必须位于至少一个已声明 RTL root 内。
+`verif-root`、`.verif-harness/`、`AGENTS.md` 和所有生成产物则必须留在 project root 内。
+因此可以让独立 verification workspace 引用另一个 RTL 仓库，而不会把 RTL 复制进来。
+
 所有 RTL 和 RTL spec 均为当前 Agent 的只读输入，不允许编辑、生成覆盖、删除、移动或
 格式化，也不得通过工具间接更改。发现输入问题时报告用户处理；验证产物必须放在独立路径。
 bootstrap 同时创建或增量更新项目根目录 `AGENTS.md` 的 verif-harness managed block，
@@ -529,11 +534,11 @@ verif-harness bootstrap [OPTIONS]
 | --- | --- |
 | `--project-name NAME` | 覆盖默认目录名 |
 | `--runtime auto\|codex\|kimi\|claude\|none` | 记录项目推理 runtime；setup 后通常无需指定 |
-| `--rtl-root PATH` | 声明 RTL 根目录；可重复 |
-| `--docs-root PATH` | 声明只读 RTL spec 文件或目录；可重复 |
-| `--verif-root PATH` | 声明验证资产根目录 |
+| `--rtl-root PATH` | 声明只读 RTL 根目录；可重复；允许显式项目外路径 |
+| `--docs-root PATH` | 声明只读 RTL spec 文件或目录；可重复；允许显式项目外路径 |
+| `--verif-root PATH` | 声明项目内验证资产输出根目录，不允许位于项目外 |
 | `--dut-top MODULE` | 明确 DUT top；不会自动猜测 |
-| `--dut-top-file PATH` | 明确 DUT top 文件 |
+| `--dut-top-file PATH` | 明确 DUT top 文件；必须属于某个 `--rtl-root`，允许位于项目外 |
 | `--refresh` | 刷新非语义 inventory；保留已存在语义状态 |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。
