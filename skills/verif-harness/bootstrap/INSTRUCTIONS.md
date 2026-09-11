@@ -19,8 +19,9 @@ refresh non-semantic inventory/capabilities.
    existing `--docs-root PATH` input; do not infer another documentation root.
 4. Create or refresh the marked verif-harness managed block in the project-root
    `AGENTS.md`. Preserve all content outside the markers. The block records DUT
-   identity, read-only input boundaries, the machine fact source, Human/Agent/Engine
-   authority, and a fail-closed route to VDOC while document contracts are pending.
+   identity, read-only input boundaries, the governance-state source,
+   Human/Agent/Engine authority, and a fail-closed route to VDOC while document
+   contracts are pending. Engineering semantics remain in project VDOC Markdown.
 5. Review `.verif-harness/project.json`, `inventory.json`, and the generated
    `AGENTS.md` block.
 6. Continue with `plan WORKSTREAM`; bootstrap must not decide coverage, tests, interfaces,

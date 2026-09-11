@@ -8,8 +8,10 @@ Markdown projection.
 
 For VDOC, read [document delivery instructions](vdoc.md) and the templates for
 the documents being drafted. Default VDOC goals name eight engineering documents;
-fill them through Human dialogue in the project's verification output directory.
-The CLI's desired-state/plan projections are not those deliverables.
+the Engine creates only missing templates in the project's verification output
+directory, then the Agent fills engineering semantics through Human dialogue.
+Existing documents are never overwritten. The CLI's desired-state/plan projections
+are not those deliverables; document governance state is rendered on demand from SQLite.
 
 ```text
 $verif-harness plan VDOC|VSTIM|VCHK|VCOV|VCASE|VREG \

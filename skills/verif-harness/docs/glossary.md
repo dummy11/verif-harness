@@ -130,10 +130,12 @@ Human gate 的权限规则由 Agent/Skill 遵守；自动填入 reviewer 不等�
 <a id="baseline"></a>
 ## Revision、Baseline、Freeze、Sign-off
 
-**Revision（修订）**标识目标的一次版本变化；与 Git commit 的源码版本不是同一个编号。
+**Revision（修订）**可以指 Workstream desired revision，也可以指由文档内容摘要变化产生的
+semantic revision；两者都与 Git commit 编号不同。
 **Baseline（基线）**是封存的状态 manifest，关联目标、模型、证据引用和评审信息。
 **Freeze（冻结）**创建该快照。Workstream freeze 封存一个工作域，final freeze 汇总
-六个已冻结工作域。当前实现不归档所有输入/报告文件，也不锁定整个工作区。
+六个已冻结工作域。VDOC freeze 会快照已评审的工程语义 Markdown；其他输入和报告仍以
+摘要/引用进入 manifest，不会锁定整个工作区。
 
 **Sign-off（签核）**是负责人对验证范围、证据和剩余风险的工程认可；CLI freeze
 只能提供记录支持，不能代替该判断。
@@ -141,11 +143,13 @@ Human gate 的权限规则由 Agent/Skill 遵守；自动填入 reviewer 不等�
 <a id="authority"></a>
 ## Source of truth、Projection、Manifest
 
-**Source of truth（权威数据源）**决定系统读取什么作为状态依据。节点、关系、评审等
-存在 `model.sqlite3`；项目身份与 runtime 等还会从 `project.json` 读取。
+**Source of truth（权威数据源）**按职责划分：项目 VDOC Markdown 保存验证工程语义；
+节点、文档摘要、semantic revision、事项状态、关系、评审和 evidence 存在
+`model.sqlite3`；项目身份与 runtime 等还会从 `project.json` 读取。
 **Projection（投影）**是供人阅读的派生表示，例如 `model.md` 和工作域 `plan.md`。
-编辑投影不会更新数据库。**Manifest（清单）**是结构化身份或快照描述文件；不要把所有
-JSON 都当成可随意编辑的阅读副本，状态变更应走 CLI。
+`docs render` 还可按需投影文档治理状态，但不会修改语义正文。编辑投影不会更新数据库。
+**Manifest（清单）**是结构化身份或快照描述文件；不要把所有 JSON 都当成可随意编辑的
+阅读副本，状态变更应走 CLI。
 
 <a id="runtime"></a>
 ## Runtime、Backend、MCP、Reference model

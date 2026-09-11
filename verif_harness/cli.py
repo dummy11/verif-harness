@@ -9,7 +9,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .store import HarnessError, ProjectStore, Validity, WORKSTREAM_TEMPLATES, capabilities
+from .store import (
+    DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES, HarnessError, ProjectStore,
+    Validity, WORKSTREAM_TEMPLATES, capabilities,
+)
 
 
 ALIASES = {
@@ -70,13 +73,15 @@ def infer_workstream(store: ProjectStore, explicit: str | None, operation: str) 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="verif-harness",
-        description="以 Verification Knowledge Model 为事实源的持续 RTL verification control plane",
+        description="以 Verification Knowledge Model 为治理状态事实源的持续 RTL verification control plane",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""常用命令：
   verif-harness bootstrap
   verif-harness plan VDOC
   verif-harness review [VDOC]
   verif-harness status [VDOC]
+  verif-harness docs status [DOCUMENT]
+  verif-harness docs render [DOCUMENT]
   verif-harness inspect [NODE]
   verif-harness trace NODE
   verif-harness impact NODE
@@ -165,6 +170,28 @@ def build_parser() -> argparse.ArgumentParser:
     changed.add_argument("path", help="项目内发生变化的文件")
     changed.add_argument("--kind", choices=("auto", "add", "modify", "delete", "rename", "spec-change", "rtl-change"), default="auto")
     changed.add_argument("--revision")
+
+    docs = commands.add_parser("docs", help="管理语义文档索引并按需投影 SQLite 治理状态")
+    docs_commands = docs.add_subparsers(dest="docs_command", required=True)
+    docs_status = docs_commands.add_parser("status", help="查看一个或全部语义文档的治理状态")
+    project_argument(docs_status); docs_status.add_argument("document", nargs="?")
+    docs_sync = docs_commands.add_parser("sync", help="重新计算正文摘要；变化会触发失效和重新评审")
+    project_argument(docs_sync); docs_sync.add_argument("documents", nargs="*")
+    docs_render = docs_commands.add_parser("render", help="按需生成状态、决策、评审和修订投影")
+    project_argument(docs_render); docs_render.add_argument("document", nargs="?")
+    docs_render.add_argument("--output", help="显式写入项目内独立投影文件；省略时输出到终端")
+    docs_review = docs_commands.add_parser("review", help="记录 Human 对当前语义正文 revision 的评审")
+    project_argument(docs_review); docs_review.add_argument("document")
+    docs_review.add_argument("--verdict", choices=("approve", "reject", "modify", "clarify"), default="approve")
+    docs_review.add_argument("--reviewer"); docs_review.add_argument("--notes")
+    docs_track = docs_commands.add_parser("track", help="登记文档中的决策、假设或外部开放问题")
+    project_argument(docs_track); docs_track.add_argument("document")
+    docs_track.add_argument("--id", dest="item_id", required=True)
+    docs_track.add_argument("--kind", choices=tuple(sorted(DOCUMENT_ITEM_KINDS)), required=True)
+    docs_track.add_argument("--title", required=True)
+    docs_track.add_argument("--status", choices=tuple(sorted(DOCUMENT_ITEM_STATUSES)), default="PENDING")
+    docs_track.add_argument("--owner"); docs_track.add_argument("--review-trigger")
+    docs_track.add_argument("--affects", action="append", default=[]); docs_track.add_argument("--anchor")
 
     simple_waive = commands.add_parser("waive", help="记录 Human waiver")
     project_argument(simple_waive)
@@ -322,6 +349,27 @@ def main(arguments: list[str] | None = None) -> int:
                 suffix = Path(args.path).suffix.lower()
                 kind = "rtl-change" if suffix in {".v", ".sv", ".svh", ".vhd", ".vhdl"} else "spec-change" if suffix in {".md", ".rst", ".txt", ".pdf"} else "modify"
             emit(store.record_change(args.path, kind, args.revision))
+        elif args.command == "docs":
+            if args.docs_command == "status":
+                emit({"documents": store.documents(args.document)})
+            elif args.docs_command == "sync":
+                emit(store.sync_documents(args.documents))
+            elif args.docs_command == "render":
+                if args.output:
+                    emit(store.write_document_state_projection(args.output, args.document))
+                else:
+                    print(store.render_document_state(args.document), end="")
+            elif args.docs_command == "review":
+                if args.verdict != "approve" and not args.notes:
+                    raise HarnessError("reject/modify/clarify 必须提供 --notes")
+                notes = args.notes or "Human approved the current semantic document revision"
+                emit(store.review_document(args.document, args.verdict,
+                                           reviewer_identity(store.root, args.reviewer), notes))
+            else:
+                emit(store.track_document_item(
+                    args.document, args.item_id, args.kind, args.title, args.status,
+                    args.owner, args.review_trigger, args.affects, args.anchor,
+                ))
         elif args.command == "waive":
             emit(store.waive_node(args.node_id, reviewer_identity(store.root, args.reviewer), args.reason))
         elif args.command == "check": emit(store.scan())

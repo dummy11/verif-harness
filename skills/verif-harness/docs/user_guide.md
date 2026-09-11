@@ -154,8 +154,8 @@ verif-harness bootstrap \
 格式化，也不得通过工具间接更改。发现输入问题时报告用户处理；验证产物必须放在独立路径。
 bootstrap 同时创建或增量更新项目根目录 `AGENTS.md` 的 verif-harness managed block，
 写入 DUT 身份、只读边界、Human/Agent/Engine 权限和“文档未就绪时返回 VDOC”的规则。
-已有项目说明保留在 managed markers 之外，不会被覆盖。初始化后可用 `status` 和
-`doctor` 检查项目状态。
+已有项目说明保留在 managed markers 之外，不会被覆盖。该区块还明确区分 Markdown
+工程语义与 SQLite 治理状态。初始化后可用 `status` 和 `doctor` 检查项目状态。
 
 ### 步骤 1：形成 VDOC desired state
 
@@ -193,8 +193,9 @@ verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不�
 ### VDOC 正式文档产出
 
 默认 `plan VDOC` 建立八个文档目标。每个 desired 节点带 `document` 合同，包含文件名、
-Skill 模板路径及后续维护工作域。Agent 使用这些模板在项目的独立验证文档目录中，
-结合只读输入和用户对话写出草稿。CLI 本身只生成计划投影，不自动写出下表正文。
+Skill 模板路径及后续维护工作域。Engine 在独立验证文档目录中创建缺失模板并登记路径、
+摘要和 desired 关系，但绝不覆盖已有文档。Agent 再结合只读输入和用户对话完成正文；
+模板创建不表示内容已完成或批准。
 
 | 正式文档 | 内容 | 后续维护 |
 | --- | --- | --- |
@@ -216,7 +217,8 @@ Stage gate review packet 或后台 task runner；对应控制由 Workstream desi
 Knowledge Model、`check`、`closure` 和 Human freeze 完成。
 
 VDOC 规划时，Agent 将对话确认的输出目录通过内部参数 `--document-root` 传给 CLI；Engine
-随后补全同一个 `AGENTS.md` managed block 中的八份文档路由。Human 无需手工输入该参数。
+随后创建缺失模板、登记 SQLite 文档索引，并补全同一个 `AGENTS.md` managed block 中的
+八份文档路由。Human 无需手工输入该参数。
 如果 capability 需要的文档尚不存在或未经评审，Agent 必须返回 VDOC/closure，不得自行
 补写项目语义后继续实现。
 
@@ -225,13 +227,15 @@ VDOC 规划时，Agent 将对话确认的输出目录通过内部参数 `--docum
 `<verif-root>/docs/verification`；与 RTL/spec 输入重叠时必须选择独立位置。
 验证侧 `reference_model_spec.md` 的命名不会使同名原始 spec 变成可写文件。
 
-VDOC 先形成可讨论的初版，允许其他工作域在其尚未全部完成时推进。未定内容标为
-open question 并注明影响；不适用项写明原因和用户确认的替代策略。正文只保留当前设计，
-评审、决策和历史运行通过记录 ID/证据链接引用。已有文档按需修订，不整套覆盖重建。
+VDOC 先形成可讨论的初版，允许其他工作域在其尚未全部完成时推进。Markdown 正文保存
+scope、架构、compare policy、coverage/test/assertion 等工程语义。SQLite 保存文档摘要、
+semantic revision、治理事项状态、评审、evidence 与失效关系；通过 `docs status/render`
+按需投影，不把 Revision Log、Review Trace 或 Human Review Notes 反复追加到正文。
 
-Agent 将每份输出的文件节点以 `AFFECTS` 关系关联对应 desired 节点，后续修改通过
-`changed` 使消费者重新验证。计划批准不等于文档内容批准；文件存在、模板已复制也不
-等于目标通过。只有真实内容经过用户评审后才登记相应 review evidence。
+Engine 将每份输出的文件和 document node 关联对应 desired 节点。正文修改后使用
+`docs sync` 计算新摘要、增加 semantic revision 并使消费者重新验证。计划批准不等于
+文档内容批准；文件存在、模板已复制也不等于目标通过。Human 确认正文后，Agent 使用
+`docs review` 将评审和 evidence 绑定到当前摘要。
 `--desired` 自定义目标仍替代默认八项，需要 Agent 显式关联实际文档。
 
 ### VDOC 完整执行步骤与角色
@@ -246,45 +250,52 @@ VDOC 使用三类责任标记：
 | 步骤 | 责任主体 | 操作与结果 |
 | --- | --- | --- |
 | 0. 建立项目事实 | Human + Agent + Engine | Human 提供 DUT 信息；Agent 只读校验；Engine 通过 `bootstrap` 建立最小知识模型 |
-| 1. 读取当前状态 | Agent + Engine | Agent 调用 `status VDOC`、`inspect`；Engine 返回当前模型、历史决策和缺口 |
-| 2. 建立 proposal | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、八个默认文档 desired node、退出条件和待答问题 |
+| 1. 读取当前状态 | Agent + Engine | 首次规划前 Agent 调用全局 `status` 和 `inspect`；VDOC 已存在时再用 `status VDOC` 读取其 revision 与缺口 |
+| 2. 建立 proposal | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、八个默认文档 desired node、缺失模板、退出条件和待答问题 |
 | 3. 确认输出目录 | Agent；有歧义时 Human | Agent 沿用已有验证文档目录或提议 `<verif-root>/docs/verification`；与只读输入重叠或有多个候选时由 Human 选择 |
 | 4. 读取输入与模板 | Agent | 只读分析 RTL、spec、已有验证文档、Knowledge Model 和本轮所需模板，不搜索或替换用户未指定的 DUT 输入 |
 | 5. 形成初始草案 | Agent | 先提出 scope 和 Feature/VF 分解，再补充策略、架构、reference model、coverage、assertion 和 testcase 候选内容 |
 | 6. 解决开放决策 | Human + Agent | Agent 只询问事实无法确定的问题；Human 作出工程选择；Agent 将答案及其影响目标写入新 revision |
 | 7. 审批 desired scope | Human | Human 对本轮目标和退出条件作出 `approve/reject/modify/clarify` 决定；Agent 不得代批 |
 | 8. 记录规划审批 | Agent + Engine | 收到 Human 明确决定后，Agent 调用 `review VDOC`；Engine 将 revision 更新为 `ACTIVE` 或 `REVISE` |
-| 9. 生成文档 Draft | Agent | 在可写的验证输出目录创建或增量修改所需文档；所有 RTL 和原始 spec 保持只读 |
-| 10. 登记追踪关系 | Agent + Engine | Agent 登记或复用文件节点和 `AFFECTS`/跨工作域依赖；Engine 写入 Knowledge Model |
-| 11. 检查一致性 | Engine + Agent | Engine 通过 `check` 扫描已登记事实并传播状态；Agent 解释冲突、缺失链接和开放问题 |
-| 12. 评审文档内容 | Human + Agent | Agent 展示正文、来源、差异和遗留问题；Human 判断内容能否作为当前验证基线 |
-| 13. 登记评审证据 | Agent + Engine | Human 明确接受后，Agent 通过 `prove` 登记真实 review evidence；Engine 校验文件、计算摘要并更新目标有效性 |
-| 14. 计算下一动作 | Engine + Agent | Engine 通过 `closure` 给出最小未闭合动作；Agent 向 Human 解释，不静默执行写操作 |
-| 15. 冻结 VDOC | Human + Agent + Engine | Human 明确授权；Agent 调用 `freeze VDOC`；Engine 检查条件并生成不可覆盖的 baseline |
-| 16. 后续修订 | Agent + Engine + Human | Agent 登记 `changed`；Engine 传播 `STALE`/`REVALIDATION_REQUIRED`；Agent 只修订受影响内容，Human 重新评审 |
+| 9. 完成文档 Draft | Agent | Agent 增量填写 Engine 已创建的缺失模板；已有文档和所有 RTL/spec 均不被覆盖 |
+| 10. 同步文档状态 | Agent + Engine | Agent 调用 `docs sync`；Engine 登记路径、摘要、semantic revision 和 desired/consumer 关系 |
+| 11. 登记治理事项 | Agent + Engine | 完整工程依据写入正文；Agent 用 `docs track` 登记 Decision、Provisional、Assumption、External Open Question 的状态索引 |
+| 12. 检查一致性 | Engine + Agent | Engine 通过 `check` 扫描摘要和已登记事实并传播状态；Agent 解释冲突、缺失链接和开放问题 |
+| 13. 评审文档内容 | Human + Agent | Agent 展示正文、来源、差异、`docs render` 状态和遗留问题；Human 判断内容能否作为当前验证基线 |
+| 14. 登记正文评审 | Agent + Engine | Human 明确接受后，Agent 调用 `docs review`；Engine 绑定当前摘要/revision、保存 Review Trace/Notes 并更新 desired |
+| 15. 计算下一动作 | Engine + Agent | Engine 通过 `closure` 给出最小未闭合动作；Agent 向 Human 解释，不静默执行写操作 |
+| 16. 冻结 VDOC | Human + Agent + Engine | Human 明确授权；Agent 调用 `freeze VDOC`；Engine 校验摘要并快照已评审正文和 manifest |
+| 17. 后续修订 | Agent + Engine + Human | Agent 修改受影响正文后调用 `docs sync`；Engine 传播失效；Human 重新评审 |
 
 VDOC 的典型命令顺序如下。命令由 Agent 在当前会话执行；表中标为 Human 的决定必须先
 由用户明确给出：
 
 ```text
 # Agent + Engine：建立 proposal
-verif-harness status VDOC
+verif-harness status
 verif-harness plan VDOC
 
 # Human：回答 questions_for_human，确认 desired scope
 # Agent + Engine：仅在收到明确 verdict 后记录规划审批
 verif-harness review VDOC --verdict approve --reviewer <human-name>
 
-# Agent：生成 Draft，并登记文档节点和依赖关系
+# Agent：填写 Engine 创建的缺失模板；已有文档不会被覆盖
+# Agent + Engine：同步摘要和治理事项
+verif-harness docs sync
+verif-harness docs track verification_plan.md --id D-001 \
+  --kind provisional --title "当前工程方向" --status ACTIVE
+
 # Agent + Engine：检查一致性和未闭合动作
 verif-harness check
 verif-harness status VDOC
 verif-harness closure
 
 # Human：评审具体文档内容
-# Agent + Engine：仅在 Human 明确接受后登记真实评审证据
-verif-harness prove <VDOC-DESIRED-NODE> <REVIEW-EVIDENCE-FILE> \
-  --kind human-review
+# Agent + Engine：仅在 Human 明确接受后评审当前正文摘要
+verif-harness docs review verification_plan.md --reviewer <human-name> \
+  --notes "正文及未决事项已检查"
+# 对本轮其余 required 文档逐份执行相同评审
 
 # Human：明确授权冻结
 # Agent + Engine：验证条件并冻结当前 revision
@@ -296,7 +307,7 @@ verif-harness freeze VDOC --reviewer <human-name> \
 
 1. **规划审批**：`review VDOC` 只批准 desired scope、交付范围与退出条件，允许 Agent
    按此开展文档工作；
-2. **内容审批**：Human 逐份检查实际文档后，Agent 才能登记 review evidence。文档存在、
+2. **内容审批**：Human 逐份检查实际文档后，Agent 才能调用 `docs review`。文档存在、
    模板已复制或 Agent 自检通过都不是内容批准。
 
 职责边界可以概括为：
@@ -307,7 +318,7 @@ Human：工程取舍、范围确认、内容批准、waiver、freeze
 Engine：持久化、状态计算、证据摘要、失效传播、closure、冻结条件检查
 ```
 
-即使由 Agent 在终端输入了 `review`、`prove` 或 `freeze`，授权来源仍必须是当前 Human。
+即使由 Agent 在终端输入了 `review`、`docs review` 或 `freeze`，授权来源仍必须是当前 Human。
 Agent 生成八份 Markdown 也不表示 VDOC 完成；只有对应 desired node 获得真实评审证据，
 并满足本轮退出条件后，VDOC 才能进入 baseline。
 
@@ -480,7 +491,7 @@ change 可进入 `PARTIALLY_STALE`，reject/modify/clarify 可进入 `REVISE`。
 
 ```text
 .verif-harness/
-├── model.sqlite3                 # 验证知识状态：节点、关系、评审等
+├── model.sqlite3                 # 治理状态：摘要、revision、评审、事项、关系和 evidence
 ├── project.json                  # bootstrap manifest
 ├── inventory.json                # 文件清单投影
 ├── model.md                      # 人工阅读投影
@@ -488,8 +499,15 @@ change 可进入 `PARTIALLY_STALE`，reject/modify/clarify 可进入 `REVISE`。
 │   ├── desired-state.json        # 当前 desired revision 投影
 │   └── plan.md                   # 简洁人工阅读投影
 └── baselines/
+    ├── vdoc/<id>/
+    │   ├── manifest.json         # 文档状态和摘要快照
+    │   ├── document-governance.md # SQLite 治理状态的人读快照
+    │   └── documents/*.md        # 已评审工程语义文档快照
     ├── <workstream>/<id>/manifest.json
     └── final/<id>/manifest.json
+
+<verif-root>/docs/verification/
+└── *.md                          # 可直接编辑和 Git review 的工程语义源
 ```
 
 不要通过编辑阅读投影改变机器状态；所有 mutation 必须走 CLI。
@@ -561,6 +579,32 @@ verif-harness review [WORKSTREAM] \
 - 该命令是 Human gate，Agent 只有收到用户明确批准后才能调用。
 
 结构化等价命令：`plan review --workstream ...`。
+
+### `docs`
+
+文档正文保存工程语义；以下命令只管理 SQLite 中的摘要、revision、治理事项和评审状态。
+
+```text
+verif-harness docs status [DOCUMENT]
+verif-harness docs sync [DOCUMENT ...]
+verif-harness docs render [DOCUMENT] [--output PATH]
+verif-harness docs review DOCUMENT \
+  [--verdict approve|reject|modify|clarify] [--reviewer NAME] [--notes TEXT]
+verif-harness docs track DOCUMENT --id ID \
+  --kind human-decision|provisional|assumption|external-open-question \
+  --title TEXT [--status PENDING|ACTIVE|RESOLVED|SUPERSEDED] \
+  [--owner NAME] [--review-trigger TEXT] [--affects NODE] [--anchor TEXT]
+```
+
+- `DOCUMENT` 可以是登记的 document ID、项目相对路径或不歧义的文件名；
+- `docs status` 是只读 JSON，同时报告工作区正文摘要是否已变化；
+- `docs sync` 不改正文；摘要变化时增加 semantic revision、保留旧记录并传播失效；
+- `docs render` 默认输出到终端，不产生文件；只有显式 `--output` 才写独立状态投影，
+  且拒绝覆盖语义文档或写入只读 RTL/spec；
+- `docs review` 是 Human gate。`approve` 将评审绑定当前摘要并为对应 VDOC desired
+  建立 review evidence；其他 verdict 必须提供 `--notes`；
+- `docs track` 只登记事项状态索引。完整问题、选项、依据和工程影响仍写在 Markdown，
+  `ACTIVE` 等状态不构成 Human approval。
 
 ### `prove SUBJECT SOURCE`
 

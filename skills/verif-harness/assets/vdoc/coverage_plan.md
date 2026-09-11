@@ -1,6 +1,7 @@
 # 覆盖率计划
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 覆盖目标与口径
 
@@ -29,6 +30,6 @@
 
 只有出现具体 code coverage 豁免候选时才创建 waiver manifest；不能预填审批或大范围 exclusion。
 
-## 本修订评审
+## 一致性要求
 
-核对分母、采样语义、feature 映射、可达性与证据新鲜度。评审记录：待登记。
+核对分母、采样语义、feature 映射、可达性与证据新鲜度。评审状态由 SQLite 按需投影。

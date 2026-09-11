@@ -21,6 +21,10 @@ STATE_DIR = ".verif-harness"
 IGNORED_PARTS = {".git", ".deps", STATE_DIR, "__pycache__"}
 RTL_SUFFIXES = {".v", ".sv", ".svh", ".vhd", ".vhdl"}
 DOC_SUFFIXES = {".md", ".rst", ".txt", ".pdf"}
+DOCUMENT_ITEM_KINDS = {
+    "human-decision", "provisional", "assumption", "external-open-question",
+}
+DOCUMENT_ITEM_STATUSES = {"PENDING", "ACTIVE", "RESOLVED", "SUPERSEDED"}
 AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
 AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
@@ -168,8 +172,10 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         f"- DUT top file（只读）：`{dut.get('top_file') or 'not recorded'}`",
         f"- RTL specification 输入（只读）：{', '.join(f'`{item}`' for item in docs_roots) or '`未提供`'}",
         f"- Verification 输出根目录：`{manifest.get('verif_root') or '.'}`",
-        "- 机器事实源：`.verif-harness/model.sqlite3`",
+        "- 治理状态事实源：`.verif-harness/model.sqlite3`",
         "",
+        "工程语义以列出的 Markdown 合同为准；SQLite 保存文档摘要、revision、review、",
+        "evidence、开放事项状态和失效关系，不保存或覆盖工程语义正文。",
         "所有 RTL 和 RTL specification 都是只读输入。禁止编辑、创建、覆盖、删除、",
         "重命名、格式化这些输入，也禁止向其中生成文件。验证产物必须放在 verification",
         "输出根目录；发现输入缺陷时交由 Human 处理。",
@@ -181,8 +187,10 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
         "- 生成文件只是 review candidate。文件存在、模板已复制或 Agent 自检通过，",
         "  都不等于语义已批准或 evidence 已通过。",
-        "- capability 写入验证资产前，必须读取本文件，查询当前 `status`/`closure`，",
-        "  并读取下列与当前动作相关且已经评审的合同。",
+        "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
+        "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同。",
+        "- 文档状态、Revision Log、Review Trace 与 Human Review Notes 通过 `docs status`",
+        "  或 `docs render` 按需投影，不在工程语义正文中手工维护。",
         "- 所需合同缺失或未解决时，返回 VDOC 或负责该目标的 Workstream；不得猜测后继续。",
         "- 本项目不采用 Stage 或 Spec Kit；不得创建 `spec/plan/tasks` 流水线或按阶段阻塞工作域。",
         "",
@@ -192,7 +200,7 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
     if document_root is None:
         lines.extend([
             "VDOC 文档路由尚未建立。执行实现类 capability 前，必须通过 `plan VDOC`",
-            "和 Human 对话建立经过评审的文档集。",
+            "生成缺失模板，并由 Agent 与 Human 对话形成经过评审的工程语义文档集。",
         ])
     else:
         lines.append(f"VDOC 文档根目录：`{document_root}`")
@@ -324,6 +332,25 @@ CREATE TABLE IF NOT EXISTS actions (
 CREATE TABLE IF NOT EXISTS baselines (
   id TEXT PRIMARY KEY, workstream TEXT, revision INTEGER, kind TEXT NOT NULL, digest TEXT NOT NULL,
   path TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, title TEXT NOT NULL, workstream TEXT NOT NULL,
+  desired_id TEXT, owner TEXT NOT NULL, semantic_revision INTEGER NOT NULL, digest TEXT NOT NULL,
+  status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_revisions (
+  document_id TEXT NOT NULL, semantic_revision INTEGER NOT NULL, digest TEXT NOT NULL,
+  summary TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (document_id, semantic_revision)
+);
+CREATE TABLE IF NOT EXISTS document_reviews (
+  id TEXT PRIMARY KEY, document_id TEXT NOT NULL, semantic_revision INTEGER NOT NULL,
+  verdict TEXT NOT NULL, reviewer TEXT NOT NULL, notes TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_items (
+  id TEXT PRIMARY KEY, document_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+  anchor TEXT, status TEXT NOT NULL, owner TEXT, review_trigger TEXT,
+  affects_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 """
 
@@ -480,6 +507,112 @@ class ProjectStore:
             },
         }
 
+    def _document_path_allowed(self, relative: str) -> None:
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        target = (self.root / relative).resolve()
+        for value in [*manifest.get("rtl_roots", []), *manifest.get("docs_roots", [])]:
+            source = (self.root / value).resolve()
+            if source.is_dir() and (target == source or source in target.parents):
+                raise HarnessError(f"文档输出不得位于只读 RTL/spec 输入内: {relative}")
+            if source.is_file() and target == source:
+                raise HarnessError(f"文档输出与只读 RTL/spec 输入冲突: {relative}")
+
+    @staticmethod
+    def _digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def _register_document(
+        self, connection: sqlite3.Connection, document_id: str, relative: str,
+        title: str, desired_id: str | None, owner: str, summary: str,
+    ) -> tuple[bool, dict[str, Any]]:
+        path = self.root / relative
+        if path.is_symlink():
+            raise HarnessError(f"拒绝跟随语义文档符号链接: {relative}")
+        if not path.is_file():
+            raise HarnessError(f"语义文档不存在或不是文件: {relative}")
+        digest = self._digest(path)
+        existing = connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+        changed = existing is not None and existing["digest"] != digest
+        revision = int(existing["semantic_revision"]) + 1 if changed else int(existing["semantic_revision"]) if existing else 1
+        status = Validity.REVIEW_REQUIRED.value if existing is None or changed else existing["status"]
+        timestamp = now()
+        if existing is None:
+            connection.execute(
+                "INSERT INTO documents VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (document_id, relative, title, "VDOC", desired_id, owner, revision, digest,
+                 status, timestamp, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO document_revisions VALUES(?,?,?,?,?)",
+                (document_id, revision, digest, summary, timestamp),
+            )
+        else:
+            connection.execute(
+                "UPDATE documents SET path=?,title=?,desired_id=?,owner=?,semantic_revision=?,digest=?,status=?,updated_at=? WHERE id=?",
+                (relative, title, desired_id, owner, revision, digest, status, timestamp, document_id),
+            )
+            if changed:
+                connection.execute(
+                    "INSERT INTO document_revisions VALUES(?,?,?,?,?)",
+                    (document_id, revision, digest, summary, timestamp),
+                )
+        data = {
+            "path": relative, "digest": digest, "semantic_revision": revision,
+            "desired_id": desired_id, "owner": owner,
+        }
+        self.upsert_node(connection, f"file:{relative}", "artifact", relative,
+                         Validity.UNKNOWN, data={"path": relative, "kind": "document"}, preserve_status=True)
+        self.upsert_node(connection, document_id, "semantic-document", title, status, "VDOC", data)
+        connection.execute(
+            "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+            (f"file:{relative}", document_id, "REPRESENTS", "runtime", 1.0, "{}", timestamp),
+        )
+        if desired_id:
+            connection.execute(
+                "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                (document_id, desired_id, "AFFECTS", "runtime", 1.0, "{}", timestamp),
+            )
+        return changed, {"id": document_id, "path": relative, "semantic_revision": revision,
+                         "digest": digest, "status": status, "created": existing is None}
+
+    def _materialize_vdoc_documents(self, desired_rows: list[dict[str, Any]], document_root: str) -> list[dict[str, Any]]:
+        output = self.root / document_root
+        output.mkdir(parents=True, exist_ok=True)
+        changed_paths: list[tuple[str, int]] = []
+        results: list[dict[str, Any]] = []
+        skill_root = Path(__file__).resolve().parents[1] / "skills" / "verif-harness"
+        with self.connect() as connection:
+            for desired in desired_rows:
+                contract = desired.get("document")
+                if not contract:
+                    continue
+                candidate = output / contract["filename"]
+                if candidate.is_symlink():
+                    raise HarnessError(f"拒绝跟随语义文档符号链接: {candidate}")
+                relative = relative_path(self.root, candidate)
+                self._document_path_allowed(relative)
+                target = self.root / relative
+                source = skill_root / contract["template"]
+                if not source.is_file():
+                    raise HarnessError(f"VDOC 模板不存在: {contract['template']}")
+                created = not target.exists()
+                if created:
+                    atomic_text(target, source.read_text(encoding="utf-8"))
+                document_id = f"document:vdoc:{desired['key']}"
+                owners = ",".join(contract["maintained_by"])
+                changed, row = self._register_document(
+                    connection, document_id, relative, desired["title"], desired["id"], owners,
+                    "由 VDOC 模板创建" if created else "登记已有语义文档",
+                )
+                row["materialized"] = created
+                results.append(row)
+                if changed:
+                    changed_paths.append((relative, row["semantic_revision"]))
+        for relative, revision in changed_paths:
+            self.record_change(relative, "modify", f"document-r{revision}")
+        self.write_model_projection()
+        return results
+
     def design_workstream(
         self, workstream: str, objective: str | None, desired: list[str],
         exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
@@ -537,20 +670,24 @@ class ProjectStore:
             """, (name, "REVIEW", revision, objective_value, json_text(desired_rows), json_text(exit_values),
                   json_text(decisions), json_text(context), now()))
         self.write_workstream_projection(name)
+        materialized_documents: list[dict[str, Any]] = []
         if name == "VDOC":
             manifest["vdoc_document_root"] = document_root_value
             manifest["updated_at"] = now()
             atomic_json(self.state / "project.json", manifest)
             update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, document_root_value))
+            if not desired:
+                materialized_documents = self._materialize_vdoc_documents(desired_rows, document_root_value)
         result = self.workstream(name)
         result["template"] = {"name": template["name"], "topics": [item[0] for item in template["desired"]]}
         if name == "VDOC":
             result["document_guidance"] = {
                 "instructions": "vplan/vdoc.md",
                 "templates_relative_to": "skill-root",
-                "materialization": "agent-dialogue-required",
+                "materialization": "missing-templates-created; agent-dialogue-required-for-semantics",
                 "document_root": document_root_value,
                 "project_instructions": "AGENTS.md",
+                "documents": materialized_documents,
                 "optional_documents": [{"filename": "code_coverage_waiver_manifest.md",
                                         "template": "assets/vdoc/code_coverage_waiver_manifest.md",
                                         "when": "specific-code-coverage-waiver-candidate", "maintained_by": ["VCOV"]}],
@@ -598,10 +735,249 @@ class ProjectStore:
         result["auto_closure"] = self.evaluate_closure(plan["workstream"])
         return result
 
+    def documents(self, selector: str | None = None) -> list[dict[str, Any]]:
+        self.require()
+        with self.read_connect() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'"
+            ).fetchone()
+            if exists is None:
+                if selector is not None:
+                    raise HarnessError(f"未知语义文档: {selector}；先执行 plan VDOC")
+                return []
+            rows = [dict(row) for row in connection.execute("SELECT * FROM documents ORDER BY path")]
+            if selector is not None:
+                matches = [row for row in rows if selector in {row["id"], row["path"], Path(row["path"]).name}]
+                if not matches:
+                    raise HarnessError(f"未知语义文档: {selector}")
+                if len(matches) > 1:
+                    raise HarnessError(f"文档选择不唯一，请使用完整路径或 ID: {selector}")
+                rows = matches
+            for row in rows:
+                current_path = self.root / row["path"]
+                row["exists"] = current_path.is_file()
+                row["content_changed"] = row["exists"] and self._digest(current_path) != row["digest"]
+                row["effective_status"] = (
+                    Validity.INVALID.value if not row["exists"] else
+                    Validity.REVIEW_REQUIRED.value if row["content_changed"] else row["status"]
+                )
+                row["revisions"] = [dict(item) for item in connection.execute(
+                    "SELECT semantic_revision,digest,summary,created_at FROM document_revisions WHERE document_id=? ORDER BY semantic_revision",
+                    (row["id"],),
+                )]
+                row["reviews"] = [dict(item) for item in connection.execute(
+                    "SELECT id,semantic_revision,verdict,reviewer,notes,created_at FROM document_reviews WHERE document_id=? ORDER BY created_at",
+                    (row["id"],),
+                )]
+                items = [dict(item) for item in connection.execute(
+                    "SELECT id,kind,title,anchor,status,owner,review_trigger,affects_json,created_at,updated_at "
+                    "FROM document_items WHERE document_id=? ORDER BY kind,id",
+                    (row["id"],),
+                )]
+                for item in items:
+                    item["affects"] = json.loads(item.pop("affects_json"))
+                row["governance_items"] = items
+        return rows
+
+    def sync_documents(self, selectors: Iterable[str] = ()) -> dict[str, Any]:
+        requested = list(selectors)
+        rows = self.documents()
+        if requested:
+            selected: list[dict[str, Any]] = []
+            for selector in requested:
+                selected.extend(self.documents(selector))
+            unique = {row["id"]: row for row in selected}
+            rows = [unique[key] for key in sorted(unique)]
+        if not rows:
+            raise HarnessError("尚未登记语义文档；先执行 plan VDOC")
+        changed: list[tuple[str, int]] = []
+        missing: list[str] = []
+        newly_missing: list[str] = []
+        restored: list[tuple[str, int]] = []
+        with self.connect() as connection:
+            for row in rows:
+                path = self.root / row["path"]
+                if not path.is_file():
+                    connection.execute("UPDATE documents SET status=?,updated_at=? WHERE id=?",
+                                       (Validity.INVALID.value, now(), row["id"]))
+                    connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                                       (Validity.INVALID.value, now(), row["id"]))
+                    missing.append(row["path"])
+                    if row["status"] != Validity.INVALID.value:
+                        newly_missing.append(row["path"])
+                    continue
+                observed_changed, result = self._register_document(
+                    connection, row["id"], row["path"], row["title"], row["desired_id"],
+                    row["owner"], "语义正文内容摘要发生变化",
+                )
+                if observed_changed:
+                    changed.append((row["path"], result["semantic_revision"]))
+                elif row["status"] == Validity.INVALID.value:
+                    connection.execute("UPDATE documents SET status=?,updated_at=? WHERE id=?",
+                                       (Validity.REVIEW_REQUIRED.value, now(), row["id"]))
+                    connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                                       (Validity.REVIEW_REQUIRED.value, now(), row["id"]))
+                    restored.append((row["path"], result["semantic_revision"]))
+        for path, revision in changed:
+            self.record_change(path, "modify", f"document-r{revision}")
+        for path in newly_missing:
+            self.record_change(path, "delete", None)
+        for path, revision in restored:
+            self.record_change(path, "add", f"document-r{revision}")
+        self.write_model_projection()
+        return {"documents": self.documents(), "changed": [path for path, _revision in changed],
+                "missing": missing, "restored": [path for path, _revision in restored],
+                "state_projection_written": False}
+
+    def review_document(
+        self, selector: str, verdict: str, reviewer: str, notes: str,
+    ) -> dict[str, Any]:
+        self.sync_documents([selector])
+        document = self.documents(selector)[0]
+        plan = self.workstream("VDOC")
+        if plan["lifecycle"] not in {"ACTIVE", "SATISFIED", "PARTIALLY_STALE"}:
+            raise HarnessError("必须先由 Human approve 当前 VDOC desired-state revision，再评审文档正文")
+        normalized = verdict.upper()
+        review_id = uuid.uuid4().hex
+        status = Validity.VALID.value if verdict == "approve" else Validity.REVIEW_REQUIRED.value
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO document_reviews VALUES(?,?,?,?,?,?,?)",
+                (review_id, document["id"], document["semantic_revision"], normalized,
+                 reviewer, notes, now()),
+            )
+            connection.execute("UPDATE documents SET status=?,updated_at=? WHERE id=?",
+                               (status, now(), document["id"]))
+            connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                               (status, now(), document["id"]))
+            if verdict == "approve":
+                connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                                   (Validity.VALID.value, now(), f"file:{document['path']}"))
+                connection.execute(
+                    "UPDATE findings SET status='RESOLVED' WHERE subject IN (?,?) AND status='OPEN'",
+                    (document["id"], f"file:{document['path']}"),
+                )
+            if verdict != "approve" and document["desired_id"]:
+                connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                                   (Validity.REVIEW_REQUIRED.value, now(), document["desired_id"]))
+        evidence = None
+        if verdict == "approve" and document["desired_id"]:
+            evidence = self.add_evidence(document["desired_id"], "document-review", document["path"], "pass")
+        self.write_model_projection()
+        return {"review_id": review_id, "document": self.documents(selector)[0],
+                "verdict": normalized, "reviewer": reviewer, "evidence": evidence,
+                "auto_closure": self.evaluate_closure("VDOC")}
+
+    def track_document_item(
+        self, selector: str, item_id: str, kind: str, title: str, status: str,
+        owner: str | None, review_trigger: str | None, affects: list[str], anchor: str | None,
+    ) -> dict[str, Any]:
+        document = self.documents(selector)[0]
+        normalized_kind = kind.lower()
+        normalized_status = status.upper()
+        if normalized_kind not in DOCUMENT_ITEM_KINDS:
+            raise HarnessError("治理事项类型必须是 " + ", ".join(sorted(DOCUMENT_ITEM_KINDS)))
+        if normalized_status not in DOCUMENT_ITEM_STATUSES:
+            raise HarnessError("治理事项状态必须是 " + ", ".join(sorted(DOCUMENT_ITEM_STATUSES)))
+        if not item_id.strip() or any(character.isspace() for character in item_id):
+            raise HarnessError("治理事项 ID 不能为空或包含空白")
+        timestamp = now()
+        with self.connect() as connection:
+            previous = connection.execute("SELECT * FROM document_items WHERE id=?", (item_id,)).fetchone()
+            connection.execute(
+                "INSERT INTO document_items VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET document_id=excluded.document_id,kind=excluded.kind,"
+                "title=excluded.title,anchor=excluded.anchor,status=excluded.status,owner=excluded.owner,"
+                "review_trigger=excluded.review_trigger,affects_json=excluded.affects_json,updated_at=excluded.updated_at",
+                (item_id, document["id"], normalized_kind, title, anchor, normalized_status,
+                 owner, review_trigger, json_text(affects), timestamp, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO events VALUES(?,?,?,?,?,?)",
+                (f"event:{uuid.uuid4().hex[:12]}", "document-item-change", item_id,
+                 str(document["semantic_revision"]), json_text({
+                     "document_id": document["id"], "previous_status": previous["status"] if previous else None,
+                     "status": normalized_status, "kind": normalized_kind,
+                 }), timestamp),
+            )
+        return {"id": item_id, "document_id": document["id"], "kind": normalized_kind,
+                "title": title, "status": normalized_status, "owner": owner,
+                "review_trigger": review_trigger, "affects": affects, "anchor": anchor}
+
+    def render_document_state(self, selector: str | None = None) -> str:
+        documents = self.documents(selector)
+        if not documents:
+            raise HarnessError("尚未登记语义文档；先执行 plan VDOC")
+
+        def cell(value: Any) -> str:
+            return str(value if value not in {None, ""} else "—").replace("|", "\\|").replace("\n", " ")
+
+        lines = ["# 验证文档治理状态", "",
+                 "> 本内容由 `.verif-harness/model.sqlite3` 按需投影；不要手工并入工程语义正文。"]
+        labels = {
+            "human-decision": "Human Decisions", "provisional": "Provisional Decisions",
+            "assumption": "Assumptions", "external-open-question": "External Open Questions",
+        }
+        for document in documents:
+            lines.extend(["", f"## `{document['path']}`", "",
+                          f"- Document ID：`{document['id']}`",
+                          f"- Semantic revision：**{document['semantic_revision']}**",
+                          f"- Status：**{document['effective_status']}**",
+                          f"- Recorded status：**{document['status']}**",
+                          f"- Working tree content changed：**{str(document['content_changed']).lower()}**",
+                          f"- Content digest：`{document['digest']}`",
+                          f"- Desired ID：`{document['desired_id'] or '—'}`",
+                          f"- Owner：{document['owner']}"])
+            for kind, label in labels.items():
+                items = [item for item in document["governance_items"] if item["kind"] == kind]
+                lines.extend(["", f"### {label}", "",
+                              "| ID | 状态 | 内容 | Owner | 复审触发器 | 影响目标 | 文档锚点 |",
+                              "| --- | --- | --- | --- | --- | --- | --- |"])
+                lines.extend(
+                    f"| `{cell(item['id'])}` | {cell(item['status'])} | {cell(item['title'])} | "
+                    f"{cell(item['owner'])} | {cell(item['review_trigger'])} | "
+                    f"{cell(', '.join(item['affects']))} | {cell(item['anchor'])} |" for item in items
+                )
+                if not items:
+                    lines.append("| — | — | 无 | — | — | — | — |")
+            lines.extend(["", "### Review Trace", "",
+                          "| Revision | Verdict | Reviewer | 时间 |",
+                          "| --- | --- | --- | --- |"])
+            lines.extend(
+                f"| {item['semantic_revision']} | {cell(item['verdict'])} | {cell(item['reviewer'])} | {cell(item['created_at'])} |"
+                for item in document["reviews"]
+            )
+            if not document["reviews"]:
+                lines.append("| — | — | 尚无评审 | — |")
+            lines.extend(["", "### Human Review Notes", ""])
+            notes = [item for item in document["reviews"] if item["notes"]]
+            lines.extend(
+                f"- r{item['semantic_revision']} · {item['reviewer']} · {item['verdict']}：{item['notes']}"
+                for item in notes
+            )
+            if not notes:
+                lines.append("- 无")
+            lines.extend(["", "### Revision Log", "",
+                          "| Revision | Digest | 摘要 | 时间 |",
+                          "| --- | --- | --- | --- |"])
+            lines.extend(
+                f"| {item['semantic_revision']} | `{item['digest']}` | {cell(item['summary'])} | {cell(item['created_at'])} |"
+                for item in document["revisions"]
+            )
+        return "\n".join(lines) + "\n"
+
+    def write_document_state_projection(self, output: str, selector: str | None = None) -> dict[str, Any]:
+        relative = relative_path(self.root, output)
+        self._document_path_allowed(relative)
+        if any(row["path"] == relative for row in self.documents()):
+            raise HarnessError("治理状态投影不能覆盖工程语义文档")
+        atomic_text(self.root / relative, self.render_document_state(selector))
+        return {"path": relative, "selector": selector, "source": ".verif-harness/model.sqlite3"}
+
     def _baseline_payload(self, workstream: str, reviewer: str, reason: str) -> dict[str, Any]:
         plan = self.workstream(workstream)
         model = self.model()
-        return {
+        payload = {
             "schema": "WorkstreamBaseline/1", "created_at": now(), "project_revision": git_revision(self.root),
             "reviewer": reviewer, "reason": reason, "plan": plan,
             "nodes": [node for node in model["nodes"] if node.get("workstream") == workstream],
@@ -615,9 +991,24 @@ class ProjectStore:
                 node["id"] == item["subject"] for node in model["nodes"] if node.get("workstream") == workstream
             )],
         }
+        if workstream == "VDOC":
+            documents = self.documents()
+            if documents:
+                payload["documents"] = documents
+                payload["document_governance_projection"] = "document-governance.md"
+                for document in documents:
+                    document["snapshot_path"] = f"documents/{Path(document['path']).name}"
+        return payload
 
     def freeze_workstream(self, workstream: str, reviewer: str, reason: str) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
+        if name == "VDOC":
+            registered_documents = self.documents()
+            if registered_documents:
+                self.sync_documents()
+                unreviewed = [row["path"] for row in self.documents() if row["status"] != Validity.VALID.value]
+                if unreviewed:
+                    raise HarnessError("VDOC 存在尚未批准或内容已变化的语义文档: " + ", ".join(unreviewed))
         closure = self.evaluate_closure(name, persist=False)
         plan = self.workstream(name)
         if plan["lifecycle"] not in {"ACTIVE", "SATISFIED"}:
@@ -632,6 +1023,16 @@ class ProjectStore:
         target = self.state / relative
         if target.exists():
             raise HarnessError(f"不可变 baseline 已存在: {relative}")
+        if name == "VDOC" and payload.get("documents"):
+            for document in payload.get("documents", []):
+                source = self.root / document["path"]
+                if self._digest(source) != document["digest"]:
+                    raise HarnessError(f"语义文档在 freeze 期间发生变化: {document['path']}")
+            atomic_text(target.parent / payload["document_governance_projection"], self.render_document_state())
+            for document in payload.get("documents", []):
+                source = self.root / document["path"]
+                snapshot = target.parent / document["snapshot_path"]
+                atomic_text(snapshot, source.read_text(encoding="utf-8"))
         atomic_json(target, payload)
         with self.connect() as connection:
             connection.execute("UPDATE workstreams SET lifecycle='BASELINED',updated_at=? WHERE name=?", (now(), name))
@@ -649,7 +1050,7 @@ class ProjectStore:
         missing = sorted(set(WORKSTREAM_TEMPLATES) - present)
         not_ready = [item["workstream"] for item in plans if item["lifecycle"] != "BASELINED"]
         audit = self.audit()
-        if missing or not_ready or audit["open_findings"] or audit["missing_files"]:
+        if missing or not_ready or audit["open_findings"] or audit["status"] == "FAIL":
             raise HarnessError(f"final freeze 未满足: missing={missing}, not_baselined={not_ready}, audit={audit}")
         with self.read_connect() as connection:
             recorded_baselines = [dict(row) for row in connection.execute("SELECT * FROM baselines ORDER BY created_at")]
@@ -800,6 +1201,7 @@ class ProjectStore:
 
     def scan(self) -> dict[str, Any]:
         self.require()
+        document_sync = self.sync_documents() if self.documents() else {"changed": [], "missing": []}
         missing: list[str] = []
         with self.connect() as connection:
             for row in connection.execute("SELECT id FROM nodes WHERE id LIKE 'file:%'"):
@@ -809,19 +1211,28 @@ class ProjectStore:
                     connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (Validity.INVALID.value, now(), row["id"]))
             open_findings = connection.execute("SELECT COUNT(*) count FROM findings WHERE status='OPEN'").fetchone()["count"]
         self.write_model_projection()
-        return {"missing_files": missing, "open_findings": open_findings, "status": "FAIL" if missing else "PASS",
+        failed = bool(missing or document_sync["changed"] or open_findings)
+        return {"missing_files": missing, "changed_documents": document_sync["changed"],
+                "open_findings": open_findings, "status": "FAIL" if failed else "PASS",
                 "auto_closure": self.reconcile()}
 
     def audit(self) -> dict[str, Any]:
         self.require()
         missing: list[str] = []
+        changed_documents: list[str] = []
+        registered_documents = self.documents()
         with self.read_connect() as connection:
             for row in connection.execute("SELECT id FROM nodes WHERE id LIKE 'file:%'"):
                 relative = row["id"][5:]
                 if relative != "." and not (self.root / relative).exists():
                     missing.append(row["id"])
             open_findings = connection.execute("SELECT COUNT(*) count FROM findings WHERE status='OPEN'").fetchone()["count"]
-        return {"missing_files": missing, "open_findings": open_findings, "status": "FAIL" if missing else "PASS"}
+            for row in registered_documents:
+                if row["content_changed"]:
+                    changed_documents.append(row["path"])
+        failed = bool(missing or changed_documents or open_findings)
+        return {"missing_files": missing, "changed_documents": changed_documents,
+                "open_findings": open_findings, "status": "FAIL" if failed else "PASS"}
 
     def evaluate_closure(self, workstream: str, persist: bool = True) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
@@ -923,11 +1334,18 @@ class ProjectStore:
         for node in model["nodes"]:
             counts[node["status"]] = counts.get(node["status"], 0) + 1
         plans = self.workstreams()
+        document_rows = self.documents()
+        document_status: dict[str, int] = {}
+        for document in document_rows:
+            observed = document["effective_status"]
+            document_status[observed] = document_status.get(observed, 0) + 1
         return {
             "project": manifest["project_name"], "baseline_revision": manifest.get("baseline_revision"),
             "runtime": manifest.get("runtime"), "lifecycle": "ACTIVE",
             "workstreams": plans, "closures": [self.evaluate_closure(item["workstream"], persist=False) for item in plans],
             "node_status": counts, "open_findings": sum(item["status"] == "OPEN" for item in model["findings"]),
+            "documents": {"count": len(document_rows), "status": document_status,
+                          "content_changed": [row["path"] for row in document_rows if row["content_changed"]]},
         }
 
     def write_model_projection(self) -> None:

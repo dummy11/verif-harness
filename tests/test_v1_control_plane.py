@@ -119,7 +119,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(status[first["desired_state"][0]["id"]], "STALE")
         self.assertEqual(status[second["desired_state"][0]["id"]], "UNKNOWN")
 
-    def test_vdoc_deliverables_persist_without_creating_or_approving_documents(self) -> None:
+    def test_vdoc_materializes_missing_semantic_documents_without_approving_them(self) -> None:
         self.bootstrap()
         readonly_source = self.root / "rtl/dut.sv"
         original = readonly_source.read_bytes()
@@ -136,12 +136,115 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertNotIn(optional["filename"], expected)
         self.assertTrue((ROOT / "skills/verif-harness" / optional["template"]).is_file())
         self.assertEqual(plan["document_guidance"]["document_root"], "verification/docs/verification")
+        self.assertEqual(len(plan["document_guidance"]["documents"]), 8)
         instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("VDOC 文档根目录：`verification/docs/verification`", instructions)
         self.assertIn("verification_workflow.md", instructions)
-        self.assertFalse((self.root / "docs/verification").exists())
+        document_root = self.root / "verification/docs/verification"
+        self.assertEqual({path.name for path in document_root.glob("*.md")}, expected)
+        status = self.run_cli("docs", "status")
+        self.assertEqual(len(status["documents"]), 8)
+        self.assertTrue(all(row["status"] == "REVIEW_REQUIRED" for row in status["documents"]))
+        self.assertTrue(all(not row["content_changed"] for row in status["documents"]))
+        premature = self.invoke("docs", "review", "verification_plan.md", "--reviewer", "alice")
+        self.assertEqual(premature.returncode, 2)
+        self.assertIn("approve 当前 VDOC desired-state revision", premature.stderr)
         self.assertEqual(readonly_source.read_bytes(), original)
         self.assertEqual(self.invoke("freeze", "VDOC").returncode, 2)
+
+    def test_existing_semantic_document_is_preserved_and_digest_change_requires_review(self) -> None:
+        self.bootstrap()
+        root = self.root / "verification/docs/verification"
+        root.mkdir(parents=True)
+        plan_path = root / "verification_plan.md"
+        plan_path.write_text("# Project-specific verification plan\n", encoding="utf-8")
+        self.run_cli("plan", "VDOC")
+        self.assertEqual(plan_path.read_text(encoding="utf-8"), "# Project-specific verification plan\n")
+        plan_path.write_text("# Project-specific verification plan\n\nUpdated semantics.\n", encoding="utf-8")
+        before = self.run_cli("docs", "status", "verification_plan.md")["documents"][0]
+        self.assertTrue(before["content_changed"])
+        synced = self.run_cli("docs", "sync", "verification_plan.md")
+        self.assertEqual(synced["changed"], ["verification/docs/verification/verification_plan.md"])
+        after = self.run_cli("docs", "status", "verification_plan.md")["documents"][0]
+        self.assertEqual(after["semantic_revision"], 2)
+        self.assertEqual(after["status"], "REVIEW_REQUIRED")
+        rendered = self.invoke("docs", "render", "verification_plan.md")
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        self.assertIn("### Revision Log", rendered.stdout)
+        self.assertIn("语义正文内容摘要发生变化", rendered.stdout)
+
+    def test_missing_document_change_is_idempotent_and_restore_requires_review(self) -> None:
+        self.bootstrap()
+        self.run_cli("plan", "VDOC")
+        path = self.root / "verification/docs/verification/verification_plan.md"
+        original = path.read_text(encoding="utf-8")
+        path.unlink()
+        first = self.run_cli("docs", "sync", "verification_plan.md")
+        self.assertEqual(first["missing"], ["verification/docs/verification/verification_plan.md"])
+        with sqlite3.connect(self.root / ".verif-harness/model.sqlite3") as connection:
+            first_events = connection.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='delete' AND subject='file:verification/docs/verification/verification_plan.md'"
+            ).fetchone()[0]
+        self.run_cli("docs", "sync", "verification_plan.md")
+        with sqlite3.connect(self.root / ".verif-harness/model.sqlite3") as connection:
+            second_events = connection.execute(
+                "SELECT COUNT(*) FROM events WHERE kind='delete' AND subject='file:verification/docs/verification/verification_plan.md'"
+            ).fetchone()[0]
+        self.assertEqual(first_events, 1)
+        self.assertEqual(second_events, first_events)
+        path.write_text(original, encoding="utf-8")
+        restored = self.run_cli("docs", "sync", "verification_plan.md")
+        self.assertEqual(restored["restored"], ["verification/docs/verification/verification_plan.md"])
+        status = self.run_cli("docs", "status", "verification_plan.md")["documents"][0]
+        self.assertEqual(status["status"], "REVIEW_REQUIRED")
+
+    def test_document_governance_items_and_review_are_sqlite_projections(self) -> None:
+        self.bootstrap()
+        plan = self.run_cli("plan", "VDOC")
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
+        tracked = self.run_cli(
+            "docs", "track", "verification_plan.md", "--id", "D-001",
+            "--kind", "provisional", "--title", "暂按 transaction-level 比较",
+            "--status", "ACTIVE", "--owner", "alice", "--review-trigger", "获得首轮回归 evidence",
+            "--affects", "VF-001", "--anchor", "#compare-policy",
+        )
+        self.assertEqual(tracked["kind"], "provisional")
+        reviewed = self.run_cli(
+            "docs", "review", "verification_plan.md", "--reviewer", "alice",
+            "--notes", "正文语义已确认",
+        )
+        self.assertEqual(reviewed["document"]["status"], "VALID")
+        desired = next(row["id"] for row in plan["desired_state"] if row["key"] == "verification-plan")
+        self.assertEqual(self.run_cli("inspect", desired)["nodes"][0]["status"], "VALID")
+        rendered = self.invoke("docs", "render", "verification_plan.md")
+        self.assertIn("D-001", rendered.stdout)
+        self.assertIn("### Human Review Notes", rendered.stdout)
+        self.assertIn("正文语义已确认", rendered.stdout)
+        self.assertFalse((self.root / "verification/docs/verification/verification_plan.status.md").exists())
+        written = self.run_cli(
+            "docs", "render", "verification_plan.md", "--output", "verification/review/document-state.md",
+        )
+        self.assertEqual(written["source"], ".verif-harness/model.sqlite3")
+        self.assertTrue((self.root / written["path"]).is_file())
+        refused = self.invoke(
+            "docs", "render", "verification_plan.md", "--output",
+            "verification/docs/verification/verification_plan.md",
+        )
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("不能覆盖工程语义文档", refused.stderr)
+
+    def test_vdoc_freeze_snapshots_reviewed_semantic_documents(self) -> None:
+        self.bootstrap()
+        self.run_cli("plan", "VDOC")
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
+        for document in self.run_cli("docs", "status")["documents"]:
+            self.run_cli("docs", "review", document["path"], "--reviewer", "alice")
+        frozen = self.run_cli("freeze", "VDOC", "--reviewer", "alice", "--reason", "reviewed documents")
+        bundle = self.root / ".verif-harness" / Path(frozen["path"]).parent
+        manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["documents"]), 8)
+        self.assertEqual(len(list((bundle / "documents").glob("*.md"))), 8)
+        self.assertTrue((bundle / "document-governance.md").is_file())
 
     def test_vdoc_document_root_is_agent_supplied_and_cannot_overlap_readonly_input(self) -> None:
         self.bootstrap()

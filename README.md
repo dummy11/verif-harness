@@ -43,6 +43,7 @@ verif-harness 将验证工程划分为六个可并行、可重入的 [Workstream
 - 根据当前 gap 动态计算并按规则排序的建议动作；
 - xverif、WavePeek、回归及代码生成能力的受控接入；
 - Human review、waiver、Workstream baseline 和 final freeze 审计链；
+- 可编辑语义文档与 SQLite 治理状态分离，以及按需状态投影和文档摘要失效检查；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
 
 ## 运行逻辑
@@ -97,8 +98,9 @@ Capability tools 负责实际工程动作；Human 负责语义批准、拒绝、
 
 ## 治理原则
 
-- `.verif-harness/model.sqlite3` 保存验证知识状态；`project.json` 保存项目配置，
-  Markdown 等阅读投影由 CLI 生成。详见[权威数据与投影](skills/verif-harness/docs/glossary.md#authority)。
+- 项目 VDOC Markdown 保存验证工程语义；`.verif-harness/model.sqlite3` 保存治理状态、
+  摘要、评审、证据和失效关系；`project.json` 保存项目配置。状态类 Markdown 由 CLI
+  按需投影。详见[权威数据与投影](skills/verif-harness/docs/glossary.md#authority)。
 - desired state 是“需要成立的状态”，不是必须顺序执行的 task 清单。
 - `VDOC/VSTIM/VCHK/VCOV/VCASE/VREG` 是工作上下文，不是线性生命周期。
 - 确定性工作交给工具；只有语义歧义进入 Verification Reasoning Engine。

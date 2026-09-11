@@ -20,7 +20,8 @@ document. Template paths are relative to the installed Skill root.
 The CLI's default VDOC desired nodes contain document contracts (filename,
 template, maintained_by). `plan.md` under `.verif-harness/workstreams/vdoc/`
 remains the planning projection; the eight deliverables are separate engineering
-documents. The CLI does not materialize them or approve their content.
+documents. `plan VDOC` creates only missing templates and registers their paths
+and digests; it never overwrites an existing semantic document or approves content.
 
 ## Dialogue and writing
 
@@ -32,7 +33,8 @@ documents. The CLI does not materialize them or approve their content.
    Pass the confirmed project-relative directory as `--document-root` when it
    differs from the recorded/default path. VDOC planning then refreshes only the
    marked verif-harness block in project-root `AGENTS.md` with the eight routes.
-2. Read the relevant template before filling that document. Reuse existing
+2. `plan VDOC` materializes missing templates in the selected output directory.
+   Read the relevant template before filling that document. Reuse existing
    verification documents and their stable IDs; inspect and edit them in place
    only within authorized verification output paths, never blindly overwrite.
    A template named reference_model_spec.md does not make an existing read-only
@@ -51,14 +53,18 @@ documents. The CLI does not materialize them or approve their content.
    needs a reason and an agreed alternative, not silently omitted requirements.
    The optional waiver manifest is not a default required VDOC deliverable.
 5. Keep each document concise: current design, source references, tables and open
-   questions. Use the knowledge model for decisions and review/evidence history;
-   link their IDs and evidence paths instead of duplicating long logs in every file.
+   questions. Markdown is authoritative for engineering semantics. Use the
+   knowledge model for document digest/revision, decision lifecycle,
+   review/evidence history and invalidation; link stable IDs instead of duplicating
+   status logs in every file.
    Do not put implementation code dumps or past run diaries in the main text.
 
 ## Model links and review
 
-For each output, register or reuse its project-relative file node, and record an
-`AFFECTS` edge from that file node to the corresponding current VDOC desired node.
+The Engine registers each default output, its digest and its corresponding VDOC
+desired node. After editing semantic content, run `docs sync [DOCUMENT]`; the
+Engine increments the semantic revision when the digest changes and propagates
+invalidation through the registered relations.
 Custom `--desired` plans replace the default catalog: establish explicit mappings
 for their actual goals, rather than guessing which custom node a document satisfies.
 Cross-workstream consumers need explicit dependency edges as applicable.
@@ -66,12 +72,18 @@ Cross-workstream consumers need explicit dependency edges as applicable.
 The initial file/draft remains UNKNOWN or REVIEW_REQUIRED. Human approval of the
 plan authorizes desired scope; it does not certify document content. Review the
 document's sources, resolved scope, remaining questions and cross-document IDs.
-Only after the user explicitly accepts that content may the Agent record the
-actual review evidence against the desired node. Do not use file existence or a
-bare template as passing evidence. CLI does not semantically enforce this rule.
+Only after the user explicitly accepts that content may the Agent run `docs review
+DOCUMENT`. That command binds the review to the current digest/revision and records
+review evidence against the corresponding desired node. Do not use file existence
+or a bare template as passing evidence.
 
-On a later document revision, record `changed` for the verification output so its
-consumers require revalidation. Preserve existing review evidence, re-review affected
-content and re-prove the relevant goals. If desired scope changes, replan and bind
-the document edges to the new desired revision. Never regenerate all documents
-merely because a single Workstream was reopened.
+Use `docs track` for the state index of Human Decision, Provisional, Assumption and
+External Open Question entries whose full engineering rationale remains in the
+Markdown. Use `docs status` for JSON and `docs render` for a Markdown state view;
+rendering defaults to stdout and never updates semantic documents.
+
+On a later document revision, run `docs sync`, preserve existing review evidence,
+and re-review affected content. If desired scope changes, replan and bind the
+document edges to the new desired revision. Never regenerate all documents merely
+because a single Workstream was reopened. VDOC freeze snapshots the reviewed
+semantic documents beside the immutable manifest.

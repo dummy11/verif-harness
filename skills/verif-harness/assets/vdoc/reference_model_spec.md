@@ -1,6 +1,7 @@
 # 参考模型接入与比较合同
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 本文是验证侧合同，不替代或修改输入 RTL spec。
 
@@ -32,6 +33,6 @@
 定义 mismatch 报告的输入标识、expected/actual、版本和复现信息。
 说明如何验证模型自身及 adapter，避免 DUT 与参考模型共享错误假设。
 
-## 决策与评审
+## 工程决策与开放问题
 
-未决比较语义及受影响目标：待填。评审记录和动态证据分别链接，不合并为一项通过结论。
+未决比较语义及受影响目标写在正文；其状态、评审和动态证据由 SQLite 按需投影。

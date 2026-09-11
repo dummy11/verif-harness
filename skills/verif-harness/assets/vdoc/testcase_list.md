@@ -1,6 +1,7 @@
 # 用例清单
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 用例组织与优先级
 
@@ -25,7 +26,7 @@
 | Test ID/Feature ID | stimulus/checker/环境依赖 | 本轮可执行范围 | 待解决项 |
 | --- | --- | --- | --- |
 
-## 本修订评审
+## 一致性要求
 
 核对用例有明确 oracle、能复现、能终止且关联验证点；避免仅“运行不报错”即通过。
-评审记录：待登记。
+评审状态与证据由 SQLite 按需投影。

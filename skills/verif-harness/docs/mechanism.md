@@ -51,9 +51,15 @@ managed block。该区块先建立只读边界、事实源、交互授权和 VDO
 VDOC 默认目标逐份关联八个正式验证文档及其通用模板，包括一份不含 Stage/Spec Kit
 语义的 `verification_workflow.md` 文档治理合同；当前 Agent 按
 [文档产出规则](../vplan/vdoc.md)进行对话填充。CLI 的 `plan.md` 仅列目标，
-正式验证计划、验证点矩阵和各专题设计是独立产物，文件节点需关联对应 desired。
+正式验证计划、验证点矩阵和各专题设计是独立的工程语义源。`plan VDOC` 只创建缺失模板，
+不覆盖已有文档，同时把路径、摘要、semantic revision 和 desired 关系登记到 SQLite。
 VDOC 规划还会把确认的文档根和八份路由写回同一个 `AGENTS.md` managed block。
 后续 VCHK、VCOV 等工作域按影响范围修订文档，不要求首次规划时全部完成。
+
+正文改变后，Agent 调用 `docs sync`；Engine 通过摘要变化传播失效。文档状态、决策事项
+生命周期、Review Trace、Human Review Notes 和 Revision Log 保存在 SQLite，通过
+`docs status` 或 `docs render` 按需查看，默认不写回工程语义正文。Human 审批具体正文后，
+Agent 调用 `docs review`，将审批绑定到当前摘要和 revision；VDOC freeze 同时快照已评审正文。
 
 ## 3. 如何决定下一步
 

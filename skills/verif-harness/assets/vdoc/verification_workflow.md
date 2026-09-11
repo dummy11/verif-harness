@@ -1,7 +1,7 @@
 # 验证文档治理流程
 
-> 状态：Draft。本文是项目验证文档的治理合同，不是 RTL 规格，也不替代
-> `.verif-harness/model.sqlite3` 中的机器事实。
+> 本文是项目验证文档的工程语义合同，不是 RTL 规格。状态、修订、评审、
+> evidence 和事项生命周期由 `.verif-harness/model.sqlite3` 按需投影。
 
 ## 目的与适用范围
 
@@ -15,8 +15,9 @@ verif-harness Engine 的责任边界。VDOC、VSTIM、VCHK、VCOV、VCASE、VREG
 | 信息 | 权威来源 | 文档用途 |
 | --- | --- | --- |
 | DUT 行为 | 只读 RTL/RTL spec | 引用，不改写来源语义 |
-| 结构化目标、关系和状态 | `.verif-harness/model.sqlite3` | Markdown/JSON 是可评审投影 |
-| 工程决定 | Human 决定及其记录 | 文档引用决定 ID 和影响范围 |
+| 验证工程语义 | VDOC Markdown 文档 | 保存策略、接口、检查、覆盖和用例合同 |
+| 结构化目标、关系和治理状态 | `.verif-harness/model.sqlite3` | 通过 `docs status/render` 按需投影 |
+| 工程决定 | Markdown 中的完整依据 + SQLite 状态索引 | 使用稳定 ID、文档锚点和影响范围关联 |
 | 工具结果 | 带来源、摘要、revision、verdict 的 evidence | 不粘贴长日志冒充结论 |
 
 ## 角色与授权
@@ -69,9 +70,10 @@ Agent 形成 proposal/Draft
 
 ## 变更、失效与重新评审
 
-验证文档、RTL、spec 或验证资产变化时，Agent 使用 `changed` 登记真实变更。Engine 沿
-显式关系传播 `STALE` 或 `REVALIDATION_REQUIRED`。只修订受影响的内容，不因单点变化
-覆盖重建整套文档；旧 evidence、review 和 baseline 保留用于审计。
+验证文档正文变化后执行 `docs sync`；RTL、spec 或其他验证资产变化时使用 `changed`
+登记真实变更。Engine 比较内容摘要并沿显式关系传播 `STALE` 或
+`REVALIDATION_REQUIRED`。只修订受影响的内容，不因单点变化覆盖重建整套文档；旧
+evidence、review 和 baseline 保留用于审计。
 
 涉及已批准 Human Decision 的变化必须重新取得 Human 结论。普通 Living 内容可以增量
 维护，但仍需记录 revision、影响范围和新的验证证据。
@@ -84,13 +86,9 @@ Agent 形成 proposal/Draft
 - 文档内容通过 Human review 后才登记 passing review evidence。
 - `status`/`closure` 显示本轮 required desired node 已满足后，才可请求 freeze。
 
-## 本修订待决定事项
+## 文档治理相关决策与开放问题
 
-- `<列出仍需 Human 决定的文档治理问题；没有则写 None>`
-
-## 本修订评审
-
-- Revision：`<revision>`
-- Reviewer：`<human reviewer>`
-- Review evidence：`<project-relative evidence path>`
-- 受影响节点：`<node IDs>`
+- 在正文写明问题、选项、依据和工程影响，并使用稳定 ID。
+- 使用 `verif-harness docs track` 登记类型、owner、状态、复审触发器和受影响节点。
+- Review Trace、Human Review Notes 与 Revision Log 不在本文手工维护；需要时使用
+  `verif-harness docs render verification_workflow.md` 查看。

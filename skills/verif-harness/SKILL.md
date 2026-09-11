@@ -5,9 +5,11 @@ description: Govern continuous RTL verification engineering with the Verificatio
 
 # verif-harness v1
 
-Use `.verif-harness/model.sqlite3` as the machine fact source. Markdown and JSON
-under `.verif-harness/` are review projections. Never manufacture facts by
-editing projections or by claiming that an Agent/tool command is evidence.
+Use project VDOC Markdown as the source for verification engineering semantics,
+and `.verif-harness/model.sqlite3` as the source for governance state, relations,
+reviews and evidence. Markdown and JSON under `.verif-harness/` are reading
+projections. Never manufacture facts by editing projections or by claiming that
+an Agent/tool command is evidence.
 
 The control loop is continuous:
 
@@ -38,6 +40,10 @@ Workstream. Project lifecycle is separate.
   `vplan/INSTRUCTIONS.md`.
   For VDOC document drafting and cross-Workstream document revisions, read
   `vplan/vdoc.md` and the selected templates under `assets/vdoc/`.
+- Document governance (`docs`): create missing semantic templates during VDOC
+  planning, synchronize content digests, track decision/open-question state,
+  record Human content reviews, and render status on demand. Never overwrite an
+  existing semantic document or write generated state back into its body.
 - Verification Knowledge Model: read-only `inspect/trace/impact` access to typed facts.
   Read `vmodel/INSTRUCTIONS.md`.
 - `record`: structured ingress for facts, relations, evidence, changes, and

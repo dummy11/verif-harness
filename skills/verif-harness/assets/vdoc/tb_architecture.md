@@ -1,6 +1,7 @@
 # 验证环境架构
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 分层与职责
 
@@ -29,7 +30,7 @@
 涵盖 package/filelist 顺序、配置入口、seed、日志与波形边界。
 示意代码只保留说明接口必需的短片段；完整实现留在代码文件。
 
-## 设计决定与评审
+## 设计决定与开放问题
 
 关联 feature、reference model 合同和已记录的 Human Decisions。
-列出未解决的组件责任冲突及阻塞范围；评审记录与证据：待登记。
+列出未解决的组件责任冲突及阻塞范围；治理状态由 SQLite 按需投影。

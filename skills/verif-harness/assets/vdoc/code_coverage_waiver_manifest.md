@@ -1,8 +1,7 @@
 # 代码覆盖豁免清单
 
-状态：Draft · 文档修订：待填 · 关联 finding/desired ID：待填
-
-仅在出现具体 coverage hole 需要处置时创建。此模板不构成任何豁免批准。
+仅在出现具体 coverage hole 需要处置时创建。本文保存工程依据；批准状态、评审和
+revision 由 SQLite 按需投影。此模板不构成任何豁免批准。
 
 ## 对象与依据
 

@@ -1,6 +1,7 @@
 # 断言计划
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 范围与类别
 
@@ -25,7 +26,7 @@
 
 零 failure 不等于断言生效；确认前提发生、reset 禁用窗口合理，且检查路径真实接通。
 
-## 待决定项与评审
+## 工程决策与开放问题
 
 明确规格未定义行为及环境约束，不由 Agent 猜测预期反应。
-评审记录与必要的例外决定：待登记。
+治理状态与必要的例外决定由 SQLite 按需投影。

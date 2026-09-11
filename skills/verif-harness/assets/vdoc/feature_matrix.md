@@ -1,6 +1,7 @@
 # 验证点矩阵
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 分解规则
 
@@ -25,7 +26,7 @@
 | Feature ID | 缺少的策略/实现/证据 | 影响工作域 | 问题或决策引用 |
 | --- | --- | --- | --- |
 
-## 本修订评审
+## 一致性要求
 
 检查来源可追溯、验证点可判定、ID 唯一和跨文档引用一致。
-评审记录与证据：待登记。
+评审记录与证据由 SQLite 按需投影。

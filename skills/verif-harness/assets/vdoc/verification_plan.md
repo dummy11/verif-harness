@@ -1,6 +1,7 @@
 # 验证总计划
 
-状态：Draft · 文档修订：待填 · 关联 desired ID：待填
+> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
+> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
 
 ## 范围与输入依据
 
@@ -34,4 +35,4 @@
 
 - [验证点](feature_matrix.md)、[TB 架构](tb_architecture.md)、[参考模型合同](reference_model_spec.md)
 - [覆盖率计划](coverage_plan.md)、[断言计划](assertion_plan.md)、[用例清单](testcase_list.md)
-- 本修订评审记录与证据：待登记；不要在此复制全部历史或伪填 Approved。
+- 治理状态由 SQLite 按需投影；不要在此复制历史或伪填 Approved。

@@ -36,12 +36,27 @@ and may route to one another; they are not lifecycle states.
 
 ## Project state
 
-`.verif-harness/model.sqlite3` is the machine source of truth. It stores:
+Project VDOC Markdown is the source for verification engineering semantics:
+scope, feature definitions, architecture, compare policy, coverage, assertions,
+and testcase contracts remain directly readable and Git-reviewable.
+
+`.verif-harness/model.sqlite3` is the machine source of truth for governance
+state. In addition to the core model, it stores:
 
 - typed nodes for intent, desired state, implementation, artifacts, and evidence;
 - typed edges with `explicit`, `inferred`, or `runtime` origin and confidence;
 - Workstream revisions and Human review records;
+- semantic-document paths, content digests, revisions, reviews, governance-item
+  lifecycle and links to desired state;
 - change events, causal findings, validity, and closure actions.
+
+`plan VDOC` creates missing Markdown templates but never overwrites existing
+semantic documents. `docs sync` detects content changes by digest; `docs status`
+and `docs render` project lifecycle, Review Trace, Human Review Notes and Revision
+Log on demand without writing them into semantic bodies. VDOC freeze snapshots
+reviewed Markdown beside the immutable manifest.
+The VDOC bundle also contains an on-demand governance Markdown snapshot rendered
+from the same database state.
 
 `project.json` stores project configuration consumed by the CLI; `inventory.json`
 records the bootstrap inventory. `model.md` and Workstream `plan.md` are reading
