@@ -1234,9 +1234,16 @@ class ProjectStore:
             for index, node_id in enumerate(affected):
                 status = initial if index == 0 else Validity.REVALIDATION_REQUIRED
                 connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
-                connection.execute("INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
-                                   (f"finding:{uuid.uuid4().hex[:12]}", node_id, "HIGH" if index == 0 else "MEDIUM",
-                                    "OPEN", event_id, f"{relative} 的 {kind} 事件使该节点需要重新验证", now()))
+                details = f"{relative} 的 {kind} 事件使该节点需要重新验证"
+                duplicate = connection.execute(
+                    "SELECT 1 FROM findings WHERE subject=? AND status='OPEN' AND details=?",
+                    (node_id, details),
+                ).fetchone()
+                if duplicate is None:
+                    connection.execute("INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
+                                       (f"finding:{uuid.uuid4().hex[:12]}", node_id,
+                                        "HIGH" if index == 0 else "MEDIUM", "OPEN",
+                                        event_id, details, now()))
             names = {row["workstream"] for row in connection.execute(
                 "SELECT DISTINCT workstream FROM nodes WHERE id IN (%s) AND workstream IS NOT NULL" % ",".join("?" * len(affected)), affected
             )} if affected else set()
@@ -1309,9 +1316,16 @@ class ProjectStore:
                 actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
                                 "executor": "human", "suggested_mode": "plan", "reason": f"lifecycle 为 {plan['lifecycle']}"})
             actions.sort(key=lambda item: (item["priority"], item["target"], item["kind"]))
+            unique_actions: list[dict[str, Any]] = []
+            seen_action_ids: set[str] = set()
             for action in actions:
                 stable = json_text({"workstream": name, **action})
                 action["id"] = "action:" + hashlib.sha256(stable.encode("utf-8")).hexdigest()[:12]
+                if action["id"] in seen_action_ids:
+                    continue
+                seen_action_ids.add(action["id"])
+                unique_actions.append(action)
+            actions = unique_actions
             lifecycle = plan["lifecycle"]
             if persist:
                 connection.execute("DELETE FROM actions WHERE workstream=? AND status='OPEN'", (name,))

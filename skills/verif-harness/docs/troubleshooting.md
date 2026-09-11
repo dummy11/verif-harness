@@ -22,6 +22,14 @@ Engine 根据正文摘要增加 semantic revision、保留旧评审并传播失�
 再次运行 `docs sync`，状态会转为 `REVIEW_REQUIRED`；Human 检查恢复后的实际内容后，
 Agent 才能调用 `docs review DOCUMENT`。未重新评审前 VDOC freeze 会 fail closed。
 
+## 连续修改同一文档后 closure 报 action ID 冲突
+
+同一个 unresolved condition 在解决前可以对应多个 change event，但只应保留一个 OPEN
+finding 和一个 closure action。当前 Engine 会在 `record change`/`docs sync` 时抑制相同
+subject 与 details 的新重复 finding，并在计算 closure 时聚合旧数据库中已经存在的完全
+重复项。事件历史和原 finding 不会被删除；完成正文评审或登记新 evidence 后，正常入口会
+一次性解决该 subject 对应的开放 finding。
+
 ## 工作看起来“跳阶段”
 
 这是预期行为。Workstream 不是线性 Stage。Verification Closure Engine 可以因 coverage hole 跳到

@@ -346,6 +346,33 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(states[check], "REVALIDATION_REQUIRED")
         self.assertEqual({item["workstream"] for item in event["auto_closure"]["workstreams"]}, {"VSTIM", "VCHK"})
 
+    def test_repeated_change_and_legacy_duplicate_findings_do_not_break_closure(self) -> None:
+        self.bootstrap()
+        desired = self.design("VDOC", "--desired", "document remains consistent")["desired_state"][0]["id"]
+        self.run_cli("record", "edge", "file:rtl/dut.sv", desired, "--relation", "AFFECTS")
+        self.run_cli("changed", "rtl/dut.sv")
+        self.run_cli("changed", "rtl/dut.sv")
+        with sqlite3.connect(self.root / ".verif-harness/model.sqlite3") as connection:
+            connection.row_factory = sqlite3.Row
+            open_findings = list(connection.execute(
+                "SELECT * FROM findings WHERE status='OPEN' ORDER BY subject"
+            ))
+            self.assertEqual(len(open_findings), 2)
+            source = next(row for row in open_findings if row["subject"] == desired)
+            connection.execute(
+                "INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
+                ("finding:legacy-duplicate", source["subject"], source["severity"],
+                 source["status"], source["cause_event"], source["details"], source["created_at"]),
+            )
+        closure = self.run_cli("closure", "--workstream", "VDOC")
+        action_ids = [action["id"] for action in closure["actions"]]
+        self.assertEqual(len(action_ids), len(set(action_ids)))
+        matching = [
+            action for action in closure["actions"]
+            if action["kind"] == "RESOLVE_FINDING" and action["target"] == desired
+        ]
+        self.assertEqual(len(matching), 1)
+
     def test_knowledge_query_surface_is_read_only(self) -> None:
         self.bootstrap()
         result = self.invoke("model", "add-node", "x")
