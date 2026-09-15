@@ -10,7 +10,7 @@ document. Template paths are relative to the installed Skill root.
 | verification_workflow.md | [template](../assets/vdoc/verification_workflow.md) | VDOC; document governance and Human gates |
 | verification_plan.md | [template](../assets/vdoc/verification_plan.md) | VDOC; project-wide scope/acceptance |
 | feature_matrix.md | [template](../assets/vdoc/feature_matrix.md) | all Workstreams; stable trace IDs |
-| tb_architecture.md | [template](../assets/vdoc/tb_architecture.md) | VSTIM/VCHK/VREG |
+| tb_architecture.md | [template](../assets/vdoc/tb_architecture.md) | VENV/VSTIM/VCHK/VREG |
 | reference_model_spec.md | [template](../assets/vdoc/reference_model_spec.md) | VCHK |
 | coverage_plan.md | [template](../assets/vdoc/coverage_plan.md) | VCOV |
 | assertion_plan.md | [template](../assets/vdoc/assertion_plan.md) | VCHK/VCOV |

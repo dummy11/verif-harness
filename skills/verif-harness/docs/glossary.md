@@ -53,19 +53,21 @@
 
 **Workstream（工作域）**把同一类验证工作放在一起管理。例如 VSTIM 保存激励目标和证据，
 VCHK 保存检查器目标和证据；每个工作域都可以多次修改和重新验证。
-VDOC 管文档，VSTIM 管激励，VCHK 管检查，VCOV 管覆盖率，VCASE 管用例，VREG 管回归。
+VDOC 管文档，VENV 管验证环境基础，VSTIM 管激励，VCHK 管检查，VCOV 管覆盖率，VCASE 管用例，
+VREG 管回归。
 例如 checker 还没完善时，也可以先实现 stimulus；两者可同时活跃。
 
 | 缩写 | 英文 | 中文职责 |
 | --- | --- | --- |
 | VDOC | Verification Documentation | 验证定义、规划和验证文档 |
+| VENV | Verification Environment | DUT 接口连接、clock/reset、验证组件结构、构建、最小运行入口和观测点 |
 | VSTIM | Verification Stimulus | 激励规则、生成、驱动、能否到达 DUT 和能否稳定复现 |
 | VCHK | Verification Checking | 参考模型、scoreboard、checker 和 assertion |
 | VCOV | Verification Coverage | 覆盖率模型、采集、合并和未覆盖项处理 |
 | VCASE | Verification Testcase | testcase、virtual sequence 和定向运行 |
 | VREG | Verification Regression | 回归策略、执行、重跑、问题分类，以及证据是否仍适用于当前版本 |
 
-**Stage（阶段）**通常表示线性里程碑。v1 不用 Stage 0–5 控制六个工作域的执行顺序。
+**Stage（阶段）**通常表示线性里程碑。v1 不用 Stage 0–5 控制七个工作域的执行顺序。
 **Lifecycle（工作域状态）**表示工作域处在待评审、计划已批准、条件已满足或已冻结等状态；
 它与单个节点是否有效是两件事。
 
@@ -112,6 +114,10 @@ Desired 描述结果，action 描述下一步做什么。一个 desired 可以�
 
 **Relation/Edge（关系/边）**连接两个节点。**Dependency（依赖）**表达影响关系，
 例如 RTL 行为变化会使 checker 结论需要重新验证。实际传播沿已登记的出边进行。
+
+标准依赖落在具体节点上，不把整个工作域当成一道门。例如 VSTIM 的激励实现依赖 VENV 的
+接口、组件结构和构建节点，但不要求 VENV 先冻结。VENV 的最小环境运行也不等待完整业务激励
+或回归结果。具体关系见[工作流之间怎样依赖](mechanism.md#workstream-dependencies)。
 
 **Trace（追溯）**查看节点直接连接的入边、出边、证据和发现。
 **Impact（影响分析）**从指定节点开始，列出所有通过已登记关系能够到达的下游节点；
@@ -186,6 +192,11 @@ coverage、cover property 和波形是旁证，不能单独证明 VSTIM closure�
 功能正确。**Simulation log（仿真日志）**记录 testcase、seed、错误数、比较、assertion 和
 运行 verdict；只有提取出规定字段，并记录原始日志的 SHA-256 后，才能用于完成条件检查。
 
+**Environment smoke（最小环境运行）**只验证环境基础：clock 有边沿，reset 完成拉起与释放，
+最小测试能启动和正常结束，错误能反映到命令退出状态，并且验证侧至少产生一条观测记录。
+它不证明业务激励、检查器、覆盖率或完整回归已经正确。VENV 报告中的
+`environment_digest` 是当前环境实现的 SHA-256；最小环境运行与构建证据必须引用同一个值。
+
 **Coverage database（覆盖率数据库）**是 VDB、UCDB 等仿真器生成的覆盖率数据库。VCOV
 使用从数据库导出的数据库标识、合并结果、覆盖项、命中次数和排除项；只有数据库文件或
 总体百分比达标，都不能直接说明 VCOV 已完成。
@@ -218,6 +229,9 @@ coverage、cover property 和波形是旁证，不能单独证明 VSTIM closure�
 | `generated/driven/accepted/hits` | 场景被生成、送出、边界接受和探针命中的次数 |
 | `config_digest/stimulus_digest` | 配置和激励序列的 SHA-256，用于判断两次运行是否使用相同输入 |
 | `compiled/registered/bound` | 已编译、已加入执行体系、assertion 已完成 bind/elaboration |
+| `clock_edges/reset_assertions/reset_deassertions` | 最小环境运行中观察到的时钟边沿数、reset 拉起和释放次数 |
+| `clean_exit/failure_propagated` | 测试能正常结束；发生仿真错误时命令会返回失败状态 |
+| `environment_digest` | 产生本次运行结果的验证环境实现 SHA-256，必须与当前 VENV 构建证据一致 |
 | `database_ids/merge_errors/stale_shards` | coverage 数据库身份、合并错误数、过期分片数 |
 | `classification/disposition` | 回归失败类别和最终处理结果 |
 | `snapshot_revision` | VREG “当前版本证据”对应的项目版本 |
@@ -287,7 +301,7 @@ Human gate 的权限规则由 Agent/Skill 遵守；自动填入 reviewer 不等�
 产生的文档版本；两者都与 Git commit 编号不同。
 **Baseline（基线）**是保存后不能覆盖的一份状态清单，记录目标、项目状态、证据引用和评审信息。
 **Freeze（冻结）**创建该快照。Workstream freeze 封存一个工作域，final freeze 汇总
-六个已冻结工作域。VDOC freeze 会保存已评审 Markdown 的版本和 SHA-256；其他输入和报告
+七个已冻结工作域。VDOC freeze 会保存已评审 Markdown 的版本和 SHA-256；其他输入和报告
 以文件引用和 SHA-256 写入清单，不会锁定整个工作区。
 
 **Sign-off（签核）**是负责人对验证范围、证据和剩余风险的工程认可；CLI freeze

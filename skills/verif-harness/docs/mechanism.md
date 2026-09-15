@@ -104,7 +104,7 @@ Verification Closure Engine 将它与 required desired state 对比，生成 [ac
 | 登记 | 将 JSON 报告关联到目标 | 自动校验程序生成 PASS/FAIL；PASS 把目标置为 `VALID`，FAIL 置为 `INVALID` |
 | 检查完成条件 | 重新运行 `closure` | 未满足目标继续显示为待办项；全部满足后才允许请求 freeze |
 
-标准 VSTIM/VCHK/VCOV/VCASE/VREG desired node 使用 `evidence`：它按 Workstream 读取专用
+标准 VENV/VSTIM/VCHK/VCOV/VCASE/VREG desired node 使用 `evidence`：它按 Workstream 读取专用
 [schema](glossary.md#evidence-format)、执行该 claim 的[自动校验](glossary.md#evidence-format)，
 并从内容生成 verdict，通用入口不能绕过。
 格式错误不登记；格式正确但没有达到工程条件时登记 FAIL。VDOC 使用绑定正文文件指纹的
@@ -127,7 +127,68 @@ closure-evidence；VDB/UCDB 需要先导出覆盖项、命中次数、合并结�
 因此需要机器阻塞的条件必须落实为 required node、Planner dependency、专用 validator 或
 [自动退出检查](glossary.md#evidence)。四者共同决定 Workstream 是否能够进入 `SATISFIED`。
 
-## 5. 一个文件修改后，系统怎样找出需要重新验证的目标
+<a id="workstream-dependencies"></a>
+## 5. 工作流之间怎样依赖
+
+依赖连接的是两个具体目标，不是两个完整工作域。例如，编写 sequence 需要接口和组件结构，
+但不需要先把 VENV 整体冻结。只有需要真正启动仿真的运行证据，才等待 VENV 的最小环境运行
+证明。这样既能尽早并行工作，也不会用尚未工作的环境产生假证据。
+
+VENV 与另外两个容易混淆的工作域边界如下：
+
+- **VENV** 负责“验证环境能不能接上 DUT、构建、启动、退出并留下观测记录”。
+- **VSTIM** 负责“能不能产生目标输入、把它送到 DUT 接收边界并按同一 seed 重现”。
+- **VREG** 负责“能不能按照清单批量运行、收集结果、逐项分析失败并确认所有证据仍对应当前版本”。
+
+标准节点依赖的主干如下。箭头 `A → B` 表示 B 需要 A 已经通过或由 Human 接受例外：
+
+```text
+VDOC 的验证计划和环境架构
+  → VENV interface-ready / clock-reset-ready / topology-ready
+  → VENV build-ready
+  → VENV run-ready
+  → VENV environment-smoke-evidence
+
+VENV run-ready + VDOC 回归规则
+  → VREG executor-ready
+
+VDOC 的事务规则 + VENV interface/topology/build
+  → VSTIM stimulus-implementation
+VSTIM 实现 + VENV smoke/observation + VREG executor
+  → VSTIM reachability-evidence
+  → VSTIM determinism-evidence
+
+VDOC 的比较规则 + VENV build
+  → VCHK reference-model/scoreboard/assertions
+VCHK 实现 + VSTIM reachability + VENV smoke
+  → VCHK 的三类运行证据
+
+VDOC 验证点/用例清单 + VSTIM 实现 + VENV build + VREG executor
+  → VCASE case-implementation
+VCASE 实现 + VSTIM reachability + VCHK scoreboard + VENV smoke
+  → VCASE targeted-evidence
+
+VDOC 覆盖率计划 + VENV build + VREG executor
+  → VCOV coverage-collection
+VCOV 收集 + VSTIM reachability + VCASE targeted + VENV smoke
+  → VCOV coverage-collection-evidence
+  → VCOV hole-analysis-evidence
+
+VREG executor + VENV smoke + VSTIM/VCHK/VCASE/VCOV 运行证据
+  → VREG execution-evidence
+  → VREG triage-evidence
+  → VREG fresh-evidence
+```
+
+这里没有要求“先冻结 VENV，再开始 VSTIM”。VENV 的接口、结构、构建和观测节点可以分批完成；
+VSTIM、VCHK 等只等待它们实际需要的节点。VENV 的最小 smoke 使用 reset/idle 级运行即可，不要求
+先有业务场景、完整 checker 或覆盖率，因此不会形成 VENV 等 VREG、VREG 又等 VENV 的循环。
+
+Planner 每次新建版本时自动把这些关系连接到相关工作域的当前版本。前置工作域尚未规划时返回
+`PLAN_PREREQUISITE`；前置节点存在但尚未通过时返回 `WAIT_FOR_DEPENDENCY`。项目额外依赖可用
+`record dependency` 登记；CLI 会拒绝形成循环的关系。
+
+## 6. 一个文件修改后，系统怎样找出需要重新验证的目标
 
 知识模型用 [node](glossary.md#knowledge) 表示目标、文件或证据，用 edge 记录它们之间的关系。
 普通影响关系按 `source → target` 表示；`DEPENDS_ON` 保存为“当前节点 → 它依赖的节点”。
@@ -142,13 +203,15 @@ Agent 登记具体文件变化后，系统会从被依赖节点找到需要重�
 证据登记也检查同一组前置目标。报告格式和内容本身正确，但前置目标尚未满足时，报告会被保留为 FAIL，
 待依赖满足后重新运行；旧证据不会因依赖状态变化而被自动升级。
 
-退出条件不只看单个节点状态。Closure 还会检查：VDOC 是否仍有未回答的人工问题；VSTIM
+退出条件不只看单个节点状态。Closure 还会检查：VDOC 是否仍有未回答的人工问题；VENV
+smoke 是否真正经过时钟、复位、启动、结束和观测路径，并且是否对应当前环境实现；VSTIM
 计划的场景是否有对应生成组件和到达 DUT 的记录；VCHK 运行日志是否来自当前检查器版本；
 VCASE 计划的每个用例是否已经实现和运行；VREG 每个失败是否都有对应分析；以及所有必需
 运行证据是否属于当前项目版本。任一项失败都会返回 `EXIT_CRITERION_BLOCKED`。
 
 VSTIM 的基础可达性采用自身 probe，不依赖完整 coverage model 或 assertion checker；它只
-依赖 VDOC 的具体合同、自己的 stimulus capability 和 VREG 的 `executor-ready` capability。
+依赖 VDOC 的具体规则、自己的 stimulus capability、VENV 的 smoke/观测节点和 VREG 的
+`executor-ready` 节点。
 
 例如已登记如下影响链（示意，节点 ID 由实际项目决定）：
 
@@ -167,7 +230,7 @@ RTL 文件 → VCHK 检查目标 → VREG 回归目标
 当前没有常驻文件 watcher。`check` 会同步已登记 VDOC 文档的 SHA-256，并检查已登记文件是否
 缺失；其他文件内容修改仍需 Agent 主动调用 `changed PATH`。
 
-## 6. 为什么可以跨工作域反复迭代
+## 7. 为什么可以跨工作域反复迭代
 
 Workstream 只是把同类目标放在一起，不是必须顺序通过的阶段。例如 VCOV 发现未覆盖项后，
 可能需要 VSTIM 补激励、VCASE 补用例，再由 VREG 运行获得证据。局部目标可以在任意时刻修订。
@@ -177,7 +240,7 @@ REVIEW。新 revision 需要再次评审与证明；不能因为上一个 revisi
 当前计划行会更新，旧节点、评审记录及已经创建的 baseline 保留；不要假设每个未冻结
 revision 都有完整的历史文档快照。
 
-## 7. 人工决策和推理在何处介入
+## 8. 人工决策和推理在何处介入
 
 能按固定输入和规则完成的动作交给工具，例如按已知配置运行测试、读取结果。无法确定数值容差、
 规格含义、失败来自 DUT 还是验证环境时，Agent 整理与问题相关的文件、日志和已知事实，再提出
@@ -189,11 +252,11 @@ Agent 只能按明确指示记录。reviewer 自动填充是审计便利，不�
 替人批准的权限。只读 RTL/spec 约束同样属于当前 Agent 必须遵守的 Skill 规则；CLI
 不是一个能隔离外部编辑器的文件系统权限系统。
 
-## 8. freeze 到底冻结什么
+## 9. freeze 到底冻结什么
 
 Workstream freeze 要求当前计划已批准且没有未完成项，然后创建一份带 SHA-256 的
 [baseline 清单](glossary.md#baseline)，记录本轮计划、目标、依赖、未决问题、证据和评审人/
-原因。final freeze 要求六个工作域都已经分别冻结，而且检查结果中没有未处理问题或缺失文件。
+原因。final freeze 要求七个工作域都已经分别冻结，而且检查结果中没有未处理问题或缺失文件。
 
 baseline 是控制面快照；当前实现不会复制所有 RTL、波形、报告，也不会把工作目录设成只读。
 报告文件和源码版本仍需项目自身保留。freeze 不表示真实世界的全部功能已验证，也不授予

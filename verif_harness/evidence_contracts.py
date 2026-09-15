@@ -13,6 +13,15 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ID = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 CLAIMS: dict[str, dict[str, str]] = {
+    "VENV": {
+        "interface-ready": "interface-ready",
+        "clock-reset-ready": "clock-reset-ready",
+        "topology-ready": "topology-ready",
+        "build-ready": "build-ready",
+        "run-ready": "run-ready",
+        "observation-ready": "observation-ready",
+        "environment-smoke-evidence": "environment-smoke-evidence",
+    },
     "VSTIM": {
         "transaction-contract": "transaction-contract",
         "stimulus-implementation": "stimulus-implementation",
@@ -51,6 +60,7 @@ CLAIMS: dict[str, dict[str, str]] = {
 }
 
 SCHEMAS = {
+    "VENV": "EnvironmentEvidence/1",
     "VSTIM": "StimulusCapabilityEvidence/1",
     "VCHK": "CheckingEvidence/1",
     "VCOV": "CoverageEvidence/1",
@@ -162,6 +172,186 @@ def _bound_digest(normalized: dict[str, Any], value: object, field: str) -> str:
     if digest not in artifact_digests:
         raise EvidenceContractError(f"{field} 未绑定到 artifacts 中的 native artifact")
     return digest
+
+
+def _venv(path: Path, claim: str) -> dict[str, Any]:
+    _payload, result, normalized = _base(path, "VENV", claim)
+    blockers: list[str] = []
+    if claim == "interface-ready":
+        interfaces = _objects(result.get("interfaces"), "result.interfaces")
+        if not interfaces:
+            raise EvidenceContractError("result.interfaces 不能为空")
+        seen: set[str] = set()
+        normalized_interfaces: list[dict[str, Any]] = []
+        for index, item in enumerate(interfaces):
+            prefix = f"result.interfaces[{index}]"
+            interface_id = _text(item.get("id"), f"{prefix}.id")
+            if interface_id in seen:
+                blockers.append(f"重复 interface: {interface_id}")
+            seen.add(interface_id)
+            connected = _boolean(item.get("connected"), f"{prefix}.connected")
+            virtual_interface_set = _boolean(
+                item.get("virtual_interface_set"), f"{prefix}.virtual_interface_set"
+            )
+            source_digest = _bound_digest(
+                normalized, item.get("source_digest"), f"{prefix}.source_digest"
+            )
+            if not connected:
+                blockers.append(f"{interface_id} 尚未连接 DUT")
+            if not virtual_interface_set:
+                blockers.append(f"{interface_id} virtual interface 尚未配置")
+            normalized_interfaces.append({
+                "id": interface_id, "connected": connected,
+                "virtual_interface_set": virtual_interface_set,
+                "source_digest": source_digest,
+            })
+        facts = {"interfaces": normalized_interfaces}
+    elif claim == "clock-reset-ready":
+        clocks = _objects(result.get("clocks"), "result.clocks")
+        resets = _objects(result.get("resets"), "result.resets")
+        if not clocks or not resets:
+            raise EvidenceContractError("result.clocks 和 result.resets 不能为空")
+        normalized_clocks: list[dict[str, Any]] = []
+        normalized_resets: list[dict[str, Any]] = []
+        for index, item in enumerate(clocks):
+            clock_id = _text(item.get("id"), f"result.clocks[{index}].id")
+            configured = _boolean(item.get("configured"), f"result.clocks[{index}].configured")
+            if not configured:
+                blockers.append(f"clock {clock_id} 尚未配置")
+            normalized_clocks.append({"id": clock_id, "configured": configured})
+        for index, item in enumerate(resets):
+            reset_id = _text(item.get("id"), f"result.resets[{index}].id")
+            configured = _boolean(item.get("configured"), f"result.resets[{index}].configured")
+            if not configured:
+                blockers.append(f"reset {reset_id} 尚未配置")
+            normalized_resets.append({"id": reset_id, "configured": configured})
+        facts = {
+            "clocks": normalized_clocks, "resets": normalized_resets,
+            "implementation_digest": _bound_digest(
+                normalized, result.get("implementation_digest"), "result.implementation_digest"
+            ),
+        }
+    elif claim == "topology-ready":
+        components = _objects(result.get("components"), "result.components")
+        if not components:
+            raise EvidenceContractError("result.components 不能为空")
+        normalized_components: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index, item in enumerate(components):
+            prefix = f"result.components[{index}]"
+            component_id = _text(item.get("id"), f"{prefix}.id")
+            if component_id in seen:
+                blockers.append(f"重复 component: {component_id}")
+            seen.add(component_id)
+            kind = _text(item.get("kind"), f"{prefix}.kind")
+            constructed = _boolean(item.get("constructed"), f"{prefix}.constructed")
+            connected = _boolean(item.get("connected"), f"{prefix}.connected")
+            if not constructed or not connected:
+                blockers.append(f"{component_id} 尚未完成构建和连接")
+            normalized_components.append({
+                "id": component_id, "kind": kind,
+                "constructed": constructed, "connected": connected,
+            })
+        facts = {
+            "components": normalized_components,
+            "topology_digest": _bound_digest(
+                normalized, result.get("topology_digest"), "result.topology_digest"
+            ),
+        }
+    elif claim == "build-ready":
+        compiled = _boolean(result.get("compiled"), "result.compiled")
+        elaborated = _boolean(result.get("elaborated"), "result.elaborated")
+        errors = _integer(result.get("errors"), "result.errors")
+        if not compiled:
+            blockers.append("验证环境编译未通过")
+        if not elaborated:
+            blockers.append("验证环境 elaboration 未通过")
+        if errors:
+            blockers.append(f"验证环境构建包含 {errors} 个 error")
+        facts = {
+            "compiled": compiled, "elaborated": elaborated, "errors": errors,
+            "build_log_digest": _bound_digest(
+                normalized, result.get("build_log_digest"), "result.build_log_digest"
+            ),
+            "environment_digest": _bound_digest(
+                normalized, result.get("environment_digest"), "result.environment_digest"
+            ),
+        }
+    elif claim == "run-ready":
+        selftest_passed = _boolean(result.get("selftest_passed"), "result.selftest_passed")
+        clean_exit = _boolean(result.get("clean_exit"), "result.clean_exit")
+        failure_propagated = _boolean(
+            result.get("failure_propagated"), "result.failure_propagated"
+        )
+        if not selftest_passed:
+            blockers.append("最小运行入口自检未通过")
+        if not clean_exit:
+            blockers.append("最小运行入口不能正常结束")
+        if not failure_propagated:
+            blockers.append("仿真错误未传递到命令退出状态")
+        facts = {
+            "selftest_passed": selftest_passed,
+            "clean_exit": clean_exit,
+            "failure_propagated": failure_propagated,
+            "command_digest": _bound_digest(
+                normalized, result.get("command_digest"), "result.command_digest"
+            ),
+            "collector_digest": _bound_digest(
+                normalized, result.get("collector_digest"), "result.collector_digest"
+            ),
+        }
+    elif claim == "observation-ready":
+        points = _objects(result.get("points"), "result.points")
+        if not points:
+            raise EvidenceContractError("result.points 不能为空")
+        normalized_points: list[dict[str, Any]] = []
+        for index, item in enumerate(points):
+            prefix = f"result.points[{index}]"
+            point_id = _text(item.get("id"), f"{prefix}.id")
+            boundary = _text(item.get("boundary"), f"{prefix}.boundary")
+            connected = _boolean(item.get("connected"), f"{prefix}.connected")
+            if boundary not in {"dut-input", "dut-output", "dut-state", "driver-monitor"}:
+                blockers.append(f"{point_id} observation boundary 未识别: {boundary}")
+            if not connected:
+                blockers.append(f"{point_id} 观测点尚未连接")
+            normalized_points.append({"id": point_id, "boundary": boundary, "connected": connected})
+        facts = {
+            "points": normalized_points,
+            "implementation_digest": _bound_digest(
+                normalized, result.get("implementation_digest"), "result.implementation_digest"
+            ),
+        }
+    else:
+        clock_edges = _integer(result.get("clock_edges"), "result.clock_edges")
+        reset_assertions = _integer(result.get("reset_assertions"), "result.reset_assertions")
+        reset_deassertions = _integer(result.get("reset_deassertions"), "result.reset_deassertions")
+        observations = _integer(result.get("observations"), "result.observations")
+        errors = _integer(result.get("errors"), "result.errors")
+        fatals = _integer(result.get("fatals"), "result.fatals")
+        timeout = _boolean(result.get("timeout"), "result.timeout")
+        clean_exit = _boolean(result.get("clean_exit"), "result.clean_exit")
+        if clock_edges == 0:
+            blockers.append("smoke 未观察到 clock edge")
+        if reset_assertions == 0 or reset_deassertions == 0:
+            blockers.append("smoke 未观察到完整 reset assert/deassert")
+        if observations == 0:
+            blockers.append("smoke 未产生验证侧观测记录")
+        if errors or fatals:
+            blockers.append(f"smoke 包含 errors={errors}, fatals={fatals}")
+        if timeout:
+            blockers.append("smoke 发生 timeout")
+        if not clean_exit:
+            blockers.append("smoke 未正常结束")
+        facts = {
+            "clock_edges": clock_edges, "reset_assertions": reset_assertions,
+            "reset_deassertions": reset_deassertions, "observations": observations,
+            "errors": errors, "fatals": fatals, "timeout": timeout, "clean_exit": clean_exit,
+            "environment_digest": _bound_digest(
+                normalized, result.get("environment_digest"), "result.environment_digest"
+            ),
+            "log_digest": _bound_digest(normalized, result.get("log_digest"), "result.log_digest"),
+        }
+    return _finish(normalized, blockers, facts)
 
 
 def _vstim(path: Path, claim: str) -> dict[str, Any]:
@@ -552,6 +742,7 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
 
 
 VALIDATORS: dict[str, Callable[[Path, str], dict[str, Any]]] = {
+    "VENV": _venv,
     "VSTIM": _vstim,
     "VCHK": _vchk,
     "VCOV": _vcov,

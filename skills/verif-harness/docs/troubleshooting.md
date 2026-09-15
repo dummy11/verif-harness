@@ -5,7 +5,8 @@
 让 Agent 运行 `verif-harness closure evaluate --workstream NAME`，查看输出中的每一条
 `action` 和 `reason`。常见原因是：当前计划还没由 Human 批准；某个必需目标还没有通过证据；
 仍有未处理问题；或者相关证据互相对不上。标准 Workstream 的结果必须通过 `evidence` 或
-VSTIM `reachability` 登记；VDOC 正文使用 `docs review`。
+VENV/VCHK/VCOV/VCASE/VREG 和 VSTIM capability 使用 `evidence` 登记，VSTIM 运行可达性使用
+`reachability` 登记；VDOC 正文使用 `docs review`。
 
 ## 修改后状态没有变化
 

@@ -546,7 +546,7 @@ class V1ControlPlaneTest(unittest.TestCase):
     def test_planner_builds_revision_aware_default_capability_evidence_graph(self) -> None:
         self.bootstrap()
         plans = {}
-        for workstream in ("VDOC", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV"):
+        for workstream in ("VDOC", "VENV", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV"):
             plans[workstream] = self.design(workstream)
         for plan in plans.values():
             template = plan["template"]
@@ -562,15 +562,21 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(custom["desired_state"][0]["role"], "capability")
 
         current_vstim = {item["key"]: item["id"] for item in plans["VSTIM"]["desired_state"]}
+        old_venv = {item["key"]: item["id"] for item in plans["VENV"]["desired_state"]}
         old_vreg = {item["key"]: item["id"] for item in plans["VREG"]["desired_state"]}
         model = self.run_cli("inspect")
         dependencies = {
             (edge["source"], edge["target"]) for edge in model["edges"]
             if edge["relation"] == "DEPENDS_ON" and edge["origin"] == "planner-default"
         }
-        self.assertIn((current_vstim["stimulus-implementation"], old_vreg["executor-ready"]), dependencies)
+        self.assertIn((current_vstim["stimulus-implementation"], old_venv["build-ready"]), dependencies)
+        self.assertIn((old_vreg["executor-ready"], old_venv["run-ready"]), dependencies)
+        self.assertIn((current_vstim["reachability-evidence"], old_vreg["executor-ready"]), dependencies)
         self.assertIn((current_vstim["determinism-evidence"], current_vstim["reachability-evidence"]), dependencies)
 
+        revised_venv = {
+            item["key"]: item["id"] for item in self.design("VENV")["desired_state"]
+        }
         revised_vreg = {
             item["key"]: item["id"] for item in self.design("VREG")["desired_state"]
         }
@@ -578,8 +584,12 @@ class V1ControlPlaneTest(unittest.TestCase):
             (edge["source"], edge["target"]) for edge in self.run_cli("inspect")["edges"]
             if edge["relation"] == "DEPENDS_ON" and edge["origin"] == "planner-default"
         }
-        self.assertIn((current_vstim["stimulus-implementation"], revised_vreg["executor-ready"]), dependencies)
-        self.assertNotIn((current_vstim["stimulus-implementation"], old_vreg["executor-ready"]), dependencies)
+        self.assertIn((current_vstim["stimulus-implementation"], revised_venv["build-ready"]), dependencies)
+        self.assertNotIn((current_vstim["stimulus-implementation"], old_venv["build-ready"]), dependencies)
+        self.assertIn((revised_vreg["executor-ready"], revised_venv["run-ready"]), dependencies)
+        self.assertNotIn((revised_vreg["executor-ready"], old_venv["run-ready"]), dependencies)
+        self.assertIn((current_vstim["reachability-evidence"], revised_vreg["executor-ready"]), dependencies)
+        self.assertNotIn((current_vstim["reachability-evidence"], old_vreg["executor-ready"]), dependencies)
 
     def test_default_dependency_is_not_lost_when_prerequisite_is_unplanned(self) -> None:
         self.bootstrap()
@@ -595,9 +605,87 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(recorded["verdict"], "FAIL")
         self.assertTrue(any("prerequisite" in item for item in recorded["validation"]["blockers"]))
 
+    def test_venv_smoke_must_match_current_environment_build(self) -> None:
+        self.bootstrap()
+        vdoc = self.design("VDOC")
+        venv = self.design("VENV")
+        vdoc_nodes = {item["key"]: item["id"] for item in vdoc["desired_state"]}
+        nodes = {item["key"]: item["id"] for item in venv["desired_state"]}
+        for node in (
+            vdoc_nodes["verification-plan"], vdoc_nodes["tb-architecture"],
+            nodes["interface-ready"], nodes["clock-reset-ready"],
+            nodes["topology-ready"], nodes["observation-ready"],
+        ):
+            self.run_cli("waive", node, "--reviewer", "alice", "--reason", "VENV fixture")
+
+        build_report = self.write_typed_report(
+            "environment-build.json", "EnvironmentEvidence/1", "build-ready",
+            {"compiled": True, "elaborated": True, "errors": 0,
+             "build_log_digest": "$ARTIFACT_DIGEST",
+             "environment_digest": "$ARTIFACT_DIGEST"},
+        )
+        self.assertEqual(
+            self.run_cli("evidence", nodes["build-ready"], build_report.name)["verdict"], "PASS"
+        )
+        build_payload = json.loads(build_report.read_text(encoding="utf-8"))
+        build_artifact = build_payload["artifacts"][0]
+
+        run_report = self.write_typed_report(
+            "environment-run.json", "EnvironmentEvidence/1", "run-ready",
+            {"selftest_passed": True, "clean_exit": True, "failure_propagated": True,
+             "command_digest": "$ARTIFACT_DIGEST", "collector_digest": "$ARTIFACT_DIGEST"},
+        )
+        self.assertEqual(
+            self.run_cli("evidence", nodes["run-ready"], run_report.name)["verdict"], "PASS"
+        )
+
+        wrong_environment = self.root / "results/contracts/wrong-environment.sv"
+        wrong_environment.write_text("module wrong_environment; endmodule\n", encoding="utf-8")
+        smoke_log = self.root / "results/contracts/environment-smoke.log"
+        smoke_log.write_text("clock reset observation clean exit\n", encoding="utf-8")
+        wrong_digest = hashlib.sha256(wrong_environment.read_bytes()).hexdigest()
+        log_digest = hashlib.sha256(smoke_log.read_bytes()).hexdigest()
+        smoke_payload = {
+            "schema": "EnvironmentEvidence/1", "claim": "environment-smoke-evidence",
+            "revision": "test-revision", "tool": "environment-smoke/1",
+            "artifacts": [
+                {"path": wrong_environment.relative_to(self.root).as_posix(), "sha256": wrong_digest},
+                {"path": smoke_log.relative_to(self.root).as_posix(), "sha256": log_digest},
+            ],
+            "result": {"clock_edges": 10, "reset_assertions": 1, "reset_deassertions": 1,
+                       "observations": 1, "errors": 0, "fatals": 0, "timeout": False,
+                       "clean_exit": True, "environment_digest": wrong_digest,
+                       "log_digest": log_digest},
+        }
+        smoke_report = self.root / "environment-smoke.json"
+        smoke_report.write_text(json.dumps(smoke_payload) + "\n", encoding="utf-8")
+        rejected = self.run_cli(
+            "evidence", nodes["environment-smoke-evidence"], smoke_report.name
+        )
+        self.assertEqual(rejected["verdict"], "FAIL")
+        self.assertTrue(any(
+            "environment digest" in blocker
+            for blocker in rejected["validation"]["blockers"]
+        ))
+
+        smoke_payload["artifacts"][0] = build_artifact
+        smoke_payload["result"]["environment_digest"] = build_artifact["sha256"]
+        smoke_report.write_text(json.dumps(smoke_payload) + "\n", encoding="utf-8")
+        self.assertEqual(
+            self.run_cli("evidence", nodes["environment-smoke-evidence"], smoke_report.name)["verdict"],
+            "PASS",
+        )
+        closure = self.run_cli("closure", "--workstream", "VENV")
+        self.assertFalse(any(
+            action["kind"] == "EXIT_CRITERION_BLOCKED" and
+            any("environment digest" in blocker for blocker in action["blocked_by"])
+            for action in closure["actions"]
+        ))
+
     def test_standard_workstreams_require_typed_evidence_contracts(self) -> None:
         self.bootstrap()
         cases = (
+            ("VENV", "environment-smoke-evidence", "environment-evidence.example.json"),
             ("VSTIM", "stimulus-implementation", "stimulus-capability-evidence.example.json"),
             ("VCHK", "scoreboard-evidence", "checking-evidence.example.json"),
             ("VCOV", "hole-analysis-evidence", "coverage-evidence.example.json"),
@@ -717,14 +805,15 @@ class V1ControlPlaneTest(unittest.TestCase):
     def test_vreg_raw_failures_require_matching_triage_and_fresh_set_is_derived(self) -> None:
         self.bootstrap()
         plans = {
-            name: self.design(name) for name in ("VDOC", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV")
+            name: self.design(name) for name in ("VDOC", "VENV", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV")
         }
         nodes = {
             name: {item["key"]: item["id"] for item in plan["desired_state"]}
             for name, plan in plans.items()
         }
         execution_prerequisites = (
-            nodes["VREG"]["executor-ready"], nodes["VSTIM"]["reachability-evidence"],
+            nodes["VREG"]["executor-ready"], nodes["VENV"]["environment-smoke-evidence"],
+            nodes["VSTIM"]["reachability-evidence"],
             nodes["VSTIM"]["determinism-evidence"], nodes["VCHK"]["reference-model-evidence"],
             nodes["VCHK"]["scoreboard-evidence"], nodes["VCHK"]["assertion-evidence"],
             nodes["VCASE"]["targeted-evidence"], nodes["VCOV"]["coverage-collection-evidence"],
@@ -844,7 +933,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.bootstrap()
         evidence = self.root / "evidence.json"
         evidence.write_text('{"verified": true}\n', encoding="utf-8")
-        for workstream in ("VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
+        for workstream in ("VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
             plan = self.run_cli("plan", workstream, "--desired", f"{workstream} verified")
             self.run_cli("review", workstream)
             if workstream == "VDOC":

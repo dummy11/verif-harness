@@ -23,17 +23,18 @@ xverif、WavePeek、仿真器、回归系统和验证代码之上，负责持续
   [代码生成器或激励生成器](skills/verif-harness/docs/glossary.md#dv-terms)接入统一控制面。
 - **Codex/Kimi Agent**：依据当前模型执行有边界的工程动作，而不是凭聊天历史猜测状态。
 
-它适合验证工作反复迭代、并行推进的项目。文档、激励、检查器、覆盖率、用例和回归
+它适合验证工作反复迭代、并行推进的项目。文档、验证环境、激励、检查器、覆盖率、用例和回归
 都可以随新发现重新打开，不要求按固定 Stage 顺序一次做完。
 
 ## 能做什么
 
-verif-harness 将验证工程划分为六个可以同时推进、发现问题后可以重新打开的
+verif-harness 将验证工程划分为七个可以同时推进、发现问题后可以重新打开的
 [Workstream（工作域）](skills/verif-harness/docs/glossary.md#workstream)：
 
 | Workstream | 负责内容 |
 | --- | --- |
 | `VDOC` | 验证定义、验证点、架构、策略、风险和决策 |
+| `VENV` | 验证环境的接口连接、时钟复位、组件结构、构建、最小运行入口和观测点 |
 | `VSTIM` | [driver、sequence、constraint 和场景激励](skills/verif-harness/docs/glossary.md#dv-terms) |
 | `VCHK` | [reference model、scoreboard、checker 和 assertion](skills/verif-harness/docs/glossary.md#dv-terms) |
 | `VCOV` | [coverage model、采集和 coverage hole 处理](skills/verif-harness/docs/glossary.md#dv-terms) |
@@ -86,7 +87,7 @@ SQLite 状态库 <--- 验证证据 --- 工程工具 / 仿真器
 5. 用户以后修改 RTL，Agent 调用 `changed PATH` 登记具体文件；系统再沿已登记依赖标出需要
    重新验证的目标。
 
-标准 VSTIM/VCHK/VCOV/VCASE/VREG 目标必须通过 `evidence` 专用
+标准 VENV/VSTIM/VCHK/VCOV/VCASE/VREG 目标必须通过 `evidence` 专用
 [schema 和 validator](skills/verif-harness/docs/glossary.md#evidence-format)，由控制面从报告内容
 生成 [verdict](skills/verif-harness/docs/glossary.md#evidence)；不能提交任意 PASS 文件。
 Coverage、cover property 和波形只能作为 VSTIM 补充材料。Planner 把模板拆成
@@ -124,7 +125,10 @@ Human 决定。
   保存项目配置。供人查看的状态 Markdown 由 CLI 需要时生成。详见
   [哪些文件可以编辑](skills/verif-harness/docs/glossary.md#authority)。
 - desired state 是“需要成立的状态”，不是必须顺序执行的 task 清单。
-- `VDOC/VSTIM/VCHK/VCOV/VCASE/VREG` 是六类可以反复开展的工作，不是必须依次通过的步骤。
+- `VDOC/VENV/VSTIM/VCHK/VCOV/VCASE/VREG` 是七类可以反复开展的工作，不是必须依次通过的步骤。
+- 标准依赖建立在具体节点之间，而不是要求先完成整个工作域。例如 VSTIM 实现只等待
+  VENV 的接口、组件结构和构建节点；VCHK 的运行证明才等待 VENV 的最小环境运行证明。
+  因此各工作域仍可并行规划和局部推进。详见[工作流之间的依赖](skills/verif-harness/docs/mechanism.md#workstream-dependencies)。
 - 能由固定输入和规则完成的工作交给工具；只有规格含义、失败责任或工程取舍无法由规则判断时，
   才交给 Verification Reasoning Engine 整理分析材料。
 - `VALID` 必须由真实 evidence 建立；`WAIVED` 必须由 Human 明确给出理由。

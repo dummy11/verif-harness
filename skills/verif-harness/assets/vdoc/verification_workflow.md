@@ -7,7 +7,7 @@
 ## 目的与适用范围
 
 说明本项目如何起草、评审、维护、失效和冻结验证文档，以及 Human、Agent 和
-verif-harness Engine 的责任边界。VDOC、VSTIM、VCHK、VCOV、VCASE、VREG 可以同时推进，
+verif-harness Engine 的责任边界。VDOC、VENV、VSTIM、VCHK、VCOV、VCASE、VREG 可以同时推进，
 发现新问题后也可以重新打开。本项目不定义 Stage，也不采用 Spec Kit 的 `spec → plan → tasks`
 流程；不得把工作域改造成必须顺序完成的阶段。
 
@@ -41,8 +41,15 @@ CLI 默认值不表示 Human 已经同意。文件存在、模板已复制、Age
 | 文档 | 对应目标节点 | 维护者 | 哪些工作会读取它 |
 | --- | --- | --- | --- |
 | verification_plan.md | `<VDOC-NODE>` | VDOC | 全部 Workstream |
-| feature_matrix.md | `<VDOC-NODE>` | 全部 Workstream | VSTIM/VCHK/VCOV/VCASE/VREG |
-| tb_architecture.md | `<VDOC-NODE>` | VDOC/VSTIM/VCHK/VREG | 实现类 capability |
+| feature_matrix.md | `<VDOC-NODE>` | 全部 Workstream | VENV/VSTIM/VCHK/VCOV/VCASE/VREG |
+| tb_architecture.md | `<VDOC-NODE>` | VDOC/VENV/VSTIM/VCHK/VREG | 实现类 capability |
+
+## 工作域依赖规则
+
+依赖必须写到具体目标节点，不能写成“整个 VENV 完成后才能开始 VSTIM”这类全工作域关卡。
+VENV 负责接口连接、clock/reset、组件结构、构建、最小运行入口和观测点；VSTIM 负责业务激励
+及其到达 DUT 的证明；VREG 负责批量运行和失败处理。VENV 的最小环境 smoke 不依赖完整
+VSTIM/VCHK/VCOV/VCASE/VREG 运行证据。项目额外关系应记录具体前置节点、依赖原因和受影响目标。
 
 ## 决策分类
 

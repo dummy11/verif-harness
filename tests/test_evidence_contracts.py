@@ -27,6 +27,39 @@ class EvidenceContractsTest(unittest.TestCase):
 
     def test_every_standard_claim_has_a_passing_contract(self) -> None:
         cases = {
+            ("VENV", "interface-ready"): {
+                "interfaces": [{"id": "dut_if", "connected": True,
+                                "virtual_interface_set": True, "source_digest": DIGEST}],
+            },
+            ("VENV", "clock-reset-ready"): {
+                "clocks": [{"id": "clk", "configured": True}],
+                "resets": [{"id": "rst_n", "configured": True}],
+                "implementation_digest": DIGEST,
+            },
+            ("VENV", "topology-ready"): {
+                "components": [{"id": "env", "kind": "uvm_env", "constructed": True,
+                                "connected": True}],
+                "topology_digest": DIGEST,
+            },
+            ("VENV", "build-ready"): {
+                "compiled": True, "elaborated": True, "errors": 0,
+                "build_log_digest": DIGEST, "environment_digest": DIGEST,
+            },
+            ("VENV", "run-ready"): {
+                "selftest_passed": True, "clean_exit": True,
+                "failure_propagated": True, "command_digest": DIGEST,
+                "collector_digest": DIGEST,
+            },
+            ("VENV", "observation-ready"): {
+                "points": [{"id": "input_monitor", "boundary": "dut-input", "connected": True}],
+                "implementation_digest": DIGEST,
+            },
+            ("VENV", "environment-smoke-evidence"): {
+                "clock_edges": 10, "reset_assertions": 1, "reset_deassertions": 1,
+                "observations": 2, "errors": 0, "fatals": 0,
+                "timeout": False, "clean_exit": True,
+                "environment_digest": DIGEST, "log_digest": DIGEST,
+            },
             ("VSTIM", "transaction-contract"): {
                 "contract_ref": "verification_plan.md#transactions", "contract_digest": DIGEST,
                 "review_ref": "review-1", "transactions": [
@@ -120,6 +153,16 @@ class EvidenceContractsTest(unittest.TestCase):
         })
         self.assertFalse(summary["ready"])
         self.assertTrue(summary["blockers"])
+
+    def test_environment_smoke_requires_clock_reset_observation_and_clean_exit(self) -> None:
+        summary = self.validate("VENV", "environment-smoke-evidence", {
+            "clock_edges": 0, "reset_assertions": 1, "reset_deassertions": 0,
+            "observations": 0, "errors": 1, "fatals": 0,
+            "timeout": True, "clean_exit": False,
+            "environment_digest": DIGEST, "log_digest": DIGEST,
+        })
+        self.assertFalse(summary["ready"])
+        self.assertGreaterEqual(len(summary["blockers"]), 5)
 
     def test_claim_digest_must_bind_to_native_artifact(self) -> None:
         with self.assertRaises(EvidenceContractError):

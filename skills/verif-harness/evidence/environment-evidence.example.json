@@ -1,0 +1,28 @@
+{
+  "schema": "EnvironmentEvidence/1",
+  "claim": "environment-smoke-evidence",
+  "revision": "git-or-model-revision",
+  "tool": "simulator and environment collector version",
+  "artifacts": [
+    {
+      "path": "results/environment/smoke.log",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "path": "verification/tb/tb_top.sv",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "result": {
+    "clock_edges": 20,
+    "reset_assertions": 1,
+    "reset_deassertions": 1,
+    "observations": 4,
+    "errors": 0,
+    "fatals": 0,
+    "timeout": false,
+    "clean_exit": true,
+    "environment_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "log_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

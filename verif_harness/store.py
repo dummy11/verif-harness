@@ -51,8 +51,8 @@ WORKSTREAM_STATES = {"REVIEW", "ACTIVE", "SATISFIED", "BASELINED", "PARTIALLY_ST
 VDOC_DOCUMENTS = {
     "verification-workflow": ("verification_workflow.md", "文档治理、评审、决策和变更失效机制已定义并评审", ["VDOC"]),
     "verification-plan": ("verification_plan.md", "验证范围、策略、风险和验收条件已定义并评审", ["VDOC"]),
-    "feature-matrix": ("feature_matrix.md", "验证点、来源及检查/覆盖/用例映射可追溯", ["VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
-    "tb-architecture": ("tb_architecture.md", "验证组件职责、接口、数据流和构建边界已定义", ["VDOC", "VSTIM", "VCHK", "VREG"]),
+    "feature-matrix": ("feature_matrix.md", "验证点、来源及检查/覆盖/用例映射可追溯", ["VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
+    "tb-architecture": ("tb_architecture.md", "验证组件职责、接口、数据流和构建边界已定义", ["VDOC", "VENV", "VSTIM", "VCHK", "VREG"]),
     "reference-model": ("reference_model_spec.md", "参考模型适用性、接入与比较合同或替代检查策略已评审", ["VDOC", "VCHK"]),
     "coverage-plan": ("coverage_plan.md", "覆盖目标、采样语义、映射和补洞规则已评审", ["VDOC", "VCOV"]),
     "assertion-plan": ("assertion_plan.md", "断言性质、挂接和非空洞验证要求已评审", ["VDOC", "VCHK", "VCOV"]),
@@ -75,6 +75,22 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         # 不是可由工具报告自动置为 PASS 的聚合 evidence node。
         "closure_evidence": [],
         "exit": ["required 文档节点为 VALID 或 Human WAIVED", "无未处置 CRITICAL open decision"],
+    },
+    "VENV": {
+        "name": "Verification Environment",
+        "objective": "建立可构建、可运行、可观察且不修改 DUT RTL 的验证环境基础",
+        "capabilities": [
+            ("interface-ready", "DUT interface 与 virtual interface 已正确连接", "add-interface"),
+            ("clock-reset-ready", "clock/reset 生成、连接和控制规则已实现", "add-harness-layer"),
+            ("topology-ready", "harness、agent、env、monitor 与配置传递关系已建立", "add-env-layer"),
+            ("build-ready", "基础验证环境可编译并完成 elaboration", "finalize-filelist-and-make"),
+            ("run-ready", "最小测试可启动、正常结束并把错误传给命令退出状态", "add-regression-runner"),
+            ("observation-ready", "DUT 输入、输出和关键状态有验证侧观测点", "add-harness-layer"),
+        ],
+        "closure_evidence": [
+            ("environment-smoke-evidence", "最小 smoke 证明 clock/reset、启动、结束和观测路径真实工作", "evidence"),
+        ],
+        "exit": ["required VENV 能力节点有效", "最小环境 smoke 无错误、超时且具有真实观测"],
     },
     "VSTIM": {
         "name": "Stimulus",
@@ -159,52 +175,82 @@ def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
 DEFAULT_DEPENDENCIES: tuple[tuple[tuple[str, str], tuple[str, str]], ...] = (
+    (("VENV", "interface-ready"), ("VDOC", "verification-plan")),
+    (("VENV", "interface-ready"), ("VDOC", "tb-architecture")),
+    (("VENV", "clock-reset-ready"), ("VDOC", "verification-plan")),
+    (("VENV", "clock-reset-ready"), ("VDOC", "tb-architecture")),
+    (("VENV", "topology-ready"), ("VDOC", "tb-architecture")),
+    (("VENV", "topology-ready"), ("VENV", "interface-ready")),
+    (("VENV", "build-ready"), ("VENV", "interface-ready")),
+    (("VENV", "build-ready"), ("VENV", "clock-reset-ready")),
+    (("VENV", "build-ready"), ("VENV", "topology-ready")),
+    (("VENV", "run-ready"), ("VENV", "build-ready")),
+    (("VENV", "observation-ready"), ("VENV", "interface-ready")),
+    (("VENV", "observation-ready"), ("VENV", "topology-ready")),
     (("VREG", "regression-policy"), ("VDOC", "verification-workflow")),
     (("VREG", "regression-policy"), ("VDOC", "verification-plan")),
     (("VREG", "regression-policy"), ("VDOC", "testcase-list")),
     (("VREG", "executor-ready"), ("VREG", "regression-policy")),
+    (("VREG", "executor-ready"), ("VENV", "run-ready")),
+    (("VENV", "environment-smoke-evidence"), ("VENV", "build-ready")),
+    (("VENV", "environment-smoke-evidence"), ("VENV", "clock-reset-ready")),
+    (("VENV", "environment-smoke-evidence"), ("VENV", "run-ready")),
+    (("VENV", "environment-smoke-evidence"), ("VENV", "observation-ready")),
     (("VSTIM", "transaction-contract"), ("VDOC", "verification-plan")),
     (("VSTIM", "transaction-contract"), ("VDOC", "feature-matrix")),
     (("VSTIM", "transaction-contract"), ("VDOC", "tb-architecture")),
     (("VSTIM", "stimulus-implementation"), ("VSTIM", "transaction-contract")),
-    (("VSTIM", "stimulus-implementation"), ("VREG", "executor-ready")),
+    (("VSTIM", "stimulus-implementation"), ("VENV", "interface-ready")),
+    (("VSTIM", "stimulus-implementation"), ("VENV", "topology-ready")),
+    (("VSTIM", "stimulus-implementation"), ("VENV", "build-ready")),
     (("VSTIM", "corner-scenarios"), ("VSTIM", "transaction-contract")),
     (("VSTIM", "corner-scenarios"), ("VDOC", "feature-matrix")),
     (("VSTIM", "reachability-evidence"), ("VSTIM", "stimulus-implementation")),
     (("VSTIM", "reachability-evidence"), ("VSTIM", "corner-scenarios")),
     (("VSTIM", "reachability-evidence"), ("VREG", "executor-ready")),
+    (("VSTIM", "reachability-evidence"), ("VENV", "environment-smoke-evidence")),
+    (("VSTIM", "reachability-evidence"), ("VENV", "observation-ready")),
     (("VSTIM", "determinism-evidence"), ("VSTIM", "reachability-evidence")),
     (("VSTIM", "determinism-evidence"), ("VREG", "executor-ready")),
     (("VCHK", "compare-policy"), ("VDOC", "verification-plan")),
     (("VCHK", "compare-policy"), ("VDOC", "reference-model")),
     (("VCHK", "reference-model"), ("VCHK", "compare-policy")),
-    (("VCHK", "reference-model"), ("VREG", "executor-ready")),
+    (("VCHK", "reference-model"), ("VENV", "build-ready")),
     (("VCHK", "scoreboard"), ("VCHK", "compare-policy")),
+    (("VCHK", "scoreboard"), ("VENV", "build-ready")),
     (("VCHK", "assertions"), ("VDOC", "assertion-plan")),
-    (("VCHK", "assertions"), ("VREG", "executor-ready")),
+    (("VCHK", "assertions"), ("VENV", "build-ready")),
     (("VCHK", "reference-model-evidence"), ("VCHK", "reference-model")),
     (("VCHK", "reference-model-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCHK", "reference-model-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VCHK", "scoreboard-evidence"), ("VCHK", "scoreboard")),
     (("VCHK", "scoreboard-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCHK", "scoreboard-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VCHK", "assertion-evidence"), ("VCHK", "assertions")),
     (("VCHK", "assertion-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCHK", "assertion-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VCASE", "case-matrix"), ("VDOC", "feature-matrix")),
     (("VCASE", "case-matrix"), ("VDOC", "testcase-list")),
     (("VCASE", "case-implementation"), ("VCASE", "case-matrix")),
     (("VCASE", "case-implementation"), ("VSTIM", "stimulus-implementation")),
+    (("VCASE", "case-implementation"), ("VENV", "build-ready")),
     (("VCASE", "case-implementation"), ("VREG", "executor-ready")),
     (("VCASE", "targeted-evidence"), ("VCASE", "case-implementation")),
     (("VCASE", "targeted-evidence"), ("VSTIM", "reachability-evidence")),
     (("VCASE", "targeted-evidence"), ("VCHK", "scoreboard-evidence")),
+    (("VCASE", "targeted-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VCOV", "coverage-model"), ("VDOC", "coverage-plan")),
     (("VCOV", "coverage-model"), ("VDOC", "feature-matrix")),
     (("VCOV", "coverage-collection"), ("VCOV", "coverage-model")),
     (("VCOV", "coverage-collection"), ("VREG", "executor-ready")),
+    (("VCOV", "coverage-collection"), ("VENV", "build-ready")),
     (("VCOV", "coverage-collection-evidence"), ("VCOV", "coverage-collection")),
     (("VCOV", "coverage-collection-evidence"), ("VSTIM", "reachability-evidence")),
     (("VCOV", "coverage-collection-evidence"), ("VCASE", "targeted-evidence")),
+    (("VCOV", "coverage-collection-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VCOV", "hole-analysis-evidence"), ("VCOV", "coverage-collection-evidence")),
     (("VREG", "execution-evidence"), ("VREG", "executor-ready")),
+    (("VREG", "execution-evidence"), ("VENV", "environment-smoke-evidence")),
     (("VREG", "execution-evidence"), ("VSTIM", "determinism-evidence")),
     (("VREG", "execution-evidence"), ("VCHK", "reference-model-evidence")),
     (("VREG", "execution-evidence"), ("VCHK", "scoreboard-evidence")),
@@ -1536,6 +1582,13 @@ class ProjectStore:
             validation = self._latest_pass_validation(connection, item["id"])
             return validation.get("facts") if validation else None
 
+        if workstream == "VENV" and claim == "environment-smoke-evidence":
+            build = facts("VENV", "build-ready")
+            if build is not None and summary["facts"].get("environment_digest") != build.get("environment_digest"):
+                blockers.append(
+                    "environment smoke 的 environment digest 与当前 build-ready 不一致"
+                )
+
         if workstream == "VSTIM" and claim == "corner-scenarios":
             implementation = facts("VSTIM", "stimulus-implementation")
             if implementation is not None:
@@ -1723,7 +1776,7 @@ class ProjectStore:
         ):
             return self.add_reachability_evidence(subject, source, claim)
         if workstream not in CLAIMS:
-            raise HarnessError("evidence 专用入口只适用于 VSTIM/VCHK/VCOV/VCASE/VREG；VDOC 使用 docs review")
+            raise HarnessError("evidence 专用入口只适用于 VENV/VSTIM/VCHK/VCOV/VCASE/VREG；VDOC 使用 docs review")
         inferred = CLAIMS[workstream].get(node_data.get("key"))
         if inferred is not None and claim is not None and claim != inferred:
             raise HarnessError(

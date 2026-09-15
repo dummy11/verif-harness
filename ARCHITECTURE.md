@@ -95,6 +95,14 @@ interfaces, DUT instantiation, tie-offs/adapters, bind, and virtual-interface
 publication. UVM owns stimulus, monitors, scoreboards, coverage, and test
 control. DUT RTL remains external and read-only.
 
+VENV owns the shared environment foundation: interface/clock/reset connection,
+component topology, build/elaboration, the minimal run entry, and observation
+points. VSTIM owns stimulus behavior and reachability; VREG owns batch policy,
+execution, collection, and triage. Planner dependencies connect concrete nodes,
+not whole Workstreams. VENV smoke is intentionally independent of completed
+business stimulus, checking, coverage, testcase, and regression evidence, so
+the graph has no VENV↔VREG completion cycle.
+
 ```text
 tests -> env -> agents -> virtual interfaces
                            |

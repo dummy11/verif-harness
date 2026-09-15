@@ -219,7 +219,7 @@ Workstream 维护。Engine 在独立验证文档目录中创建缺失模板，�
 | `verification_workflow.md` | 文档修改规则、角色分工、哪些操作需要 Human 同意、决策分类、评审和重新建立基线 | VDOC |
 | `verification_plan.md` | 范围、总体策略、风险和验收条件 | VDOC，面向整个验证工程 |
 | `feature_matrix.md` | 验证点、来源、场景与检查/覆盖/用例映射 | 全部工作域 |
-| `tb_architecture.md` | 接口、组件分层、数据流、构建与诊断 | VSTIM/VCHK/VREG |
+| `tb_architecture.md` | 接口、组件分层、数据流、构建与诊断 | VENV/VSTIM/VCHK/VREG |
 | `reference_model_spec.md` | 验证侧模型接入、支持范围、比较规则或替代方案 | VCHK |
 | `coverage_plan.md` | 采样、[bin/cross](glossary.md#dv-terms)、可达条件和完成标准 | VCOV |
 | `assertion_plan.md` | [assertion/property](glossary.md#dv-terms)、挂接、失败处理和必须真正触发的要求 | VCHK/VCOV |
@@ -348,6 +348,7 @@ Agent 生成八份 Markdown 也不表示 VDOC 完成；只有对应 desired node
 
 ```text
 verif-harness plan VSTIM
+verif-harness plan VENV
 verif-harness plan VCHK
 verif-harness plan VCASE
 verif-harness plan VCOV
@@ -362,11 +363,12 @@ verif-harness review VSTIM
 verif-harness review VCHK
 ```
 
-六个通用模板的关注点：
+七个通用模板的关注点：
 
 | Workstream | 典型输入 | 典型产物/证据 | 常见回跳原因 |
 | --- | --- | --- | --- |
 | `VDOC` | 规格、RTL 文件清单、历史决定 | 验证点、验证策略、架构和退出条件文档 | 实现时发现规格含糊或原计划不可行 |
+| `VENV` | 环境架构、DUT 接口、clock/reset 和构建配置 | 接口连接、组件结构、基础构建、最小运行入口、观测点和环境 smoke 结果 | 接口或结构变化、环境无法启动/退出、观测路径失效 |
 | `VSTIM` | 接口事务定义和需要产生的场景 | driver/sequence/constraint，实现是否编译注册，以及事务是否被 DUT 接受的计数 | 场景无法到达 DUT，或覆盖率分析发现缺少输入组合 |
 | `VCHK` | 比较规则和预期行为 | reference model、scoreboard、assertion，以及实际比较/触发/失败统计 | mismatch 无法判断来自 DUT、检查器还是规格 |
 | `VCOV` | 验证点、用例和检查器之间的对应关系 | coverage model、覆盖率数据库导出结果、未覆盖项及处理结果 | 缺少对应激励、用例或检查器 |
@@ -388,16 +390,21 @@ Workstream 当前 revision。前置 Workstream 尚未规划时，closure 返回
 默认依赖的主干如下；箭头表示“右侧依赖左侧”，不是整个 Workstream gate：
 
 ```text
-VDOC contracts -> VREG policy -> VREG executor-ready
-VDOC contracts + executor-ready -> VSTIM capabilities -> VSTIM evidence
-VDOC contracts + executor-ready -> VCHK capabilities + VSTIM reachability -> VCHK evidence
-VDOC contracts + VSTIM/VCHK capabilities -> VCASE capability -> targeted evidence
-VDOC contracts + executor-ready + VSTIM/VCASE evidence -> VCOV collection/hole evidence
-VSTIM/VCHK/VCASE/VCOV evidence + executor-ready -> VREG execution/triage/fresh evidence
+VDOC 的验证计划/环境架构 -> VENV interface/clock-reset/topology
+VENV 基础节点 -> build-ready -> run-ready -> environment-smoke-evidence
+VENV run-ready + VDOC 回归规则 -> VREG executor-ready
+VDOC 事务规则 + VENV interface/topology/build -> VSTIM 实现
+VENV smoke/observation + VSTIM 实现 + VREG executor -> VSTIM 运行证据
+VDOC 比较规则 + VENV build + VSTIM reachability -> VCHK 能力和运行证据
+VDOC 用例规则 + VENV build + VSTIM/VCHK -> VCASE 能力和运行证据
+VDOC 覆盖率规则 + VENV build + VSTIM/VCASE -> VCOV 能力和运行证据
+VENV smoke + VSTIM/VCHK/VCASE/VCOV 运行证据 + VREG executor -> VREG 最终证据
 ```
 
-因此 VREG 的基础 executor capability 可以较早完成，VREG 的最终 closure evidence 较晚完成；
-不会形成“VSTIM 等完整 VREG、完整 VREG 又等 VSTIM”的环。
+VENV 的基础节点可以分批完成，其他工作域只等待自己实际使用的节点，不等待整个 VENV
+冻结。VENV 的最小 smoke 不依赖业务激励、完整检查器或回归结果；VREG 的运行入口则复用
+VENV 已证明的最小运行能力，因此不会形成相互等待。完整节点图和依赖原因见
+[工作流之间怎样依赖](mechanism.md#workstream-dependencies)。
 
 ### 步骤 3：查看并完成系统建议的下一项工作
 
@@ -435,7 +442,7 @@ Verification Closure Engine 为每个 gap 返回：
 
 ### 步骤 4：把工程结果登记为证据
 
-标准 VSTIM/VCHK/VCOV/VCASE/VREG [desired node](glossary.md#knowledge) 使用统一的专用
+标准 VENV/VSTIM/VCHK/VCOV/VCASE/VREG [desired node](glossary.md#knowledge) 使用统一的专用
 [evidence](glossary.md#evidence) 入口：
 
 ```text
@@ -514,6 +521,7 @@ SQLite 保存报告索引、文件指纹、提取后的字段、状态和[来源
 | [Workstream](glossary.md#workstream) | [能力节点](glossary.md#node-role)：证明“已经具备” | [运行证据节点](glossary.md#node-role)：证明“实际有效” | 主要原始来源 |
 | --- | --- | --- | --- |
 | `VDOC` | 八份正式验证文档的当前文件版本和 SHA-256 | 无独立运行证据；使用 Human `docs review` | Markdown、评审记录 |
+| `VENV` | 接口连接（`interface-ready`）、时钟复位（`clock-reset-ready`）、组件结构（`topology-ready`）、构建（`build-ready`）、最小运行入口（`run-ready`）和观测点（`observation-ready`） | clock/reset、启动、结束和观测路径实际工作的最小环境运行（`environment-smoke-evidence`） | 验证源码、编译/elaboration 日志、最小仿真日志和观测汇总 |
 | `VSTIM` | 接口事务规则（`transaction-contract`）、激励实现（`stimulus-implementation`）、边界场景清单（`corner-scenarios`） | 场景确实到达 DUT（`reachability-evidence`）、同样输入可重复产生同样激励（`determinism-evidence`） | 源码、编译和注册结果、DUT 输入边界探针输出，可选波形 |
 | `VCHK` | 比较规则（`compare-policy`）、参考模型（`reference-model`）、计分板（`scoreboard`）、断言（`assertions`） | 参考模型、计分板和断言在真实仿真中实际参与工作且没有失败 | 编译和 elaboration 日志、仿真日志、检查器和断言汇总报告 |
 | `VCOV` | 覆盖率模型（`coverage-model`）、覆盖率收集工具（`coverage-collection`） | 覆盖数据成功收集（`coverage-collection-evidence`）、每个未覆盖项都有处理结果（`hole-analysis-evidence`） | VDB/UCDB、覆盖率导出文件、合并报告、豁免记录 |
@@ -525,6 +533,13 @@ SQLite 保存报告索引、文件指纹、提取后的字段、状态和[来源
 
 - **VDOC**：八份必需文档均为 `VALID/WAIVED`；每份当前正文和 SHA-256 已由 Human 评审；
   没有仍在等待回答或仍在讨论的人工决定和外部问题。
+- **VENV 能力准备完成**：DUT 接口和 virtual interface 已连接；clock/reset 已配置；harness、
+  agent、env、monitor 已构建并连接；环境能够编译和 elaboration，且没有构建错误；最小运行入口
+  自检通过、能正常退出，也能把仿真失败传递给命令退出状态；DUT 输入、输出或关键状态至少有一个
+  已连接的验证侧观测点。
+- **VENV 运行证明完成**：最小 smoke 实际观察到 clock edge、reset assert/deassert 和验证侧
+  观测记录；没有 error/fatal/timeout，命令正常结束；报告中的环境实现 SHA-256 与当前
+  `build-ready` 节点记录一致。这个 smoke 只证明环境基础，不证明业务场景、检查器或覆盖率。
 - **VSTIM 能力准备完成**：接口事务的方向、字段和握手规则合法；每个必需验证点都有已经注册、
   能够编译的 driver、sequence、constraint 或 generator；每个必需边界场景都对应当前代码中
   真实存在的激励生成组件。
@@ -633,7 +648,7 @@ SHA-256 标识、不能覆盖旧版本的 baseline 清单。如果还有未完�
 
 ### 步骤 7：保存全项目的最终基线
 
-六个 Workstream 都已存在并分别冻结，而且检查结果中没有未处理问题或缺失文件后：
+七个 Workstream 都已存在并分别冻结，而且检查结果中没有未处理问题或缺失文件后：
 
 ```text
 verif-harness freeze final
@@ -764,7 +779,7 @@ verif-harness bootstrap [OPTIONS]
 
 当用户询问“当前做到哪里、还缺什么”时，Agent 先运行这个命令。
 无参数显示全局模型、Workstream 和 ranked actions；指定 Workstream 只显示其 plan 与
-只读 closure。WORKSTREAM 为 `VDOC/VSTIM/VCHK/VCOV/VCASE/VREG`。
+只读 closure。WORKSTREAM 为 `VDOC/VENV/VSTIM/VCHK/VCOV/VCASE/VREG`。
 
 ### `plan WORKSTREAM`
 
@@ -843,7 +858,7 @@ verif-harness prove SUBJECT SOURCE [--kind KIND] [--fail]
 仅用于项目自行添加、且没有标准证据格式的自定义 node。默认 `kind=verification`、
 verdict=`pass`；`--fail`
 记录失败证据。SOURCE 必须存在、位于项目内且为文件；系统计算 SHA-256 digest。
-标准 VSTIM/VCHK/VCOV/VCASE/VREG desired node 会拒绝该命令。
+标准 VENV/VSTIM/VCHK/VCOV/VCASE/VREG desired node 会拒绝该命令。
 
 ### `evidence SUBJECT SOURCE [--claim CLAIM]`
 
@@ -856,7 +871,7 @@ verif-harness evidence SUBJECT SOURCE [--claim CLAIM]
 
 标准 node 从 key 自动确定[要证明的内容（claim）](glossary.md#evidence-format)；自定义 node
 必须显式给出。命令分别校验
-`StimulusCapabilityEvidence/1`、`StimulusReachabilityEvidence/1`、
+`EnvironmentEvidence/1`、`StimulusCapabilityEvidence/1`、`StimulusReachabilityEvidence/1`、
 `CheckingEvidence/1`、`CoverageEvidence/1`、
 `TestcaseEvidence/1` 或 `RegressionEvidence/1`，然后从内容推导 verdict。VDOC 不接受该
 入口，工程正文使用 `docs review`。
@@ -898,7 +913,7 @@ verif-harness freeze [WORKSTREAM|final] [--reviewer NAME] [--reason TEXT]
 ```
 
 - 不指定 Workstream 时只在唯一 ready 候选时推导；
-- `freeze final` 要求六个 Workstream 全部 BASELINED 且 audit 通过；
+- `freeze final` 要求七个 Workstream 全部 BASELINED 且 audit 通过；
 - reviewer 未填写时从 Git 或环境中的用户名读取，reason 未填写时使用内置记录说明；
 - 这是 Human gate，且 baseline 不可覆盖。
 

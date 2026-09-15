@@ -186,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
         "evidence", help="按 node 所属 Workstream 校验专用 schema 并从内容推导 verdict",
     )
     project_argument(specialized_evidence)
-    specialized_evidence.add_argument("subject", help="VSTIM/VCHK/VCOV/VCASE/VREG desired node")
+    specialized_evidence.add_argument("subject", help="VENV/VSTIM/VCHK/VCOV/VCASE/VREG desired node")
     specialized_evidence.add_argument("source", help="项目内专用 evidence JSON")
     specialized_evidence.add_argument("--claim", help="标准 desired node 自动推导；自定义 node 必须显式提供")
 

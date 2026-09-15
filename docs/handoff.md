@@ -1,16 +1,18 @@
 # Session handoff
 
-更新日期：2026-09-07
+更新日期：2026-09-16
 
 ## 当前状态
 
-- 当前分支是 `v1`；已推送的实现提交是
-  `7c06e1d8203c5ab16537a481beccc76ef35c063d`，当时与 `origin/v1` 一致。
+- 当前分支是 `v1`；VENV 实现以
+  `5da9f3baaff05238882bc304983f4bb51c2e43c1` 为修改前基线，最终提交以 Git 历史为准。
 - `v0` 与 `v1` 是两套独立流程：`v0` 保留旧 Stage/workflow 设计；`v1` 使用持续
   Verification Knowledge Model、可重入 Workstream 和动态 closure。
 - v1 不使用 Spec Kit 的 `spec -> plan -> tasks -> implement` 作为主控制流程。
-- 六个 Workstream 是 `VDOC`、`VSTIM`、`VCHK`、`VCOV`、`VCASE`、`VREG`；它们可
+- 七个 Workstream 是 `VDOC`、`VENV`、`VSTIM`、`VCHK`、`VCOV`、`VCASE`、`VREG`；它们可
   并行、回跳和重新规划，不是线性 Stage。
+- VENV 管理接口连接、clock/reset、组件结构、构建、最小运行入口、观测点和最小环境 smoke。
+  标准依赖连接具体节点，不要求先冻结整个 VENV；VSTIM 仍独立管理业务激励和场景可达性。
 - 五个架构子系统已统一命名为：
   - Verification Planner
   - Verification Knowledge Model
@@ -27,22 +29,22 @@
 
 ## 已验证
 
-- 2026-09-07 在 `v1` 上完整执行 `make check`：
+- 2026-09-16 在含 VENV 的当前工作树上完整执行 `make check`：
   - structure check PASS；
-  - text format PASS（233 files）；
-  - 主测试 97 项 PASS；
+  - text format PASS（265 files）；
+  - 主测试 128 项 PASS；
   - regression tool 测试 5 项 PASS；
   - capability tool 测试 6 项 PASS；
   - freeze tool 测试 9 项 PASS；
   - OSS readiness 为 `READY_FOR_HUMAN_REVIEW`，0 errors。
-- CLI 专项测试包含一条完整短命令路径：`bootstrap -> 六个 Workstream 的
+- CLI 专项测试包含一条完整短命令路径：`bootstrap -> 七个 Workstream 的
   plan/review/prove/freeze -> final freeze`。
-- 实现提交已推送；本 handoff 的提交按 session-handoff 规则默认不自动 push。
+- VENV 实现、节点级依赖、证据规则和文档已完成并通过仓库检查。
 
 ## 卡点
 
 - 当前没有已知代码或测试卡点。
-- 尚未收到新的 v1 功能需求；下一步由用户决定。
+- VENV 与节点级依赖说明已经实现并通过检查；下一步由用户决定。
 
 ## 下一步
 

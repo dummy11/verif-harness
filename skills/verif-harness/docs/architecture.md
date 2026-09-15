@@ -10,7 +10,7 @@ change/evidence -> Verification Knowledge Model
 ```
 
 Verification Planner combines a detailed template, current model, project context, and Human
-dialogue to create revisioned desired state. `VDOC`, `VSTIM`, `VCHK`, `VCOV`,
+dialogue to create revisioned desired state. `VDOC`, `VENV`, `VSTIM`, `VCHK`, `VCOV`,
 `VCASE`, and `VREG` are parallel, re-entrant Workstreams. Each has its own
 `desired -> plan -> act -> observe -> evaluate -> replan` loop. They are not a
 fixed lifecycle or prerequisite chain.
@@ -23,6 +23,13 @@ files cannot satisfy those contracts.
 Closure additionally evaluates cross-evidence predicates and derives VREG
 fresh-evidence membership from the current required closure-evidence nodes;
 evidence producers cannot shrink that set.
+
+VENV owns interface/clock/reset connection, environment topology, build,
+minimal run, and observation readiness. VSTIM owns generated behavior and DUT
+input reachability; VREG owns batch execution and triage. Dependencies join
+only the required nodes. In particular, VENV smoke does not require completed
+VSTIM/VCHK/VCOV/VCASE/VREG evidence, while VREG executor readiness reuses the
+VENV minimal run capability. This prevents a whole-Workstream dependency cycle.
 
 `.verif-harness/model.sqlite3` is authority. JSON and Markdown are review
 projections. Verification Knowledge Model is read-only to Human-facing callers;

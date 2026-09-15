@@ -10,7 +10,7 @@ Preferred trace chain:
 REQ -> VF -> DESIRED -> ACTION -> MODE -> ARTIFACT -> EVIDENCE -> REVIEW
 ```
 
-For standard VSTIM/VCHK/VCOV/VCASE/VREG desired nodes use `evidence NODE FILE`;
+For standard VENV/VSTIM/VCHK/VCOV/VCASE/VREG desired nodes use `evidence NODE FILE`;
 use generic `prove NODE FILE` only when no typed contract is declared. Use
 `changed PATH` and `waive NODE --reason ...` for changes and Human waivers.
 Adapters and automation may use `record node|edge|change|waive` for advanced

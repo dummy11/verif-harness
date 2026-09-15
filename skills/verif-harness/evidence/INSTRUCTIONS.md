@@ -3,7 +3,7 @@
 User-facing definitions for schema, claim, validator, raw artifact, and native
 artifact are in the [glossary](../docs/glossary.md#evidence-format).
 
-Use `verif-harness evidence NODE REPORT.json` for VCHK, VCOV, VCASE, and VREG
+Use `verif-harness evidence NODE REPORT.json` for VENV, VCHK, VCOV, VCASE, and VREG
 desired nodes. Standard template nodes infer their claim; custom nodes require
 `--claim`. VSTIM is dispatched to its stricter reachability validator. VDOC
 semantic approval remains `docs review` and is not accepted here.
@@ -32,6 +32,7 @@ promote the old FAIL record automatically.
 
 Schemas and starting examples are in this directory:
 
+- `environment-evidence.schema.json` / `environment-evidence.example.json`
 - `stimulus-capability-evidence.schema.json` / `stimulus-capability-evidence.example.json`
 - `checking-evidence.schema.json` / `checking-evidence.example.json`
 - `coverage-evidence.schema.json` / `coverage-evidence.example.json`
@@ -42,6 +43,7 @@ Standard claims:
 
 | Workstream | Claims |
 | --- | --- |
+| VENV | capability: `interface-ready`, `clock-reset-ready`, `topology-ready`, `build-ready`, `run-ready`, `observation-ready`; closure: `environment-smoke-evidence` |
 | VSTIM | capability: `transaction-contract`, `stimulus-implementation`, `corner-scenarios`; closure remains `StimulusReachabilityEvidence/1` |
 | VCHK | capability: `compare-policy`, `reference-model`, `scoreboard`, `assertions`; closure: `reference-model-evidence`, `scoreboard-evidence`, `assertion-evidence` |
 | VCOV | capability: `coverage-model`, `coverage-collection`; closure: `coverage-collection-evidence`, `hole-analysis-evidence` |

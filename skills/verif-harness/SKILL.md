@@ -20,7 +20,7 @@ Verification Planner -> Verification Knowledge Model
   \-> Verification Reasoning Engine only for ambiguity
 ```
 
-`VDOC`, `VSTIM`, `VCHK`, `VCOV`, `VCASE`, and `VREG` are parallel, re-entrant
+`VDOC`, `VENV`, `VSTIM`, `VCHK`, `VCOV`, `VCASE`, and `VREG` are parallel, re-entrant
 Workstreams, not lifecycle steps. Each has a local `desired -> plan -> act ->
 observe -> evaluate -> replan` loop. Evidence or findings may reopen any
 Workstream. Project lifecycle is separate.
@@ -48,7 +48,7 @@ Workstream. Project lifecycle is separate.
   Read `vmodel/INSTRUCTIONS.md`.
 - `record`: structured ingress for facts, relations, evidence, changes, and
   Human waivers. It automatically reconciles the consistency and closure engines.
-- `evidence`: validate VSTIM capability, VCHK, VCOV, VCASE, and VREG typed
+- `evidence`: validate VENV, VSTIM capability, VCHK, VCOV, VCASE, and VREG typed
   evidence and derive the verdict from content. Read `evidence/INSTRUCTIONS.md`;
   do not use generic `prove` to bypass a standard Workstream contract. Enforce
   cross-evidence exit predicates and derive VREG fresh-evidence membership from

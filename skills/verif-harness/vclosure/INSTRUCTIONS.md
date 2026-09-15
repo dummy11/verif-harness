@@ -18,6 +18,10 @@ Also enforce executable cross-evidence exit predicates. Emit
 capability/evidence digest mismatch, incomplete VCASE mappings, unmatched VREG
 failure triage, or an incomplete Planner-derived fresh-evidence set. Natural
 language exit prose is review context, not a substitute for these predicates.
+For VENV, require the environment smoke report to bind the same environment
+implementation digest as the current `build-ready` evidence. The smoke is a
+minimal clock/reset/run/observe proof and must not depend on completed VSTIM,
+VCHK, VCOV, VCASE, or VREG execution evidence.
 
 A Workstream is closure-ready only when all current required nodes are
 VALID/WAIVED, all planner-default prerequisites are planned and VALID/WAIVED,

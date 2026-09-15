@@ -14,7 +14,7 @@ Existing documents are never overwritten. The CLI's desired-state/plan projectio
 are not those deliverables; document governance state is rendered on demand from SQLite.
 
 ```text
-$verif-harness plan VDOC|VSTIM|VCHK|VCOV|VCASE|VREG \
+$verif-harness plan VDOC|VENV|VSTIM|VCHK|VCOV|VCASE|VREG \
   [--objective "..."] [--desired "..."] [--exit "..."] [--decision "..."]
 $verif-harness review [NAME] [--verdict approve|reject|modify|clarify] \
   [--reviewer NAME] [--reason "..."]
