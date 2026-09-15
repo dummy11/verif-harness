@@ -86,6 +86,8 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness trace NODE
   verif-harness impact NODE
   verif-harness prove NODE FILE
+  verif-harness evidence NODE FILE
+  verif-harness reachability NODE FILE
   verif-harness changed PATH
   verif-harness freeze VDOC|final
 
@@ -147,6 +149,10 @@ def build_parser() -> argparse.ArgumentParser:
     edge.add_argument("source"); edge.add_argument("target"); edge.add_argument("--relation", required=True)
     edge.add_argument("--origin", choices=("explicit", "inferred", "runtime"), default="explicit")
     edge.add_argument("--confidence", type=float, default=1.0)
+    dependency = record_commands.add_parser("dependency", help="登记 node 级依赖；不会等待整个 Workstream")
+    project_argument(dependency)
+    dependency.add_argument("subject", help="被阻塞的 dependent node")
+    dependency.add_argument("prerequisite", help="必须先 VALID/WAIVED 的 prerequisite node")
     validity = record_commands.add_parser("status"); project_argument(validity)
     validity.add_argument("node_id")
     validity.add_argument("status", choices=[item.value for item in Validity if item not in {Validity.VALID, Validity.WAIVED}])
@@ -160,12 +166,29 @@ def build_parser() -> argparse.ArgumentParser:
     waive = record_commands.add_parser("waive"); project_argument(waive)
     waive.add_argument("node_id"); waive.add_argument("--reviewer", required=True); waive.add_argument("--reason", required=True)
 
-    prove = commands.add_parser("prove", help="把一个真实文件记录为 node 的通过/失败证据")
+    prove = commands.add_parser("prove", help="仅为无专用合同的自定义 node 登记调用方判定")
     project_argument(prove)
     prove.add_argument("subject", help="status/closure 输出中的目标 node ID")
     prove.add_argument("source", help="项目内 evidence 文件")
     prove.add_argument("--kind", default="verification", help="证据类型，默认 verification")
     prove.add_argument("--fail", action="store_true", help="记录失败证据；默认通过")
+
+    reachability = commands.add_parser(
+        "reachability", help="校验并登记 VSTIM 自有 probe 的场景可达性/确定性证据",
+    )
+    project_argument(reachability)
+    reachability.add_argument("subject", help="VSTIM desired-state 或 stimulus-scenario node")
+    reachability.add_argument("source", help="项目内 StimulusReachabilityEvidence/1 JSON")
+    reachability.add_argument("--claim", choices=("reachability", "determinism"),
+                              help="默认从标准 VSTIM desired-state key 推导")
+
+    specialized_evidence = commands.add_parser(
+        "evidence", help="按 node 所属 Workstream 校验专用 schema 并从内容推导 verdict",
+    )
+    project_argument(specialized_evidence)
+    specialized_evidence.add_argument("subject", help="VSTIM/VCHK/VCOV/VCASE/VREG desired node")
+    specialized_evidence.add_argument("source", help="项目内专用 evidence JSON")
+    specialized_evidence.add_argument("--claim", help="标准 desired node 自动推导；自定义 node 必须显式提供")
 
     changed = commands.add_parser("changed", help="记录文件变化并自动传播失效")
     project_argument(changed)
@@ -339,12 +362,17 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "record":
             if args.record_command == "node": emit(store.add_node(args.node_id, args.node_type, args.title, args.workstream, Validity(args.status)))
             elif args.record_command == "edge": emit(store.add_edge(args.source, args.target, args.relation, args.origin, args.confidence))
+            elif args.record_command == "dependency": emit(store.add_dependency(args.subject, args.prerequisite))
             elif args.record_command == "status": emit(store.set_status(args.node_id, Validity(args.status)))
             elif args.record_command == "evidence": emit(store.add_evidence(args.subject, args.kind, args.source, args.verdict))
             elif args.record_command == "change": emit(store.record_change(args.path, args.kind, args.revision))
             else: emit(store.waive_node(args.node_id, args.reviewer, args.reason))
         elif args.command == "prove":
             emit(store.add_evidence(args.subject, args.kind, args.source, "fail" if args.fail else "pass"))
+        elif args.command == "reachability":
+            emit(store.add_reachability_evidence(args.subject, args.source, args.claim))
+        elif args.command == "evidence":
+            emit(store.add_workstream_evidence(args.subject, args.source, args.claim))
         elif args.command == "changed":
             kind = args.kind
             if kind == "auto":

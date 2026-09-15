@@ -1,7 +1,7 @@
 # 验证点矩阵
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的验证点设计。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
 ## 分解规则
 
@@ -29,4 +29,4 @@
 ## 一致性要求
 
 检查来源可追溯、验证点可判定、ID 唯一和跨文档引用一致。
-评审记录与证据由 SQLite 按需投影。
+评审记录和证据索引保存在 SQLite 中，通过 `verif-harness docs status/render` 查看。

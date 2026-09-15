@@ -15,6 +15,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
 
+from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
+from .reachability import ReachabilityError, validate_reachability
+
 
 SCHEMA_VERSION = 2
 STATE_DIR = ".verif-harness"
@@ -67,47 +70,63 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
     "VDOC": {
         "name": "Verification Documentation",
         "objective": "形成并持续维护可评审的验证定义、架构、策略和退出标准",
-        "desired": [(key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()],
+        "capabilities": [(key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()],
+        # VDOC 的 closure proof 是绑定到每份正文 revision 的 Human review，
+        # 不是可由工具报告自动置为 PASS 的聚合 evidence node。
+        "closure_evidence": [],
         "exit": ["required 文档节点为 VALID 或 Human WAIVED", "无未处置 CRITICAL open decision"],
     },
     "VSTIM": {
         "name": "Stimulus",
         "objective": "实现可复现、可组合并覆盖目标场景的激励能力",
-        "desired": [
+        "capabilities": [
             ("transaction-contract", "transaction、sequence 与 constraint 合同明确", "plan"),
             ("stimulus-implementation", "required feature 有可复现 stimulus 实现", "add-uvc-skeleton"),
             ("corner-scenarios", "边界、错误、并发与 backpressure 场景可生成", "add-testcase"),
-            ("stimulus-evidence", "targeted run 证明 stimulus 可达且行为确定", "xverif"),
         ],
-        "exit": ["required stimulus 节点有效", "目标场景存在新鲜可达性证据"],
+        "closure_evidence": [
+            ("reachability-evidence", "VSTIM probe 证明 required scenario 已在 DUT 输入接受边界可达", "reachability"),
+            ("determinism-evidence", "相同 test、seed 与配置的复跑具有一致 stimulus digest", "reachability"),
+        ],
+        "exit": ["required stimulus 节点有效", "目标场景有 VSTIM 自有且新鲜的可达性与确定性证据"],
     },
     "VCHK": {
         "name": "Checking",
         "objective": "建立可信的 comparison、reference model、scoreboard 与 assertion",
-        "desired": [
+        "capabilities": [
             ("compare-policy", "数值、时序、顺序、异常与容差策略明确", "plan"),
             ("reference-model", "reference-model adapter 与 DUT 边界可验证", "add-refmodel-bridge"),
             ("scoreboard", "scoreboard/checker 对 required feature 生效", "complete-scoreboard"),
             ("assertions", "协议与关键不变量有 assertion 和非空洞证据", "add-assertion-skeleton"),
+        ],
+        "closure_evidence": [
+            ("reference-model-evidence", "reference model 已实际 engaged 且比较无 mismatch/residual", "evidence"),
+            ("scoreboard-evidence", "scoreboard 已执行非零比较且无 mismatch/residual", "evidence"),
+            ("assertion-evidence", "required assertion 已编译、挂接、激活且无 failure/vacuity", "evidence"),
         ],
         "exit": ["required checking path 有确定性 evidence", "无未解释 checker mismatch"],
     },
     "VCOV": {
         "name": "Coverage",
         "objective": "建立可追溯 coverage model 并持续分析、关闭 coverage hole",
-        "desired": [
+        "capabilities": [
             ("coverage-model", "functional/code/assertion coverage 目标可追溯", "add-coverage-skeleton"),
             ("coverage-collection", "coverage 数据可重复收集并关联 revision", "xverif"),
-            ("hole-analysis", "coverage hole 已补测、证明不可达或 Human waiver", "coverage-closure"),
+        ],
+        "closure_evidence": [
+            ("coverage-collection-evidence", "当前 revision 的 coverage 数据库完整且无 merge/stale shard 错误", "evidence"),
+            ("hole-analysis-evidence", "coverage hole 已补测、证明不可达或 Human waiver", "evidence"),
         ],
         "exit": ["required coverage goal 有新鲜证据", "所有 required hole 已处置"],
     },
     "VCASE": {
         "name": "Testcase",
         "objective": "把 verification feature 组合成可重复执行、可诊断的 testcase",
-        "desired": [
+        "capabilities": [
             ("case-matrix", "feature/scenario 到 testcase 的映射完整", "plan"),
             ("case-implementation", "required testcase 与 virtual sequence 已实现", "add-testcase"),
+        ],
+        "closure_evidence": [
             ("targeted-evidence", "新增 testcase 通过 targeted run", "xverif"),
         ],
         "exit": ["required feature 无 testcase 缺口", "新增 case 有新鲜通过证据"],
@@ -115,15 +134,124 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
     "VREG": {
         "name": "Regression",
         "objective": "执行可复现 regression、聚类失败、调试并刷新验证证据",
-        "desired": [
+        "capabilities": [
             ("regression-policy", "smoke/nightly/full、seed、timeout、rerun 与 known-fail policy 明确", "add-regression-runner"),
-            ("execution", "required regression 可确定性执行并保留 revision 信息", "xverif"),
-            ("triage", "失败已聚类，语义歧义才路由到 Verification Reasoning Engine", "regression-triage"),
+            ("executor-ready", "compile/run/collect 基础执行器已配置并通过自检", "add-regression-runner"),
+        ],
+        "closure_evidence": [
+            ("execution-evidence", "required regression 可确定性执行并保留 revision 信息", "evidence"),
+            ("triage-evidence", "失败已聚类并具有 same-seed rerun 与 disposition", "evidence"),
             ("fresh-evidence", "required verification node 关联当前 revision 的新鲜 evidence", "xverif"),
         ],
         "exit": ["无未处置 P0/P1 failure", "required evidence 与当前 revision 一致"],
     },
 }
+
+
+def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    """Flatten explicit template sections without inferring role from a node name."""
+    return [
+        *((key, title, mode, "capability") for key, title, mode in template["capabilities"]),
+        *((key, title, mode, "closure-evidence")
+          for key, title, mode in template["closure_evidence"]),
+    ]
+
+# Stored as dependent (workstream, key) -> prerequisite (workstream, key).
+# These are capability/evidence dependencies, never whole-Workstream gates.
+DEFAULT_DEPENDENCIES: tuple[tuple[tuple[str, str], tuple[str, str]], ...] = (
+    (("VREG", "regression-policy"), ("VDOC", "verification-workflow")),
+    (("VREG", "regression-policy"), ("VDOC", "verification-plan")),
+    (("VREG", "regression-policy"), ("VDOC", "testcase-list")),
+    (("VREG", "executor-ready"), ("VREG", "regression-policy")),
+    (("VSTIM", "transaction-contract"), ("VDOC", "verification-plan")),
+    (("VSTIM", "transaction-contract"), ("VDOC", "feature-matrix")),
+    (("VSTIM", "transaction-contract"), ("VDOC", "tb-architecture")),
+    (("VSTIM", "stimulus-implementation"), ("VSTIM", "transaction-contract")),
+    (("VSTIM", "stimulus-implementation"), ("VREG", "executor-ready")),
+    (("VSTIM", "corner-scenarios"), ("VSTIM", "transaction-contract")),
+    (("VSTIM", "corner-scenarios"), ("VDOC", "feature-matrix")),
+    (("VSTIM", "reachability-evidence"), ("VSTIM", "stimulus-implementation")),
+    (("VSTIM", "reachability-evidence"), ("VSTIM", "corner-scenarios")),
+    (("VSTIM", "reachability-evidence"), ("VREG", "executor-ready")),
+    (("VSTIM", "determinism-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VSTIM", "determinism-evidence"), ("VREG", "executor-ready")),
+    (("VCHK", "compare-policy"), ("VDOC", "verification-plan")),
+    (("VCHK", "compare-policy"), ("VDOC", "reference-model")),
+    (("VCHK", "reference-model"), ("VCHK", "compare-policy")),
+    (("VCHK", "reference-model"), ("VREG", "executor-ready")),
+    (("VCHK", "scoreboard"), ("VCHK", "compare-policy")),
+    (("VCHK", "assertions"), ("VDOC", "assertion-plan")),
+    (("VCHK", "assertions"), ("VREG", "executor-ready")),
+    (("VCHK", "reference-model-evidence"), ("VCHK", "reference-model")),
+    (("VCHK", "reference-model-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCHK", "scoreboard-evidence"), ("VCHK", "scoreboard")),
+    (("VCHK", "scoreboard-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCHK", "assertion-evidence"), ("VCHK", "assertions")),
+    (("VCHK", "assertion-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCASE", "case-matrix"), ("VDOC", "feature-matrix")),
+    (("VCASE", "case-matrix"), ("VDOC", "testcase-list")),
+    (("VCASE", "case-implementation"), ("VCASE", "case-matrix")),
+    (("VCASE", "case-implementation"), ("VSTIM", "stimulus-implementation")),
+    (("VCASE", "case-implementation"), ("VREG", "executor-ready")),
+    (("VCASE", "targeted-evidence"), ("VCASE", "case-implementation")),
+    (("VCASE", "targeted-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCASE", "targeted-evidence"), ("VCHK", "scoreboard-evidence")),
+    (("VCOV", "coverage-model"), ("VDOC", "coverage-plan")),
+    (("VCOV", "coverage-model"), ("VDOC", "feature-matrix")),
+    (("VCOV", "coverage-collection"), ("VCOV", "coverage-model")),
+    (("VCOV", "coverage-collection"), ("VREG", "executor-ready")),
+    (("VCOV", "coverage-collection-evidence"), ("VCOV", "coverage-collection")),
+    (("VCOV", "coverage-collection-evidence"), ("VSTIM", "reachability-evidence")),
+    (("VCOV", "coverage-collection-evidence"), ("VCASE", "targeted-evidence")),
+    (("VCOV", "hole-analysis-evidence"), ("VCOV", "coverage-collection-evidence")),
+    (("VREG", "execution-evidence"), ("VREG", "executor-ready")),
+    (("VREG", "execution-evidence"), ("VSTIM", "determinism-evidence")),
+    (("VREG", "execution-evidence"), ("VCHK", "reference-model-evidence")),
+    (("VREG", "execution-evidence"), ("VCHK", "scoreboard-evidence")),
+    (("VREG", "execution-evidence"), ("VCHK", "assertion-evidence")),
+    (("VREG", "execution-evidence"), ("VCASE", "targeted-evidence")),
+    (("VREG", "execution-evidence"), ("VCOV", "coverage-collection-evidence")),
+    (("VREG", "triage-evidence"), ("VREG", "execution-evidence")),
+    (("VREG", "fresh-evidence"), ("VREG", "execution-evidence")),
+    (("VREG", "fresh-evidence"), ("VREG", "triage-evidence")),
+    (("VREG", "fresh-evidence"), ("VCOV", "hole-analysis-evidence")),
+)
+
+
+def validate_default_dependency_graph() -> None:
+    """Fail fast when a built-in template or its default graph is inconsistent."""
+    declared = {
+        (workstream, key)
+        for workstream, template in WORKSTREAM_TEMPLATES.items()
+        for key, _title, _mode, _role in template_nodes(template)
+    }
+    referenced = {node for edge in DEFAULT_DEPENDENCIES for node in edge}
+    unknown = sorted(referenced - declared)
+    if unknown:
+        raise RuntimeError(f"DEFAULT_DEPENDENCIES 引用了未声明 template node: {unknown}")
+
+    graph: dict[tuple[str, str], list[tuple[str, str]]] = {node: [] for node in declared}
+    for dependent, prerequisite in DEFAULT_DEPENDENCIES:
+        graph[dependent].append(prerequisite)
+    visiting: set[tuple[str, str]] = set()
+    visited: set[tuple[str, str]] = set()
+
+    def visit(node: tuple[str, str]) -> None:
+        if node in visiting:
+            raise RuntimeError(f"DEFAULT_DEPENDENCIES 存在循环依赖: {node}")
+        if node in visited:
+            return
+        visiting.add(node)
+        for prerequisite in graph[node]:
+            visit(prerequisite)
+        visiting.remove(node)
+        visited.add(node)
+
+    for node in graph:
+        visit(node)
+
+
+validate_default_dependency_graph()
 
 
 def now() -> str:
@@ -526,6 +654,28 @@ class ProjectStore:
             raise HarnessError("workstream 必须是 " + ", ".join(WORKSTREAM_TEMPLATES))
         return name
 
+    @staticmethod
+    def _reconcile_default_dependencies(connection: sqlite3.Connection) -> int:
+        current: dict[tuple[str, str], str] = {}
+        for row in connection.execute("SELECT name,desired_json FROM workstreams"):
+            for desired in json.loads(row["desired_json"]):
+                current[(row["name"], desired["key"])] = desired["id"]
+        connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
+        count = 0
+        timestamp = now()
+        for dependent_key, prerequisite_key in DEFAULT_DEPENDENCIES:
+            dependent = current.get(dependent_key)
+            prerequisite = current.get(prerequisite_key)
+            if dependent is None or prerequisite is None:
+                continue
+            connection.execute(
+                "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                (dependent, prerequisite, "DEPENDS_ON", "planner-default", 1.0,
+                 json_text({"dependent": list(dependent_key), "prerequisite": list(prerequisite_key)}), timestamp),
+            )
+            count += 1
+        return count
+
     def planning_context(self, workstream: str) -> dict[str, Any]:
         model = self.model()
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -674,8 +824,9 @@ class ProjectStore:
         template = WORKSTREAM_TEMPLATES[name]
         objective_value = objective.strip() if objective and objective.strip() else template["objective"]
         desired_specs = (
-            [(f"custom-{index:03d}", title, "reason") for index, title in enumerate(desired, 1)]
-            if desired else list(template["desired"])
+            [(f"custom-{index:03d}", title, "reason", "capability")
+             for index, title in enumerate(desired, 1)]
+            if desired else template_nodes(template)
         )
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
@@ -704,9 +855,10 @@ class ProjectStore:
             connection.execute("UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE workstream=? AND type='desired-state'",
                                (Validity.STALE.value, now(), name))
             desired_rows = []
-            for key, title, suggested_mode in desired_specs:
+            for key, title, suggested_mode, role in desired_specs:
                 node_id = f"workstream:{name}:r{revision}:desired:{key}"
-                row = {"id": node_id, "key": key, "title": title, "required": True, "suggested_mode": suggested_mode}
+                row = {"id": node_id, "key": key, "title": title, "role": role,
+                       "required": True, "suggested_mode": suggested_mode}
                 if name == "VDOC" and not desired:
                     row["document"] = vdoc_document_contract(key)
                 desired_rows.append(row)
@@ -719,6 +871,7 @@ class ProjectStore:
                   decisions_json=excluded.decisions_json,context_json=excluded.context_json,updated_at=excluded.updated_at
             """, (name, "REVIEW", revision, objective_value, json_text(desired_rows), json_text(exit_values),
                   json_text(decisions), json_text(context), now()))
+            default_dependency_count = self._reconcile_default_dependencies(connection)
         self.write_workstream_projection(name)
         materialized_documents: list[dict[str, Any]] = []
         if name == "VDOC":
@@ -729,7 +882,11 @@ class ProjectStore:
             if not desired:
                 materialized_documents = self._materialize_vdoc_documents(desired_rows, document_root_value)
         result = self.workstream(name)
-        result["template"] = {"name": template["name"], "topics": [item[0] for item in template["desired"]]}
+        result["template"] = {
+            "name": template["name"],
+            "capabilities": [item[0] for item in template["capabilities"]],
+            "closure_evidence": [item[0] for item in template["closure_evidence"]],
+        }
         if name == "VDOC":
             result["document_guidance"] = {
                 "instructions": "vplan/vdoc.md",
@@ -743,8 +900,9 @@ class ProjectStore:
                                         "when": "specific-code-coverage-waiver-candidate", "maintained_by": ["VCOV"]}],
             }
         result["decision_log"] = decisions
+        result["default_dependency_count"] = default_dependency_count
         result["questions_for_human"] = [
-            f"请确认 `{key}`：{title}" for key, title, _mode in desired_specs
+            f"请确认 `{key}`：{title}" for key, title, _mode, _role in desired_specs
         ] if not decisions else []
         result["auto_closure"] = self.evaluate_closure(name)
         return result
@@ -948,11 +1106,24 @@ class ProjectStore:
                  str(document["semantic_revision"]), json_text({
                      "document_id": document["id"], "previous_status": previous["status"] if previous else None,
                      "status": normalized_status, "kind": normalized_kind,
-                 }), timestamp),
+                }), timestamp),
             )
-        return {"id": item_id, "document_id": document["id"], "kind": normalized_kind,
-                "title": title, "status": normalized_status, "owner": owner,
-                "review_trigger": review_trigger, "affects": affects, "anchor": anchor}
+            if normalized_kind in {"human-decision", "external-open-question"}:
+                unresolved = connection.execute(
+                    """SELECT COUNT(*) count FROM document_items
+                       WHERE kind IN ('human-decision','external-open-question')
+                         AND status IN ('PENDING','ACTIVE')"""
+                ).fetchone()["count"]
+                lifecycle = "PARTIALLY_STALE" if unresolved else "ACTIVE"
+                connection.execute(
+                    "UPDATE workstreams SET lifecycle=?,updated_at=? WHERE name='VDOC' AND lifecycle IN ('ACTIVE','SATISFIED','BASELINED','PARTIALLY_STALE')",
+                    (lifecycle, timestamp),
+                )
+        result = {"id": item_id, "document_id": document["id"], "kind": normalized_kind,
+                  "title": title, "status": normalized_status, "owner": owner,
+                  "review_trigger": review_trigger, "affects": affects, "anchor": anchor}
+        result["auto_closure"] = self.reconcile()
+        return result
 
     def render_document_state(self, selector: str | None = None) -> str:
         documents = self.documents(selector)
@@ -1142,6 +1313,8 @@ class ProjectStore:
         self.require()
         if not 0 <= confidence <= 1:
             raise HarnessError("confidence 必须在 0 到 1 之间")
+        if relation.upper() == "DEPENDS_ON":
+            raise HarnessError("DEPENDS_ON 必须使用 record dependency，以执行方向与循环检查")
         with self.connect() as connection:
             known = {row["id"] for row in connection.execute("SELECT id FROM nodes WHERE id IN (?,?)", (source, target))}
             missing = [item for item in (source, target) if item not in known]
@@ -1152,6 +1325,36 @@ class ProjectStore:
         self.write_model_projection()
         return {"source": source, "target": target, "relation": relation.upper(), "origin": origin,
                 "confidence": confidence, "auto_closure": self.reconcile()}
+
+    def add_dependency(self, subject: str, prerequisite: str) -> dict[str, Any]:
+        """Record a node-scoped dependency as dependent -> prerequisite."""
+        self.require()
+        if subject == prerequisite:
+            raise HarnessError("node 不能依赖自身")
+        with self.connect() as connection:
+            known = {row["id"] for row in connection.execute(
+                "SELECT id FROM nodes WHERE id IN (?,?)", (subject, prerequisite)
+            )}
+            missing = [item for item in (subject, prerequisite) if item not in known]
+            if missing:
+                raise HarnessError("未知 node: " + ", ".join(missing))
+            queue = [prerequisite]
+            visited: set[str] = set()
+            while queue:
+                current = queue.pop(0)
+                if current == subject:
+                    raise HarnessError(f"DEPENDS_ON 会形成循环依赖: {subject} -> {prerequisite}")
+                if current in visited:
+                    continue
+                visited.add(current)
+                queue.extend(row["target"] for row in connection.execute(
+                    "SELECT target FROM edges WHERE source=? AND relation='DEPENDS_ON'", (current,)
+                ))
+            connection.execute("INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                               (subject, prerequisite, "DEPENDS_ON", "explicit", 1.0, "{}", now()))
+        self.write_model_projection()
+        return {"subject": subject, "requires": prerequisite, "relation": "DEPENDS_ON",
+                "semantics": "dependent-to-prerequisite", "auto_closure": self.reconcile()}
 
     def set_status(self, node_id: str, status: Validity) -> dict[str, Any]:
         self.require()
@@ -1184,7 +1387,10 @@ class ProjectStore:
         return {"review_id": review_id, "id": node_id, "status": Validity.WAIVED.value,
                 "reviewer": reviewer, "reason": reason, "auto_closure": self.reconcile()}
 
-    def add_evidence(self, subject: str, kind: str, source: str, verdict: str) -> dict[str, Any]:
+    def add_evidence(
+        self, subject: str, kind: str, source: str, verdict: str,
+        data: dict[str, Any] | None = None, contract_validated: bool = False,
+    ) -> dict[str, Any]:
         self.require()
         source_path = Path(source)
         if not source_path.is_absolute():
@@ -1194,21 +1400,376 @@ class ProjectStore:
         digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
         evidence_id = f"evidence:{uuid.uuid4().hex[:12]}"
         with self.connect() as connection:
-            if connection.execute("SELECT 1 FROM nodes WHERE id=?", (subject,)).fetchone() is None:
+            subject_row = connection.execute(
+                "SELECT type,workstream,data_json FROM nodes WHERE id=?", (subject,)
+            ).fetchone()
+            if subject_row is None:
                 raise HarnessError(f"未知 evidence subject: {subject}")
+            subject_data = json.loads(subject_row["data_json"])
+            protected = (
+                subject_row["workstream"] == "VSTIM"
+                and (subject_row["type"] in {"desired-state", "stimulus-scenario"}
+                     or subject_data.get("key") in {"reachability-evidence", "determinism-evidence"})
+            ) or (
+                subject_row["workstream"] in CLAIMS and subject_row["type"] == "desired-state"
+            )
+            if protected and not contract_validated:
+                raise HarnessError("该 Workstream desired node 必须使用 evidence 命令登记专用结构化证据")
+            relative = relative_path(self.root, source_path)
             connection.execute("INSERT INTO evidence VALUES(?,?,?,?,?,?,?,?)",
-                               (evidence_id, subject, kind, relative_path(self.root, source_path), digest, verdict.upper(), "{}", now()))
-            self.upsert_node(connection, evidence_id, "evidence", relative_path(self.root, source_path),
-                             Validity.VALID if verdict == "pass" else Validity.INVALID)
+                               (evidence_id, subject, kind, relative, digest, verdict.upper(), json_text(data or {}), now()))
+            file_node = f"file:{relative}"
+            if connection.execute("SELECT 1 FROM nodes WHERE id=?", (file_node,)).fetchone() is None:
+                self.upsert_node(connection, file_node, "artifact", relative, Validity.VALID,
+                                 data={"path": relative, "kind": "evidence-source", "digest": digest})
+            self.upsert_node(connection, evidence_id, "evidence", relative,
+                             Validity.VALID if verdict == "pass" else Validity.INVALID, data=data)
             connection.execute("INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
                                (subject, evidence_id, "VALIDATED_BY", "runtime", 1.0, "{}", now()))
+            if file_node != subject:
+                connection.execute("INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                                   (file_node, subject, "EVIDENCES", "runtime", 1.0,
+                                    json_text({"evidence_id": evidence_id}), now()))
+            for artifact in (data or {}).get("artifact_sources", []):
+                artifact_node = f"file:{artifact['path']}"
+                if connection.execute("SELECT 1 FROM nodes WHERE id=?", (artifact_node,)).fetchone() is None:
+                    self.upsert_node(connection, artifact_node, "artifact", artifact["path"], Validity.VALID,
+                                     data={"path": artifact["path"], "kind": "native-evidence",
+                                           "digest": artifact["sha256"]})
+                if artifact_node != subject:
+                    connection.execute("INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                                       (artifact_node, subject, "EVIDENCES", "runtime", 1.0,
+                                        json_text({"evidence_id": evidence_id}), now()))
             connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
                                (Validity.VALID.value if verdict == "pass" else Validity.INVALID.value, now(), subject))
             if verdict == "pass":
                 connection.execute("UPDATE findings SET status='RESOLVED' WHERE subject=? AND status='OPEN'", (subject,))
         self.write_model_projection()
-        return {"id": evidence_id, "subject": subject, "kind": kind, "source": relative_path(self.root, source_path),
-                "digest": digest, "verdict": verdict.upper(), "auto_closure": self.reconcile()}
+        return {"id": evidence_id, "subject": subject, "kind": kind, "source": relative,
+                "digest": digest, "verdict": verdict.upper(), "data": data or {},
+                "auto_closure": self.reconcile()}
+
+    def _verify_evidence_artifacts(self, artifacts: list[dict[str, str]]) -> list[dict[str, str]]:
+        verified: list[dict[str, str]] = []
+        for artifact in artifacts:
+            relative = relative_path(self.root, artifact["path"])
+            path = self.root / relative
+            if not path.is_file():
+                raise HarnessError(f"native evidence artifact 不存在或不是文件: {artifact['path']}")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if digest != artifact["sha256"]:
+                raise HarnessError(f"native evidence artifact digest 不匹配: {artifact['path']}")
+            verified.append({"path": relative, "sha256": digest})
+        return verified
+
+    def _apply_revision_check(self, summary: dict[str, Any]) -> None:
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        expected = manifest.get("baseline_revision")
+        if expected and summary.get("revision") != expected:
+            summary.setdefault("blockers", []).append(
+                f"evidence revision={summary.get('revision')}，project revision={expected}"
+            )
+            if "ready" in summary:
+                summary["ready"] = False
+            if "reachability_ready" in summary:
+                summary["reachability_ready"] = False
+                summary["determinism_ready"] = False
+
+    def _evidence_dependency_blockers(self, subject: str) -> list[str]:
+        blockers: list[str] = []
+        with self.read_connect() as connection:
+            row = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (subject,)).fetchone()
+            if row is None:
+                return [f"未知 evidence subject: {subject}"]
+            data = json.loads(row["data_json"])
+            current: dict[tuple[str, str], str] = {}
+            for workstream_row in connection.execute("SELECT name,desired_json FROM workstreams"):
+                for item in json.loads(workstream_row["desired_json"]):
+                    current[(workstream_row["name"], item["key"])] = item["id"]
+            expected = [
+                prerequisite for dependent, prerequisite in DEFAULT_DEPENDENCIES
+                if dependent == (row["workstream"], data.get("key"))
+            ]
+            blockers.extend(
+                f"prerequisite 尚未规划: {workstream}/{key}"
+                for workstream, key in expected if (workstream, key) not in current
+            )
+            for dependency in connection.execute(
+                """SELECT nodes.id,nodes.status FROM edges JOIN nodes ON nodes.id=edges.target
+                   WHERE edges.source=? AND edges.relation='DEPENDS_ON'""", (subject,)
+            ):
+                if dependency["status"] not in {Validity.VALID.value, Validity.WAIVED.value}:
+                    blockers.append(f"prerequisite {dependency['id']} 当前为 {dependency['status']}")
+        return blockers
+
+    @staticmethod
+    def _latest_pass_validation(connection: sqlite3.Connection, subject: str) -> dict[str, Any] | None:
+        row = connection.execute(
+            "SELECT data_json FROM evidence WHERE subject=? AND verdict='PASS' ORDER BY created_at DESC LIMIT 1",
+            (subject,),
+        ).fetchone()
+        if row is None:
+            return None
+        data = json.loads(row["data_json"])
+        validation = data.get("validation")
+        return validation if isinstance(validation, dict) else None
+
+    @staticmethod
+    def _current_desired_nodes(connection: sqlite3.Connection) -> dict[tuple[str, str], dict[str, Any]]:
+        current: dict[tuple[str, str], dict[str, Any]] = {}
+        for workstream_row in connection.execute("SELECT name,desired_json FROM workstreams"):
+            for item in json.loads(workstream_row["desired_json"]):
+                current[(workstream_row["name"], item["key"])] = item
+        return current
+
+    def _cross_evidence_blockers(
+        self, connection: sqlite3.Connection, workstream: str, claim: str,
+        summary: dict[str, Any], current: dict[tuple[str, str], dict[str, Any]],
+    ) -> list[str]:
+        """Validate relationships that cannot be proven inside one evidence file."""
+        blockers: list[str] = []
+
+        def facts(name: str, key: str) -> dict[str, Any] | None:
+            item = current.get((name, key))
+            if item is None:
+                return None
+            validation = self._latest_pass_validation(connection, item["id"])
+            return validation.get("facts") if validation else None
+
+        if workstream == "VSTIM" and claim == "corner-scenarios":
+            implementation = facts("VSTIM", "stimulus-implementation")
+            if implementation is not None:
+                components = {item["id"] for item in implementation.get("components", [])}
+                missing = sorted({
+                    item["generator"] for item in summary["facts"].get("mappings", [])
+                    if item["generator"] not in components
+                })
+                if missing:
+                    blockers.append("corner scenario 引用了未登记 generator: " + ", ".join(missing))
+
+        if workstream == "VCHK" and claim in {"reference-model-evidence", "scoreboard-evidence"}:
+            capability_key = claim.removesuffix("-evidence")
+            capability = facts("VCHK", capability_key)
+            if capability is not None and summary["facts"].get("implementation_digest") != capability.get("implementation_digest"):
+                blockers.append(f"{claim} 的 implementation digest 与当前 {capability_key} capability 不一致")
+        if workstream == "VCHK" and claim == "assertion-evidence":
+            capability = facts("VCHK", "assertions")
+            if capability is not None and summary["facts"].get("assertions") != capability.get("planned"):
+                blockers.append("assertion evidence 数量与当前 assertion capability planned 数量不一致")
+
+        if workstream == "VCASE" and claim == "case-implementation":
+            matrix = facts("VCASE", "case-matrix")
+            if matrix is not None:
+                required_cases = {
+                    case for mapping in matrix.get("mappings", []) for case in mapping.get("cases", [])
+                }
+                implemented = set(summary["facts"].get("cases", []))
+                missing = sorted(required_cases - implemented)
+                if missing:
+                    blockers.append("case matrix 中的 testcase 尚未实现: " + ", ".join(missing))
+        if workstream == "VCASE" and claim == "targeted-evidence":
+            implementation = facts("VCASE", "case-implementation")
+            if implementation is not None:
+                missing = sorted(
+                    set(implementation.get("cases", [])) - set(summary["facts"].get("executed_cases", []))
+                )
+                if missing:
+                    blockers.append("尚无 targeted PASS 的 implemented testcase: " + ", ".join(missing))
+
+        if workstream == "VREG" and claim == "triage-evidence":
+            execution = facts("VREG", "execution-evidence")
+            if execution is not None:
+                expected = {(item["test"], item["seed"]) for item in execution.get("failed_runs", [])}
+                observed = {
+                    (item["test"], item["original_seed"])
+                    for item in summary["facts"].get("failures", [])
+                }
+                missing = sorted(expected - observed)
+                extra = sorted(observed - expected)
+                if missing:
+                    blockers.append("regression failure 尚未 triage: " + ", ".join(f"{test}/{seed}" for test, seed in missing))
+                if extra:
+                    blockers.append("triage 含当前 execution 不存在的 failure: " + ", ".join(f"{test}/{seed}" for test, seed in extra))
+            for item in summary["facts"].get("failures", []):
+                if item.get("disposition") != "accepted-known-fail":
+                    continue
+                waiver = connection.execute(
+                    "SELECT 1 FROM reviews WHERE id=? AND verdict='WAIVE'", (item.get("waiver_ref"),)
+                ).fetchone()
+                if waiver is None:
+                    blockers.append(f"{item['test']} 的 waiver_ref 不是 SQLite 中的 Human WAIVE review")
+        return blockers
+
+    def _derive_fresh_evidence(
+        self, connection: sqlite3.Connection, subject: str, summary: dict[str, Any],
+        current: dict[tuple[str, str], dict[str, Any]],
+    ) -> list[str]:
+        blockers: list[str] = []
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        expected_revision = manifest.get("baseline_revision")
+        if summary["facts"].get("snapshot_revision") != summary.get("revision"):
+            blockers.append("fresh-evidence snapshot_revision 必须等于报告 revision")
+        derived: list[dict[str, str]] = []
+        for item in sorted(current.values(), key=lambda value: value["id"]):
+            if item["id"] == subject or item.get("role") != "closure-evidence" or not item.get("required", True):
+                continue
+            node = connection.execute("SELECT status FROM nodes WHERE id=?", (item["id"],)).fetchone()
+            status = node["status"] if node else Validity.UNKNOWN.value
+            if status == Validity.WAIVED.value:
+                derived.append({"id": item["id"], "status": Validity.WAIVED.value})
+                continue
+            if status != Validity.VALID.value:
+                blockers.append(f"required closure evidence node {item['id']} 当前为 {status}")
+                continue
+            evidence = connection.execute(
+                "SELECT digest,data_json FROM evidence WHERE subject=? AND verdict='PASS' ORDER BY created_at DESC LIMIT 1",
+                (item["id"],),
+            ).fetchone()
+            if evidence is None:
+                blockers.append(f"required closure evidence node {item['id']} 没有 PASS evidence")
+                continue
+            validation = json.loads(evidence["data_json"]).get("validation", {})
+            if expected_revision and validation.get("revision") != expected_revision:
+                blockers.append(f"required closure evidence node {item['id']} 不是当前 project revision")
+                continue
+            derived.append({"id": item["id"], "status": Validity.VALID.value,
+                            "evidence_digest": evidence["digest"]})
+        summary["facts"]["required_nodes"] = derived
+        return blockers
+
+    def add_reachability_evidence(self, subject: str, source: str, claim: str | None = None) -> dict[str, Any]:
+        self.require()
+        source_path = resolved_path(self.root, source)
+        if not source_path.is_file():
+            raise HarnessError(f"reachability evidence source 不存在或不是文件: {source}")
+        relative_path(self.root, source_path)
+        with self.read_connect() as connection:
+            row = connection.execute(
+                "SELECT type,workstream,data_json FROM nodes WHERE id=?", (subject,)
+            ).fetchone()
+        if row is None:
+            raise HarnessError(f"未知 evidence subject: {subject}")
+        if row["workstream"] != "VSTIM":
+            raise HarnessError("reachability evidence 只能绑定到 VSTIM node")
+        node_data = json.loads(row["data_json"])
+        inferred = {
+            "reachability-evidence": "reachability",
+            "determinism-evidence": "determinism",
+        }.get(node_data.get("key"))
+        if inferred is None and node_data.get("key") in CLAIMS.get("VSTIM", {}):
+            raise HarnessError(
+                f"标准 VSTIM capability node {node_data.get('key')} 必须使用 StimulusCapabilityEvidence/1"
+            )
+        if inferred is not None and claim is not None and claim != inferred:
+            raise HarnessError(
+                f"标准 node {node_data.get('key')} 的 claim 固定为 {inferred}，不能改为 {claim}"
+            )
+        selected = inferred or claim
+        if selected not in {"reachability", "determinism"}:
+            raise HarnessError("无法从 node 推导 claim；请显式传 --claim reachability|determinism")
+        try:
+            summary = validate_reachability(source_path)
+        except ReachabilityError as exc:
+            raise HarnessError(str(exc)) from exc
+        summary["artifacts"] = self._verify_evidence_artifacts(summary["artifacts"])
+        self._apply_revision_check(summary)
+        dependency_blockers = self._evidence_dependency_blockers(subject)
+        with self.read_connect() as connection:
+            current = self._current_desired_nodes(connection)
+            corner = current.get(("VSTIM", "corner-scenarios"))
+            corner_validation = (
+                self._latest_pass_validation(connection, corner["id"]) if corner is not None else None
+            )
+            if corner_validation is not None:
+                planned = set(corner_validation.get("facts", {}).get("required_scenarios", []))
+                observed = set(summary.get("required_scenarios", []))
+                missing = sorted(planned - observed)
+                if missing:
+                    dependency_blockers.append(
+                        "reachability report 缺少当前 corner-scenarios required 项: " + ", ".join(missing)
+                    )
+        summary["blockers"] = [*summary.get("blockers", []), *dependency_blockers]
+        if summary["blockers"]:
+            summary["reachability_ready"] = False
+            summary["determinism_ready"] = False
+        ready_key = f"{selected}_ready"
+        verdict = "pass" if summary[ready_key] else "fail"
+        recorded = self.add_evidence(
+            subject, f"stimulus-{selected}", str(source_path), verdict,
+            data={"claim": selected, "validation": summary,
+                  "artifact_sources": summary["artifacts"]}, contract_validated=True,
+        )
+        recorded["claim"] = selected
+        recorded["validation"] = summary
+        return recorded
+
+    def add_workstream_evidence(self, subject: str, source: str, claim: str | None = None) -> dict[str, Any]:
+        self.require()
+        source_path = resolved_path(self.root, source)
+        if not source_path.is_file():
+            raise HarnessError(f"evidence source 不存在或不是文件: {source}")
+        relative_path(self.root, source_path)
+        with self.read_connect() as connection:
+            row = connection.execute(
+                "SELECT type,workstream,data_json FROM nodes WHERE id=?", (subject,)
+            ).fetchone()
+        if row is None:
+            raise HarnessError(f"未知 evidence subject: {subject}")
+        workstream = row["workstream"]
+        node_data = json.loads(row["data_json"])
+        if workstream == "VSTIM" and (
+            node_data.get("key") in {"reachability-evidence", "determinism-evidence"}
+            or claim in {"reachability", "determinism"}
+        ):
+            return self.add_reachability_evidence(subject, source, claim)
+        if workstream not in CLAIMS:
+            raise HarnessError("evidence 专用入口只适用于 VSTIM/VCHK/VCOV/VCASE/VREG；VDOC 使用 docs review")
+        inferred = CLAIMS[workstream].get(node_data.get("key"))
+        if inferred is not None and claim is not None and claim != inferred:
+            raise HarnessError(
+                f"标准 node {node_data.get('key')} 的 claim 固定为 {inferred}，不能改为 {claim}"
+            )
+        selected = inferred or claim
+        if selected is None:
+            supported = ", ".join(CLAIMS[workstream].values())
+            raise HarnessError(f"无法从 node 推导 claim；请使用 --claim，{workstream} 支持: {supported}")
+        try:
+            summary = validate_workstream_evidence(source_path, workstream, selected)
+        except EvidenceContractError as exc:
+            raise HarnessError(str(exc)) from exc
+        summary["artifacts"] = self._verify_evidence_artifacts(summary["artifacts"])
+        self._apply_revision_check(summary)
+        summary["blockers"].extend(self._evidence_dependency_blockers(subject))
+        with self.read_connect() as connection:
+            current = self._current_desired_nodes(connection)
+            summary["blockers"].extend(
+                self._cross_evidence_blockers(connection, workstream, selected, summary, current)
+            )
+            if workstream == "VREG" and selected == "fresh-evidence":
+                summary["blockers"].extend(
+                    self._derive_fresh_evidence(connection, subject, summary, current)
+                )
+        summary["ready"] = not summary["blockers"]
+        verdict = "pass" if summary["ready"] else "fail"
+        recorded = self.add_evidence(
+            subject, f"{workstream.lower()}-{selected}", str(source_path), verdict,
+            data={"claim": selected, "validation": summary,
+                  "artifact_sources": summary["artifacts"]}, contract_validated=True,
+        )
+        recorded["claim"] = selected
+        recorded["validation"] = summary
+        return recorded
+
+    @staticmethod
+    def _impact_targets(connection: sqlite3.Connection, node_id: str) -> list[str]:
+        """Return causal dependents; DEPENDS_ON is stored dependent -> prerequisite."""
+        direct = [row["target"] for row in connection.execute(
+            "SELECT target FROM edges WHERE source=? AND relation!='DEPENDS_ON' ORDER BY target", (node_id,)
+        )]
+        reverse_dependencies = [row["source"] for row in connection.execute(
+            "SELECT source FROM edges WHERE target=? AND relation='DEPENDS_ON' ORDER BY source", (node_id,)
+        )]
+        return direct + reverse_dependencies
 
     def record_change(self, path: str, kind: str, revision: str | None = None) -> dict[str, Any]:
         self.require()
@@ -1230,7 +1791,7 @@ class ProjectStore:
                     continue
                 visited.add(current)
                 affected.append(current)
-                queue.extend(row["target"] for row in connection.execute("SELECT target FROM edges WHERE source=?", (current,)))
+                queue.extend(self._impact_targets(connection, current))
             for index, node_id in enumerate(affected):
                 status = initial if index == 0 else Validity.REVALIDATION_REQUIRED
                 connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
@@ -1291,16 +1852,103 @@ class ProjectStore:
         return {"missing_files": missing, "changed_documents": changed_documents,
                 "open_findings": open_findings, "status": "FAIL" if failed else "PASS"}
 
+    def _executable_exit_blockers(
+        self, connection: sqlite3.Connection, workstream: str,
+        current: dict[tuple[str, str], dict[str, Any]],
+    ) -> list[str]:
+        """Evaluate cross-document and cross-evidence exit predicates."""
+        blockers: list[str] = []
+        if workstream == "VDOC":
+            unresolved = [dict(row) for row in connection.execute(
+                """SELECT document_items.id,document_items.kind,document_items.status,documents.path
+                   FROM document_items JOIN documents ON documents.id=document_items.document_id
+                   WHERE document_items.kind IN ('human-decision','external-open-question')
+                     AND document_items.status IN ('PENDING','ACTIVE')
+                   ORDER BY document_items.id"""
+            )]
+            blockers.extend(
+                f"未决 VDOC 治理事项 {item['id']} ({item['kind']}, {item['status']}, {item['path']})"
+                for item in unresolved
+            )
+            return blockers
+
+        reachability_claims = {
+            "reachability-evidence": "reachability",
+            "determinism-evidence": "determinism",
+        }
+        for (name, key), item in current.items():
+            if name != workstream or not item.get("required", True):
+                continue
+            node = connection.execute("SELECT status FROM nodes WHERE id=?", (item["id"],)).fetchone()
+            if node is None or node["status"] != Validity.VALID.value:
+                continue
+            claim = reachability_claims.get(key) or CLAIMS.get(workstream, {}).get(key)
+            if claim is None:
+                continue
+            validation = self._latest_pass_validation(connection, item["id"])
+            if validation is None:
+                blockers.append(f"标准 node {item['id']} 缺少专用 PASS evidence validation")
+                continue
+            if workstream == "VSTIM" and claim in {"reachability", "determinism"}:
+                corner = current.get(("VSTIM", "corner-scenarios"))
+                corner_validation = (
+                    self._latest_pass_validation(connection, corner["id"]) if corner is not None else None
+                )
+                if corner_validation is not None:
+                    planned = set(corner_validation.get("facts", {}).get("required_scenarios", []))
+                    missing = sorted(planned - set(validation.get("required_scenarios", [])))
+                    if missing:
+                        blockers.append(
+                            f"{key} 缺少当前 required scenario: " + ", ".join(missing)
+                        )
+                continue
+            blockers.extend(
+                self._cross_evidence_blockers(connection, workstream, claim, validation, current)
+            )
+            if workstream == "VREG" and claim == "fresh-evidence":
+                blockers.extend(self._derive_fresh_evidence(connection, item["id"], validation, current))
+        return blockers
+
     def evaluate_closure(self, workstream: str, persist: bool = True) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
         plan = self.workstream(name)
         actions: list[dict[str, Any]] = []
         connector = self.connect if persist else self.read_connect
         with connector() as connection:
+            current_nodes = self._current_desired_nodes(connection)
+            current_desired = {key: item["id"] for key, item in current_nodes.items()}
             for desired in plan["desired_state"]:
                 row = connection.execute("SELECT status FROM nodes WHERE id=?", (desired["id"],)).fetchone()
                 status = row["status"] if row else Validity.UNKNOWN.value
-                if desired.get("required", True) and status not in {Validity.VALID.value, Validity.WAIVED.value}:
+                dependencies = [dict(item) for item in connection.execute(
+                    """SELECT nodes.id,nodes.status,nodes.workstream,nodes.title
+                       FROM edges JOIN nodes ON nodes.id=edges.target
+                       WHERE edges.source=? AND edges.relation='DEPENDS_ON'
+                       ORDER BY nodes.id""", (desired["id"],)
+                )]
+                blockers = [item for item in dependencies if item["status"] not in {
+                    Validity.VALID.value, Validity.WAIVED.value,
+                }]
+                expected_dependencies = [
+                    prerequisite for dependent, prerequisite in DEFAULT_DEPENDENCIES
+                    if dependent == (name, desired["key"])
+                ]
+                missing_dependencies = [item for item in expected_dependencies if item not in current_desired]
+                if desired.get("required", True) and missing_dependencies:
+                    actions.append({
+                        "kind": "PLAN_PREREQUISITE", "target": desired["id"], "priority": 3,
+                        "executor": "reasoning", "suggested_mode": "plan",
+                        "reason": "默认 prerequisite 尚未规划；先形成其当前 revision desired node",
+                        "blocked_by": [f"workstream:{ws}:desired:{key}" for ws, key in missing_dependencies],
+                    })
+                elif desired.get("required", True) and blockers:
+                    actions.append({
+                        "kind": "WAIT_FOR_DEPENDENCY", "target": desired["id"], "priority": 4,
+                        "executor": "deterministic", "suggested_mode": "closure",
+                        "reason": "仅等待显式 prerequisite node，不等待其整个 Workstream",
+                        "blocked_by": [item["id"] for item in blockers],
+                    })
+                elif desired.get("required", True) and status not in {Validity.VALID.value, Validity.WAIVED.value}:
                     if status in {Validity.STALE.value, Validity.REVALIDATION_REQUIRED.value}:
                         kind, executor = "REVALIDATE", "deterministic"
                     elif status in {Validity.INVALID.value, Validity.BLOCKED.value}:
@@ -1309,6 +1957,15 @@ class ProjectStore:
                         kind, executor = "SATISFY_DESIRED_STATE", "reasoning"
                     actions.append({"kind": kind, "target": desired["id"], "priority": 10, "executor": executor,
                                     "suggested_mode": desired.get("suggested_mode"), "reason": f"required desired-state 当前为 {status}"})
+            for index, blocker in enumerate(self._executable_exit_blockers(connection, name, current_nodes), 1):
+                actions.append({
+                    "kind": "EXIT_CRITERION_BLOCKED",
+                    "target": f"workstream:{name}:exit:{index}",
+                    "priority": 6,
+                    "executor": "deterministic",
+                    "suggested_mode": "closure",
+                    "reason": blocker,
+                })
             for row in connection.execute("SELECT subject,severity,details FROM findings WHERE status='OPEN' AND subject IN (SELECT id FROM nodes WHERE workstream=?)", (name,)):
                 actions.append({"kind": "RESOLVE_FINDING", "target": row["subject"], "priority": 5,
                                 "executor": "reasoning", "suggested_mode": "reason", "reason": row["details"]})
@@ -1359,11 +2016,18 @@ class ProjectStore:
             if node_id is None:
                 edges = [dict(row) for row in connection.execute("SELECT source,target,relation,origin,confidence FROM edges ORDER BY source,target,relation")]
                 findings = [dict(row) for row in connection.execute("SELECT id,subject,severity,status,cause_event,details FROM findings ORDER BY created_at")]
-                evidence = [dict(row) for row in connection.execute("SELECT id,subject,kind,source,digest,verdict,created_at FROM evidence ORDER BY created_at")]
+                evidence = [dict(row) for row in connection.execute(
+                    "SELECT id,subject,kind,source,digest,verdict,data_json,created_at FROM evidence ORDER BY created_at"
+                )]
             else:
                 edges = [dict(row) for row in connection.execute("SELECT source,target,relation,origin,confidence FROM edges WHERE source=? OR target=? ORDER BY source,target,relation", (node_id, node_id))]
                 findings = [dict(row) for row in connection.execute("SELECT id,subject,severity,status,cause_event,details FROM findings WHERE subject=? ORDER BY created_at", (node_id,))]
-                evidence = [dict(row) for row in connection.execute("SELECT id,subject,kind,source,digest,verdict,created_at FROM evidence WHERE subject=? ORDER BY created_at", (node_id,))]
+                evidence = [dict(row) for row in connection.execute(
+                    "SELECT id,subject,kind,source,digest,verdict,data_json,created_at FROM evidence WHERE subject=? ORDER BY created_at",
+                    (node_id,),
+                )]
+        for item in evidence:
+            item["data"] = json.loads(item.pop("data_json"))
         return {"schema_version": SCHEMA_VERSION, "nodes": nodes, "edges": edges, "findings": findings, "evidence": evidence}
 
     def trace(self, node_id: str) -> dict[str, Any]:
@@ -1387,7 +2051,7 @@ class ProjectStore:
                     row = connection.execute("SELECT id,type,title,workstream,status FROM nodes WHERE id=?", (current,)).fetchone()
                     if row:
                         item = dict(row); item["depth"] = depth; affected.append(item)
-                queue.extend((row["target"], depth + 1) for row in connection.execute("SELECT target FROM edges WHERE source=? ORDER BY target", (current,)))
+                queue.extend((target, depth + 1) for target in self._impact_targets(connection, current))
         return {"source": node_id, "affected": affected}
 
     def status(self) -> dict[str, Any]:
@@ -1441,7 +2105,8 @@ class ProjectStore:
                  f"- Model nodes: {plan['planning_context']['model_summary']['node_count']}",
                  f"- Open findings: {plan['planning_context']['model_summary']['open_findings']}",
                  "", "## Desired State", ""]
-        lines.extend(f"- [ ] `{item['key']}` {item['title']}" for item in plan["desired_state"])
+        lines.extend(f"- [ ] `{item['key']}` ({item.get('role', 'capability')}) {item['title']}"
+                     for item in plan["desired_state"])
         documents = [item for item in plan["desired_state"] if item.get("document")]
         if documents:
             lines.extend(["", "## Document Deliverables", "",

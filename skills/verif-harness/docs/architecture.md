@@ -15,14 +15,27 @@ dialogue to create revisioned desired state. `VDOC`, `VSTIM`, `VCHK`, `VCOV`,
 `desired -> plan -> act -> observe -> evaluate -> replan` loop. They are not a
 fixed lifecycle or prerequisite chain.
 
+Implementation Workstream templates split desired state into capability nodes
+and closure-evidence nodes. Planner-default dependencies connect node keys, not
+whole Workstreams, and are rebound to the current revision after every plan.
+Typed evidence validators derive verdicts for standard nodes; arbitrary PASS
+files cannot satisfy those contracts.
+Closure additionally evaluates cross-evidence predicates and derives VREG
+fresh-evidence membership from the current required closure-evidence nodes;
+evidence producers cannot shrink that set.
+
 `.verif-harness/model.sqlite3` is authority. JSON and Markdown are review
 projections. Verification Knowledge Model is read-only to Human-facing callers;
-structured `record` ingress supplies mutations and triggers the consistency and closure engines.
+structured `evidence`, `reachability`, document-governance, change, and advanced
+`record` ingress supply mutations and trigger the consistency and closure engines.
 
 - Verification Consistency Engine judges validity and propagates causal invalidation; it does not act.
 - Verification Closure Engine selects/routes actions; it does not write code.
 - Verification Reasoning Engine handles semantic uncertainty through independent Role × Backend.
-- Tools produce deterministic artifacts/evidence with provenance.
+- Tools produce raw compiler/simulation/coverage/regression artifacts; project
+  adapters or collectors convert them to typed reports with provenance. v1
+  validates those reports but does not provide a universal vendor log/VDB/UCDB
+  extractor.
 - Human reviewers own approval, waiver, Workstream baseline, and final freeze.
 
 Workstream and final baselines are immutable snapshots. The workspace can keep

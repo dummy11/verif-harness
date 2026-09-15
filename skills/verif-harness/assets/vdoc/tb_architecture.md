@@ -1,7 +1,7 @@
 # 验证环境架构
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的验证环境设计。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
 ## 分层与职责
 
@@ -32,5 +32,6 @@
 
 ## 设计决定与开放问题
 
-关联 feature、reference model 合同和已记录的 Human Decisions。
-列出未解决的组件责任冲突及阻塞范围；治理状态由 SQLite 按需投影。
+关联验证点、参考模型规则和已记录的人工决定。
+列出尚未解决的组件责任冲突，以及它会阻止哪些目标继续。事项状态保存在 SQLite 中，
+通过 `verif-harness docs status/render` 查看。

@@ -1,0 +1,24 @@
+{
+  "schema": "RegressionEvidence/1",
+  "claim": "execution-evidence",
+  "revision": "git-or-model-revision",
+  "tool": "regression collector version",
+  "artifacts": [
+    {"path": "results/regression/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    {"path": "results/regression/manifest.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
+    {"path": "results/regression/smoke_test.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+  ],
+  "result": {
+    "golden_required": true,
+    "batch_seed": "17",
+    "manifest_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "results": [
+      {
+        "test": "smoke_test",
+        "seed": 17,
+        "verdict": "PASS",
+        "log_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ]
+  }
+}

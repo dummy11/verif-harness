@@ -1,0 +1,19 @@
+{
+  "schema": "TestcaseEvidence/1",
+  "claim": "targeted-evidence",
+  "revision": "git-or-model-revision",
+  "tool": "regression collector version",
+  "artifacts": [{"path": "results/targeted/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],
+  "result": {
+    "runs": [
+      {
+        "case": "backpressure_test",
+        "seed": 17,
+        "verdict": "PASS",
+        "uvm_error": 0,
+        "uvm_fatal": 0,
+        "log_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    ]
+  }
+}

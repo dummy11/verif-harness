@@ -1,6 +1,7 @@
 # verif-harness
 
-verif-harness 是面向 RTL/ASIC 验证项目的持续验证[控制面](skills/verif-harness/docs/glossary.md#control-plane)。它把验证目标、工程事实、
+verif-harness 是面向 [RTL/ASIC 验证项目](skills/verif-harness/docs/glossary.md#dv-terms)的持续验证
+[控制面](skills/verif-harness/docs/glossary.md#control-plane)。它把验证目标、工程事实、
 变更影响、验证证据和人工决策放进同一个可追溯模型，让项目能够持续回答：
 
 - 当前想证明什么？
@@ -9,14 +10,17 @@ verif-harness 是面向 RTL/ASIC 验证项目的持续验证[控制面](skills/v
 - 下一步应执行工具、调用推理，还是等待人工决策？
 - 依据什么证据可以冻结 Workstream 或最终验证基线？
 
-它不是新的仿真器，也不是一份从头跑到尾的 `tasks.md`。它位于工程师、Agent、
+它不是新的仿真器，也不是一份从头跑到尾的 `tasks.md`。它位于工程师、
+[Agent](skills/verif-harness/docs/glossary.md#control-plane)、
 xverif、WavePeek、仿真器、回归系统和验证代码之上，负责持续规划、治理和追溯。
 
 ## 给谁使用
 
 - **验证工程师**：规划验证目标，组织激励、检查器、覆盖率、用例和回归工作。
-- **验证负责人/Reviewer**：评审 desired state、处理风险与豁免、冻结可审计基线。
-- **验证基础设施工程师**：把编译、仿真、波形、回归和生成器接入统一控制面。
+- **验证负责人/Reviewer**：评审 [desired state](skills/verif-harness/docs/glossary.md#desired-current)、
+  处理风险与[豁免](skills/verif-harness/docs/glossary.md#human-gate)、冻结可审计基线。
+- **验证基础设施工程师**：把编译、仿真、波形、回归和
+  [代码生成器或激励生成器](skills/verif-harness/docs/glossary.md#dv-terms)接入统一控制面。
 - **Codex/Kimi Agent**：依据当前模型执行有边界的工程动作，而不是凭聊天历史猜测状态。
 
 它适合验证工作反复迭代、并行推进的项目。文档、激励、检查器、覆盖率、用例和回归
@@ -24,26 +28,29 @@ xverif、WavePeek、仿真器、回归系统和验证代码之上，负责持续
 
 ## 能做什么
 
-verif-harness 将验证工程划分为六个可并行、可重入的 [Workstream（工作域）](skills/verif-harness/docs/glossary.md#workstream)：
+verif-harness 将验证工程划分为六个可以同时推进、发现问题后可以重新打开的
+[Workstream（工作域）](skills/verif-harness/docs/glossary.md#workstream)：
 
 | Workstream | 负责内容 |
 | --- | --- |
-| `VDOC` | 验证定义、feature、架构、策略、风险和决策 |
-| `VSTIM` | driver、sequence、constraint 和场景激励 |
-| `VCHK` | reference model、scoreboard、checker 和 assertion |
-| `VCOV` | coverage model、目标、采集和 hole closure |
-| `VCASE` | testcase、virtual sequence 和场景组合 |
-| `VREG` | compile、simulation、regression、rerun 和 triage |
+| `VDOC` | 验证定义、验证点、架构、策略、风险和决策 |
+| `VSTIM` | [driver、sequence、constraint 和场景激励](skills/verif-harness/docs/glossary.md#dv-terms) |
+| `VCHK` | [reference model、scoreboard、checker 和 assertion](skills/verif-harness/docs/glossary.md#dv-terms) |
+| `VCOV` | [coverage model、采集和 coverage hole 处理](skills/verif-harness/docs/glossary.md#dv-terms) |
+| `VCASE` | [testcase、virtual sequence 和场景组合](skills/verif-harness/docs/glossary.md#dv-terms) |
+| `VREG` | [compile、simulation、regression、rerun 和 triage](skills/verif-harness/docs/glossary.md#dv-terms) |
 
 围绕这些 Workstream，它提供：
 
-- 详细通用模板与当前项目事实驱动的 desired-state 规划；
-- typed node、relation、provenance、validity、finding 和 evidence 模型；
-- RTL、规格及验证资产变化后的跨 Workstream 失效传播；
-- 根据当前 gap 动态计算并按规则排序的建议动作；
+- 详细通用模板与当前项目事实驱动的 [desired-state](skills/verif-harness/docs/glossary.md#desired-current) 规划；
+- [node、relation、validity、finding 和 evidence](skills/verif-harness/docs/glossary.md#knowledge) 模型；
+- Agent 用 `changed PATH` 登记 RTL/spec/验证文件已修改后，自动找出需要重新验证的下游目标；
+- 根据当前[未完成项](skills/verif-harness/docs/glossary.md#gap-action)，重新列出并按规则排序下一步建议；
 - xverif、WavePeek、回归及代码生成能力的受控接入；
-- Human review、waiver、Workstream baseline 和 final freeze 审计链；
-- 可编辑语义文档与 SQLite 治理状态分离，以及按需状态投影和文档摘要失效检查；
+- [Human review 和 waiver](skills/verif-harness/docs/glossary.md#human-gate)、
+  [Workstream baseline 和 final freeze](skills/verif-harness/docs/glossary.md#baseline) 审计链；
+- 可编辑验证文档与 SQLite 状态分离；`docs sync` 用 SHA-256 判断文档是否修改，并按需生成
+  [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
 
 ## 运行逻辑
@@ -53,21 +60,21 @@ Knowledge Model。CLI 返回待处理的缺口，Agent 再调用工程工具、�
 这个闭环由当前会话推进，五个子系统不是五个独立进程。
 
 ```text
-Human intent
+用户提出目标
     |
     v
-Verification Planner ---- Human review ----> desired state
+Planner（整理目标）---- 用户确认 ----> 本轮目标
     |                                |
     v                                v
-Verification Knowledge Model <--- evidence --- tools / simulators
+SQLite 状态库 <--- 验证证据 --- 工程工具 / 仿真器
     |
-    +----> Verification Consistency Engine ----> validity + causal findings
+    +----> 检查文件和证据 ----> 结论是否仍有效 + 发现的问题
     |                         |
-    +----> Verification Closure Engine <--------+
+    +----> 列出当前未完成项 <--------+
                  |
-                 +---- deterministic action
-                 +---- Verification Reasoning Engine request
-                 +---- Human decision
+                 +---- 运行固定规则工具
+                 +---- 请求 Agent 分析
+                 +---- 等待用户决定
 ```
 
 例如用户希望“backpressure 下输出比较正确”：
@@ -76,36 +83,52 @@ Verification Knowledge Model <--- evidence --- tools / simulators
 2. 当前目标还没有证据，Closure Engine 返回待实现/证明的 [action](skills/verif-harness/docs/glossary.md#gap-action)。
 3. Agent 实现验证代码并运行测试，检查报告，再将结果登记为目标的 [evidence](skills/verif-harness/docs/glossary.md#evidence)。
 4. 控制面更新状态、重新计算缺口。所有 required 目标满足后，用户可冻结该工作域。
-5. 用户以后修改 RTL 并登记变化时，系统沿已登记依赖传播失效，要求重新验证。
+5. 用户以后修改 RTL，Agent 调用 `changed PATH` 登记具体文件；系统再沿已登记依赖标出需要
+   重新验证的目标。
 
-当前证据入口接受调用方给出的 verdict，并不自动理解任意报告；closure 返回动作建议，
-不自动执行；`reason` 生成分析请求，不直接启动推理后端。系统可靠性也依赖登记的目标、
-依赖和证据是否完整。具体规则与实现边界见[工作机制](skills/verif-harness/docs/mechanism.md)。
+标准 VSTIM/VCHK/VCOV/VCASE/VREG 目标必须通过 `evidence` 专用
+[schema 和 validator](skills/verif-harness/docs/glossary.md#evidence-format)，由控制面从报告内容
+生成 [verdict](skills/verif-harness/docs/glossary.md#evidence)；不能提交任意 PASS 文件。
+Coverage、cover property 和波形只能作为 VSTIM 补充材料。Planner 把模板拆成
+[capability/closure-evidence node](skills/verif-harness/docs/glossary.md#node-role)，并按当前
+计划版本自动建立节点之间的默认依赖。完成条件检查还会检查相关证据、尚未回答的人工问题，
+以及根据当前必需目标生成的[当前版本证据清单](skills/verif-harness/docs/glossary.md#runtime-evidence)。
+`closure` 只返回动作建议，不自动执行；`reason` 生成
+分析请求，不直接启动推理后端。具体规则见[工作机制](skills/verif-harness/docs/mechanism.md)。
+
+编译 log、仿真 log、回归 manifest、VDB/UCDB 和波形只是
+[工具原始输出](skills/verif-harness/docs/glossary.md#evidence-source)，不直接等于验证结论。
+项目 adapter/extractor 将明确事实转换成绑定 revision 与原始文件 SHA-256 的 JSON 报告，
+再由专用 validator 决定节点状态；当前没有内置支持所有工具格式的 extractor。具体形式和
+退出条件见[用户指南](skills/verif-harness/docs/user_guide.md#步骤-4把工程结果登记为证据)。
 
 ## 五个核心子系统
 
-用户不需要先理解内部实现才能使用，但理解下面的职责边界有助于判断“谁应做什么”：
+用户不需要启动五个程序。下面说明它们分别会在什么情况下出现，以及用户能看到什么结果：
 
-| 子系统 | 唯一职责 | 不负责 |
+| 子系统 | 什么时候使用 | 实际结果 |
 | --- | --- | --- |
-| **Verification Planner** | 根据模板、当前知识模型和人工判断形成/修订 desired state | 不生成一次性大任务流水线 |
-| **Verification Knowledge Model** | 保存事实、关系、来源、状态、证据和历史 | 不推断工程结论，不替代文档评审 |
-| **Verification Consistency Engine** | 执行确定性检查和失效传播 | 不修代码，不处理语义歧义 |
-| **Verification Closure Engine** | 比较 desired/current state，生成并排序建议动作 | 不静默执行写操作，不批准 gate |
-| **Verification Reasoning Engine** | 为语义不确定问题生成结构化分析与建议 | 不制造 evidence，不代替 Human 决策 |
+| [Verification Planner](skills/verif-harness/docs/glossary.md#subsystems) | 用户提出“规划 VCHK”或要求修改现有目标时 | 结合模板和当前项目状态，生成一份待用户确认的目标清单、退出条件和问题；不会直接开始实现 |
+| [Verification Knowledge Model](skills/verif-harness/docs/glossary.md#subsystems) | `status`、`inspect` 或新 Agent 会话需要了解以前做到哪里时 | 从 SQLite 读出已经确认的目标、文件、证据、依赖和评审记录；不会凭聊天内容补造事实 |
+| [Verification Consistency Engine](skills/verif-harness/docs/glossary.md#subsystems) | Agent 调用 `changed PATH`、`docs sync` 或 `evidence` 后 | `changed` 使用调用方明确给出的文件；`docs sync` 比较文档 SHA-256；`evidence` 检查报告格式和引用文件 SHA-256。随后标记需要重验的下游目标；不会后台监控或修改文件 |
+| [Verification Closure Engine](skills/verif-harness/docs/glossary.md#subsystems) | 用户询问“现在还缺什么”或准备 freeze 时 | 列出当前阻塞目标、前置依赖和下一项建议动作；不会自行执行这些动作或批准冻结 |
+| [Verification Reasoning Engine](skills/verif-harness/docs/glossary.md#subsystems) | 日志和固定规则无法判断 DUT bug、checker bug 或规格含义时 | 整理与问题直接相关的文件、日志和已知事实，生成分析请求和候选解释；分析结果仍需测试证据或 Human 决定确认 |
 
-Capability tools 负责实际工程动作；Human 负责语义批准、拒绝、修改、豁免和冻结。
+实际写验证代码、编译、仿真和读取波形由 Agent 调用工程工具完成；范围批准、豁免和冻结由
+Human 决定。
 
 ## 治理原则
 
-- 项目 VDOC Markdown 保存验证工程语义；`.verif-harness/model.sqlite3` 保存治理状态、
-  摘要、评审、证据和失效关系；`project.json` 保存项目配置。状态类 Markdown 由 CLI
-  按需投影。详见[权威数据与投影](skills/verif-harness/docs/glossary.md#authority)。
+- 项目 VDOC Markdown 保存工程师需要直接阅读和修改的验证设计；
+  `.verif-harness/model.sqlite3` 保存文件指纹、状态、评审、证据和依赖；`project.json`
+  保存项目配置。供人查看的状态 Markdown 由 CLI 需要时生成。详见
+  [哪些文件可以编辑](skills/verif-harness/docs/glossary.md#authority)。
 - desired state 是“需要成立的状态”，不是必须顺序执行的 task 清单。
-- `VDOC/VSTIM/VCHK/VCOV/VCASE/VREG` 是工作上下文，不是线性生命周期。
-- 确定性工作交给工具；只有语义歧义进入 Verification Reasoning Engine。
+- `VDOC/VSTIM/VCHK/VCOV/VCASE/VREG` 是六类可以反复开展的工作，不是必须依次通过的步骤。
+- 能由固定输入和规则完成的工作交给工具；只有规格含义、失败责任或工程取舍无法由规则判断时，
+  才交给 Verification Reasoning Engine 整理分析材料。
 - `VALID` 必须由真实 evidence 建立；`WAIVED` 必须由 Human 明确给出理由。
-- Workstream freeze 和 final freeze 生成不可覆盖的内容寻址基线。
+- Workstream freeze 和 final freeze 生成用 SHA-256 标识、不能覆盖旧版本的基线记录。
 - 所有 RTL 和 RTL spec 始终只读，当前 Agent 不得直接或通过工具更改；输入问题由用户处理。
   显式输入可以位于项目目录之外，但控制状态和所有生成产物必须保留在项目内。
   Agent 不得代替 Human 审批，也不得把工具退出码冒充 sign-off。
@@ -125,7 +148,8 @@ Capability tools 负责实际工程动作；Human 负责语义批准、拒绝、
 
 ## 项目状态
 
-v1 当前使用可重入 Workstream 和持续 closure 模型。xverif、WavePeek 等可选能力
+v1 允许每个 Workstream 在发现新问题后重新打开，并持续检查还缺哪些目标和证据。
+xverif、WavePeek 等可选能力
 保持独立许可和发布边界；v1 主控制流程不依赖外部 specification workflow。
 
 提交前运行 `make check`；公开发布候选运行 `make release-check`。测试通过只说明

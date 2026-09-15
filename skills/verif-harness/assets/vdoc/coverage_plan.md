@@ -1,7 +1,7 @@
 # 覆盖率计划
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的覆盖率设计。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
 ## 覆盖目标与口径
 
@@ -32,4 +32,5 @@
 
 ## 一致性要求
 
-核对分母、采样语义、feature 映射、可达性与证据新鲜度。评审状态由 SQLite 按需投影。
+核对统计范围、采样含义、feature 映射、场景能否到达 DUT，以及证据是否对应当前文件和配置。
+评审状态保存在 SQLite 中，通过 `verif-harness docs status/render` 查看。

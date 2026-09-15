@@ -1,7 +1,7 @@
 # 验证总计划
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的验证总计划。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
 ## 范围与输入依据
 
@@ -33,6 +33,7 @@
 
 ## 文档导航与评审依据
 
-- [验证点](feature_matrix.md)、[TB 架构](tb_architecture.md)、[参考模型合同](reference_model_spec.md)
+- [验证点](feature_matrix.md)、[TB 架构](tb_architecture.md)、[参考模型规则](reference_model_spec.md)
 - [覆盖率计划](coverage_plan.md)、[断言计划](assertion_plan.md)、[用例清单](testcase_list.md)
-- 治理状态由 SQLite 按需投影；不要在此复制历史或伪填 Approved。
+- 文件版本、问题状态和评审记录保存在 SQLite 中，通过 `verif-harness docs status/render`
+  查看；不要在正文复制历史记录或填写并不存在的 Approved 状态。

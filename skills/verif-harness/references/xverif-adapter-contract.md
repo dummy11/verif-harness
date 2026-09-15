@@ -2,17 +2,17 @@
 
 ## 定位
 
-权威上游为 `https://github.com/BLANK2077/xverif.git`。仓库提供多个确定性工具，
+权威上游为 `https://github.com/BLANK2077/xverif.git`。仓库提供多个按明确参数运行、同样输入可重复得到同样结果的工具，
 而不是一个名为 `xverif` 的统一 executable：
 
 | 工具 | 主要用途 |
 | --- | --- |
 | `xdebug` | daidir/FSDB 设计、波形、协议和 active-driver 事实查询 |
 | `xcov` | VCS/Verdi coverage database 查询与导出 |
-| `xbit` | SystemVerilog literal、slice、mask、表达式确定性计算 |
+| `xbit` | 计算 SystemVerilog literal、slice、mask 和表达式；同样输入得到同样结果 |
 | `xentry` | 多拍 entry/descriptor/header raw field 解码 |
 | `xloc` | UVM 日志位置压缩 ID 恢复与统计 |
-| `xsva` | SVA 解析、IR、lint 与确定性解释 |
+| `xsva` | 按固定规则执行 SVA 解析、IR、lint 和解释 |
 | `xwaveform` | 由已导出数据生成波形图和统计 |
 
 调用链必须保持：
@@ -131,7 +131,7 @@ schema hash 和 native completeness 必须进入 evidence manifest。
 
 ## Surface 与输出边界
 
-- xdebug/xcov/xentry 需要结构化字段时，通过其 native JSON envelope 和 `--json`
+- xdebug/xcov/xentry 需要字段固定的结果时，通过其 native JSON envelope 和 `--json`
   执行；不能把 MCP 参数壳写进 CLI envelope。
 - Agent 交互可以使用 XOUT，但 adapter 只做完整原文归档，不从排版反推 JSON。
 - xsva 等 native text command 声明 `text`；不要强行要求 XOUT。
@@ -142,7 +142,7 @@ schema hash 和 native completeness 必须进入 evidence manifest。
 
 - adapter 不修改 DUT RTL，不批准测试、waiver、stage gate 或 freeze；
 - environment 只保存 key，不输出 value；argv 出现 secret-like material 时拒绝；
-- xdebug/xcov 的真实 EDA/NPI 动作在项目规定的获授权环境执行；
+- xdebug/xcov 的真实 EDA/NPI 动作在项目规定且许可证允许的环境执行；
 - Git commit 和 wrapper hash 证明工具身份，不证明结果语义正确；
 - CI fake xverif 只验证 CLI adapter；MCP 兼容性必须由 approved upstream
   checkout 的 runtime `xverif_ping` 和 focused native operation 证明。

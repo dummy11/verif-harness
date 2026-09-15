@@ -1,0 +1,25 @@
+{
+  "schema": "StimulusCapabilityEvidence/1",
+  "claim": "stimulus-implementation",
+  "revision": "git-or-model-revision",
+  "tool": "compile-and-registration-audit/1",
+  "artifacts": [
+    {
+      "path": "results/stimulus/input_sequence.sv",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "result": {
+    "required_features": ["VF.INPUT.BACKPRESSURE"],
+    "components": [
+      {
+        "id": "input_sequence",
+        "kind": "sequence",
+        "features": ["VF.INPUT.BACKPRESSURE"],
+        "compiled": true,
+        "registered": true,
+        "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
+}

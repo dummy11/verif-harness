@@ -1,0 +1,57 @@
+{
+  "schema": "StimulusReachabilityEvidence/1",
+  "revision": "git-or-model-revision",
+  "artifacts": [
+    {"path": "results/stimulus/probe.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+  ],
+  "producer": {
+    "kind": "vstim-probe",
+    "name": "input-acceptance-monitor",
+    "version": "1"
+  },
+  "observation": {
+    "boundary": "dut-input-accepted",
+    "point": "tb.input_monitor.accepted_transaction",
+    "predicate": "valid && ready && scenario_tag == backpressure_release"
+  },
+  "runs": [
+    {
+      "id": "run-001",
+      "test": "targeted_backpressure",
+      "seed": 17,
+      "config_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stimulus_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "errors": 0,
+      "timeouts": 0,
+      "scenarios": [
+        {
+          "id": "backpressure-release",
+          "required": true,
+          "generated": 4,
+          "driven": 4,
+          "accepted": 4,
+          "hits": 4
+        }
+      ]
+    },
+    {
+      "id": "run-002",
+      "test": "targeted_backpressure",
+      "seed": 17,
+      "config_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stimulus_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "errors": 0,
+      "timeouts": 0,
+      "scenarios": [
+        {
+          "id": "backpressure-release",
+          "required": true,
+          "generated": 4,
+          "driven": 4,
+          "accepted": 4,
+          "hits": 4
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -46,6 +47,84 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
+
+    def write_reachability_report(self, producer_kind: str = "vstim-probe", repeated: bool = True) -> Path:
+        native = self.root / "results/stimulus/probe.json"
+        native.parent.mkdir(parents=True, exist_ok=True)
+        native.write_text('{"accepted": 2}\n', encoding="utf-8")
+        run = {
+            "id": "run-001", "test": "targeted", "seed": 17,
+            "config_digest": "a" * 64, "stimulus_digest": "b" * 64,
+            "errors": 0, "timeouts": 0,
+            "scenarios": [{
+                "id": "backpressure-release", "required": True,
+                "generated": 2, "driven": 2, "accepted": 2, "hits": 2,
+            }],
+        }
+        runs = [run]
+        if repeated:
+            runs.append({**run, "id": "run-002"})
+        report = {
+            "schema": "StimulusReachabilityEvidence/1",
+            "revision": "test-revision",
+            "artifacts": [{"path": "results/stimulus/probe.json",
+                           "sha256": hashlib.sha256(native.read_bytes()).hexdigest()}],
+            "producer": {"kind": producer_kind, "name": "input-monitor", "version": "1"},
+            "observation": {
+                "boundary": "dut-input-accepted", "point": "monitor.accepted",
+                "predicate": "valid && ready && tag == backpressure_release",
+            },
+            "runs": runs,
+        }
+        path = self.root / "reachability.json"
+        path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+        return path
+
+    def materialize_evidence_example(self, filename: str) -> Path:
+        source = ROOT / "skills/verif-harness/evidence" / filename
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        digest_replacements: dict[str, str] = {}
+        for index, artifact in enumerate(payload["artifacts"]):
+            path = self.root / artifact["path"]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"native artifact {filename} {index}\n", encoding="utf-8")
+            old_digest = artifact["sha256"]
+            artifact["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest_replacements[old_digest] = artifact["sha256"]
+
+        def bind_artifacts(value):
+            if isinstance(value, dict):
+                return {key: bind_artifacts(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [bind_artifacts(item) for item in value]
+            return digest_replacements.get(value, value)
+
+        payload["result"] = bind_artifacts(payload["result"])
+        target = self.root / filename
+        target.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        return target
+
+    def write_typed_report(self, filename: str, schema: str, claim: str, result: dict) -> Path:
+        native = self.root / "results/contracts" / f"{filename}.native"
+        native.parent.mkdir(parents=True, exist_ok=True)
+        native.write_text(f"native evidence for {claim}\n", encoding="utf-8")
+        digest = hashlib.sha256(native.read_bytes()).hexdigest()
+
+        def bind(value):
+            if isinstance(value, dict):
+                return {key: bind(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [bind(item) for item in value]
+            return digest if value == "$ARTIFACT_DIGEST" else value
+
+        payload = {
+            "schema": schema, "claim": claim, "revision": "test-revision", "tool": "test-tool/1",
+            "artifacts": [{"path": native.relative_to(self.root).as_posix(), "sha256": digest}],
+            "result": bind(result),
+        }
+        target = self.root / filename
+        target.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        return target
 
     def test_bootstrap_creates_minimal_model_without_verification_semantics(self) -> None:
         payload = self.bootstrap()
@@ -407,6 +486,289 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("evidence source", result.stderr)
 
+    def test_vstim_reachability_uses_owned_probe_and_derived_verdict(self) -> None:
+        self.bootstrap()
+        plan = self.design("VSTIM", "--desired", "reachability", "--desired", "determinism")
+        desired = [item["id"] for item in plan["desired_state"]]
+        self.run_cli("review", "VSTIM")
+        report = self.write_reachability_report()
+
+        generic = self.invoke("prove", desired[0], report.name)
+        self.assertEqual(generic.returncode, 2)
+        self.assertIn("evidence 命令", generic.stderr)
+
+        reached = self.run_cli("reachability", desired[0], report.name, "--claim", "reachability")
+        deterministic = self.run_cli("reachability", desired[1], report.name, "--claim", "determinism")
+        self.assertEqual(reached["claim"], "reachability")
+        self.assertEqual(reached["verdict"], "PASS")
+        self.assertTrue(reached["validation"]["reachability_ready"])
+        self.assertEqual(deterministic["verdict"], "PASS")
+        self.assertTrue(deterministic["validation"]["determinism_ready"])
+        traced = self.run_cli("trace", desired[0])
+        self.assertEqual(traced["evidence"][0]["data"]["claim"], "reachability")
+
+        changed = self.run_cli("changed", report.name)
+        self.assertIn(desired[0], changed["affected"])
+        self.assertIn(desired[1], changed["affected"])
+
+    def test_coverage_cannot_be_sole_vstim_reachability_authority(self) -> None:
+        self.bootstrap()
+        desired = self.design("VSTIM", "--desired", "reachability")["desired_state"][0]["id"]
+        report = self.write_reachability_report(producer_kind="functional-coverage")
+        result = self.invoke("reachability", desired, report.name, "--claim", "reachability")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("只能作为旁证", result.stderr)
+
+    def test_node_dependency_blocks_only_subject_and_rejects_cycles(self) -> None:
+        self.bootstrap()
+        stim = self.design("VSTIM", "--desired", "scenario reachable")["desired_state"][0]["id"]
+        cov = self.design("VCOV", "--desired", "counter available")["desired_state"][0]["id"]
+        recorded = self.run_cli("record", "dependency", stim, cov)
+        self.assertEqual(recorded["semantics"], "dependent-to-prerequisite")
+        bypass = self.invoke("record", "edge", stim, cov, "--relation", "DEPENDS_ON")
+        self.assertEqual(bypass.returncode, 2)
+        self.assertIn("record dependency", bypass.stderr)
+        closure = self.run_cli("closure", "--workstream", "VSTIM")
+        wait = next(action for action in closure["actions"] if action["kind"] == "WAIT_FOR_DEPENDENCY")
+        self.assertEqual(wait["target"], stim)
+        self.assertEqual(wait["blocked_by"], [cov])
+        self.assertIn(stim, {item["id"] for item in self.run_cli("impact", cov)["affected"]})
+
+        cycle = self.invoke("record", "dependency", cov, stim)
+        self.assertEqual(cycle.returncode, 2)
+        self.assertIn("循环依赖", cycle.stderr)
+
+        self.run_cli("waive", cov, "--reviewer", "alice", "--reason", "dependency test fixture")
+        closure = self.run_cli("closure", "--workstream", "VSTIM")
+        self.assertFalse(any(action["kind"] == "WAIT_FOR_DEPENDENCY" for action in closure["actions"]))
+        self.assertTrue(any(action["target"] == stim for action in closure["actions"]))
+
+    def test_planner_builds_revision_aware_default_capability_evidence_graph(self) -> None:
+        self.bootstrap()
+        plans = {}
+        for workstream in ("VDOC", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV"):
+            plans[workstream] = self.design(workstream)
+        for plan in plans.values():
+            template = plan["template"]
+            roles = {desired["key"]: desired["role"] for desired in plan["desired_state"]}
+            self.assertEqual(template["capabilities"], [
+                key for key, role in roles.items() if role == "capability"
+            ])
+            self.assertEqual(template["closure_evidence"], [
+                key for key, role in roles.items() if role == "closure-evidence"
+            ])
+
+        custom = self.design("VCHK", "--desired", "custom name ending in evidence")
+        self.assertEqual(custom["desired_state"][0]["role"], "capability")
+
+        current_vstim = {item["key"]: item["id"] for item in plans["VSTIM"]["desired_state"]}
+        old_vreg = {item["key"]: item["id"] for item in plans["VREG"]["desired_state"]}
+        model = self.run_cli("inspect")
+        dependencies = {
+            (edge["source"], edge["target"]) for edge in model["edges"]
+            if edge["relation"] == "DEPENDS_ON" and edge["origin"] == "planner-default"
+        }
+        self.assertIn((current_vstim["stimulus-implementation"], old_vreg["executor-ready"]), dependencies)
+        self.assertIn((current_vstim["determinism-evidence"], current_vstim["reachability-evidence"]), dependencies)
+
+        revised_vreg = {
+            item["key"]: item["id"] for item in self.design("VREG")["desired_state"]
+        }
+        dependencies = {
+            (edge["source"], edge["target"]) for edge in self.run_cli("inspect")["edges"]
+            if edge["relation"] == "DEPENDS_ON" and edge["origin"] == "planner-default"
+        }
+        self.assertIn((current_vstim["stimulus-implementation"], revised_vreg["executor-ready"]), dependencies)
+        self.assertNotIn((current_vstim["stimulus-implementation"], old_vreg["executor-ready"]), dependencies)
+
+    def test_default_dependency_is_not_lost_when_prerequisite_is_unplanned(self) -> None:
+        self.bootstrap()
+        plan = self.design("VSTIM")
+        closure = self.run_cli("closure", "--workstream", "VSTIM")
+        missing = [action for action in closure["actions"] if action["kind"] == "PLAN_PREREQUISITE"]
+        self.assertTrue(missing)
+        blocked_by = {item for action in missing for item in action["blocked_by"]}
+        self.assertIn("workstream:VDOC:desired:verification-plan", blocked_by)
+        self.assertIn("workstream:VREG:desired:executor-ready", blocked_by)
+        reachability = next(item["id"] for item in plan["desired_state"] if item["key"] == "reachability-evidence")
+        recorded = self.run_cli("evidence", reachability, self.write_reachability_report().name)
+        self.assertEqual(recorded["verdict"], "FAIL")
+        self.assertTrue(any("prerequisite" in item for item in recorded["validation"]["blockers"]))
+
+    def test_standard_workstreams_require_typed_evidence_contracts(self) -> None:
+        self.bootstrap()
+        cases = (
+            ("VSTIM", "stimulus-implementation", "stimulus-capability-evidence.example.json"),
+            ("VCHK", "scoreboard-evidence", "checking-evidence.example.json"),
+            ("VCOV", "hole-analysis-evidence", "coverage-evidence.example.json"),
+            ("VCASE", "targeted-evidence", "testcase-evidence.example.json"),
+            ("VREG", "execution-evidence", "regression-evidence.example.json"),
+        )
+        for workstream, claim, filename in cases:
+            standard = {item["key"]: item["id"] for item in self.design(workstream)["desired_state"]}[claim]
+            target = self.materialize_evidence_example(filename)
+            bypass = self.invoke("prove", standard, filename)
+            self.assertEqual(bypass.returncode, 2)
+            self.assertIn("evidence 命令", bypass.stderr)
+            desired = self.design(workstream, "--desired", f"custom {claim}")["desired_state"][0]["id"]
+            recorded = self.run_cli("evidence", desired, filename, "--claim", claim)
+            self.assertEqual(recorded["verdict"], "PASS", (workstream, recorded))
+            self.assertTrue(recorded["validation"]["ready"])
+
+    def test_standard_node_claim_cannot_be_overridden(self) -> None:
+        self.bootstrap()
+        plan = self.design("VCHK")
+        scoreboard = next(item["id"] for item in plan["desired_state"] if item["key"] == "scoreboard-evidence")
+        report = self.materialize_evidence_example("checking-evidence.example.json")
+        rejected = self.invoke("evidence", scoreboard, report.name, "--claim", "reference-model-evidence")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("claim 固定为 scoreboard-evidence", rejected.stderr)
+
+    def test_typed_evidence_rejects_arbitrary_pass_and_records_semantic_failure(self) -> None:
+        self.bootstrap()
+        desired = self.design("VCHK", "--desired", "custom scoreboard evidence")["desired_state"][0]["id"]
+        arbitrary = self.root / "arbitrary.json"
+        arbitrary.write_text('{"pass": true}\n', encoding="utf-8")
+        rejected = self.invoke("evidence", desired, arbitrary.name, "--claim", "scoreboard-evidence")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("schema 必须是 CheckingEvidence/1", rejected.stderr)
+
+        valid = self.materialize_evidence_example("checking-evidence.example.json")
+        native = self.root / "results/checker/run.log"
+        native.write_text("tampered after export\n", encoding="utf-8")
+        mismatched = self.invoke("evidence", desired, valid.name, "--claim", "scoreboard-evidence")
+        self.assertEqual(mismatched.returncode, 2)
+        self.assertIn("artifact digest 不匹配", mismatched.stderr)
+
+        valid = self.materialize_evidence_example("checking-evidence.example.json")
+        report = json.loads(valid.read_text())
+        report["result"]["mismatches"] = 1
+        failed = self.root / "checker-failed.json"
+        failed.write_text(json.dumps(report) + "\n", encoding="utf-8")
+        recorded = self.run_cli("evidence", desired, failed.name, "--claim", "scoreboard-evidence")
+        self.assertEqual(recorded["verdict"], "FAIL")
+        self.assertFalse(recorded["validation"]["ready"])
+        self.assertEqual(self.run_cli("inspect", desired)["nodes"][0]["status"], "INVALID")
+
+    def test_native_evidence_artifact_change_invalidates_its_closure_node(self) -> None:
+        self.bootstrap()
+        desired = self.design("VCHK", "--desired", "custom scoreboard evidence")["desired_state"][0]["id"]
+        report = self.materialize_evidence_example("checking-evidence.example.json")
+        recorded = self.run_cli("evidence", desired, report.name, "--claim", "scoreboard-evidence")
+        self.assertEqual(recorded["verdict"], "PASS")
+
+        native = self.root / "results/checker/run.log"
+        native.write_text("new simulator output\n", encoding="utf-8")
+        changed = self.run_cli("changed", "results/checker/run.log")
+        self.assertIn(desired, changed["affected"])
+        self.assertEqual(self.run_cli("inspect", desired)["nodes"][0]["status"], "REVALIDATION_REQUIRED")
+
+    def test_vdoc_unresolved_human_items_are_executable_exit_blockers(self) -> None:
+        self.bootstrap()
+        self.design("VDOC")
+        self.run_cli("review", "VDOC")
+        self.run_cli(
+            "docs", "track", "verification_plan.md", "--id", "HD-001",
+            "--kind", "human-decision", "--title", "选择 latency correctness policy",
+            "--status", "PENDING",
+        )
+        closure = self.run_cli("closure", "--workstream", "VDOC")
+        blockers = [item for item in closure["actions"] if item["kind"] == "EXIT_CRITERION_BLOCKED"]
+        self.assertTrue(any("HD-001" in item["reason"] for item in blockers))
+        self.run_cli(
+            "docs", "track", "verification_plan.md", "--id", "HD-001",
+            "--kind", "human-decision", "--title", "选择 latency correctness policy",
+            "--status", "RESOLVED",
+        )
+        closure = self.run_cli("closure", "--workstream", "VDOC")
+        self.assertFalse(any(item["kind"] == "EXIT_CRITERION_BLOCKED" for item in closure["actions"]))
+
+    def test_vcase_matrix_and_implementation_are_cross_checked(self) -> None:
+        self.bootstrap()
+        plans = {name: self.design(name) for name in ("VDOC", "VREG", "VSTIM", "VCASE")}
+        nodes = {
+            name: {item["key"]: item["id"] for item in plan["desired_state"]}
+            for name, plan in plans.items()
+        }
+        for node in (
+            nodes["VDOC"]["feature-matrix"], nodes["VDOC"]["testcase-list"],
+            nodes["VSTIM"]["stimulus-implementation"], nodes["VREG"]["executor-ready"],
+        ):
+            self.run_cli("waive", node, "--reviewer", "alice", "--reason", "cross-check fixture")
+        matrix_report = self.write_typed_report(
+            "case-matrix.json", "TestcaseEvidence/1", "case-matrix",
+            {"required_features": ["VF.DEMO"],
+             "mappings": [{"feature": "VF.DEMO", "cases": ["required_test"]}]},
+        )
+        self.assertEqual(
+            self.run_cli("evidence", nodes["VCASE"]["case-matrix"], matrix_report.name)["verdict"], "PASS"
+        )
+        implementation_report = self.write_typed_report(
+            "case-implementation.json", "TestcaseEvidence/1", "case-implementation",
+            {"cases": [{"id": "different_test", "source_digest": "$ARTIFACT_DIGEST",
+                        "registered": True, "compiled": True}]},
+        )
+        recorded = self.run_cli(
+            "evidence", nodes["VCASE"]["case-implementation"], implementation_report.name
+        )
+        self.assertEqual(recorded["verdict"], "FAIL")
+        self.assertTrue(any("required_test" in item for item in recorded["validation"]["blockers"]))
+
+    def test_vreg_raw_failures_require_matching_triage_and_fresh_set_is_derived(self) -> None:
+        self.bootstrap()
+        plans = {
+            name: self.design(name) for name in ("VDOC", "VREG", "VSTIM", "VCHK", "VCASE", "VCOV")
+        }
+        nodes = {
+            name: {item["key"]: item["id"] for item in plan["desired_state"]}
+            for name, plan in plans.items()
+        }
+        execution_prerequisites = (
+            nodes["VREG"]["executor-ready"], nodes["VSTIM"]["reachability-evidence"],
+            nodes["VSTIM"]["determinism-evidence"], nodes["VCHK"]["reference-model-evidence"],
+            nodes["VCHK"]["scoreboard-evidence"], nodes["VCHK"]["assertion-evidence"],
+            nodes["VCASE"]["targeted-evidence"], nodes["VCOV"]["coverage-collection-evidence"],
+            nodes["VCOV"]["hole-analysis-evidence"],
+        )
+        for node in execution_prerequisites:
+            self.run_cli("waive", node, "--reviewer", "alice", "--reason", "regression fixture")
+
+        execution_report = self.write_typed_report(
+            "execution-with-failure.json", "RegressionEvidence/1", "execution-evidence",
+            {"golden_required": True, "batch_seed": "17", "manifest_digest": "$ARTIFACT_DIGEST",
+             "results": [{"test": "corner_test", "seed": 91, "verdict": "FAIL",
+                          "log_digest": "$ARTIFACT_DIGEST"}]},
+        )
+        execution = self.run_cli("evidence", nodes["VREG"]["execution-evidence"], execution_report.name)
+        self.assertEqual(execution["verdict"], "PASS")
+        self.assertEqual(execution["validation"]["facts"]["failed_runs"][0]["test"], "corner_test")
+
+        empty_triage = self.write_typed_report(
+            "empty-triage.json", "RegressionEvidence/1", "triage-evidence", {"failures": []},
+        )
+        rejected = self.run_cli("evidence", nodes["VREG"]["triage-evidence"], empty_triage.name)
+        self.assertEqual(rejected["verdict"], "FAIL")
+        self.assertTrue(any("尚未 triage" in item for item in rejected["validation"]["blockers"]))
+
+        triage_report = self.write_typed_report(
+            "matching-triage.json", "RegressionEvidence/1", "triage-evidence",
+            {"failures": [{"test": "corner_test", "original_seed": 91, "rerun_seed": 91,
+                           "classification": "DUT_BUG", "disposition": "fixed",
+                           "rerun_verdict": "PASS", "rerun_log_digest": "$ARTIFACT_DIGEST"}]},
+        )
+        triage = self.run_cli("evidence", nodes["VREG"]["triage-evidence"], triage_report.name)
+        self.assertEqual(triage["verdict"], "PASS")
+
+        fresh_report = self.write_typed_report(
+            "fresh.json", "RegressionEvidence/1", "fresh-evidence",
+            {"snapshot_revision": "test-revision"},
+        )
+        fresh = self.run_cli("evidence", nodes["VREG"]["fresh-evidence"], fresh_report.name)
+        self.assertEqual(fresh["verdict"], "PASS", fresh)
+        derived = fresh["validation"]["facts"]["required_nodes"]
+        self.assertNotEqual(derived, [])
+        self.assertTrue(all("id" in item and "status" in item for item in derived))
+
     def test_reason_request_separates_role_and_backend(self) -> None:
         payload = self.run_cli("reason", "request", "--purpose", "triage ambiguity", "--context", "two causes",
                                "--role", "DebugEngineer", "--backend", "codex")
@@ -485,7 +847,11 @@ class V1ControlPlaneTest(unittest.TestCase):
         for workstream in ("VDOC", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
             plan = self.run_cli("plan", workstream, "--desired", f"{workstream} verified")
             self.run_cli("review", workstream)
-            self.run_cli("prove", plan["desired_state"][0]["id"], "evidence.json")
+            if workstream == "VDOC":
+                self.run_cli("prove", plan["desired_state"][0]["id"], "evidence.json")
+            else:
+                self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
+                             "--reason", "final-freeze command fixture")
             self.assertEqual(self.run_cli("freeze", workstream)["lifecycle"], "BASELINED")
         final = self.run_cli("freeze", "final")
         self.assertEqual(final["kind"], "FINAL")

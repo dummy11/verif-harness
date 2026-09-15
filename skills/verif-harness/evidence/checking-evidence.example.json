@@ -1,0 +1,14 @@
+{
+  "schema": "CheckingEvidence/1",
+  "claim": "scoreboard-evidence",
+  "revision": "git-or-model-revision",
+  "tool": "simulator and collector version",
+  "artifacts": [{"path": "results/checker/run.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],
+  "result": {
+    "engaged": true,
+    "comparisons": 128,
+    "mismatches": 0,
+    "residual": 0,
+    "implementation_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  }
+}

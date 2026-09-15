@@ -44,6 +44,8 @@ and testcase contracts remain directly readable and Git-reviewable.
 state. In addition to the core model, it stores:
 
 - typed nodes for intent, desired state, implementation, artifacts, and evidence;
+- capability and closure-evidence nodes linked by revision-aware planner-default dependencies;
+- executable cross-evidence exit predicates and Planner-derived fresh-evidence membership;
 - typed edges with `explicit`, `inferred`, or `runtime` origin and confidence;
 - Workstream revisions and Human review records;
 - semantic-document paths, content digests, revisions, reviews, governance-item
@@ -108,3 +110,11 @@ xverif, WavePeek, simulators, waveform viewers, regression systems, and EDA
 providers are capability adapters. The core depends on declared capabilities
 and recorded evidence, not vendor command syntax. Tool success is provenance,
 not Human approval or semantic sign-off.
+
+Compiler/simulation logs, regression manifests, waveform files, and VDB/UCDB
+databases are raw artifacts rather than evidence verdicts. Project adapters or
+collectors convert them into typed JSON reports that bind the current project
+revision and native-artifact SHA-256 values. The control plane validates schema,
+claim semantics, dependencies, and cross-evidence exit predicates before it
+derives PASS/FAIL. v1 does not yet ship one universal extractor for every EDA
+vendor format.

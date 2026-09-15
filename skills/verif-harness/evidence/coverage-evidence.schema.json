@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CoverageEvidence/1",
+  "type": "object",
+  "required": ["schema", "claim", "revision", "tool", "artifacts", "result"],
+  "properties": {
+    "schema": {"const": "CoverageEvidence/1"},
+    "claim": {"enum": ["coverage-model", "coverage-collection", "coverage-collection-evidence", "hole-analysis-evidence"]},
+    "revision": {"type": "string", "minLength": 1},
+    "tool": {"type": "string", "minLength": 1},
+    "artifacts": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}},
+    "result": {"type": "object"}
+  }
+}

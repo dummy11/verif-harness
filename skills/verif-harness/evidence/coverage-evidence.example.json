@@ -1,0 +1,20 @@
+{
+  "schema": "CoverageEvidence/1",
+  "claim": "hole-analysis-evidence",
+  "revision": "git-or-model-revision",
+  "tool": "coverage exporter version",
+  "artifacts": [
+    {"path": "results/coverage/merge.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    {"path": "results/coverage/database.ucdb", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+  ],
+  "result": {
+    "items": [
+      {
+        "id": "COV.DEMO.001",
+        "status": "covered",
+        "hits": 4,
+        "plan_ref": "coverage_plan.md#demo"
+      }
+    ]
+  }
+}

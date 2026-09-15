@@ -48,6 +48,15 @@ Workstream. Project lifecycle is separate.
   Read `vmodel/INSTRUCTIONS.md`.
 - `record`: structured ingress for facts, relations, evidence, changes, and
   Human waivers. It automatically reconciles the consistency and closure engines.
+- `evidence`: validate VSTIM capability, VCHK, VCOV, VCASE, and VREG typed
+  evidence and derive the verdict from content. Read `evidence/INSTRUCTIONS.md`;
+  do not use generic `prove` to bypass a standard Workstream contract. Enforce
+  cross-evidence exit predicates and derive VREG fresh-evidence membership from
+  the current Planner graph rather than a producer-supplied node list.
+- `reachability`: validate and record VSTIM-owned scenario reachability or
+  deterministic-replay evidence. Read `reachability/INSTRUCTIONS.md`. Coverage,
+  cover properties, and waveforms are corroboration rather than the sole VSTIM
+  closure authority.
 - Verification Consistency Engine (`check`): scan model facts and propagate change invalidation. Read
   `vcheck/INSTRUCTIONS.md`.
 - Verification Closure Engine (`closure`): compute the smallest next actions across Workstreams. Read
@@ -56,7 +65,7 @@ Workstream. Project lifecycle is separate.
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 
 Prefer the human-facing spellings in interactive work: `plan VDOC`, `review
-[VDOC]`, `status [VDOC]`, `prove NODE FILE`, `changed PATH`, `waive NODE
+[VDOC]`, `status [VDOC]`, `evidence NODE FILE`, `changed PATH`, `waive NODE
 --reason ...`, and `freeze VDOC|final`. Use the expanded `plan
 design|review|freeze` and `record ...` forms only when automation needs explicit
 fields. The older `model` and `v*` spellings are compatibility-only and must not
@@ -113,4 +122,6 @@ files are review candidates. DUT RTL and Human approval remain out of bounds.
 - The Verification Closure Engine recommends actions; it does not silently execute write modes.
 - The Verification Reasoning Engine returns structured diagnosis/proposals and never grants approval.
 - xverif, WavePeek, simulation, regression, and coverage outputs become
-  evidence only when recorded with provenance and verdict.
+  evidence only after a project adapter/collector converts raw outputs into the
+  appropriate typed report and the control plane derives its verdict. The core
+  does not yet provide a universal vendor log/VDB/UCDB extractor.

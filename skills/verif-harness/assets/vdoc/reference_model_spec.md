@@ -1,9 +1,9 @@
-# 参考模型接入与比较合同
+# 参考模型接入与比较规则
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的参考模型与比较规则。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
-本文是验证侧合同，不替代或修改输入 RTL spec。
+本文定义验证环境怎样使用参考模型，不替代或修改输入 RTL spec。
 
 ## 目标、非目标与适用性
 
@@ -25,14 +25,15 @@
 
 ## API 与支持范围
 
-| 操作/Feature ID | 接入合同 | 当前支持情况 | unsupported/skip 行为 | 验证方法 |
+| 操作/Feature ID | 接入规则 | 当前支持情况 | 不支持或跳过时怎样处理 | 验证方法 |
 | --- | --- | --- | --- | --- |
 
 ## 诊断与可信度验证
 
 定义 mismatch 报告的输入标识、expected/actual、版本和复现信息。
-说明如何验证模型自身及 adapter，避免 DUT 与参考模型共享错误假设。
+说明如何验证模型自身及格式适配程序（adapter），避免 DUT 与参考模型共享错误假设。
 
 ## 工程决策与开放问题
 
-未决比较语义及受影响目标写在正文；其状态、评审和动态证据由 SQLite 按需投影。
+尚未决定的比较规则及受影响目标写在正文；事项状态、评审记录和证据索引保存在 SQLite 中，
+通过 `verif-harness docs status/render` 查看。

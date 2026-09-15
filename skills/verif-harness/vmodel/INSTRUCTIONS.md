@@ -10,9 +10,13 @@ Preferred trace chain:
 REQ -> VF -> DESIRED -> ACTION -> MODE -> ARTIFACT -> EVIDENCE -> REVIEW
 ```
 
-For common operations use `prove NODE FILE`, `changed PATH`, and `waive NODE
---reason ...`. Adapters and automation may use `record
-node|edge|status|evidence|change|waive`; every structured write automatically
+For standard VSTIM/VCHK/VCOV/VCASE/VREG desired nodes use `evidence NODE FILE`;
+use generic `prove NODE FILE` only when no typed contract is declared. Use
+`changed PATH` and `waive NODE --reason ...` for changes and Human waivers.
+Adapters and automation may use `record node|edge|change|waive` for advanced
+facts, but standard Workstream evidence must still enter through `evidence` or
+`reachability`; do not bypass its validator with low-level `record evidence`.
+Every accepted structured write automatically
 triggers the Verification Consistency Engine and Verification Closure Engine. Explicit relations
 represent reviewed knowledge, inferred relations require confidence, and
 runtime relations represent observed evidence. Never mark a desired state

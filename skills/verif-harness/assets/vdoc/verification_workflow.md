@@ -1,13 +1,14 @@
 # 验证文档治理流程
 
-> 本文是项目验证文档的工程语义合同，不是 RTL 规格。状态、修订、评审、
-> evidence 和事项生命周期由 `.verif-harness/model.sqlite3` 按需投影。
+> 本文说明项目验证文档应写什么、由谁评审、修改后怎样重新确认；它不是 RTL 规格。
+> 文件版本、评审记录、证据索引和待处理事项保存在 `.verif-harness/model.sqlite3` 中，
+> 通过 `verif-harness docs status/render` 查看。
 
 ## 目的与适用范围
 
 说明本项目如何起草、评审、维护、失效和冻结验证文档，以及 Human、Agent 和
-verif-harness Engine 的责任边界。VDOC、VSTIM、VCHK、VCOV、VCASE、VREG 是可并行、
-可重入的 Workstream。本项目不定义 Stage，也不采用 Spec Kit 的 `spec → plan → tasks`
+verif-harness Engine 的责任边界。VDOC、VSTIM、VCHK、VCOV、VCASE、VREG 可以同时推进，
+发现新问题后也可以重新打开。本项目不定义 Stage，也不采用 Spec Kit 的 `spec → plan → tasks`
 流程；不得把工作域改造成必须顺序完成的阶段。
 
 ## 事实源与文档职责
@@ -15,27 +16,29 @@ verif-harness Engine 的责任边界。VDOC、VSTIM、VCHK、VCOV、VCASE、VREG
 | 信息 | 权威来源 | 文档用途 |
 | --- | --- | --- |
 | DUT 行为 | 只读 RTL/RTL spec | 引用，不改写来源语义 |
-| 验证工程语义 | VDOC Markdown 文档 | 保存策略、接口、检查、覆盖和用例合同 |
-| 结构化目标、关系和治理状态 | `.verif-harness/model.sqlite3` | 通过 `docs status/render` 按需投影 |
+| 工程师直接维护的验证设计 | VDOC Markdown 文档 | 保存策略、接口规则、检查方法、覆盖目标和用例设计 |
+| 目标、依赖、文件版本和评审状态 | `.verif-harness/model.sqlite3` | 通过 `docs status/render` 查看 |
 | 工程决定 | Markdown 中的完整依据 + SQLite 状态索引 | 使用稳定 ID、文档锚点和影响范围关联 |
-| 工具结果 | 带来源、摘要、revision、verdict 的 evidence | 不粘贴长日志冒充结论 |
+| 工具结果 | 带原始文件路径、SHA-256、项目版本和 PASS/FAIL 的 evidence | 不粘贴长日志冒充结论 |
 
-## 角色与授权
+## 三种角色分别做什么
 
-- **Human**：决定验证范围、工程取舍、内容批准、waiver 和 freeze。
-- **Agent**：只读分析输入、提出问题、生成 Draft，并在取得授权后调用 CLI。
-- **Engine**：持久化事实、检查一致性、传播失效、计算 closure；不作工程判断。
+- **Human（项目工程师或负责人）**：决定验证范围和工程取舍；判断文档内容是否可以接受；
+  决定是否接受未满足项（waiver）以及是否保存当前基线（freeze）。
+- **Agent（当前 Codex/Kimi 会话）**：只读分析 RTL 和规格、提出问题、生成初稿、运行工程工具；
+  只有在 Human 已明确作出上述决定后，才调用相应 CLI 记录决定。
+- **Engine**：保存 Agent 已登记的信息；检查文件版本和证据格式；一个输入修改后，列出哪些目标
+  需要重新验证；再列出当前还缺什么。它不判断规格含义，也不决定验证方案。
 
-CLI 默认值不是 Human 授权。文件存在、模板已复制、Agent 自检或工具成功退出，都不等于
+CLI 默认值不表示 Human 已经同意。文件存在、模板已复制、Agent 自检或工具成功退出，都不等于
 内容已批准或目标已经满足。
 
 ## 文档集、路由与同步
 
-列出本项目的验证文档路径、对应 desired node、维护 Workstream 和主要消费者。新增
-feature、testcase、coverage、assertion 或 reference-model 语义时，必须同步相应文档与
-Knowledge Model 关系。
+列出本项目的验证文档路径、对应目标节点、由哪个 Workstream 维护，以及哪些工作会读取它。
+新增验证点、用例、覆盖项、断言或参考模型规则时，必须同步相应文档和数据库中的依赖关系。
 
-| 文档 | Desired node | 维护者 | 主要消费者 |
+| 文档 | 对应目标节点 | 维护者 | 哪些工作会读取它 |
 | --- | --- | --- | --- |
 | verification_plan.md | `<VDOC-NODE>` | VDOC | 全部 Workstream |
 | feature_matrix.md | `<VDOC-NODE>` | 全部 Workstream | VSTIM/VCHK/VCOV/VCASE/VREG |
@@ -46,45 +49,46 @@ Knowledge Model 关系。
 | 类型 | 含义 | 处理方式 |
 | --- | --- | --- |
 | Human Decision | Human 已明确批准的工程基线 | 修改时记录原因、影响并重新评审 |
-| Provisional | 已选方向但保留复审触发条件 | 写明依据、影响和 evidence/milestone 触发器 |
+| Provisional（暂定方案） | 已选方向但以后需要重新确认 | 写明依据、影响，以及什么事件发生后必须重审 |
 | Assumption | 应由 Human 决定、当前尚未确认 | 不得写成确定事实；进入 `questions_for_human` |
 | External Open Question | 依赖项目外部输入 | 写明 owner、依赖、阻塞目标和跟踪状态 |
 
-Provisional 必须使用可观察的复审触发器，例如某个 Workstream 进入 closure、获得新的
-evidence、RTL/spec 变化或指定日期。
+暂定方案必须写明可以明确判断的重审条件，例如某个 Workstream 已满足当前目标、取得新的
+证据、RTL/spec 修改或到达指定日期。
 
 ## 起草、评审与基线
 
 ```text
-Agent 形成 proposal/Draft
-  → Human 审批 desired scope
+Agent 形成待评审方案和文档初稿
+  → Human 确认本轮目标和完成条件
   → Agent 完善正文并登记关系
-  → Engine 检查一致性
+  → Engine 检查文件版本、证据格式和已登记关系
   → Human 评审实际内容
-  → Agent 登记真实 review evidence
-  → Human 明确授权 freeze
+  → Agent 登记这次评审及其对应的文件 SHA-256
+  → Human 明确同意保存当前基线
 ```
 
-规划审批与内容审批是两个独立 Human gate。允许相关 Workstream 在部分文档仍为 Draft
-时并行推进，但缺少当前动作所需合同的 capability 必须停止并返回 VDOC/closure。
+确认“本轮准备做什么”和确认“实际文档内容可以接受”是两个不同决定。部分文档仍是初稿时，
+其他 Workstream 可以继续不依赖这些内容的工作；如果当前工作需要的接口规则或比较规则尚未
+明确，则必须停止这项工作，回到 VDOC 补全文档并再次检查未完成项。
 
 ## 变更、失效与重新评审
 
 验证文档正文变化后执行 `docs sync`；RTL、spec 或其他验证资产变化时使用 `changed`
-登记真实变更。Engine 比较内容摘要并沿显式关系传播 `STALE` 或
-`REVALIDATION_REQUIRED`。只修订受影响的内容，不因单点变化覆盖重建整套文档；旧
-evidence、review 和 baseline 保留用于审计。
+明确登记具体修改过的文件。Engine 比较文件 SHA-256，并按照数据库中已经登记的依赖关系，
+把受影响目标标为 `STALE` 或 `REVALIDATION_REQUIRED`。只修订受影响的内容，不因一个文件修改
+而覆盖重建整套文档；旧证据、评审记录和基线保留，便于以后查明当时依据的是哪个版本。
 
-涉及已批准 Human Decision 的变化必须重新取得 Human 结论。普通 Living 内容可以增量
-维护，但仍需记录 revision、影响范围和新的验证证据。
+涉及已批准人工决定的内容修改，必须由 Human 重新确认。允许持续更新的普通内容可以逐步修改，
+但仍要记录新的文件版本、受影响目标和重新取得的验证证据。
 
 ## 一致性与完成条件
 
 - 文档引用的项目路径存在，且不指向可写的 RTL/spec 输出位置。
 - Feature/VF、checker、coverage、case 和 evidence 使用稳定 ID 并可追踪。
-- unresolved assumption/open question 明确关联受影响目标。
-- 文档内容通过 Human review 后才登记 passing review evidence。
-- `status`/`closure` 显示本轮 required desired node 已满足后，才可请求 freeze。
+- 尚未确认的假设或问题明确关联受影响目标。
+- Human 明确接受当前文档内容后，才登记通过评审的证据。
+- `status`/`closure` 显示本轮所有必需目标已满足后，才可请求保存基线（freeze）。
 
 ## 文档治理相关决策与开放问题
 

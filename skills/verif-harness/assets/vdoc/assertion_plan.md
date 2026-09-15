@@ -1,13 +1,13 @@
 # 断言计划
 
-> 本文保存工程语义。状态、修订、评审和 evidence 通过 `verif-harness docs status/render`
-> 从 Verification Knowledge Model 按需查看，不在正文重复维护。
+> 本文保存工程师需要直接阅读和修改的断言设计。文件版本、评审状态和证据通过
+> `verif-harness docs status/render` 查看，不在正文重复维护。
 
 ## 范围与类别
 
 说明 protocol、timing、safety 等不变量及来源。区分环境假设、DUT obligation 和 TB sanity。
 
-## Property 合同
+## 断言规则（Property）
 
 | Assertion ID | Feature/规格来源 | 前提与预期性质 | clock/reset/disable | immediate/concurrent |
 | --- | --- | --- | --- | --- |
@@ -29,4 +29,4 @@
 ## 工程决策与开放问题
 
 明确规格未定义行为及环境约束，不由 Agent 猜测预期反应。
-治理状态与必要的例外决定由 SQLite 按需投影。
+事项是否待确认、已解决或已接受例外，由 SQLite 保存并通过 `verif-harness docs status/render` 查看。
