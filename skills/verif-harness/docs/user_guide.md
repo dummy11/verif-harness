@@ -839,35 +839,240 @@ final freeze 只保存当前已审核状态，不表示工具替项目负责人�
 
 ## 4. 日常闭环场景
 
-### 覆盖率发现未覆盖项后，返回激励工作补场景
+本章把步骤 2～7放进实际工作循环。图中的角色固定为：
+
+- **Human**：在当前对话中作工程判断、批准计划、接受例外或同意冻结；不手工操作 SQLite，
+  通常也不直接输入底层 CLI。
+- **Agent**：当前 Codex/Kimi 会话，负责提问、修改验证资产、调用 CLI 和工程工具、检查输出并
+  向 Human 解释结果。
+- **Engine**：verif-harness CLI 中按固定规则工作的部分，负责保存状态、检查证据和依赖、列出
+  下一项工作；不理解规格含义，不代替 Human 作决定。
+
+除图中特别标明的 Human 对话外，所有 `verif-harness ...` 命令都由 Agent 调用。这里的循环不会
+启动隐藏的 [worker（任务进程）](glossary.md#gap-action)等待用户输入；需要人工回答时，Agent
+在当前对话中提问。
+
+### 4.1 从查看状态到完成一个目标
+
+这是最常见的日常循环。步骤 3 产生工程结果，步骤 4 登记证据；Engine 更新状态后，Agent
+再次查询下一个 [gap（尚未满足的目标）](glossary.md#gap-action)。
+
+```mermaid
+sequenceDiagram
+    participant H as Human
+    participant A as Agent（Codex/Kimi）
+    participant E as Engine（verif-harness CLI）
+    participant T as 工程工具
+
+    A->>E: 调用 status / closure
+    E-->>A: 返回 target、原因、前置依赖和建议执行者
+    alt 尚无已批准计划
+        A->>E: 调用 plan WORKSTREAM
+        E-->>A: 返回待评审方案和人工问题
+        A->>H: 解释方案、问题和影响
+        H-->>A: 批准、修改、拒绝或继续澄清
+        A->>E: 调用 review，保存 Human 的明确结论
+        E-->>A: ACTIVE 或 REVISE
+    else 当前动作需要 Human 判断
+        A->>H: 展示问题、已有证据和受影响目标
+        H-->>A: 给出工程决定或保留开放问题
+        A->>E: 登记决定，必要时重新 plan
+        E-->>A: 重新计算 gap 和依赖
+    else 当前动作可以执行
+        A->>T: 修改验证资产并运行编译、仿真、回归或覆盖率工具
+        T-->>A: 返回 log、manifest、数据库、波形等原始结果
+        A->>A: 用项目结果提取程序生成固定格式 JSON
+        A->>E: 调用 evidence / reachability
+        E->>E: 检查格式、文件指纹、版本、依赖和专用规则
+        E-->>A: PASS/FAIL、节点状态和新的 gap
+    end
+    A->>E: 再次调用 closure
+```
+
+一次循环只处理一个边界清楚的目标。出现 `FAIL` 不表示整个项目终止：Agent 根据新 gap 修复、
+重跑或请求 Human 判断，然后再次登记新证据。只有该 Workstream 的所有必需节点满足后，Engine
+才把它置为 `SATISFIED`；冻结仍需走 4.6 的人工确认。
+
+### 4.2 需要人工判断时怎样暂停和继续
+
+人工干预不是后台进程等待 stdin。Engine 只把问题标为需要 Human；Agent 在当前对话解释，
+Human 回答后，Agent 才调用 CLI 保存结论。
+
+```mermaid
+flowchart TD
+    E1["Engine：closure 返回 executor=human"] --> A1["Agent：说明问题、已有事实、选项和影响"]
+    A1 --> H1{"Human：作出什么决定？"}
+    H1 -->|批准当前方案| A2["Agent：调用 review 或登记决定"]
+    H1 -->|要求修改范围或退出条件| A3["Agent：修改文档并重新 plan"]
+    H1 -->|信息仍不足| A4["Agent：保留开放问题；继续不受影响的工作"]
+    H1 -->|有依据地接受例外| A5["Agent：确认理由和影响后调用 waive"]
+    A2 --> E2["Engine：保存结论并重新计算依赖"]
+    A3 --> E3["Engine：创建新 revision，状态回到 REVIEW"]
+    A4 --> E4["Engine：相关目标保持 REVIEW_REQUIRED/BLOCKED"]
+    A5 --> E5["Engine：记录 WAIVED；保留理由和评审人"]
+    E2 --> A6["Agent：调用 closure 继续"]
+    E3 --> A1
+    E4 --> A6
+    E5 --> A6
+```
+
+四种结果的含义不同：
+
+- “批准”只批准当前计划或决定，不证明实现已经完成；
+- “修改”创建新 revision，旧方案保留为历史；
+- “继续澄清”不会伪造默认答案，相关目标仍未完成；
+- [`waiver（有理由接受例外）`](glossary.md#validity)得到 `WAIVED`，不是 `VALID`，也不是工具测试通过。
+
+### 4.3 覆盖率发现未覆盖项后，返回激励或用例工作
+
+覆盖率缺口不应直接由 VCOV 自己“补成已覆盖”。Agent 先判断缺的是场景、用例、检查器还是
+覆盖率模型；无法从事实确定时由 Human 决定目标是否仍然必需。
+
+```mermaid
+flowchart LR
+    A1["Agent：运行覆盖率工具并导出结果"] --> E1["Engine：登记 VCOV 证据"]
+    E1 --> E2{"Engine：是否存在 uncovered item？"}
+    E2 -->|否| E3["Engine：VCOV 当前目标继续收敛"]
+    E2 -->|是| A2["Agent：读取验证点、场景、用例和采样条件"]
+    A2 --> H1{"Human：该目标是否仍为必需？"}
+    H1 -->|必需；缺少输入场景| A3["Agent：重新 plan VSTIM，补激励"]
+    H1 -->|必需；缺少定向用例| A4["Agent：重新 plan VCASE，补 testcase"]
+    H1 -->|必需；采样或 bin 有误| A5["Agent：重新 plan VCOV，修正模型"]
+    H1 -->|有充分依据且可以接受| A6["Agent：按 Human 决定登记 waiver"]
+    A3 --> A7["Agent：运行定向仿真并生成新原始结果"]
+    A4 --> A7
+    A5 --> A7
+    A7 --> E4["Engine：检查新证据及其版本、依赖和文件指纹"]
+    E4 --> E2
+    A6 --> E5["Engine：保存 WAIVED 和理由，再重新计算 closure"]
+```
+
+典型底层调用如下；Human 只在对话中作决定：
 
 ```text
-verif-harness changed verification/coverage/model.sv
+# Agent：查询缺口和影响范围
 verif-harness closure
 verif-harness impact file:verification/coverage/model.sv
+
+# Agent：仅在 Human 确认需要补该场景后创建新的 VSTIM 方案
 verif-harness plan VSTIM --decision "补充 backpressure × error 组合"
 ```
 
-### 检查结果不一致，而且可能有多种原因
+### 4.4 检查结果不一致时怎样定位并回跳
 
-按固定规则提取的日志结果和波形仍不足以判断 DUT bug、checker bug 或规格含义时：
+仿真出现 [mismatch（实际结果与预期不一致）](glossary.md#runtime-evidence)时，固定规则只能确认
+“不一致确实发生”，不能自动断言是 DUT、检查器还是规格错误。
+
+```mermaid
+flowchart TD
+    A1["Agent：运行定向仿真"] --> A2["Agent：提取 mismatch、test、seed、log 和波形引用"]
+    A2 --> E1["Engine：登记 FAIL evidence；VCHK 节点变为 INVALID"]
+    E1 --> A3["Agent：比较输入、DUT 输出、参考结果、时序和 reset 状态"]
+    A3 --> D1{"事实是否足以定位？"}
+    D1 -->|检查器实现错误| A4["Agent：修复 VCHK；保持 DUT RTL 只读"]
+    D1 -->|激励或用例错误| A5["Agent：修复 VSTIM/VCASE"]
+    D1 -->|环境连接错误| A6["Agent：修复 VENV"]
+    D1 -->|可能是 DUT 问题| H1["Human：确认问题归属和后续处理；Agent 不修改 DUT"]
+    D1 -->|规格含义不清| H2["Human：决定正确行为；Agent 更新 VDOC 并重新 plan"]
+    D1 -->|仍无法判断| A7["Agent：调用 reason 形成候选原因和下一步检查"]
+    A7 --> H3["Human：选择补充检查或保留开放问题"]
+    H1 --> A8["Agent：等待 DUT 侧修复或登记外部问题"]
+    H2 --> A9["Agent：docs sync，并让受影响目标重新验证"]
+    H3 --> A10["Agent：执行补充实验"]
+    A4 --> A11["Agent：同 test/seed 重跑"]
+    A5 --> A11
+    A6 --> A11
+    A8 --> A11
+    A9 --> A11
+    A10 --> A11
+    A11 --> E2["Engine：检查新的当前版本证据"]
+    E2 --> D2{"结果是否满足规则？"}
+    D2 -->|否| A3
+    D2 -->|是| A12["Agent：调用 closure 继续下一个目标"]
+```
+
+分析辅助命令由 Agent 调用；它只产生候选原因和建议，不能替代重新运行和标准证据：
 
 ```text
+# Agent：在已有日志和波形仍不足以定位时调用
 verif-harness reason DebugEngineer "分析 mismatch 的候选根因" \
   --context results/mismatch.json --context waves/failing.vcd
 ```
 
-Verification Reasoning Engine 只返回分析请求和建议；真实验证动作仍须执行，并通过相应的
-标准 `evidence` 格式登记。
+### 4.5 文件变化后怎样重新验证
 
-### Human 明确接受一个未满足项（waiver）
+RTL、spec、验证实现、配置或结果提取程序发生变化后，旧证据仍保留供回看，但不能继续证明
+当前版本。Agent 明确登记变化，Engine 只让真正依赖该文件的节点失效。
 
-```text
-verif-harness waive NODE --reason "该场景在当前产品配置中不可达，依据 DEC-017"
+```mermaid
+flowchart LR
+    H1["Human：提供新的规格决定或 DUT 版本"] --> A1["Agent：发现文件 SHA-256 已变化"]
+    A0["Agent：修改验证代码或文档"] --> A1
+    A1 --> E1["Agent 调用 changed PATH；VDOC 使用 docs sync"]
+    E1 --> E2["Engine：文件标为 STALE"]
+    E2 --> E3["Engine：依赖该文件的节点标为 REVALIDATION_REQUIRED"]
+    E3 --> A2["Agent：调用 impact / closure 查看受影响目标"]
+    A2 --> H2{"Human：工程语义或范围是否变化？"}
+    H2 -->|是| A3["Agent：更新 VDOC 或重新 plan；等待 Human 评审"]
+    H2 -->|否| A4["Agent：按原计划重跑受影响检查"]
+    A3 --> A4
+    A4 --> E4["Engine：登记新证据；旧证据和旧 baseline 保留"]
+    E4 --> E5{"受影响目标是否重新满足？"}
+    E5 -->|否| A2
+    E5 -->|是| A5["Agent：继续 closure；需要时创建新 baseline"]
 ```
 
-waiver 只允许用于已规划 Workstream node，必须提供理由，reviewer 默认从 git identity
-推导。Agent 不得自行运行该命令。
+```text
+# Agent：登记变化并查询影响；Human 无需手工输入路径
+verif-harness changed verification/scoreboard.sv
+verif-harness impact file:verification/scoreboard.sv
+verif-harness closure
+```
+
+### 4.6 waiver、单 Workstream 冻结和最终冻结
+
+waiver 和 freeze 都必须由 Human 明确决定，但含义不同：waiver 接受一个仍未满足的目标；
+freeze 保存已经评审的状态。Engine 只检查并记录，不能自行批准。
+
+```mermaid
+flowchart TD
+    E1["Engine：closure 返回未满足目标"] --> A1["Agent：展示证据、原因、影响和可选处理"]
+    A1 --> H1{"Human：修复还是接受例外？"}
+    H1 -->|继续修复| A2["Agent：返回步骤 3 执行和重验"]
+    H1 -->|接受例外并给出依据| A3["Agent：调用 waive NODE --reason ..."]
+    A3 --> E2["Engine：验证目标已规划、理由非空；记录 WAIVED"]
+    A2 --> E3["Engine：登记新证据并重新计算 closure"]
+    E2 --> E4{"Workstream 所有退出条件是否满足？"}
+    E3 --> E4
+    E4 -->|否| A1
+    E4 -->|是| A4["Agent：向 Human 展示 SATISFIED 状态、证据和例外"]
+    A4 --> H2{"Human：是否同意冻结该 Workstream？"}
+    H2 -->|否| A2
+    H2 -->|是| A5["Agent：调用 freeze WORKSTREAM"]
+    A5 --> E5["Engine：复查条件并生成不可覆盖的 baseline"]
+    E5 --> E6{"七个 Workstream 是否都已 BASELINED？"}
+    E6 -->|否| A6["Agent：继续其他 Workstream"]
+    E6 -->|是| A7["Agent：展示项目级状态和未处理问题"]
+    A7 --> H3{"Human：是否同意保存最终基线？"}
+    H3 -->|否| A6
+    H3 -->|是| A8["Agent：调用 freeze final"]
+    A8 --> E7["Engine：生成项目级 baseline；不代替最终签核"]
+```
+
+```text
+# Human：先在当前对话说明接受例外的理由
+# Agent：收到明确决定后调用 CLI
+verif-harness waive NODE --reason "该场景在当前产品配置中不可达，依据 DEC-017"
+
+# Human：分别明确同意单 Workstream 和最终基线
+# Agent：分别在收到同意后调用 CLI
+verif-harness freeze VSTIM
+verif-harness freeze final
+```
+
+waiver 只允许用于已规划 Workstream node，必须提供理由；Agent 不得根据“暂时跑不过”自行
+waive。单 Workstream baseline 和 final baseline 都保留旧版本，后续变化必须重新验证并创建
+新 baseline，不能改写历史。
 
 ## 5. 状态、文件与治理边界
 
