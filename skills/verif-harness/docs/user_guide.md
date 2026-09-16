@@ -406,6 +406,130 @@ VENV 的基础节点可以分批完成，其他工作域只等待自己实际使
 VENV 已证明的最小运行能力，因此不会形成相互等待。完整节点图和依赖原因见
 [工作流之间怎样依赖](mechanism.md#workstream-dependencies)。
 
+### 六个 Workstream 并行执行的完整步骤与角色
+
+这里的“并行”表示六个 Workstream 可以同时处于 `ACTIVE`、交错推进，并且只等待自己实际
+依赖的节点；它不表示 Engine 启动六个后台进程。当前 Agent 依据 `closure` 返回的最小动作，
+在六条工作线之间切换。每次 CLI 调用仍是一次有边界的短操作。
+
+三种角色在并行执行中保持以下边界：
+
+- **Human**：决定工程语义、目标范围和优先级；回答 Agent 提出的工程问题；批准计划；决定
+  是否接受例外和冻结。Human 通常直接在对话中表达决定，不需要手工操作 SQLite 或拼接 CLI。
+- **Agent**：读取只读 RTL/spec、VDOC 和当前状态；向 Human 提问；起草并修改验证代码；调用
+  编译、仿真、回归和结果提取工具；检查输出；在 Human 明确决定后调用 CLI 保存决定。
+- **Engine**：保存每个 Workstream 的 revision、节点、依赖、证据和评审；检查报告格式、
+  文件 SHA-256、前置节点和自动退出条件；输入变化后标记需要重新验证的目标；通过 `closure`
+  列出下一项动作。Engine 不理解规格含义、不写验证代码，也不代替 Human 作决定。
+
+#### 共同执行流程
+
+| 步骤 | 责任主体 | 操作与结果 |
+| --- | --- | --- |
+| 0. 确认 VDOC 前置内容 | Human + Agent + Engine | Agent 根据六个工作域准备使用的节点检查 VDOC；Human 评审当前需要的验证计划、验证点、环境架构、比较、覆盖率、断言、用例和回归规则；Engine 只放行已经 `VALID/WAIVED` 的具体文档节点，不要求先冻结整个 VDOC |
+| 1. 读取全局状态 | Agent + Engine | Agent 调用 `status`、`inspect` 和 `closure`；Engine 返回六个 Workstream 当前 revision、未完成目标、前置依赖和开放问题 |
+| 2. 建立六份待评审方案 | Agent + Engine | Agent 分别调用 `plan VENV/VSTIM/VCHK/VCOV/VCASE/VREG`；Engine 为每个工作域创建独立 revision、能力节点、运行证据节点、退出条件和默认依赖 |
+| 3. 合并展示跨工作域问题 | Agent | Agent 将六份 proposal 中重复或相互影响的问题合并说明，例如接口采样规则同时影响 VENV、VSTIM 和 VCHK；不要求 Human 回答六遍同一个问题 |
+| 4. 作出工程决定 | Human + Agent | Human 确认各工作域目标、优先级、暂不纳入范围的内容及关键工程语义；Agent 记录答案、影响范围和需要重新规划的目标 |
+| 5. 审批各自计划 | Human | Human 分别对六个 Workstream 作出 `approve/reject/modify/clarify` 决定。批准表示同意“本轮准备达到什么状态”，不表示实现或测试已经完成 |
+| 6. 记录规划审批 | Agent + Engine | Human 明确决定后，Agent 调用 `review WORKSTREAM`；Engine 将对应 revision 置为 `ACTIVE` 或 `REVISE`，保留六份互相独立的评审记录 |
+| 7. 建立当前依赖图 | Engine | Engine 将模板中的默认依赖重新绑定到六个 Workstream 的当前 revision；尚未规划的前置目标产生 `PLAN_PREREQUISITE`，已规划但未满足的前置目标产生 `WAIT_FOR_DEPENDENCY` |
+| 8. 选择下一项有边界的工作 | Agent + Engine | Agent 调用 `closure`；Engine 按规则返回目标、原因、前置节点和建议执行者。Agent 一次选择一个可以安全执行的动作，不启动一个覆盖六个工作域的大型 task |
+| 9. 完成能力实现 | Agent；有歧义时 Human | Agent 编写或修改验证环境、激励、检查器、覆盖率、用例或回归工具，并运行编译、自检等确定性检查；出现接口语义、容差、范围或风险取舍时停止当前动作并询问 Human |
+| 10. 产生工具原始输出 | Agent + 工程工具 | Agent 调用编译、仿真、回归或覆盖率工具，产生 log、manifest、VDB/UCDB、波形等原始文件；工具退出码本身不直接改变节点状态 |
+| 11. 提取固定格式报告 | Agent + 项目结果提取程序 | 结果提取程序从原始文件生成 Workstream 专用 JSON，记录项目 revision、工具版本、原始文件路径和 SHA-256，以及该节点要求的计数或结果字段 |
+| 12. 登记和检查证据 | Agent + Engine | Agent 调用 `evidence` 或 `reachability`；Engine 检查格式、字段、文件 SHA-256、当前 revision、前置节点和相关证据，再自行生成 PASS/FAIL。Agent 不能直接指定标准节点的 verdict |
+| 13. 重新计算完成条件 | Engine + Agent | Engine 更新节点状态并重新运行 closure；Agent 向 Human 解释还缺什么、哪些工作可以继续并行、哪些工作必须等待 |
+| 14. 处理失败或开放问题 | Human + Agent + Engine | 确定性失败由 Agent 修复或重跑；语义无法确定时 Agent 向 Human 提问；Human 决定后，Agent 记录决定或重新 `plan`；Engine 只让受影响的目标失效 |
+| 15. 满足并冻结单个 Workstream | Human + Agent + Engine | Engine 判断该工作域 required 节点、依赖、相关证据和开放问题均已满足后置为 `SATISFIED`；Human 明确同意冻结后，Agent 调用 `freeze WORKSTREAM`；Engine 再次检查并创建不可覆盖的基线 |
+| 16. 处理后续变更 | Agent + Engine + Human | 验证文件、RTL 或 spec 变化后，Agent 调用 `changed PATH`；VDOC 变化使用 `docs sync`；Engine 标记受影响节点需要重新验证；涉及工程语义变化时由 Human 重新决定 |
+
+步骤 2、6 中的命令由 Agent 在当前会话执行。Human 的“批准”“修改”“接受例外”或“冻结”
+必须先在对话中明确表达，Agent 不能根据 CLI 默认参数推定已经获得同意。
+
+#### 六条工作线各自怎样执行
+
+| Workstream | Human 参与 | Agent 执行 | Engine 检查与状态 | 主要等待点 |
+| --- | --- | --- | --- | --- |
+| `VENV` | 确认接口接入、clock/reset、组件职责、配置传递和观测边界；决定最小 smoke 范围 | 只读分析 DUT；实现 interface、harness、agent/env 结构、构建和最小运行入口；运行 compile/elaboration 和 reset/idle smoke；生成 `EnvironmentEvidence/1` | 检查连接、组件结构、构建错误、正常/失败退出状态、clock/reset 和观测计数；要求 smoke 的环境 SHA-256 与当前构建一致 | 开始需要相关 VDOC；内部按 interface/clock-reset/topology → build → run/observation → smoke 推进，不等待完整 VSTIM/VCHK/VCOV/VCASE/VREG |
+| `VSTIM` | 确认 transaction 字段、握手、合法/非法输入、边界、并发和反压场景 | 实现 driver、sequence、constraint 和场景生成组件；运行场景探针和同 seed 复跑 | 检查实现已注册且可编译；要求 required 场景 `generated/driven/accepted/hits > 0`；检查重复运行的激励 SHA-256 一致 | 设计可与 VENV 并行；实现依赖 VENV interface/topology/build；可达性证据等待 VENV smoke/observation 和 VREG executor |
+| `VCHK` | 确认数值容差、时序对齐、顺序、异常、reset/flush 及 mismatch 处理原则 | 实现 reference-model adapter、scoreboard/checker 和 assertion；运行包含目标场景的比较和断言 | 检查检查组件对应当前实现；要求实际参与运行、比较次数非零、无 mismatch/residual；assertion 必须已挂接、触发且非空洞 | compare policy 可较早完成；实现等待 VENV build；运行证据等待 VSTIM reachability 和 VENV smoke |
+| `VCOV` | 确认 coverage goal、采样条件、bin/cross、不可达判断和豁免理由 | 实现 coverage model 和导出程序；采集/合并覆盖率数据库；分析 hole，必要时返回 VSTIM/VCASE 补场景 | 检查计划项映射、模型编译、数据库身份、合并错误和旧数据分片；每个 hole 必须 covered 或具有 Human 已接受的完整例外 | coverage model 可较早完成；收集等待 VENV build 和 VREG executor；正式 hole 分析使用 VSTIM reachability、VCASE targeted evidence 和 VENV smoke |
+| `VCASE` | 确认 testcase 范围、优先级、场景组合和每个验证点需要的检查方式 | 建立 feature/scenario 到 testcase 的矩阵；实现 testcase/virtual sequence；注册并运行定向测试 | 检查每个 required feature 有用例、每个用例只有一个当前实现且已编译注册；要求每个实现至少有一次定向 PASS | 矩阵可较早完成；实现等待 VSTIM implementation、VENV build 和 VREG executor；运行证据等待 VSTIM reachability、VCHK scoreboard 和 VENV smoke |
+| `VREG` | 确认 smoke/nightly/full 集合、seed、timeout、重跑、known-fail 和正式回归标准 | 建立运行清单、runner、collector 和失败重跑；执行批量回归；对每个失败做 same-seed 重跑和分类 | 检查 runner/collector 自检、执行结果、每个失败的唯一分析记录及其处理结果；根据当前依赖图自动核对所有 required 运行证据是否属于当前版本 | policy 可较早完成；executor 等待 VENV run-ready；完整 execution/triage/fresh evidence 位于其他工作域运行证据之后 |
+
+#### 实际并行节拍
+
+六个 Workstream 不应被理解成“全部同时开始、全部同时结束”。比较实用的并行节拍如下：
+
+| 批次 | 可以并行开展的工作 | 本批次结束后解锁的工作 |
+| --- | --- | --- |
+| A. 方案与规则 | 六个 Workstream 同时 plan/review；VENV 接口/结构设计；VSTIM transaction/场景设计；VCHK compare policy；VCOV coverage model；VCASE case matrix；VREG regression policy | 得到六份独立 `ACTIVE` 计划和当前节点依赖图 |
+| B. 公共运行基础 | VENV 构建、最小运行入口和观测点；同时继续编写不依赖运行结果的 VSTIM/VCHK/VCOV/VCASE 代码；VREG 完成 runner/collector 设计 | `build-ready`、`run-ready`、`environment-smoke-evidence` 和 `executor-ready` 逐步解锁运行类节点 |
+| C. 定向验证 | VSTIM 场景可达性和复现性；随后 VCHK 比较/断言、VCASE 定向运行可交错进行；VCOV 开始采集 | 获得 VSTIM、VCHK、VCASE、VCOV 的当前版本运行证据 |
+| D. 汇合与收敛 | VREG 执行正式集合并逐项分析失败；VCOV 根据结果补洞；发现问题时只返回受影响的工作域 | 六个 Workstream 分别达到 `SATISFIED`，等待 Human 决定是否逐个冻结 |
+
+一个批次不要求前一批次所有工作域整体完成。Engine 只依据具体节点判断能否推进。例如
+VCHK 的 compare policy 可以在 VENV 尚未 build 时完成，但 scoreboard 运行证据必须等待
+VENV smoke 和 VSTIM reachability。
+
+#### 并行执行中的人工问题
+
+当 `closure` 返回 `executor=human` 时：
+
+1. Engine 只报告目标、缺失信息和受影响节点，不自行选择答案；
+2. Agent 在当前对话解释选项、证据和工程影响；
+3. Human 作出决定，或要求保留为开放问题；
+4. Agent 将决定写入相应文档/plan，并调用结构化命令登记；
+5. Engine 重新计算依赖和未完成项；
+6. 当前没有依赖该决定的其他工作可以继续，不需要暂停六个 Workstream。
+
+不存在后台 worker 在终端中显示问题并等待 stdin 的机制。需要 Human 的动作始终回到当前
+Agent 会话；如果 Agent 会话中断，重新启动后通过 `status`、`inspect` 和 `closure` 从磁盘状态继续。
+
+#### 并行执行的典型命令顺序
+
+以下命令是 Agent 的底层操作示例，不是要求 Human 逐条手工执行：
+
+```text
+# Agent + Engine：读取全局状态并建立六份方案
+verif-harness status
+verif-harness plan VENV
+verif-harness plan VSTIM
+verif-harness plan VCHK
+verif-harness plan VCOV
+verif-harness plan VCASE
+verif-harness plan VREG
+
+# Human：在对话中逐个批准或要求修改
+# Agent + Engine：只记录 Human 已明确给出的结论
+verif-harness review VENV
+verif-harness review VSTIM
+verif-harness review VCHK
+verif-harness review VCOV
+verif-harness review VCASE
+verif-harness review VREG
+
+# Agent + Engine：反复选择一个当前可执行的最小动作
+verif-harness closure
+verif-harness status VENV
+verif-harness status VSTIM
+
+# Agent：执行工程工具并生成固定格式报告
+# Agent + Engine：登记报告；Engine 生成 PASS/FAIL 并重新计算 closure
+verif-harness evidence <NODE> <REPORT.json>
+verif-harness reachability <VSTIM-NODE> <REPORT.json>
+verif-harness closure
+
+# Human：某个 Workstream 满足条件后明确同意冻结
+# Agent + Engine：保存该 Workstream 当前基线
+verif-harness freeze <WORKSTREAM>
+```
+
+六个执行 Workstream 分别冻结后仍不代表项目已经最终签核。只有 VDOC 和六个执行
+Workstream 都已 `BASELINED`、检查结果没有未处理问题，并且 Human 明确要求保存最终基线时，
+Agent 才调用 `verif-harness freeze final`。
+
 ### 步骤 3：查看并完成系统建议的下一项工作
 
 ```text
