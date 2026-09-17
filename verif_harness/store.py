@@ -328,6 +328,47 @@ def atomic_text(path: Path, value: str) -> None:
     temporary.replace(path)
 
 
+def capability_config_projection(
+    path: Path, manifest: dict[str, Any], refresh: bool,
+) -> dict[str, Any] | None:
+    """Build the capability config while preserving non-bootstrap project fields."""
+    existing: dict[str, Any] = {}
+    if path.exists() or path.is_symlink():
+        if not refresh:
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise HarnessError(f"拒绝刷新非普通 .harness-config.json: {path}")
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HarnessError(f"无法读取现有 .harness-config.json: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise HarnessError("现有 .harness-config.json 顶层必须是对象")
+        existing = loaded
+
+    verif_root = str(manifest["verif_root"])
+    docs_output = "docs" if verif_root in {"", "."} else f"{verif_root.rstrip('/')}/docs"
+    existing_rtl = existing.get("rtl") if isinstance(existing.get("rtl"), dict) else {}
+    existing_verif = existing.get("verif") if isinstance(existing.get("verif"), dict) else {}
+    return {
+        **existing,
+        "project_name": manifest["project_name"],
+        "rtl": {
+            **existing_rtl,
+            "root": manifest["rtl_roots"][0],
+            "top_module": manifest["dut"]["top_module"],
+            "top_file": manifest["dut"]["top_file"],
+        },
+        "verif": {
+            **existing_verif,
+            "root": verif_root,
+            "docs_root": docs_output,
+            "verification_subdir": existing_verif.get("verification_subdir", "verification"),
+            "governance_subdir": existing_verif.get("governance_subdir", "governance"),
+        },
+    }
+
+
 def default_vdoc_document_root(manifest: dict[str, Any]) -> str:
     verif_root = str(manifest.get("verif_root") or ".").rstrip("/")
     return "docs/verification" if verif_root in {"", "."} else f"{verif_root}/docs/verification"
@@ -598,6 +639,38 @@ class ProjectStore:
     def initialized(self) -> bool:
         return (self.state / "project.json").is_file() and self.database.is_file()
 
+    def bootstrap_refresh_prompt(self) -> dict[str, Any]:
+        """Describe the Human confirmations required before a path refresh."""
+        self.require()
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        dut = manifest.get("dut", {})
+        current = {
+            "project_name": manifest.get("project_name"),
+            "rtl_roots": manifest.get("rtl_roots", []),
+            "dut_top": dut.get("top_module"),
+            "dut_top_file": dut.get("top_file"),
+            "docs_roots": manifest.get("docs_roots", []),
+            "verif_root": manifest.get("verif_root"),
+        }
+        return {
+            "schema": "BootstrapReconfiguration/1",
+            "status": "ACTION_REQUIRED",
+            "message": "请在当前对话重新确认 bootstrap 参数；尚未修改任何配置。",
+            "current": current,
+            "questions_for_human": [
+                {"id": "rtl_roots", "required": True, "current": current["rtl_roots"],
+                 "question": "只读 RTL root 是哪些目录？"},
+                {"id": "dut_top", "required": True, "current": current["dut_top"],
+                 "question": "DUT top 模块名是什么？"},
+                {"id": "dut_top_file", "required": True, "current": current["dut_top_file"],
+                 "question": "DUT top file 是哪个文件？"},
+                {"id": "docs_roots", "required": False, "current": current["docs_roots"],
+                 "question": "可选 RTL spec 路径是哪些；保留、替换还是移除？"},
+                {"id": "verif_root", "required": True, "current": current["verif_root"],
+                 "question": "项目内 verification 输出目录是什么？"},
+            ],
+        }
+
     def require(self) -> None:
         if not self.initialized:
             raise HarnessError(f"项目尚未 bootstrap: {self.root}")
@@ -634,6 +707,7 @@ class ProjectStore:
         rtl_roots: Iterable[str] = (), docs_roots: Iterable[str] = (),
         verif_root: str | None = None, dut_top: str | None = None,
         dut_top_file: str | None = None, refresh: bool = False,
+        clear_docs_roots: bool = False,
     ) -> dict[str, Any]:
         if self.initialized and not refresh:
             raise HarnessError("项目已经 bootstrap；如需刷新非语义清单，请使用 --refresh")
@@ -649,7 +723,11 @@ class ProjectStore:
         if runtime == "auto":
             selected = str(previous.get("runtime") or (detected[0] if len(detected) == 1 else "unselected"))
         rtl_values = [input_path(self.root, item) for item in rtl_roots] or list(previous.get("rtl_roots", []))
-        docs_values = [input_path(self.root, item) for item in docs_roots] or list(previous.get("docs_roots", []))
+        docs_values = (
+            [] if clear_docs_roots
+            else [input_path(self.root, item) for item in docs_roots]
+            or list(previous.get("docs_roots", []))
+        )
         verif_value = relative_path(self.root, verif_root) if verif_root is not None else str(previous.get("verif_root", "."))
         previous_dut = previous.get("dut", {}) if isinstance(previous.get("dut"), dict) else {}
         dut_top = dut_top or previous_dut.get("top_module")
@@ -680,16 +758,11 @@ class ProjectStore:
             "project_instructions": {"path": "AGENTS.md", "managed_by": ["bootstrap", "VDOC"]},
             "inventory_count": 0, "capabilities": caps, "updated_at": now(),
         }
-        update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, vdoc_document_root))
         capability_config = self.root / ".harness-config.json"
-        if not capability_config.exists():
-            docs_output = "docs" if verif_value in {"", "."} else f"{verif_value.rstrip('/')}/docs"
-            atomic_json(capability_config, {
-                "project_name": manifest["project_name"],
-                "rtl": {"root": rtl_values[0], "top_module": dut_top, "top_file": manifest["dut"]["top_file"]},
-                "verif": {"root": verif_value, "docs_root": docs_output,
-                          "verification_subdir": "verification", "governance_subdir": "governance"},
-            })
+        capability_projection = capability_config_projection(capability_config, manifest, refresh)
+        update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, vdoc_document_root))
+        if capability_projection is not None:
+            atomic_json(capability_config, capability_projection)
         inventory = source_inventory(self.root, [*rtl_values, *docs_values])
         manifest["inventory_count"] = len(inventory)
         atomic_json(self.state / "project.json", manifest)
@@ -2471,6 +2544,7 @@ class ProjectStore:
         closure_by_workstream = {item["workstream"]: item for item in summary["closures"]}
 
         workstream_views: list[dict[str, Any]] = []
+        waiting_for_human: list[dict[str, Any]] = []
         current_desired_ids: set[str] = set()
         for plan in summary["workstreams"]:
             desired_nodes: list[dict[str, Any]] = []
@@ -2505,6 +2579,30 @@ class ProjectStore:
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
                 })
+            workstream_human_actions = [item for item in human_actions if (
+                item["target"] == plan["workstream"] or item["target"] in desired_ids
+            )]
+            explicit_waiting = [
+                {**item, "source": "human-action"}
+                for item in workstream_human_actions if item["status"] == "OPEN"
+            ]
+            closure_waiting = [
+                {
+                    "id": item["id"],
+                    "source": "closure",
+                    "target": item["target"],
+                    "target_type": "workstream" if item["target"] == f"workstream:{plan['workstream']}" else "node",
+                    "action": item["kind"],
+                    "status": "OPEN",
+                    "reviewer": "待处理",
+                    "reason": item["reason"],
+                    "created_at": plan["updated_at"],
+                }
+                for item in closure_by_workstream.get(plan["workstream"], {}).get("actions", [])
+                if item.get("executor") == "human"
+            ]
+            workstream_waiting = [*closure_waiting, *explicit_waiting]
+            waiting_for_human.extend(workstream_waiting)
             workstream_views.append({
                 "workstream": plan["workstream"],
                 "display_name": plan["display_name"],
@@ -2525,9 +2623,11 @@ class ProjectStore:
                     "lifecycle": plan["lifecycle"], "actions": [],
                 }),
                 "activities": [item for item in activities if item["node_id"] in desired_ids],
-                "human_actions": [item for item in human_actions if (
-                    item["target"] == plan["workstream"] or item["target"] in desired_ids
-                )],
+                "human_actions": workstream_human_actions,
+                # A closure review request is just as actionable as an explicit Human request.
+                # Keep both in one derived list so the dashboard cannot report zero while a
+                # Workstream is in REVIEW/REVISE and waiting for a Human decision.
+                "waiting_for_human": workstream_waiting,
                 "reviews": [item for item in reviews if item["workstream"] == plan["workstream"]],
             })
 
@@ -2571,6 +2671,7 @@ class ProjectStore:
             "activity_history": activities,
             "human_actions": current_human_actions,
             "human_action_history": human_actions,
+            "waiting_for_human": waiting_for_human,
             "reviews": reviews,
             "baselines": baselines,
             "events": events,

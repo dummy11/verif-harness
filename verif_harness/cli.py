@@ -103,12 +103,18 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--runtime", choices=("auto", "codex", "kimi", "claude", "none"), default="auto")
     bootstrap.add_argument("--rtl-root", action="append", default=[],
                            help="只读 RTL 根目录；可重复，也可显式位于 project root 外")
-    bootstrap.add_argument("--docs-root", action="append", default=[],
-                           help="可选只读 RTL spec 文件或目录；可重复，也可位于 project root 外")
+    docs_input = bootstrap.add_mutually_exclusive_group()
+    docs_input.add_argument("--docs-root", action="append", default=[],
+                            help="可选只读 RTL spec 文件或目录；可重复，也可位于 project root 外")
+    docs_input.add_argument("--clear-docs-root", action="store_true",
+                            help="refresh 时明确清除已有 RTL spec 输入")
     bootstrap.add_argument("--verif-root", help="project root 内的验证资产输出根目录")
     bootstrap.add_argument("--dut-top")
     bootstrap.add_argument("--dut-top-file", help="属于某个 --rtl-root 的 DUT top 文件")
-    bootstrap.add_argument("--refresh", action="store_true")
+    bootstrap.add_argument(
+        "--refresh", action="store_true",
+        help="重新配置；未提供其他参数时只返回待 Human 确认的问题，不写入配置",
+    )
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")
     project_argument(status)
@@ -388,8 +394,16 @@ def main(arguments: list[str] | None = None) -> int:
             return 0
         store = ProjectStore(args.project_root.resolve())
         if args.command == "bootstrap":
-            emit(store.bootstrap(args.project_name, args.runtime, args.rtl_root, args.docs_root,
-                                 args.verif_root, args.dut_top, args.dut_top_file, args.refresh))
+            supplied_reconfiguration = any((
+                args.project_name, args.rtl_root, args.docs_root, args.clear_docs_root,
+                args.verif_root, args.dut_top, args.dut_top_file,
+            ))
+            if args.refresh and store.initialized and not supplied_reconfiguration:
+                emit(store.bootstrap_refresh_prompt())
+            else:
+                emit(store.bootstrap(args.project_name, args.runtime, args.rtl_root, args.docs_root,
+                                     args.verif_root, args.dut_top, args.dut_top_file, args.refresh,
+                                     args.clear_docs_root))
         elif args.command == "status":
             emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
         elif args.command == "dashboard":

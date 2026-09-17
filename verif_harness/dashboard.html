@@ -220,7 +220,7 @@
     }
     function overviewMetrics() {
       const s = state.snapshot, activities = s.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
-      const human = pendingHuman(s.human_actions);
+      const human = s.waiting_for_human || pendingHuman(s.human_actions);
       const risk = (s.node_status.INVALID || 0) + (s.node_status.REVALIDATION_REQUIRED || 0) + (s.node_status.STALE || 0);
       return [
         ['工作域', s.workstreams.length, `${s.workstreams.filter(w => w.lifecycle === 'BASELINED').length} 已冻结`],
@@ -231,7 +231,7 @@
       ];
     }
     function renderOverview() {
-      const s = state.snapshot, metrics = overviewMetrics(), openHuman = pendingHuman(s.human_actions);
+      const s = state.snapshot, metrics = overviewMetrics(), openHuman = s.waiting_for_human || pendingHuman(s.human_actions);
       $('#main').innerHTML = `<div class="page-head"><div><h1>项目验证总览</h1><p>实时汇总 Workstream、节点、Activity、证据和人工决定。百分比只表示必需节点满足数量，不代表功能验证充分性。</p></div><div class="page-actions"><button class="btn primary" id="global-action">提交人工意见</button></div></div>
         <div class="grid summary-grid">${metrics.map(m => `<article class="card metric"><div class="label">${escapeHtml(m[0])}</div><div class="value">${escapeHtml(m[1])}</div><div class="hint">${escapeHtml(m[2])}</div></article>`).join('')}</div>
         <section class="section"><div class="section-head"><h2>Workstream</h2><span class="count">${s.workstreams.length}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划 Workstream</div>'}</div></section>
@@ -245,7 +245,7 @@
     }
     function wsCard(w) {
       const p = percent(w.progress), running = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)).length;
-      const human = pendingHuman(w.human_actions).length;
+      const human = (w.waiting_for_human || pendingHuman(w.human_actions)).length;
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(w.display_name)}</strong>${statusBadge(w.lifecycle)}<span class="revision">r${w.revision}</span></div>
         <div class="ws-objective">${escapeHtml(w.objective)}</div><div class="progress" title="节点数量进度，不表示验证充分性"><span style="width:${p}%"></span></div><div class="progress-text"><span>${w.progress.satisfied}/${w.progress.required} 必需节点</span><span>${p}%</span></div>
         <div class="chips"><span class="badge RUNNING">${running} Activity</span><span class="badge ${human ? 'OPEN':'RECORDED'}">${human} 等待 Human</span>${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(k)}</span>`).join('')}</div></article>`;
@@ -257,7 +257,7 @@
     }
     function humanRows(items) {
       if (!items.length) return '<div class="empty">当前没有等待 Human 的事项</div>';
-      return items.map(a => `<div class="list-row"><div><div class="row-title">${escapeHtml(a.action)} · ${escapeHtml(a.target)}</div><div class="row-meta">${escapeHtml(a.reason)} · ${escapeHtml(a.reviewer)} · ${shortTime(a.created_at)}</div></div>${statusBadge(a.status)}</div>`).join('');
+      return items.map(a => `<div class="list-row"><div><div class="row-title">${escapeHtml(a.action)} · ${escapeHtml(a.target)}</div><div class="row-meta">${escapeHtml(a.reason)} · ${escapeHtml(a.source === 'closure' ? 'Closure 要求人工处理' : a.reviewer)} · ${shortTime(a.created_at)}</div></div>${statusBadge(a.status)}</div>`).join('');
     }
     function evidenceRows(items) {
       if (!items.length) return '<div class="empty">尚无证据</div>';
@@ -265,7 +265,7 @@
     }
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
-      const p = percent(w.progress), openHuman = pendingHuman(w.human_actions), actions = w.closure.actions || [];
+      const p = percent(w.progress), openHuman = w.waiting_for_human || pendingHuman(w.human_actions), actions = w.closure.actions || [];
       $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(w.display_name)}</h1><p>${escapeHtml(w.objective)}</p></div><div class="page-actions"><button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button></div></div>
         <div class="grid summary-grid"><article class="card metric"><div class="label">生命周期</div><div class="value" style="font-size:18px">${statusBadge(w.lifecycle)}</div><div class="hint">revision ${w.revision}</div></article><article class="card metric"><div class="label">必需节点</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 节点满足</div></article><article class="card metric"><div class="label">当前 Activity</div><div class="value">${w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)).length}</div><div class="hint">已登记的实时工作</div></article><article class="card metric"><div class="label">等待 Human</div><div class="value">${openHuman.length}</div><div class="hint">随时可以处理</div></article><article class="card metric"><div class="label">Closure 动作</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '退出条件已满足' : '仍有缺口'}</div></article></div>
         <div class="grid two-col"><section><div class="section-head"><h2>节点</h2><span class="count">按目标、状态或 ID 搜索</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>目标</th><th>状态</th><th>角色</th><th>证据 / Activity</th></tr></thead><tbody>${nodeRows(w.nodes)}</tbody></table></div></section><aside><div class="section-head"><h2>退出条件</h2></div><div class="card metric"><ul class="exit-list">${w.exit_criteria.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div><div class="section"><div class="section-head"><h2>等待 Human</h2></div><div class="card list-card attention">${humanRows(openHuman)}</div></div></aside></div>

@@ -63,6 +63,9 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(snapshot["workstreams"][0]["workstream"], "VCHK")
         self.assertTrue(snapshot["workstreams"][0]["nodes"])
         self.assertIn("closure", snapshot["workstreams"][0])
+        self.assertEqual(snapshot["waiting_for_human"][0]["action"], "HUMAN_REVIEW")
+        self.assertEqual(snapshot["waiting_for_human"][0]["source"], "closure")
+        self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
 
     def test_human_can_comment_and_review_without_waiting_for_closure(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]
@@ -77,6 +80,11 @@ class DashboardTest(unittest.TestCase):
         }, self.server.write_token)["result"]
         self.assertEqual(reviewed["lifecycle"], "REVISE")
         self.assertEqual(self.store.workstream("VCHK")["lifecycle"], "REVISE")
+        snapshot = self.store.dashboard_snapshot()
+        self.assertEqual(
+            {item["source"] for item in snapshot["waiting_for_human"]},
+            {"closure", "human-action"},
+        )
 
     def test_write_api_requires_dashboard_token(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]

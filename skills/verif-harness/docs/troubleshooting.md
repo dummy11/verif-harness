@@ -1,5 +1,33 @@
 # v1 troubleshooting
 
+<a id="dashboard-无法从本地浏览器打开"></a>
+## Dashboard 无法从本地浏览器打开
+
+先区分两个端口：Dashboard 默认监听**远端服务器**的 `127.0.0.1:8765`；浏览器访问的是
+**本地电脑**的转发端口。两者可以使用不同数字，但 SSH `LocalForward` 的右侧必须等于
+Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监听 `0.0.0.0`。
+
+按以下顺序检查：
+
+1. 在远端服务器确认 `verif-harness dashboard` 仍在运行，并记下打印的端口。
+2. 在本地电脑保持 `ssh -N ...` 隧道进程运行；该命令没有 shell 提示符是正常现象。
+3. 本地执行 `curl http://127.0.0.1:<local-port>/healthz`。返回 `status: ok` 才说明隧道完整。
+4. 浏览器打开同一个本地端口，而不是远端私网 IP。
+
+常见 SSH 错误：
+
+- `connect to host <jump> port 22: Operation timed out`：本地到跳板机尚未建立；检查 VPN，或把
+  跳板机实际端口写入 `ProxyJump` 主机配置。命令行 `-p` 默认控制最终服务器，不控制跳板机。
+- 跳板机 `Permission denied (publickey,...)`：跳板机没有使用正确密钥。为跳板机单独配置
+  `IdentityFile` 和 `IdentitiesOnly yes`；不要假设最终服务器的 `-i` 会自动传给 ProxyJump。
+- `Connection closed by UNKNOWN port 65535`：通常是前面的跳板机连接或认证失败引发的附带信息，
+  先处理上一条真正错误。
+- `bind ... Address already in use`：本地端口被占用。把本地端口改成其他值，例如
+  `LocalForward 18765 127.0.0.1:8765`，浏览器相应访问 `127.0.0.1:18765`。
+- `/healthz` 连接失败：Dashboard 已停止、隧道未运行，或转发右侧端口与远端 Dashboard 不一致。
+
+完整的单跳和双跳配置见[从本地浏览器访问远端 Dashboard](user_guide.md#从本地浏览器访问远端-dashboard)。
+
 ## Workstream 不能 freeze
 
 让 Agent 运行 `verif-harness closure evaluate --workstream NAME`，查看输出中的每一条

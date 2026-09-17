@@ -176,6 +176,12 @@ VDOC”的规则。已有项目说明保留在 verif-harness 标记之外，不�
 验证设计写在 Markdown，文件版本、评审和证据状态保存在 SQLite。初始化后可用 `status`
 和 `doctor` 检查项目状态。
 
+路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
+静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec
+和 verification 输出目录。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
+`project.json`、`inventory.json`、`AGENTS.md` 和 `.harness-config.json` 中由 bootstrap 管理的
+路径字段；已有 Workstream、证据、评审和文档治理状态保持不变。
+
 这一步的角色边界是：
 
 - **Human**：明确提供 workspace、RTL root、DUT top、DUT top file 和可选 spec；决定输入错误
@@ -1124,9 +1130,86 @@ Human 不需要等到某个 Workstream 满足全部[完成条件](glossary.md#ga
 verif-harness dashboard --open-browser
 ```
 
+#### 从本地浏览器访问远端 Dashboard
+
+Dashboard 始终只监听它所在服务器的 `127.0.0.1`。不指定 `--port` 时，远端监听端口固定为
+`8765`；启动日志打印的 URL 是最终依据。如果浏览器和 Dashboard 在同一台机器，直接打开该
+URL。通过 SSH 使用远端服务器时，不要依赖 `--open-browser`：远端服务器、跳板机和本地电脑的
+`127.0.0.1` 分别代表三台不同机器，必须先建立 SSH 本地端口转发。
+
+单跳 SSH，即本地电脑可以直接登录远端服务器：
+
+```bash
+# 本地电脑执行；保持该进程运行
+ssh -N \
+  -L 8765:127.0.0.1:8765 \
+  <remote-user>@<remote-host>
+```
+
+双跳 SSH 推荐写入本地电脑的 `~/.ssh/config`。跳板机使用非标准端口或专用密钥时，必须把这些
+参数写在跳板机自己的 `Host` 条目里；命令行最外层的 `-p` 只控制最终服务器端口：
+
+```sshconfig
+Host verification-jump
+    HostName <jump-host>
+    User <jump-user>
+    Port <jump-port>
+    IdentityFile ~/.ssh/<private-key>
+    IdentitiesOnly yes
+
+Host verification-server
+    HostName <remote-private-host>
+    User <remote-user>
+    IdentityFile ~/.ssh/<private-key>
+    IdentitiesOnly yes
+    ProxyJump verification-jump
+    LocalForward 8765 127.0.0.1:8765
+```
+
+先在远端服务器启动 Dashboard，再在本地电脑建立隧道：
+
+```bash
+# 远端服务器：默认监听远端 127.0.0.1:8765
+verif-harness dashboard
+
+# 本地电脑：保持运行，不会出现新的 shell 提示符
+ssh -N verification-server
+
+# 另一个本地终端：确认请求确实到达远端 Dashboard
+curl http://127.0.0.1:8765/healthz
+```
+
+健康检查应返回 `status: ok` 和远端项目路径。随后在本地浏览器打开
+`http://127.0.0.1:8765/`。如果本地 `8765` 已占用，可以只改变本地一侧，例如
+`LocalForward 18765 127.0.0.1:8765`，此时浏览器访问 `http://127.0.0.1:18765/`；远端
+Dashboard 端口仍是 `8765`。如果远端启动时使用 `--port 9000`，转发右侧也必须改成
+`127.0.0.1:9000`。
+
+不要为了省略 SSH 转发而把 Dashboard 暴露到 `0.0.0.0`。Dashboard 含有带本机会话令牌的
+Human 写操作入口，当前设计只允许 loopback。常见连接问题见
+[Dashboard 无法从本地浏览器打开](troubleshooting.md#dashboard-无法从本地浏览器打开)。
+
 实时显示需要 Agent 或项目工具把正在做的工作登记为
 [Activity（当前活动）](glossary.md#dashboard)。登记活动不会把目标改成 `VALID`；最终结论仍必须来自
-规定格式的证据或 Human 明确作出的评审、豁免和冻结决定。
+规定格式的证据或 Human 明确作出的评审、豁免和冻结决定。`当前 Activity` 只统计已经登记且尚未
+结束的具体实现、编译、仿真或分析动作，不是 Workstream 完成百分比。Agent 在目标节点上开始任何
+非简单工程动作前必须登记 Activity；否则 Dashboard 无法从另一个终端的普通进程或对话文字中猜出
+它正在做什么。
+
+`等待 Human` 同时统计两类事项：Closure 根据 Workstream 生命周期产生的人工评审要求，以及 Human
+主动登记但尚未处理的修改或澄清请求。因此 VDOC 处于 `REVIEW`/`REVISE` 时，即使尚未有人提交评论，
+这里也会显示 `HUMAN_REVIEW`，不会再错误显示为 0。
+
+Dashboard 的 Human 输入会立即保存并刷新页面，但不会作为聊天消息直接打断正在运行的 Codex/Kimi。
+Agent 必须在开始、恢复和结束 Activity 时读取尚未处理的输入：
+
+```text
+# Agent：在工作边界读取；Human 通常不直接输入此命令
+verif-harness human-action list --status OPEN
+```
+
+如果 Agent 正阻塞在一个外部编译或仿真进程里，输入会安全地留在 SQLite，等 Agent 到达下一个检查点
+再处理。需要立即停止工具时，Human 仍应在 Agent 对话或终端中明确要求停止。
 
 ```text
 # Agent：开始一个有边界的实现、编译、仿真或分析动作时登记
@@ -1239,12 +1322,17 @@ verif-harness bootstrap [OPTIONS]
 | `--runtime auto\|codex\|kimi\|claude\|none` | 记录项目推理 runtime；setup 后通常无需指定 |
 | `--rtl-root PATH` | 声明只读 RTL 根目录；可重复；允许显式项目外路径 |
 | `--docs-root PATH` | 声明只读 RTL spec 文件或目录；可重复；允许显式项目外路径 |
+| `--clear-docs-root` | refresh 时明确移除以前登记的可选 RTL spec 输入；不能与 `--docs-root` 同时使用 |
 | `--verif-root PATH` | 声明项目内验证资产输出根目录，不允许位于项目外 |
 | `--dut-top MODULE` | 明确 DUT top；不会自动猜测 |
 | `--dut-top-file PATH` | 明确 DUT top 文件；必须属于某个 `--rtl-root`，允许位于项目外 |
-| `--refresh` | 重新读取文件和工具清单；保留已有目标、证据和评审状态 |
+| `--refresh` | 重新配置并读取文件/工具清单；同步 `.harness-config.json` 管理字段，保留已有目标、证据和评审状态 |
 
-已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。
+已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。对话中只需提出
+`bootstrap --refresh`；Agent 必须重新确认参数，再展开成底层完整命令。
+如果底层 CLI 在没有其他参数的情况下收到裸 `bootstrap --refresh`，它只返回
+`BootstrapReconfiguration/1` 的当前值与待确认问题，不修改任何文件；这是防止 Agent 跳过对话的
+保护措施。
 上述参数属于底层自动化接口；Skill 首次初始化必须先在对话中收齐三个必填 DUT 字段。
 用户提供的可选 spec 路径映射到 `--docs-root`，未提供时不推导或补填。
 
@@ -1266,8 +1354,8 @@ verif-harness dashboard --snapshot
 | 参数 | 说明 |
 | --- | --- |
 | `--host` | 监听地址；只接受 `127.0.0.1` 或 `localhost`，默认 `127.0.0.1` |
-| `--port` | 本机端口，默认 `8765`；`0` 表示由操作系统选择空闲端口 |
-| `--open-browser` | 启动后打开默认浏览器 |
+| `--port` | Dashboard 所在机器的监听端口，默认固定为 `8765`；`0` 表示由操作系统选择空闲端口 |
+| `--open-browser` | 仅当浏览器与 Dashboard 位于同一台机器时使用；SSH 场景应建立端口转发 |
 | `--snapshot` | 只输出一次完整 JSON 快照后退出，适合 CI 或自定义前端 |
 
 页面通过本机事件流接收状态更新，不轮询外部服务。关闭页面或停止 Dashboard 不会停止仿真，

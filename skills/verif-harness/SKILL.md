@@ -33,7 +33,12 @@ Workstream. Project lifecycle is separate.
   `dut top`, and `dut top file`, with optional `spec`. Never discover candidates
   or run initialization while mandatory inputs are missing. After validation,
   create or refresh only the marked verif-harness block in the project-root
-  `AGENTS.md`; preserve all project-owned instructions outside it.
+  `AGENTS.md`; preserve all project-owned instructions outside it. When the Human
+  requests only `bootstrap --refresh`, treat that as a request to reopen the
+  bootstrap dialogue: show the current values, reconfirm every path and DUT field,
+  then call the low-level CLI with the complete confirmed parameter set. Refresh
+  must synchronize bootstrap-managed `.harness-config.json` fields while preserving
+  optional project-owned fields.
 - Verification Planner (`plan`): combine a detailed Workstream template, current
   Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
@@ -66,7 +71,13 @@ Workstream. Project lifecycle is separate.
   `vclosure/INSTRUCTIONS.md`.
 - Human dashboard (`dashboard`): start the loopback-only live view when the Human
   asks to monitor Workstreams, nodes, evidence, progress, or intervene before
-  closure. Use `activity` to register bounded Agent/tool work and
+  closure. After a desired-state node exists, register every non-trivial bounded
+  Agent/tool operation with `activity start` before doing the work, update it
+  when progress changes or Human input is required, and close it with the real
+  terminal result. Before starting, resuming, or completing an Activity, read
+  open `human-action` records and apply relevant Human input. Dashboard writes
+  are persistent control-plane input, not a direct interrupt or chat-message
+  channel into a running Agent. Use
   `human-action` to preserve comments or requested changes. Dashboard state is
   an audited view of the same model; never manufacture progress or validity.
 - Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic

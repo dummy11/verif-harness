@@ -209,7 +209,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         instructions = self.root / "AGENTS.md"
         instructions.write_text("# Team policy\n\nKeep this.\n", encoding="utf-8")
         self.bootstrap()
-        self.run_cli("bootstrap", "--refresh")
+        self.run_cli(
+            "bootstrap", "--refresh", "--rtl-root", "rtl", "--verif-root", "verification",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+        )
         source = instructions.read_text(encoding="utf-8")
         self.assertIn("# Team policy", source)
         self.assertIn("Keep this.", source)
@@ -222,6 +225,21 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--refresh", result.stderr)
 
+    def test_bare_refresh_returns_reconfiguration_questions_without_writing(self) -> None:
+        original = self.bootstrap()
+        prompted = self.run_cli("bootstrap", "--refresh")
+        self.assertEqual(prompted["schema"], "BootstrapReconfiguration/1")
+        self.assertEqual(prompted["status"], "ACTION_REQUIRED")
+        self.assertEqual(prompted["current"]["rtl_roots"], ["rtl"])
+        self.assertEqual(
+            {item["id"] for item in prompted["questions_for_human"]},
+            {"rtl_roots", "dut_top", "dut_top_file", "docs_roots", "verif_root"},
+        )
+        unchanged = json.loads(
+            (self.root / ".verif-harness/project.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(unchanged["updated_at"], original["updated_at"])
+
     def test_bootstrap_can_project_complete_dut_identity(self) -> None:
         payload = self.run_cli(
             "bootstrap", "--runtime", "none", "--rtl-root", "rtl", "--verif-root", "verification",
@@ -231,6 +249,53 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(payload["dut"]["top_module"], "dut")
         self.assertEqual(config["rtl"]["top_file"], "rtl/dut.sv")
         self.assertEqual(config["verif"]["docs_root"], "verification/docs")
+
+    def test_bootstrap_refresh_synchronizes_capability_config_and_preserves_optional_fields(self) -> None:
+        self.bootstrap()
+        config_path = self.root / ".harness-config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["verif"]["verification_subdir"] = "plans"
+        config["reference_model"] = {"enabled": True, "spec_path": "/reviewed/model.md"}
+        config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
+
+        replacement = self.root / "rtl-v2"
+        replacement.mkdir()
+        top = replacement / "dut_v2.sv"
+        top.write_text("module dut_v2; endmodule\n", encoding="utf-8")
+        refreshed = self.run_cli(
+            "bootstrap", "--refresh", "--project-name", "updated-project",
+            "--rtl-root", "rtl-v2", "--verif-root", "sim",
+            "--dut-top", "dut_v2", "--dut-top-file", "rtl-v2/dut_v2.sv",
+        )
+        synchronized = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(refreshed["rtl_roots"], ["rtl-v2"])
+        self.assertEqual(synchronized["project_name"], "updated-project")
+        self.assertEqual(synchronized["rtl"], {
+            "root": "rtl-v2", "top_module": "dut_v2", "top_file": "rtl-v2/dut_v2.sv",
+        })
+        self.assertEqual(synchronized["verif"]["root"], "sim")
+        self.assertEqual(synchronized["verif"]["docs_root"], "sim/docs")
+        self.assertEqual(synchronized["verif"]["verification_subdir"], "plans")
+        self.assertEqual(synchronized["verif"]["governance_subdir"], "governance")
+        self.assertEqual(
+            synchronized["reference_model"],
+            {"enabled": True, "spec_path": "/reviewed/model.md"},
+        )
+
+    def test_bootstrap_refresh_can_explicitly_clear_optional_spec_inputs(self) -> None:
+        specification = self.root / "spec.md"
+        specification.write_text("# DUT specification\n", encoding="utf-8")
+        self.run_cli(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--docs-root", "spec.md", "--verif-root", "verification",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+        )
+        refreshed = self.run_cli(
+            "bootstrap", "--refresh", "--clear-docs-root", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut",
+            "--dut-top-file", "rtl/dut.sv",
+        )
+        self.assertEqual(refreshed["docs_roots"], [])
 
     def test_bootstrap_accepts_explicit_external_readonly_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as external_directory:
@@ -256,7 +321,11 @@ class V1ControlPlaneTest(unittest.TestCase):
             self.assertIn(str(specification.resolve()), {item["path"] for item in inventory})
             config = json.loads((self.root / ".harness-config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["rtl"]["root"], str(rtl.resolve()))
-            refreshed = self.run_cli("bootstrap", "--refresh")
+            refreshed = self.run_cli(
+                "bootstrap", "--refresh", "--rtl-root", str(rtl),
+                "--docs-root", str(specification), "--verif-root", "verification",
+                "--dut-top", "external_dut", "--dut-top-file", str(top),
+            )
             self.assertEqual(refreshed["rtl_roots"], [str(rtl.resolve())])
             changed = self.run_cli("changed", str(top))
             self.assertEqual(changed["subject"], f"file:{top.resolve()}")
@@ -664,7 +733,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         desired = self.design("VDOC", "--desired", "reviewed")["desired_state"][0]["id"]
         evidence = self.root / "review.json"; evidence.write_text("{}\n", encoding="utf-8")
         self.run_cli("record", "evidence", "--subject", desired, "--kind", "review", "--source", "review.json", "--verdict", "pass")
-        self.run_cli("bootstrap", "--refresh")
+        self.run_cli(
+            "bootstrap", "--refresh", "--rtl-root", "rtl", "--verif-root", "verification",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+        )
         states = {item["id"]: item["status"] for item in self.run_cli("model", "show")["nodes"]}
         self.assertEqual(states[desired], "VALID")
 

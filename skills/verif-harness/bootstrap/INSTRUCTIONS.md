@@ -1,7 +1,11 @@
 # bootstrap mode
 
-Use this once when onboarding a project, and later with `--refresh` only to
-refresh non-semantic inventory/capabilities.
+Use this once when onboarding a project. A later Human request containing only
+`bootstrap --refresh` reopens the same conversational configuration flow; it is
+not permission to silently reuse the old paths.
+The low-level CLI also fails closed: bare `bootstrap --refresh` returns a
+`BootstrapReconfiguration/1` `ACTION_REQUIRED` payload containing current values
+and questions, and does not write project state.
 
 1. Use the workspace selected by setup and read its repository instructions.
 2. Require the user to explicitly provide DUT identity in the live conversation:
@@ -9,7 +13,10 @@ refresh non-semantic inventory/capabilities.
    specification file or directory) is optional. Ask for missing fields together.
    Values explicitly supplied by the user in this conversation count as answers.
    Do not discover candidate directories, guess a top module, or silently use
-   existing configuration as the user's answer. Do not run bootstrap until all
+   existing configuration as the user's answer. For refresh, read current values
+   only so they can be shown as defaults; ask the Human to confirm, replace, or
+   remove them. Reconfirm `rtl root`, `dut top`, `dut top file`, optional `spec`,
+   and the verification output root. Do not run bootstrap until all
    three mandatory fields have been provided. Omitting spec must not block setup.
 3. Validate only the supplied paths read-only. If a path is missing, ambiguous,
    or unsupported by the CLI, explain the issue and ask the user to correct it;
@@ -18,9 +25,10 @@ refresh non-semantic inventory/capabilities.
    project root when explicitly supplied. The top file must belong to one of the
    declared RTL roots. Keep external paths as read-only absolute input identities;
    all generated verification output and control state remain inside the project.
-   Run the Skill launcher with `bootstrap --rtl-root PATH --dut-top NAME
-   --dut-top-file PATH`. If spec was supplied, pass its exact path through the
-   existing `--docs-root PATH` input; do not infer another documentation root.
+   Run the Skill launcher with `bootstrap --refresh --rtl-root PATH --dut-top NAME
+   --dut-top-file PATH --verif-root PATH` for refresh. If spec was supplied, pass
+   its exact path through `--docs-root PATH`; if the Human explicitly removes the
+   previous optional spec, pass `--clear-docs-root`. Do not infer another path.
 4. Create or refresh the marked verif-harness managed block in the project-root
    `AGENTS.md`. Preserve all content outside the markers. The block records DUT
    identity, read-only input boundaries, the governance-state source,
@@ -31,12 +39,16 @@ refresh non-semantic inventory/capabilities.
 6. Continue with `plan WORKSTREAM`; bootstrap must not decide coverage, tests, interfaces,
    reference models, acceptance criteria, or Human Decisions.
 
-When DUT identity is complete, bootstrap also writes the lower-level capability
-projection `.harness-config.json` without overwriting an existing file. VDOC later
+When DUT identity is complete, initial bootstrap also writes the lower-level capability
+projection `.harness-config.json`. Refresh synchronizes its bootstrap-managed
+`project_name`, `rtl.*`, `verif.root`, and `verif.docs_root` fields with the newly
+confirmed manifest while preserving optional project-owned sections and customized
+verification/governance subdirectory names. VDOC later
 refreshes the same managed `AGENTS.md` block with its actual document root and
 document routes; it must not create a competing instruction file.
-Never overwrite existing state implicitly. Use `--refresh` only after checking
-that the project identity and root are unchanged.
+Never overwrite existing state implicitly. Refresh preserves Workstream, evidence,
+review, and document-governance state; it changes only the confirmed project
+identity/path projection and rebuilt inventory/capability information.
 
 All RTL and RTL specifications are read-only inputs, including files outside
 the declared top file. Never edit, create, overwrite, delete, rename, format,

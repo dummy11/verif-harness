@@ -83,6 +83,11 @@ the confirmed document root and contract routes. Existing project instructions
 outside the markers are preserved. Stage and Spec Kit workflow state are not
 reintroduced through this projection.
 
+Refresh also synchronizes bootstrap-managed fields in `.harness-config.json`
+from the confirmed project manifest. Optional project sections and customized
+verification/governance subdirectory names are retained; Workstream, evidence,
+review, and document-governance records are not reset.
+
 Validity is explicit: `VALID`, `STALE`, `INVALID`, `REVIEW_REQUIRED`,
 `REVALIDATION_REQUIRED`, `BLOCKED`, `WAIVED`, or `UNKNOWN`.
 
