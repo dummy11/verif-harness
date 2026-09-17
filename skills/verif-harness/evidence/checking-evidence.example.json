@@ -3,12 +3,17 @@
   "claim": "scoreboard-evidence",
   "revision": "git-or-model-revision",
   "tool": "simulator and collector version",
-  "artifacts": [{"path": "results/checker/run.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],
+  "artifacts": [
+    {"path": "verification/checker/scoreboard.sv", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "kind": "source", "analyzed_by": ["xverif"]},
+    {"path": "results/checker/run.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "simulation-log", "analyzed_by": ["xverif"]},
+    {"path": "results/checker/run.vcd", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "waveform", "analyzed_by": ["wavepeek"]},
+    {"path": "results/checker/wavepeek-analysis.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "analysis-report", "analyzed_by": ["wavepeek"]}
+  ],
   "result": {
     "engaged": true,
     "comparisons": 128,
     "mismatches": 0,
     "residual": 0,
-    "implementation_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    "implementation_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   }
 }

@@ -3,7 +3,11 @@
   "claim": "targeted-evidence",
   "revision": "git-or-model-revision",
   "tool": "regression collector version",
-  "artifacts": [{"path": "results/targeted/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}],
+  "artifacts": [
+    {"path": "results/targeted/run.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "simulation-log", "analyzed_by": ["xverif"]},
+    {"path": "results/targeted/run.vcd", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "waveform", "analyzed_by": ["wavepeek"]},
+    {"path": "results/targeted/wavepeek-analysis.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "analysis-report", "analyzed_by": ["wavepeek"]}
+  ],
   "result": {
     "runs": [
       {

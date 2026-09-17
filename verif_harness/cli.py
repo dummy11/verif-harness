@@ -10,8 +10,9 @@ import sys
 from pathlib import Path
 
 from .store import (
-    DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES, HarnessError, ProjectStore,
-    Validity, WORKSTREAM_TEMPLATES, capabilities,
+    ACTIVITY_STATUSES, DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES, HUMAN_ACTIONS,
+    HUMAN_ACTION_STATUSES, HarnessError, ProjectStore, Validity, WORKSTREAM_TEMPLATES,
+    capabilities,
 )
 
 
@@ -90,6 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness reachability NODE FILE
   verif-harness changed PATH
   verif-harness freeze VDOC|final
+  verif-harness dashboard --open-browser
 
 完整操作与参数见 skills/verif-harness/docs/user_guide.md。""",
     )
@@ -112,12 +114,23 @@ def build_parser() -> argparse.ArgumentParser:
     project_argument(status)
     status.add_argument("workstream", nargs="?", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
 
+    dashboard = commands.add_parser("dashboard", help="启动 Human 可实时查看和评审的本地 Web Dashboard")
+    project_argument(dashboard)
+    dashboard.add_argument("--host", default="127.0.0.1", help="仅允许 loopback host")
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--open-browser", action="store_true")
+    dashboard.add_argument("--snapshot", action="store_true", help="输出 Dashboard JSON 后退出，不启动服务")
+
     plan = commands.add_parser("plan", help="Verification Planner：使用 plan WORKSTREAM 形成/修订 desired state")
     plan_commands = plan.add_subparsers(dest="plan_command", required=True)
     design = plan_commands.add_parser("design", help="设计或修订一个可重入 Workstream")
     project_argument(design); workstream_argument(design)
     design.add_argument("--objective")
     design.add_argument("--desired", action="append", default=[])
+    design.add_argument(
+        "--evidence-claim", action="append", default=[],
+        help="与自定义 --desired 一一对应的专用 evidence claim",
+    )
     design.add_argument("--exit", dest="exit_criteria", action="append", default=[])
     design.add_argument("--decision", action="append", default=[])
     design.add_argument("--document-root", help="VDOC 文档输出目录；由 Agent 在对话确认后传入")
@@ -224,6 +237,56 @@ def build_parser() -> argparse.ArgumentParser:
     simple_waive.add_argument("--reason", required=True)
     simple_waive.add_argument("--reviewer")
 
+    activity = commands.add_parser("activity", help="登记 Agent/工具当前正在执行的有边界工作")
+    activity_commands = activity.add_subparsers(dest="activity_command", required=True)
+    activity_start = activity_commands.add_parser("start", help="开始一个 Activity")
+    project_argument(activity_start)
+    activity_start.add_argument("node_id")
+    activity_start.add_argument("--operation", required=True)
+    activity_start.add_argument("--actor", default="Agent")
+    activity_start.add_argument("--message", default="")
+    activity_start.add_argument("--total", type=int)
+    activity_start.add_argument("--log-path")
+    activity_update = activity_commands.add_parser("update", help="更新 Activity 状态和进度")
+    project_argument(activity_update)
+    activity_update.add_argument("activity_id")
+    activity_update.add_argument(
+        "--status", choices=tuple(sorted(ACTIVITY_STATUSES)), type=str.upper, required=True,
+    )
+    activity_update.add_argument("--message")
+    activity_update.add_argument("--current", type=int)
+    activity_update.add_argument("--total", type=int)
+    activity_update.add_argument("--log-path")
+    activity_list = activity_commands.add_parser("list", help="查看 Activity")
+    project_argument(activity_list)
+    activity_list.add_argument("--workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
+    activity_list.add_argument("--node")
+    activity_list.add_argument("--active", action="store_true")
+
+    human_action = commands.add_parser("human-action", help="登记 Dashboard/对话中的 Human 意见或调整请求")
+    human_commands = human_action.add_subparsers(dest="human_command", required=True)
+    human_add = human_commands.add_parser("add", help="添加节点或 Workstream 级 Human action")
+    project_argument(human_add)
+    human_add.add_argument("target")
+    human_add.add_argument(
+        "--action", choices=tuple(sorted(HUMAN_ACTIONS)), type=str.upper, required=True,
+    )
+    human_add.add_argument("--reviewer")
+    human_add.add_argument("--reason", required=True)
+    human_resolve = human_commands.add_parser("resolve", help="解析 Human action；不直接修改节点有效性")
+    project_argument(human_resolve)
+    human_resolve.add_argument("action_id")
+    human_resolve.add_argument("--reviewer")
+    human_resolve.add_argument("--resolution", required=True)
+    human_resolve.add_argument(
+        "--status", choices=("RESOLVED", "SUPERSEDED"), type=str.upper, default="RESOLVED",
+    )
+    human_list = human_commands.add_parser("list", help="查看 Human action")
+    project_argument(human_list)
+    human_list.add_argument(
+        "--status", choices=tuple(sorted(HUMAN_ACTION_STATUSES)), type=str.upper,
+    )
+
     check = commands.add_parser("check", help="Verification Consistency Engine：自动执行，也可显式扫描确定性事实")
     check_commands = check.add_subparsers(dest="check_command", required=True)
     scan = check_commands.add_parser("scan"); project_argument(scan)
@@ -329,6 +392,12 @@ def main(arguments: list[str] | None = None) -> int:
                                  args.verif_root, args.dut_top, args.dut_top_file, args.refresh))
         elif args.command == "status":
             emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
+        elif args.command == "dashboard":
+            if args.snapshot:
+                emit(store.dashboard_snapshot())
+            else:
+                from .dashboard import serve_dashboard
+                return serve_dashboard(store, args.host, args.port, args.open_browser)
         elif args.command == "doctor":
             if not store.initialized:
                 emit({"status": "INFO", "code": "BOOTSTRAP_REQUIRED", "next": "bootstrap", "project_root": str(store.root)})
@@ -341,7 +410,7 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "plan":
             if args.plan_command == "design":
                 emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria,
-                                             args.decision, args.document_root))
+                                             args.decision, args.document_root, args.evidence_claim))
             elif args.plan_command == "show": emit(store.workstream(args.workstream))
             elif args.plan_command == "review":
                 workstream = infer_workstream(store, args.workstream, "review")
@@ -402,6 +471,29 @@ def main(arguments: list[str] | None = None) -> int:
                 ))
         elif args.command == "waive":
             emit(store.waive_node(args.node_id, reviewer_identity(store.root, args.reviewer), args.reason))
+        elif args.command == "activity":
+            if args.activity_command == "start":
+                emit(store.create_activity(
+                    args.node_id, args.operation, args.actor, args.message, args.total, args.log_path,
+                ))
+            elif args.activity_command == "update":
+                emit(store.update_activity(
+                    args.activity_id, args.status, args.message, args.current, args.total, args.log_path,
+                ))
+            else:
+                emit({"activities": store.activities(args.workstream, args.node, args.active)})
+        elif args.command == "human-action":
+            if args.human_command == "add":
+                emit(store.add_human_action(
+                    args.target, args.action, reviewer_identity(store.root, args.reviewer), args.reason,
+                ))
+            elif args.human_command == "resolve":
+                emit(store.resolve_human_action(
+                    args.action_id, reviewer_identity(store.root, args.reviewer),
+                    args.resolution, args.status,
+                ))
+            else:
+                emit({"human_actions": store.human_actions(args.status)})
         elif args.command == "check": emit(store.scan())
         elif args.command == "closure":
             emit(store.evaluate_closure(args.workstream) if args.workstream else store.reconcile())

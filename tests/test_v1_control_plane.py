@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from verif_harness.evidence_policy import policy_for
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts/verif_harness.py"
@@ -48,10 +50,30 @@ class V1ControlPlaneTest(unittest.TestCase):
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
 
+    @staticmethod
+    def adapter_receipt(analyzer: str) -> dict:
+        receipt = {
+            "adapter_schema_version": 1, "adapter_version": "test",
+            "state": "PASS", "operation": "analyze",
+            "request_sha256": "c" * 64, "blockers": [],
+            "tool_identity": {"state": "PASS"},
+        }
+        if analyzer == "xverif":
+            receipt["tool"] = "fixture-simulator"
+        else:
+            receipt["tool_identity"]["binary_sha256"] = "d" * 64
+        return receipt
+
     def write_reachability_report(self, producer_kind: str = "vstim-probe", repeated: bool = True) -> Path:
         native = self.root / "results/stimulus/probe.json"
+        simulation_log = self.root / "results/stimulus/run.log"
+        analysis_report = self.root / "results/stimulus/xverif-analysis.json"
         native.parent.mkdir(parents=True, exist_ok=True)
         native.write_text('{"accepted": 2}\n', encoding="utf-8")
+        simulation_log.write_text("simulation passed\n", encoding="utf-8")
+        analysis_report.write_text(
+            json.dumps(self.adapter_receipt("xverif")) + "\n", encoding="utf-8",
+        )
         run = {
             "id": "run-001", "test": "targeted", "seed": 17,
             "config_digest": "a" * 64, "stimulus_digest": "b" * 64,
@@ -67,8 +89,17 @@ class V1ControlPlaneTest(unittest.TestCase):
         report = {
             "schema": "StimulusReachabilityEvidence/1",
             "revision": "test-revision",
-            "artifacts": [{"path": "results/stimulus/probe.json",
-                           "sha256": hashlib.sha256(native.read_bytes()).hexdigest()}],
+            "artifacts": [
+                {"path": "results/stimulus/run.log",
+                 "sha256": hashlib.sha256(simulation_log.read_bytes()).hexdigest(),
+                 "kind": "simulation-log", "analyzed_by": ["xverif"]},
+                {"path": "results/stimulus/probe.json",
+                 "sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
+                 "kind": "transaction-trace", "analyzed_by": ["xverif"]},
+                {"path": "results/stimulus/xverif-analysis.json",
+                 "sha256": hashlib.sha256(analysis_report.read_bytes()).hexdigest(),
+                 "kind": "analysis-report", "analyzed_by": ["xverif"]},
+            ],
             "producer": {"kind": producer_kind, "name": "input-monitor", "version": "1"},
             "observation": {
                 "boundary": "dut-input-accepted", "point": "monitor.accepted",
@@ -87,7 +118,13 @@ class V1ControlPlaneTest(unittest.TestCase):
         for index, artifact in enumerate(payload["artifacts"]):
             path = self.root / artifact["path"]
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(f"native artifact {filename} {index}\n", encoding="utf-8")
+            if artifact.get("kind") == "analysis-report":
+                path.write_text(
+                    json.dumps(self.adapter_receipt(artifact["analyzed_by"][0])) + "\n",
+                    encoding="utf-8",
+                )
+            else:
+                path.write_text(f"native artifact {filename} {index}\n", encoding="utf-8")
             old_digest = artifact["sha256"]
             artifact["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             digest_replacements[old_digest] = artifact["sha256"]
@@ -105,10 +142,30 @@ class V1ControlPlaneTest(unittest.TestCase):
         return target
 
     def write_typed_report(self, filename: str, schema: str, claim: str, result: dict) -> Path:
-        native = self.root / "results/contracts" / f"{filename}.native"
-        native.parent.mkdir(parents=True, exist_ok=True)
-        native.write_text(f"native evidence for {claim}\n", encoding="utf-8")
-        digest = hashlib.sha256(native.read_bytes()).hexdigest()
+        workstream = {
+            "EnvironmentEvidence/1": "VENV", "StimulusCapabilityEvidence/1": "VSTIM",
+            "CheckingEvidence/1": "VCHK", "CoverageEvidence/1": "VCOV",
+            "TestcaseEvidence/1": "VCASE", "RegressionEvidence/1": "VREG",
+        }[schema]
+        policy = policy_for(workstream, claim)
+        artifacts = []
+        digest = ""
+        for index, item in enumerate(policy["requirements"]):
+            selected = item["alternatives"][0]
+            native = self.root / "results/contracts" / f"{filename}.{index}.{selected['kind']}"
+            native.parent.mkdir(parents=True, exist_ok=True)
+            if selected["kind"] == "analysis-report":
+                native.write_text(
+                    json.dumps(self.adapter_receipt(selected["analyzer"])) + "\n",
+                    encoding="utf-8",
+                )
+            else:
+                native.write_text(f"native evidence for {claim}\n", encoding="utf-8")
+            digest = hashlib.sha256(native.read_bytes()).hexdigest()
+            artifacts.append({
+                "path": native.relative_to(self.root).as_posix(), "sha256": digest,
+                "kind": selected["kind"], "analyzed_by": [selected["analyzer"]],
+            })
 
         def bind(value):
             if isinstance(value, dict):
@@ -119,7 +176,7 @@ class V1ControlPlaneTest(unittest.TestCase):
 
         payload = {
             "schema": schema, "claim": claim, "revision": "test-revision", "tool": "test-tool/1",
-            "artifacts": [{"path": native.relative_to(self.root).as_posix(), "sha256": digest}],
+            "artifacts": artifacts,
             "result": bind(result),
         }
         target = self.root / filename
@@ -238,16 +295,142 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(plan["auto_closure"]["actions"][0]["executor"], "human")
         self.assertTrue((self.root / ".verif-harness/workstreams/vchk/desired-state.json").is_file())
         self.assertTrue((self.root / ".verif-harness/workstreams/vchk/plan.md").is_file())
+        scoreboard = next(
+            item for item in plan["desired_state"] if item["key"] == "scoreboard-evidence"
+        )
+        self.assertEqual(scoreboard["evidence_contract"]["claim"], "scoreboard-evidence")
+        requirements = scoreboard["evidence_contract"]["requirements"]
+        self.assertTrue(any(
+            {choice["kind"] for choice in item["alternatives"]} == {"simulation-log"}
+            for item in requirements
+        ))
+        self.assertTrue(any(
+            {choice["kind"] for choice in item["alternatives"]}
+            == {"waveform", "transaction-trace"}
+            for item in requirements
+        ))
+        self.assertTrue(any(
+            {choice["kind"] for choice in item["alternatives"]} == {"analysis-report"}
+            for item in requirements
+        ))
+
+    def test_every_standard_desired_node_has_a_stored_evidence_contract(self) -> None:
+        self.bootstrap()
+        for workstream in ("VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
+            with self.subTest(workstream=workstream):
+                plan = self.design(workstream)
+                for desired in plan["desired_state"]:
+                    self.assertEqual(
+                        desired["evidence_contract"]["claim"], desired["evidence_claim"],
+                    )
+                    self.assertTrue(desired["evidence_contract"]["requirements"])
+
+    def test_custom_implementation_goal_requires_explicit_evidence_claim(self) -> None:
+        self.bootstrap()
+        rejected = self.invoke("plan", "VCHK", "--desired", "custom checker behavior")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("--evidence-claim", rejected.stderr)
+        planned = self.run_cli(
+            "plan", "VCHK", "--desired", "custom checker behavior",
+            "--evidence-claim", "scoreboard-evidence",
+        )
+        desired = planned["desired_state"][0]
+        self.assertEqual(desired["evidence_claim"], "scoreboard-evidence")
+        self.assertEqual(desired["evidence_contract"]["basis"], "runtime-comparison")
+
+    def test_analysis_report_must_be_an_adapter_pass_receipt(self) -> None:
+        self.bootstrap()
+        plan = self.design(
+            "VCHK", "--desired", "custom checker behavior",
+            "--evidence-claim", "scoreboard-evidence",
+        )
+        report = self.write_typed_report(
+            "custom-checker.json", "CheckingEvidence/1", "scoreboard-evidence",
+            {"engaged": True, "comparisons": 2, "mismatches": 0,
+             "residual": 0, "implementation_digest": "$ARTIFACT_DIGEST"},
+        )
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        analysis = next(item for item in payload["artifacts"] if item["kind"] == "analysis-report")
+        analysis_path = self.root / analysis["path"]
+        analysis_path.write_text('{"state":"PASS"}\n', encoding="utf-8")
+        analysis["sha256"] = hashlib.sha256(analysis_path.read_bytes()).hexdigest()
+        payload["result"]["implementation_digest"] = analysis["sha256"]
+        report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        rejected = self.invoke("evidence", plan["desired_state"][0]["id"], report.name)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("adapter_schema_version=1", rejected.stderr)
 
     def test_workstream_is_reentrant_and_revisioned(self) -> None:
         self.bootstrap()
-        first = self.design("VSTIM", "--desired", "基础激励可达")
-        second = self.design("VSTIM", "--desired", "补充 backpressure 场景")
+        first = self.design(
+            "VSTIM", "--desired", "基础激励可达",
+            "--evidence-claim", "reachability-evidence",
+        )
+        second = self.design(
+            "VSTIM", "--desired", "补充 backpressure 场景",
+            "--evidence-claim", "reachability-evidence",
+        )
         self.assertEqual(second["revision"], first["revision"] + 1)
         model = self.run_cli("model", "show")
         status = {node["id"]: node["status"] for node in model["nodes"]}
         self.assertEqual(status[first["desired_state"][0]["id"]], "STALE")
         self.assertEqual(status[second["desired_state"][0]["id"]], "UNKNOWN")
+
+    def test_activity_human_action_and_dashboard_snapshot_are_persistent(self) -> None:
+        self.bootstrap()
+        plan = self.design("VCHK")
+        node_id = plan["desired_state"][0]["id"]
+        activity = self.run_cli(
+            "activity", "start", node_id, "--operation", "targeted-simulation",
+            "--actor", "Agent", "--message", "running seed 42", "--total", "10",
+        )
+        self.assertEqual(activity["status"], "RUNNING")
+        self.assertEqual(activity["progress_current"], 0)
+        updated = self.run_cli(
+            "activity", "update", activity["id"], "--status", "WAITING_FOR_HUMAN",
+            "--current", "3", "--message", "需要确认 tolerance",
+        )
+        self.assertEqual(updated["progress_current"], 3)
+        self.assertEqual(updated["status"], "WAITING_FOR_HUMAN")
+
+        action = self.run_cli(
+            "human-action", "add", node_id, "--action", "REQUEST_CHANGE",
+            "--reason", "absolute tolerance 改为 2", "--reviewer", "alice",
+        )
+        self.assertEqual(action["status"], "OPEN")
+        self.assertEqual(action["target"], node_id)
+        snapshot = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(snapshot["schema"], "VerificationDashboard/1")
+        self.assertEqual(snapshot["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(snapshot["human_actions"][0]["action"], "REQUEST_CHANGE")
+        view = next(item for item in snapshot["workstreams"] if item["workstream"] == "VCHK")
+        desired = next(item for item in view["nodes"] if item["id"] == node_id)
+        self.assertEqual(desired["activities"][0]["id"], activity["id"])
+        self.assertEqual(view["human_actions"][0]["id"], action["id"])
+
+        resolved = self.run_cli(
+            "human-action", "resolve", action["id"], "--reviewer", "bob",
+            "--resolution", "已转入新 revision",
+        )
+        self.assertEqual(resolved["status"], "RESOLVED")
+
+        replacement = self.design("VCHK")
+        refreshed = self.run_cli("dashboard", "--snapshot")
+        self.assertNotIn(node_id, {item["node_id"] for item in refreshed["activities"]})
+        self.assertIn(activity["id"], {item["id"] for item in refreshed["activity_history"]})
+        self.assertIn(action["id"], {item["id"] for item in refreshed["human_action_history"]})
+        self.assertEqual(
+            refreshed["current_node_count"], len(replacement["desired_state"]),
+        )
+
+    def test_activity_cannot_directly_change_node_validity(self) -> None:
+        self.bootstrap()
+        plan = self.design("VSTIM")
+        node_id = plan["desired_state"][0]["id"]
+        activity = self.run_cli("activity", "start", node_id, "--operation", "implementation")
+        self.run_cli("activity", "update", activity["id"], "--status", "COMPLETED")
+        node = self.run_cli("inspect", node_id)["nodes"][0]
+        self.assertEqual(node["status"], "UNKNOWN")
 
     def test_vdoc_materializes_missing_semantic_documents_without_approving_them(self) -> None:
         self.bootstrap()
@@ -414,8 +597,14 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_change_crosses_workstream_edges_and_auto_reconciles(self) -> None:
         self.bootstrap()
-        stim = self.design("VSTIM", "--desired", "stimulus stable")["desired_state"][0]["id"]
-        check = self.design("VCHK", "--desired", "checker stable")["desired_state"][0]["id"]
+        stim = self.design(
+            "VSTIM", "--desired", "stimulus stable",
+            "--evidence-claim", "stimulus-implementation",
+        )["desired_state"][0]["id"]
+        check = self.design(
+            "VCHK", "--desired", "checker stable",
+            "--evidence-claim", "scoreboard",
+        )["desired_state"][0]["id"]
         self.run_cli("record", "edge", "file:rtl/dut.sv", stim, "--relation", "AFFECTS")
         self.run_cli("record", "edge", stim, check, "--relation", "AFFECTS")
         event = self.run_cli("record", "change", "--path", "rtl/dut.sv", "--kind", "rtl-change")
@@ -488,7 +677,10 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_vstim_reachability_uses_owned_probe_and_derived_verdict(self) -> None:
         self.bootstrap()
-        plan = self.design("VSTIM", "--desired", "reachability", "--desired", "determinism")
+        plan = self.design(
+            "VSTIM", "--desired", "reachability", "--evidence-claim", "reachability-evidence",
+            "--desired", "determinism", "--evidence-claim", "determinism-evidence",
+        )
         desired = [item["id"] for item in plan["desired_state"]]
         self.run_cli("review", "VSTIM")
         report = self.write_reachability_report()
@@ -513,7 +705,10 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_coverage_cannot_be_sole_vstim_reachability_authority(self) -> None:
         self.bootstrap()
-        desired = self.design("VSTIM", "--desired", "reachability")["desired_state"][0]["id"]
+        desired = self.design(
+            "VSTIM", "--desired", "reachability",
+            "--evidence-claim", "reachability-evidence",
+        )["desired_state"][0]["id"]
         report = self.write_reachability_report(producer_kind="functional-coverage")
         result = self.invoke("reachability", desired, report.name, "--claim", "reachability")
         self.assertEqual(result.returncode, 2)
@@ -521,8 +716,14 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_node_dependency_blocks_only_subject_and_rejects_cycles(self) -> None:
         self.bootstrap()
-        stim = self.design("VSTIM", "--desired", "scenario reachable")["desired_state"][0]["id"]
-        cov = self.design("VCOV", "--desired", "counter available")["desired_state"][0]["id"]
+        stim = self.design(
+            "VSTIM", "--desired", "scenario reachable",
+            "--evidence-claim", "reachability-evidence",
+        )["desired_state"][0]["id"]
+        cov = self.design(
+            "VCOV", "--desired", "counter available",
+            "--evidence-claim", "coverage-model",
+        )["desired_state"][0]["id"]
         recorded = self.run_cli("record", "dependency", stim, cov)
         self.assertEqual(recorded["semantics"], "dependent-to-prerequisite")
         bypass = self.invoke("record", "edge", stim, cov, "--relation", "DEPENDS_ON")
@@ -558,7 +759,10 @@ class V1ControlPlaneTest(unittest.TestCase):
                 key for key, role in roles.items() if role == "closure-evidence"
             ])
 
-        custom = self.design("VCHK", "--desired", "custom name ending in evidence")
+        custom = self.design(
+            "VCHK", "--desired", "custom name ending in evidence",
+            "--evidence-claim", "scoreboard-evidence",
+        )
         self.assertEqual(custom["desired_state"][0]["role"], "capability")
 
         current_vstim = {item["key"]: item["id"] for item in plans["VSTIM"]["desired_state"]}
@@ -642,15 +846,30 @@ class V1ControlPlaneTest(unittest.TestCase):
         wrong_environment = self.root / "results/contracts/wrong-environment.sv"
         wrong_environment.write_text("module wrong_environment; endmodule\n", encoding="utf-8")
         smoke_log = self.root / "results/contracts/environment-smoke.log"
+        smoke_wave = self.root / "results/contracts/environment-smoke.vcd"
+        smoke_analysis = self.root / "results/contracts/environment-smoke-analysis.json"
         smoke_log.write_text("clock reset observation clean exit\n", encoding="utf-8")
+        smoke_wave.write_text("$date test $end\n", encoding="utf-8")
+        smoke_analysis.write_text(
+            json.dumps(self.adapter_receipt("wavepeek")) + "\n", encoding="utf-8",
+        )
         wrong_digest = hashlib.sha256(wrong_environment.read_bytes()).hexdigest()
         log_digest = hashlib.sha256(smoke_log.read_bytes()).hexdigest()
+        wave_digest = hashlib.sha256(smoke_wave.read_bytes()).hexdigest()
+        analysis_digest = hashlib.sha256(smoke_analysis.read_bytes()).hexdigest()
         smoke_payload = {
             "schema": "EnvironmentEvidence/1", "claim": "environment-smoke-evidence",
             "revision": "test-revision", "tool": "environment-smoke/1",
             "artifacts": [
-                {"path": wrong_environment.relative_to(self.root).as_posix(), "sha256": wrong_digest},
-                {"path": smoke_log.relative_to(self.root).as_posix(), "sha256": log_digest},
+                {"path": wrong_environment.relative_to(self.root).as_posix(), "sha256": wrong_digest,
+                 "kind": "source", "analyzed_by": ["xverif"]},
+                {"path": smoke_log.relative_to(self.root).as_posix(), "sha256": log_digest,
+                 "kind": "simulation-log", "analyzed_by": ["xverif"]},
+                {"path": smoke_wave.relative_to(self.root).as_posix(), "sha256": wave_digest,
+                 "kind": "waveform", "analyzed_by": ["wavepeek"]},
+                {"path": smoke_analysis.relative_to(self.root).as_posix(),
+                 "sha256": analysis_digest, "kind": "analysis-report",
+                 "analyzed_by": ["wavepeek"]},
             ],
             "result": {"clock_edges": 10, "reset_assertions": 1, "reset_deassertions": 1,
                        "observations": 1, "errors": 0, "fatals": 0, "timeout": False,
@@ -698,7 +917,9 @@ class V1ControlPlaneTest(unittest.TestCase):
             bypass = self.invoke("prove", standard, filename)
             self.assertEqual(bypass.returncode, 2)
             self.assertIn("evidence 命令", bypass.stderr)
-            desired = self.design(workstream, "--desired", f"custom {claim}")["desired_state"][0]["id"]
+            desired = self.design(
+                workstream, "--desired", f"custom {claim}", "--evidence-claim", claim,
+            )["desired_state"][0]["id"]
             recorded = self.run_cli("evidence", desired, filename, "--claim", claim)
             self.assertEqual(recorded["verdict"], "PASS", (workstream, recorded))
             self.assertTrue(recorded["validation"]["ready"])
@@ -714,7 +935,10 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_typed_evidence_rejects_arbitrary_pass_and_records_semantic_failure(self) -> None:
         self.bootstrap()
-        desired = self.design("VCHK", "--desired", "custom scoreboard evidence")["desired_state"][0]["id"]
+        desired = self.design(
+            "VCHK", "--desired", "custom scoreboard evidence",
+            "--evidence-claim", "scoreboard-evidence",
+        )["desired_state"][0]["id"]
         arbitrary = self.root / "arbitrary.json"
         arbitrary.write_text('{"pass": true}\n', encoding="utf-8")
         rejected = self.invoke("evidence", desired, arbitrary.name, "--claim", "scoreboard-evidence")
@@ -740,7 +964,10 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_native_evidence_artifact_change_invalidates_its_closure_node(self) -> None:
         self.bootstrap()
-        desired = self.design("VCHK", "--desired", "custom scoreboard evidence")["desired_state"][0]["id"]
+        desired = self.design(
+            "VCHK", "--desired", "custom scoreboard evidence",
+            "--evidence-claim", "scoreboard-evidence",
+        )["desired_state"][0]["id"]
         report = self.materialize_evidence_example("checking-evidence.example.json")
         recorded = self.run_cli("evidence", desired, report.name, "--claim", "scoreboard-evidence")
         self.assertEqual(recorded["verdict"], "PASS")
@@ -933,8 +1160,16 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.bootstrap()
         evidence = self.root / "evidence.json"
         evidence.write_text('{"verified": true}\n', encoding="utf-8")
+        custom_claims = {
+            "VENV": "environment-smoke-evidence", "VSTIM": "reachability-evidence",
+            "VCHK": "scoreboard-evidence", "VCOV": "hole-analysis-evidence",
+            "VCASE": "targeted-evidence", "VREG": "execution-evidence",
+        }
         for workstream in ("VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
-            plan = self.run_cli("plan", workstream, "--desired", f"{workstream} verified")
+            arguments = ["plan", workstream, "--desired", f"{workstream} verified"]
+            if workstream != "VDOC":
+                arguments.extend(["--evidence-claim", custom_claims[workstream]])
+            plan = self.run_cli(*arguments)
             self.run_cli("review", workstream)
             if workstream == "VDOC":
                 self.run_cli("prove", plan["desired_state"][0]["id"], "evidence.json")

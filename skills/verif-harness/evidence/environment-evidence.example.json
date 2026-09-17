@@ -6,11 +6,27 @@
   "artifacts": [
     {
       "path": "results/environment/smoke.log",
-      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "kind": "simulation-log",
+      "analyzed_by": ["xverif"]
     },
     {
       "path": "verification/tb/tb_top.sv",
-      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "kind": "source",
+      "analyzed_by": ["xverif"]
+    },
+    {
+      "path": "results/environment/smoke.vcd",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "kind": "waveform",
+      "analyzed_by": ["wavepeek"]
+    },
+    {
+      "path": "results/environment/wavepeek-analysis.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "analysis-report",
+      "analyzed_by": ["wavepeek"]
     }
   ],
   "result": {

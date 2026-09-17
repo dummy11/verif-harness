@@ -52,7 +52,10 @@ Workstream. Project lifecycle is separate.
   evidence and derive the verdict from content. Read `evidence/INSTRUCTIONS.md`;
   do not use generic `prove` to bypass a standard Workstream contract. Enforce
   cross-evidence exit predicates and derive VREG fresh-evidence membership from
-  the current Planner graph rather than a producer-supplied node list.
+  the current Planner graph rather than a producer-supplied node list. Enforce
+  each desired node's stored artifact/analyzer admission policy. Runtime claims
+  require simulation or coverage data plus a stored xverif or WavePeek analysis
+  report; an arbitrary PASS file or analyzer label is not sufficient evidence.
 - `reachability`: validate and record VSTIM-owned scenario reachability or
   deterministic-replay evidence. Read `reachability/INSTRUCTIONS.md`. Coverage,
   cover properties, and waveforms are corroboration rather than the sole VSTIM
@@ -61,12 +64,17 @@ Workstream. Project lifecycle is separate.
   `vcheck/INSTRUCTIONS.md`.
 - Verification Closure Engine (`closure`): compute the smallest next actions across Workstreams. Read
   `vclosure/INSTRUCTIONS.md`.
+- Human dashboard (`dashboard`): start the loopback-only live view when the Human
+  asks to monitor Workstreams, nodes, evidence, progress, or intervene before
+  closure. Use `activity` to register bounded Agent/tool work and
+  `human-action` to preserve comments or requested changes. Dashboard state is
+  an audited view of the same model; never manufacture progress or validity.
 - Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 
 Prefer the human-facing spellings in interactive work: `plan VDOC`, `review
 [VDOC]`, `status [VDOC]`, `evidence NODE FILE`, `changed PATH`, `waive NODE
---reason ...`, and `freeze VDOC|final`. Use the expanded `plan
+--reason ...`, `dashboard --open-browser`, and `freeze VDOC|final`. Use the expanded `plan
 design|review|freeze` and `record ...` forms only when automation needs explicit
 fields. The older `model` and `v*` spellings are compatibility-only and must not
 be presented as the interactive interface. There is no detached worker,

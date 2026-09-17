@@ -36,6 +36,21 @@ projections. Verification Knowledge Model is read-only to Human-facing callers;
 structured `evidence`, `reachability`, document-governance, change, and advanced
 `record` ingress supply mutations and trigger the consistency and closure engines.
 
+The local Dashboard is a presentation and Human-control surface over that same
+database, not another source of truth or a sixth engine. It exposes a versioned
+snapshot and server-sent updates for Workstreams, nodes, closure, evidence,
+activities, and Human actions. Writes use a per-process token, bind only to the
+loopback interface, and call the same ProjectStore review/waiver/freeze APIs.
+Activity records communicate current Agent/tool progress but never mutate node
+validity; evidence validators and explicit Human gates remain authoritative.
+
+Each planned desired node stores its evidence claim and admission policy. The
+policy separates compile-time capability proof from runtime closure proof and
+names the required raw artifact classes and analyzers. Runtime proof also binds
+a stored xverif or WavePeek analysis report; a free-form PASS file cannot satisfy
+the policy. The full Workstream closes only after both capability and required
+runtime evidence nodes satisfy their own contracts.
+
 - Verification Consistency Engine judges validity and propagates causal invalidation; it does not act.
 - Verification Closure Engine selects/routes actions; it does not write code.
 - Verification Reasoning Engine handles semantic uncertainty through independent Role × Backend.

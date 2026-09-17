@@ -4,9 +4,9 @@
   "revision": "git-or-model-revision",
   "tool": "regression collector version",
   "artifacts": [
-    {"path": "results/regression/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
-    {"path": "results/regression/manifest.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
-    {"path": "results/regression/smoke_test.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+    {"path": "results/regression/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "analysis-report", "analyzed_by": ["xverif"]},
+    {"path": "results/regression/manifest.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "kind": "regression-manifest", "analyzed_by": ["xverif"]},
+    {"path": "results/regression/smoke_test.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "simulation-log", "analyzed_by": ["xverif"]}
   ],
   "result": {
     "golden_required": true,

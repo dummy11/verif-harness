@@ -19,8 +19,9 @@ extractor.
 The command validates the Workstream schema and claim-specific invariants,
 then derives PASS or FAIL from the content. A malformed report is rejected
 without creating evidence. A valid report with blockers is retained as FAIL
-evidence. Every native log/database entry must provide a project-relative path
-and SHA-256; missing or changed artifacts are rejected and later changes
+evidence. Every native log/database entry must provide a project-relative path,
+SHA-256, explicit artifact `kind`, and deterministic analyzer in `analyzed_by`;
+missing or changed artifacts are rejected and later changes
 invalidate the bound node. Every implementation, policy, manifest, or log
 digest asserted by a claim must match one of those artifact digests. Evidence
 revision must match the bootstrap project
@@ -62,16 +63,39 @@ envelope:
   "claim": "<fixed node claim>",
   "revision": "<bootstrap project revision>",
   "tool": "<producer/version>",
-  "artifacts": [{"path": "project/relative/path", "sha256": "<sha256>"}],
+  "artifacts": [{
+    "path": "project/relative/path",
+    "sha256": "<sha256>",
+    "kind": "simulation-log",
+    "analyzed_by": ["xverif"]
+  }],
   "result": {"...": "claim-specific facts"}
 }
 ```
+
+The Planner writes the exact admission policy into every desired node and the
+Workstream `plan.md`. Runtime claims normally require an xverif-analyzed
+`simulation-log` plus either a WavePeek-analyzed `waveform` or an
+xverif-analyzed `transaction-trace`, and a stored `analysis-report` produced by
+xverif or WavePeek. Coverage closure requires a `coverage-database` plus an
+xverif `analysis-report`; regression execution requires a `regression-manifest`,
+simulation logs, and an xverif `analysis-report`. Source capability claims require
+`source` plus `build-log`. A report that omits one of these classes is retained
+as FAIL even if its result body says PASS.
+
+An `analysis-report` is not an arbitrary project summary. At ingestion the
+control plane opens the referenced JSON and requires an adapter run receipt with
+`adapter_schema_version=1`, `state=PASS`, an empty `blockers` list, a valid
+`request_sha256`, a non-empty `operation`, and a PASS `tool_identity`. xverif
+receipts also name the executed tool; WavePeek receipts bind the executable
+SHA-256. A forged free-form file carrying only `{"state":"PASS"}` is rejected.
 
 Compilation artifacts normally prove capability readiness only. Runtime
 closure requires observations such as accepted stimulus, non-zero checker
 engagement, assertion attempts without failures or vacuity, targeted test
 PASS, coverage item disposition, and regression execution/triage. A waveform
-may corroborate a result but is not a default substitute for typed evidence.
+or transaction trace is an analysis input, not a substitute for the typed
+counters and semantic checks in the report result.
 
 `fresh-evidence` reports provide only `result.snapshot_revision`; the engine
 derives required closure-evidence nodes from the current Planner graph and

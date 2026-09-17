@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="verif-token" content="__VERIF_DASHBOARD_TOKEN__">
+  <title>verif-harness · Verification Dashboard</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f7fb; --panel: #ffffff; --panel-2: #f8fafc; --text: #172033;
+      --muted: #637083; --line: #dfe5ee; --brand: #195fb8; --brand-2: #eaf3ff;
+      --green: #147a4b; --green-bg: #eaf8f1; --red: #b4232f; --red-bg: #fff0f1;
+      --yellow: #8a5a00; --yellow-bg: #fff7df; --orange: #b54708; --orange-bg: #fff2e8;
+      --blue: #175cd3; --blue-bg: #eaf2ff; --purple: #6941c6; --purple-bg: #f3efff;
+      --gray: #596579; --gray-bg: #eef1f5; --shadow: 0 12px 34px rgba(30, 48, 78, .08);
+      --radius: 14px;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0d1523; --panel: #141f30; --panel-2: #182538; --text: #edf3fb;
+      --muted: #a1afc2; --line: #2b3b52; --brand: #79b5ff; --brand-2: #173252;
+      --green: #74d6a6; --green-bg: #173b2c; --red: #ff9ca5; --red-bg: #48242a;
+      --yellow: #ffd37a; --yellow-bg: #46391d; --orange: #ffad73; --orange-bg: #482e1c;
+      --blue: #8bc0ff; --blue-bg: #1b3658; --purple: #c4adff; --purple-bg: #352958;
+      --gray: #b4c0d0; --gray-bg: #2a3545; --shadow: 0 12px 34px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .topbar { position: sticky; top: 0; z-index: 20; height: 68px; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(12px); }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 260px; }
+    .logo { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: white; font-weight: 800; background: linear-gradient(145deg, #0d4f9f, #2f80ed); box-shadow: 0 7px 18px rgba(25, 95, 184, .25); }
+    .brand strong { display: block; font-size: 15px; }
+    .brand small { color: var(--muted); }
+    .search { flex: 1; max-width: 620px; position: relative; }
+    .search input { width: 100%; padding: 10px 14px 10px 38px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel-2); outline: none; }
+    .search span { position: absolute; left: 13px; top: 9px; color: var(--muted); }
+    .connection { margin-left: auto; display: flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #98a2b3; }
+    .dot.live { background: #22a663; box-shadow: 0 0 0 4px rgba(34,166,99,.12); }
+    .dot.offline { background: #e5484d; }
+    .icon-btn { border: 1px solid var(--line); color: var(--text); background: var(--panel); border-radius: 9px; padding: 8px 10px; }
+    .layout { min-height: calc(100vh - 68px); display: grid; grid-template-columns: 238px minmax(0, 1fr); }
+    .sidebar { border-right: 1px solid var(--line); background: var(--panel); padding: 22px 14px; }
+    .nav-label { padding: 0 10px 8px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .nav-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border: 0; border-radius: 9px; color: var(--text); background: transparent; text-align: left; }
+    .nav-item:hover { background: var(--panel-2); }
+    .nav-item.active { color: var(--brand); background: var(--brand-2); font-weight: 700; }
+    .nav-item .nav-code { width: 52px; font-weight: 800; }
+    .nav-item .nav-state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
+    .sidebar-foot { margin-top: 26px; padding: 14px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    main { min-width: 0; padding: 28px clamp(18px, 3vw, 42px) 64px; }
+    .page-head { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 24px; }
+    .page-head h1 { margin: 0 0 5px; font-size: clamp(23px, 2vw, 31px); line-height: 1.25; }
+    .page-head p { margin: 0; color: var(--muted); max-width: 850px; }
+    .page-actions { margin-left: auto; display: flex; gap: 8px; }
+    .btn { border: 1px solid var(--line); border-radius: 9px; padding: 9px 13px; color: var(--text); background: var(--panel); font-weight: 650; }
+    .btn:hover { border-color: var(--brand); }
+    .btn.primary { color: white; background: #195fb8; border-color: #195fb8; }
+    .btn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--line)); }
+    .btn.small { padding: 6px 9px; font-size: 12px; }
+    .grid { display: grid; gap: 16px; }
+    .summary-grid { grid-template-columns: repeat(5, minmax(130px, 1fr)); margin-bottom: 20px; }
+    .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
+    .metric { padding: 17px 18px; }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { margin-top: 3px; font-size: 25px; font-weight: 780; }
+    .metric .hint { margin-top: 2px; color: var(--muted); font-size: 12px; }
+    .section { margin-top: 20px; }
+    .section-head { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+    .section-head h2 { margin: 0; font-size: 17px; }
+    .section-head .count { color: var(--muted); }
+    .section-head .spacer { margin-left: auto; }
+    .workstream-grid { grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); }
+    .ws-card { padding: 18px; transition: transform .15s ease, border-color .15s ease; }
+    .ws-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+    .ws-title { display: flex; align-items: center; gap: 10px; }
+    .ws-title strong { font-size: 16px; }
+    .ws-title .revision { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .ws-objective { min-height: 42px; margin: 10px 0; color: var(--muted); }
+    .progress { height: 8px; overflow: hidden; border-radius: 8px; background: var(--gray-bg); }
+    .progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
+    .progress-text { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 8px; font-size: 11px; font-weight: 750; white-space: nowrap; }
+    .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED { color: var(--green); background: var(--green-bg); }
+    .RUNNING { color: var(--blue); background: var(--blue-bg); }
+    .INVALID, .FAILED { color: var(--red); background: var(--red-bg); }
+    .STALE, .REVALIDATION_REQUIRED, .PARTIALLY_STALE { color: var(--orange); background: var(--orange-bg); }
+    .REVIEW_REQUIRED, .REVIEW, .REVISE, .WAITING_FOR_HUMAN, .OPEN, .BLOCKED { color: var(--yellow); background: var(--yellow-bg); }
+    .WAIVED { color: var(--purple); background: var(--purple-bg); }
+    .UNKNOWN, .PENDING, .RECORDED, .CANCELLED { color: var(--gray); background: var(--gray-bg); }
+    .two-col { grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr); align-items: start; }
+    .list-card { overflow: hidden; }
+    .list-row { display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 12px; padding: 13px 16px; border-top: 1px solid var(--line); align-items: center; }
+    .list-row:first-child { border-top: 0; }
+    .list-row:hover { background: var(--panel-2); }
+    .row-title { font-weight: 700; overflow-wrap: anywhere; }
+    .row-meta { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .empty { padding: 30px; text-align: center; color: var(--muted); }
+    .attention { border-left: 4px solid var(--yellow); }
+    .activity-bar { margin-top: 8px; height: 5px; border-radius: 4px; background: var(--gray-bg); overflow: hidden; }
+    .activity-bar span { display: block; height: 100%; background: var(--blue); }
+    .node-table { width: 100%; border-collapse: collapse; }
+    .node-table th { padding: 10px 14px; text-align: left; color: var(--muted); background: var(--panel-2); font-size: 12px; }
+    .node-table td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+    .node-table tr:hover td { background: var(--panel-2); }
+    .node-link { border: 0; padding: 0; color: var(--brand); background: transparent; text-align: left; font-weight: 700; }
+    .node-id { margin-top: 3px; max-width: 520px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .exit-list { margin: 0; padding: 0 0 0 18px; }
+    .exit-list li { margin: 6px 0; }
+    .drawer-backdrop { position: fixed; inset: 0; z-index: 40; display: none; background: rgba(10, 18, 31, .4); }
+    .drawer-backdrop.open { display: block; }
+    .drawer { position: absolute; top: 0; right: 0; width: min(680px, 94vw); height: 100%; overflow: auto; padding: 24px; background: var(--panel); box-shadow: -20px 0 50px rgba(0,0,0,.2); }
+    .drawer-head { position: sticky; top: -24px; z-index: 2; display: flex; align-items: flex-start; gap: 14px; margin: -24px -24px 18px; padding: 22px 24px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+    .drawer-head h2 { margin: 3px 0 0; font-size: 20px; }
+    .drawer-head .close { margin-left: auto; }
+    .detail-block { margin-top: 18px; }
+    .detail-block h3 { margin: 0 0 8px; font-size: 14px; }
+    .detail-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .kv { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 7px 14px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; overflow-wrap: anywhere; }
+    .clean-list { margin: 12px 0 0; padding-left: 20px; }
+    .clean-list li + li { margin-top: 10px; }
+    .tag-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 5px; }
+    .tag { display: inline-flex; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--brand); background: var(--panel); font-size: 11px; }
+    .muted { color: var(--muted); }
+    details { border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    details + details { margin-top: 8px; }
+    summary { padding: 10px 12px; cursor: pointer; font-weight: 650; }
+    pre { overflow: auto; margin: 0; padding: 12px; border-top: 1px solid var(--line); color: var(--text); background: var(--panel-2); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: none; place-items: center; padding: 18px; background: rgba(10,18,31,.55); }
+    .modal-backdrop.open { display: grid; }
+    .modal { width: min(540px, 96vw); max-height: 90vh; overflow: auto; padding: 22px; border-radius: var(--radius); background: var(--panel); box-shadow: 0 24px 70px rgba(0,0,0,.3); }
+    .modal h2 { margin: 0 0 6px; }
+    .modal p { margin: 0 0 16px; color: var(--muted); }
+    .field { margin-top: 13px; }
+    .field label { display: block; margin-bottom: 5px; font-weight: 700; }
+    .field input, .field select, .field textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--panel-2); }
+    .field textarea { min-height: 100px; resize: vertical; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 80; max-width: 420px; padding: 12px 15px; border-radius: 10px; color: white; background: #173252; box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { background: #a51d2a; }
+    @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; } .brand { min-width: 0; } .brand small { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(3), .node-table td:nth-child(3) { display: none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><div class="logo">VH</div><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
+    <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索 Workstream、节点、证据或文件"></div>
+    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
+    <button id="theme" class="icon-btn" title="切换明暗主题">◐</button>
+  </header>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"><div class="nav-label">验证工作域</div></aside>
+    <main id="main"><div class="empty">正在加载 Dashboard…</div></main>
+  </div>
+  <div id="drawer-backdrop" class="drawer-backdrop"><aside id="drawer" class="drawer"></aside></div>
+  <div id="modal-backdrop" class="modal-backdrop"><section id="modal" class="modal"></section></div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const token = document.querySelector('meta[name="verif-token"]').content;
+    const state = { snapshot: null, workstream: null, node: null, connected: false, query: '' };
+    const $ = (selector) => document.querySelector(selector);
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    const statusBadge = (value) => `<span class="badge ${escapeHtml(value)}">${escapeHtml(value)}</span>`;
+    const shortTime = (value) => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
+    const percent = (progress) => progress.required ? Math.round(progress.satisfied * 100 / progress.required) : 0;
+    const activeActivity = (items) => (items || []).find(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+    const pendingHuman = (items) => (items || []).filter(a => a.status === 'OPEN');
+    const allNodes = () => state.snapshot?.model?.nodes || [];
+    const workstream = (name) => state.snapshot?.workstreams?.find(w => w.workstream === name);
+
+    function toast(message, error=false) {
+      const node = $('#toast'); node.textContent = message; node.className = `toast show${error ? ' error' : ''}`;
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => node.className = 'toast', 3500);
+    }
+    function setConnection(connected) {
+      state.connected = connected;
+      $('#connection-dot').className = `dot ${connected ? 'live' : 'offline'}`;
+      $('#connection-text').textContent = connected ? '实时连接正常' : '连接中断 · 显示最后状态';
+    }
+    function setSnapshot(snapshot) {
+      state.snapshot = snapshot;
+      $('#project-name').textContent = snapshot.project.name;
+      const revision = snapshot.project.baseline_revision ? snapshot.project.baseline_revision.slice(0, 9) : '无 Git revision';
+      $('#project-meta').textContent = `${revision} · ${shortTime(snapshot.generated_at)}`;
+      if (state.workstream && !workstream(state.workstream)) state.workstream = null;
+      render();
+    }
+    async function initialLoad() {
+      try { const response = await fetch('/api/snapshot'); if (!response.ok) throw new Error(response.statusText); setSnapshot(await response.json()); }
+      catch (error) { toast(`读取状态失败：${error}`, true); }
+      const stream = new EventSource('/api/events');
+      stream.addEventListener('snapshot', event => { setConnection(true); setSnapshot(JSON.parse(event.data)); });
+      stream.onerror = () => setConnection(false);
+    }
+    function renderSidebar() {
+      const items = state.snapshot?.workstreams || [];
+      $('#sidebar').innerHTML = `<div class="nav-label">验证工作域</div>
+        <button class="nav-item ${state.workstream ? '' : 'active'}" data-nav="overview"><span class="nav-code">总览</span><span>项目状态</span></button>
+        ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream ? 'active' : ''}" data-nav="${escapeHtml(w.workstream)}">
+          <span class="nav-code">${escapeHtml(w.workstream)}</span><span>${escapeHtml(w.display_name)}</span><span class="nav-state ${escapeHtml(w.lifecycle)}"></span>
+        </button>`).join('')}
+        <div class="sidebar-foot">SQLite 是状态事实源。Dashboard 只通过受控 API 读写，不直接修改数据库。</div>`;
+      document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => { state.workstream = button.dataset.nav === 'overview' ? null : button.dataset.nav; state.node = null; render(); });
+    }
+    function render() {
+      if (!state.snapshot) return;
+      renderSidebar();
+      state.workstream ? renderWorkstream(workstream(state.workstream)) : renderOverview();
+      if (state.node) renderDrawer(state.node);
+    }
+    function overviewMetrics() {
+      const s = state.snapshot, activities = s.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+      const human = pendingHuman(s.human_actions);
+      const risk = (s.node_status.INVALID || 0) + (s.node_status.REVALIDATION_REQUIRED || 0) + (s.node_status.STALE || 0);
+      return [
+        ['工作域', s.workstreams.length, `${s.workstreams.filter(w => w.lifecycle === 'BASELINED').length} 已冻结`],
+        ['当前节点', s.current_node_count, `${s.node_status.VALID || 0} VALID · ${s.node_status.WAIVED || 0} WAIVED`],
+        ['正在进行', activities.length, activities.some(a => a.status === 'WAITING_FOR_HUMAN') ? '存在等待人工的工作' : 'Activity 实时记录'],
+        ['等待 Human', human.length, '评论、澄清或修改请求'],
+        ['需要关注', risk, `${s.open_findings} 个开放 finding`],
+      ];
+    }
+    function renderOverview() {
+      const s = state.snapshot, metrics = overviewMetrics(), openHuman = pendingHuman(s.human_actions);
+      $('#main').innerHTML = `<div class="page-head"><div><h1>项目验证总览</h1><p>实时汇总 Workstream、节点、Activity、证据和人工决定。百分比只表示必需节点满足数量，不代表功能验证充分性。</p></div><div class="page-actions"><button class="btn primary" id="global-action">提交人工意见</button></div></div>
+        <div class="grid summary-grid">${metrics.map(m => `<article class="card metric"><div class="label">${escapeHtml(m[0])}</div><div class="value">${escapeHtml(m[1])}</div><div class="hint">${escapeHtml(m[2])}</div></article>`).join('')}</div>
+        <section class="section"><div class="section-head"><h2>Workstream</h2><span class="count">${s.workstreams.length}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划 Workstream</div>'}</div></section>
+        <div class="grid two-col">
+          <section class="section"><div class="section-head"><h2>当前 Activity</h2><span class="count">实时工作记录</span></div><div class="card list-card">${activityRows(s.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
+          <section class="section"><div class="section-head"><h2>等待 Human</h2><span class="count">${openHuman.length}</span></div><div class="card list-card attention">${humanRows(openHuman)}</div></section>
+        </div>
+        <section class="section"><div class="section-head"><h2>最近证据</h2><span class="count">仅显示最新 12 条</span></div><div class="card list-card">${evidenceRows([...s.model.evidence].reverse().slice(0,12))}</div></section>`;
+      $('#global-action').onclick = () => openHumanModal(s.workstreams[0]?.workstream || '');
+      bindWorkstreamCards(); bindNodeLinks();
+    }
+    function wsCard(w) {
+      const p = percent(w.progress), running = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)).length;
+      const human = pendingHuman(w.human_actions).length;
+      return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(w.display_name)}</strong>${statusBadge(w.lifecycle)}<span class="revision">r${w.revision}</span></div>
+        <div class="ws-objective">${escapeHtml(w.objective)}</div><div class="progress" title="节点数量进度，不表示验证充分性"><span style="width:${p}%"></span></div><div class="progress-text"><span>${w.progress.satisfied}/${w.progress.required} 必需节点</span><span>${p}%</span></div>
+        <div class="chips"><span class="badge RUNNING">${running} Activity</span><span class="badge ${human ? 'OPEN':'RECORDED'}">${human} 等待 Human</span>${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(k)}</span>`).join('')}</div></article>`;
+    }
+    function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => card.onclick = () => { state.workstream = card.dataset.workstream; render(); }); }
+    function activityRows(items) {
+      if (!items.length) return '<div class="empty">当前没有登记为运行中的 Activity</div>';
+      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta mono">${escapeHtml(a.node_id)} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div>${p === null ? '' : `<div class="activity-bar"><span style="width:${p}%"></span></div>`}</div><div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div>`; }).join('');
+    }
+    function humanRows(items) {
+      if (!items.length) return '<div class="empty">当前没有等待 Human 的事项</div>';
+      return items.map(a => `<div class="list-row"><div><div class="row-title">${escapeHtml(a.action)} · ${escapeHtml(a.target)}</div><div class="row-meta">${escapeHtml(a.reason)} · ${escapeHtml(a.reviewer)} · ${shortTime(a.created_at)}</div></div>${statusBadge(a.status)}</div>`).join('');
+    }
+    function evidenceRows(items) {
+      if (!items.length) return '<div class="empty">尚无证据</div>';
+      return items.map(e => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(e.subject)}">${escapeHtml(e.kind)}</button><div class="row-meta mono">${escapeHtml(e.subject)} · ${escapeHtml(e.source)} · ${shortTime(e.created_at)}</div></div>${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')}</div>`).join('');
+    }
+    function renderWorkstream(w) {
+      if (!w) { state.workstream = null; return renderOverview(); }
+      const p = percent(w.progress), openHuman = pendingHuman(w.human_actions), actions = w.closure.actions || [];
+      $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(w.display_name)}</h1><p>${escapeHtml(w.objective)}</p></div><div class="page-actions"><button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button></div></div>
+        <div class="grid summary-grid"><article class="card metric"><div class="label">生命周期</div><div class="value" style="font-size:18px">${statusBadge(w.lifecycle)}</div><div class="hint">revision ${w.revision}</div></article><article class="card metric"><div class="label">必需节点</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 节点满足</div></article><article class="card metric"><div class="label">当前 Activity</div><div class="value">${w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)).length}</div><div class="hint">已登记的实时工作</div></article><article class="card metric"><div class="label">等待 Human</div><div class="value">${openHuman.length}</div><div class="hint">随时可以处理</div></article><article class="card metric"><div class="label">Closure 动作</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '退出条件已满足' : '仍有缺口'}</div></article></div>
+        <div class="grid two-col"><section><div class="section-head"><h2>节点</h2><span class="count">按目标、状态或 ID 搜索</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>目标</th><th>状态</th><th>角色</th><th>证据 / Activity</th></tr></thead><tbody>${nodeRows(w.nodes)}</tbody></table></div></section><aside><div class="section-head"><h2>退出条件</h2></div><div class="card metric"><ul class="exit-list">${w.exit_criteria.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div><div class="section"><div class="section-head"><h2>等待 Human</h2></div><div class="card list-card attention">${humanRows(openHuman)}</div></div></aside></div>
+        <section class="section"><div class="section-head"><h2>当前 Activity</h2></div><div class="card list-card">${activityRows(w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
+        <section class="section"><div class="section-head"><h2>当前缺口与建议动作</h2><span class="count">closure 是建议，不是 Human 参与的唯一入口</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
+      $('#human-action').onclick = () => openHumanModal(w.workstream);
+      $('#review-ws').onclick = () => openReviewModal(w);
+      bindNodeLinks();
+    }
+    function nodeRows(nodes) {
+      const query = state.query.toLowerCase();
+      const filtered = nodes.filter(n => !query || `${n.id} ${n.title} ${n.status} ${n.key}`.toLowerCase().includes(query));
+      if (!filtered.length) return '<tr><td colspan="4" class="empty">没有匹配节点</td></tr>';
+      return filtered.map(n => { const activity = activeActivity(n.activities); return `<tr><td><button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(n.title)}</button><div class="node-id mono">${escapeHtml(n.id)}</div></td><td>${statusBadge(n.status)}</td><td><span class="badge UNKNOWN">${escapeHtml(n.role)}</span>${n.required ? '' : '<span class="badge UNKNOWN">optional</span>'}</td><td>${n.evidence.length} evidence${activity ? `<div style="margin-top:5px">${statusBadge(activity.status)} ${escapeHtml(activity.operation)}</div>` : ''}</td></tr>`; }).join('');
+    }
+    function closureRows(items) {
+      if (!items.length) return '<div class="empty">当前没有 closure 缺口</div>';
+      return items.map(a => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(a.kind)} · ${escapeHtml(a.target)}</button><div class="row-meta">${escapeHtml(a.reason)}${a.blocked_by?.length ? ` · 等待 ${escapeHtml(a.blocked_by.join(', '))}` : ''}</div></div><span class="badge ${a.executor === 'human' ? 'WAITING_FOR_HUMAN' : 'PENDING'}">${escapeHtml(a.executor)}</span></div>`).join('');
+    }
+    function bindNodeLinks() { document.querySelectorAll('[data-node]').forEach(button => button.onclick = event => { event.stopPropagation(); state.node = button.dataset.node; renderDrawer(state.node); }); }
+
+    function evidenceContractHtml(contract) {
+      if (!contract) return '<div class="detail-card empty">该节点没有登记证据合同；不能据此关闭节点</div>';
+      const requirements = (contract.requirements || []).map(item => {
+        if (typeof item === 'string') return `<li>${escapeHtml(item)}</li>`;
+        const choices = (item.alternatives || []).map(choice =>
+          `<span class="tag mono">${escapeHtml(choice.kind)} · ${escapeHtml(choice.analyzer)}</span>`
+        ).join(' <span class="muted">或</span> ');
+        return `<li><strong>${escapeHtml(item.label || '证据要求')}</strong><div class="tag-row">${choices}</div></li>`;
+      }).join('');
+      return `<div class="detail-card"><dl class="kv"><dt>Claim</dt><dd class="mono">${escapeHtml(contract.claim || '—')}</dd><dt>判定基础</dt><dd>${escapeHtml(contract.basis || contract.version || '—')}</dd></dl><ul class="clean-list contract-list">${requirements || '<li>没有登记具体原始产物要求</li>'}</ul><p class="muted">缺少任一要求时，报告会是 FAIL；Activity 或任意 PASS 文件不能代替这些材料。</p></div>`;
+    }
+    function findNode(id) {
+      for (const w of state.snapshot.workstreams) { const node = w.nodes.find(n => n.id === id); if (node) return node; }
+      const raw = allNodes().find(n => n.id === id); if (!raw) return null;
+      const evidence = state.snapshot.model.evidence.filter(e => e.subject === id), findings = state.snapshot.model.findings.filter(f => f.subject === id);
+      return {...raw, evidence, findings, activities: state.snapshot.activities.filter(a => a.node_id === id), incoming: state.snapshot.model.edges.filter(e => e.target === id), outgoing: state.snapshot.model.edges.filter(e => e.source === id)};
+    }
+    function renderDrawer(id) {
+      const n = findNode(id); if (!n) { toast(`找不到节点 ${id}`, true); return; }
+      $('#drawer-backdrop').classList.add('open');
+      $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)}</div><h2>${escapeHtml(n.title)}</h2><div class="node-id mono">${escapeHtml(n.id)}</div></div><button class="icon-btn close" id="close-drawer">✕</button></div>
+        <div class="page-actions" style="margin:0"><button class="btn primary" id="node-comment">评论/要求调整</button>${n.workstream ? '<button class="btn danger" id="node-waive">提交 waiver</button>' : ''}</div>
+        <section class="detail-block"><h3>当前信息</h3><div class="detail-card"><dl class="kv"><dt>Workstream</dt><dd>${escapeHtml(n.workstream || '—')}</dd><dt>节点类型</dt><dd>${escapeHtml(n.type)}</dd><dt>最近更新</dt><dd>${shortTime(n.updated_at)}</dd><dt>建议能力</dt><dd>${escapeHtml(n.suggested_mode || '—')}</dd><dt>证据数量</dt><dd>${n.evidence?.length || 0}</dd></dl></div></section>
+        <section class="detail-block"><h3>证据合同</h3>${evidenceContractHtml(n.evidence_contract)}</section>
+        <section class="detail-block"><h3>当前 Activity</h3><div class="card list-card">${activityRows((n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
+        <section class="detail-block"><h3>依赖与影响</h3><div class="detail-card"><strong>入边</strong><ul>${(n.incoming || []).map(e => `<li><span class="mono">${escapeHtml(e.source)}</span> — ${escapeHtml(e.relation)}</li>`).join('') || '<li>无</li>'}</ul><strong>出边</strong><ul>${(n.outgoing || []).map(e => `<li>${escapeHtml(e.relation)} → <span class="mono">${escapeHtml(e.target)}</span></li>`).join('') || '<li>无</li>'}</ul></div></section>
+        <section class="detail-block"><h3>Finding</h3><div class="card list-card">${(n.findings || []).map(f => `<div class="list-row"><div><div class="row-title">${escapeHtml(f.severity)} · ${escapeHtml(f.details)}</div><div class="row-meta">${escapeHtml(f.id)}</div></div>${statusBadge(f.status)}</div>`).join('') || '<div class="empty">无 Finding</div>'}</div></section>
+        <section class="detail-block"><h3>证据历史</h3>${(n.evidence || []).slice().reverse().map(e => `<details><summary>${escapeHtml(e.kind)} · ${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')} · ${shortTime(e.created_at)}</summary><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre></details>`).join('') || '<div class="detail-card empty">尚无证据</div>'}</section>`;
+      $('#close-drawer').onclick = closeDrawer;
+      $('#node-comment').onclick = () => openHumanModal(n.id);
+      if ($('#node-waive')) $('#node-waive').onclick = () => openWaiveModal(n);
+    }
+    function closeDrawer() { state.node = null; $('#drawer-backdrop').classList.remove('open'); }
+    function openModal(html) { $('#modal').innerHTML = html; $('#modal-backdrop').classList.add('open'); document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = closeModal); }
+    function closeModal() { $('#modal-backdrop').classList.remove('open'); }
+    function reviewerValue() { return localStorage.getItem('verif-reviewer') || ''; }
+    function rememberReviewer(value) { if (value) localStorage.setItem('verif-reviewer', value); }
+    function openHumanModal(target) {
+      openModal(`<h2>提交 Human 意见</h2><p>随时评论、澄清或要求调整。此操作不会直接修改节点有效性。</p><form id="human-form"><div class="field"><label>目标</label><input name="target" value="${escapeHtml(target)}" required></div><div class="field"><label>动作</label><select name="action"><option value="COMMENT">评论</option><option value="REQUEST_CHANGE">要求修改</option><option value="CLARIFY">要求澄清</option><option value="PRIORITIZE">调整优先级</option><option value="ACKNOWLEDGE">确认已阅</option></select></div><div class="field"><label>Reviewer</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>说明</label><textarea name="reason" placeholder="说明判断、依据和期望动作" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交</button></div></form>`);
+      $('#human-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); rememberReviewer(data.reviewer); await post('/api/human-actions', data, '人工意见已保存'); };
+    }
+    function openReviewModal(w) {
+      openModal(`<h2>评审 ${escapeHtml(w.workstream)} revision ${w.revision}</h2><p>评审可以在任何时点发起。批准不等于实现或证据已经完成。</p><form id="review-form"><div class="field"><label>结论</label><select name="verdict"><option value="approve">批准当前计划</option><option value="modify">要求修改</option><option value="clarify">继续澄清</option><option value="reject">拒绝</option></select></div><div class="field"><label>Reviewer</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>理由</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交评审</button></div></form>`);
+      $('#review-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.workstream = w.workstream; rememberReviewer(data.reviewer); await post('/api/reviews/workstream', data, 'Workstream 评审已保存'); };
+    }
+    function openWaiveModal(n) {
+      openModal(`<h2>接受未满足项</h2><p>waiver 不是 PASS。请确认风险、依据和影响；该操作会把节点置为 WAIVED。</p><form id="waive-form"><div class="field"><label>节点</label><input value="${escapeHtml(n.id)}" disabled></div><div class="field"><label>Reviewer</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>理由和依据</label><textarea name="reason" required></textarea></div><div class="field"><label><input name="confirm" type="checkbox" style="width:auto" required> 我确认这是 Human 的明确工程决定</label></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn danger">确认 waiver</button></div></form>`);
+      $('#waive-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.node = n.id; data.confirm = true; rememberReviewer(data.reviewer); await post('/api/waive', data, 'waiver 已记录'); };
+    }
+    async function post(path, data, success) {
+      try { const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)}); const body = await response.json(); if (!response.ok) throw new Error(body.error || response.statusText); setSnapshot(body.snapshot); closeModal(); toast(success); }
+      catch (error) { toast(String(error), true); }
+    }
+    $('#drawer-backdrop').onclick = event => { if (event.target === $('#drawer-backdrop')) closeDrawer(); };
+    $('#modal-backdrop').onclick = event => { if (event.target === $('#modal-backdrop')) closeModal(); };
+    $('#search').oninput = event => { state.query = event.target.value.trim(); if (state.workstream) renderWorkstream(workstream(state.workstream)); else if (state.query) { const match = allNodes().find(n => `${n.id} ${n.title}`.toLowerCase().includes(state.query.toLowerCase())); if (match) { state.node = match.id; renderDrawer(match.id); } } };
+    $('#theme').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? '' : 'dark'; localStorage.setItem('verif-theme', dark ? 'light' : 'dark'); };
+    if (localStorage.getItem('verif-theme') === 'dark' || (!localStorage.getItem('verif-theme') && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.dataset.theme = 'dark';
+    initialLoad();
+  </script>
+</body>
+</html>

@@ -619,11 +619,11 @@ implementation、policy、manifest、log 等字段中记录的 SHA-256 还必须
         ↓
 raw artifact: log / manifest / VDB / UCDB / waveform
         ↓
-项目 adapter / extractor（结果提取程序）
+xverif / WavePeek + 项目 adapter / extractor（结果提取程序）
         ↓
 字段固定的 evidence JSON
         ↓
-JSON 格式 + 要证明的内容 + 项目版本 + 文件指纹 + 依赖 + 相关证据检查
+JSON 格式 + 要证明的内容 + 原始产物类型 + 分析器 + 项目版本 + 文件指纹 + 依赖检查
         ↓
 PASS/FAIL evidence → node VALID/INVALID → closure（检查还缺什么）
 ```
@@ -637,7 +637,16 @@ log/VDB/UCDB 解析程序**。现阶段由项目脚本、仿真器结果收集�
 编译成功主要证明[能力节点](glossary.md#node-role)已经准备好，不足以关闭运行目标。仿真日志
 必须提取 testcase、[seed](glossary.md#triage)、错误、比较、assertion 或场景计数；
 [coverage database（覆盖率数据库）](glossary.md#evidence-source)必须导出数据库标识、合并结果、
-覆盖项、命中次数和排除项。波形用于调试或补充说明，默认不能单独关闭工作域。
+覆盖项、命中次数和排除项。运行类节点通常还必须提供 WavePeek 分析的波形，或 xverif 分析的
+结构化事务轨迹，并保存 xverif 或 WavePeek 实际生成的结构化分析结果文件；这些文件都不能
+单独关闭工作域。
+
+因此 `stimulus-implementation`、`corner-scenarios` 或 `case-implementation` 可以在其“源码存在、
+注册关系完整、能够编译”的证据合同通过后显示 `VALID`；这里的 `VALID` 只表示该能力节点自身成立，
+不是功能已经验证通过。对应的 `reachability-evidence`、`determinism-evidence` 或
+`targeted-evidence` 仍是必需节点。任何一个运行证据节点缺少仿真、波形/事务轨迹或分析结果时，
+整个 Workstream 都不能进入 `SATISFIED`。不把能力节点降成 `REVIEW_REQUIRED`，是为了让状态准确
+表达“实现已准备但尚未运行”，而不是把两类事实混成一个状态。
 
 除独立的 VSTIM reachability 格式外，标准报告使用以下[公共 JSON 字段](glossary.md#evidence-format)：
 
@@ -648,7 +657,18 @@ log/VDB/UCDB 解析程序**。现阶段由项目脚本、仿真器结果收集�
   "revision": "<bootstrap project revision>",
   "tool": "<producer/version>",
   "artifacts": [
-    {"path": "results/checker/run.log", "sha256": "<64 位小写 SHA-256>"}
+    {
+      "path": "results/checker/run.log",
+      "sha256": "<64 位小写 SHA-256>",
+      "kind": "simulation-log",
+      "analyzed_by": ["xverif"]
+    },
+    {
+      "path": "results/checker/wavepeek-analysis.json",
+      "sha256": "<64 位小写 SHA-256>",
+      "kind": "analysis-report",
+      "analyzed_by": ["wavepeek"]
+    }
   ],
   "result": {"...": "该 claim 对应的事实"}
 }
@@ -656,6 +676,9 @@ log/VDB/UCDB 解析程序**。现阶段由项目脚本、仿真器结果收集�
 
 SQLite 保存报告索引、文件指纹、提取后的字段、状态和[来源信息](glossary.md#evidence)，
 不保存整份 VDB/UCDB。原始数据库和日志仍由项目管理；报告用路径和 SHA-256 引用它们。
+`analysis-report` 必须直接引用 xverif 或 WavePeek adapter 生成的运行回执。Engine 会打开该
+JSON，检查格式版本、请求 SHA-256、操作、工具身份、`state=PASS` 和空 blocker；只写一个
+`{"state":"PASS"}` 或只填写 `analyzed_by` 会被拒绝。
 
 #### 各 Workstream 的证据形式与退出条件
 
@@ -665,12 +688,12 @@ SQLite 保存报告索引、文件指纹、提取后的字段、状态和[来源
 | [Workstream](glossary.md#workstream) | [能力节点](glossary.md#node-role)：证明“已经具备” | [运行证据节点](glossary.md#node-role)：证明“实际有效” | 主要原始来源 |
 | --- | --- | --- | --- |
 | `VDOC` | 八份正式验证文档的当前文件版本和 SHA-256 | 无独立运行证据；使用 Human `docs review` | Markdown、评审记录 |
-| `VENV` | 接口连接（`interface-ready`）、时钟复位（`clock-reset-ready`）、组件结构（`topology-ready`）、构建（`build-ready`）、最小运行入口（`run-ready`）和观测点（`observation-ready`） | clock/reset、启动、结束和观测路径实际工作的最小环境运行（`environment-smoke-evidence`） | 验证源码、编译/elaboration 日志、最小仿真日志和观测汇总 |
-| `VSTIM` | 接口事务规则（`transaction-contract`）、激励实现（`stimulus-implementation`）、边界场景清单（`corner-scenarios`） | 场景确实到达 DUT（`reachability-evidence`）、同样输入可重复产生同样激励（`determinism-evidence`） | 源码、编译和注册结果、DUT 输入边界探针输出，可选波形 |
-| `VCHK` | 比较规则（`compare-policy`）、参考模型（`reference-model`）、计分板（`scoreboard`）、断言（`assertions`） | 参考模型、计分板和断言在真实仿真中实际参与工作且没有失败 | 编译和 elaboration 日志、仿真日志、检查器和断言汇总报告 |
-| `VCOV` | 覆盖率模型（`coverage-model`）、覆盖率收集工具（`coverage-collection`） | 覆盖数据成功收集（`coverage-collection-evidence`）、每个未覆盖项都有处理结果（`hole-analysis-evidence`） | VDB/UCDB、覆盖率导出文件、合并报告、豁免记录 |
-| `VCASE` | 用例与验证点对应表（`case-matrix`）、用例实现（`case-implementation`） | 每个已实现用例的定向运行结果（`targeted-evidence`） | 用例源码和注册结果、定向仿真日志或报告 |
-| `VREG` | 回归运行规则（`regression-policy`）、运行和收集工具已可用（`executor-ready`） | 批量执行结果（`execution-evidence`）、每个失败的分析结果（`triage-evidence`）、全部必需证据都对应当前项目版本（`fresh-evidence`） | 运行清单、[runner/collector](glossary.md#dv-terms) 自检、批量仿真日志、重跑记录 |
+| `VENV` | 接口连接（`interface-ready`）、时钟复位（`clock-reset-ready`）、组件结构（`topology-ready`）、构建（`build-ready`）、最小运行入口（`run-ready`）和观测点（`observation-ready`） | clock/reset、启动、结束和观测路径实际工作的最小环境运行（`environment-smoke-evidence`） | 源码与构建日志由 xverif 检查；动态节点还要求 xverif 仿真日志、WavePeek 波形或 xverif 事务轨迹，以及保存的分析结果 |
+| `VSTIM` | 接口事务规则（`transaction-contract`）、激励实现（`stimulus-implementation`）、边界场景清单（`corner-scenarios`） | 场景确实到达 DUT（`reachability-evidence`）、同样输入可重复产生同样激励（`determinism-evidence`） | 源码和构建日志；运行节点必须有 xverif 仿真日志、WavePeek 波形或 xverif DUT 输入边界事务轨迹，以及保存的分析结果 |
+| `VCHK` | 比较规则（`compare-policy`）、参考模型（`reference-model`）、计分板（`scoreboard`）、断言（`assertions`） | 参考模型、计分板和断言在真实仿真中实际参与工作且没有失败 | 实现源码和构建日志；运行节点必须有 xverif 仿真日志、WavePeek 波形或 xverif 事务轨迹，以及保存的分析结果 |
+| `VCOV` | 覆盖率模型（`coverage-model`）、覆盖率收集工具（`coverage-collection`） | 覆盖数据成功收集（`coverage-collection-evidence`）、每个未覆盖项都有处理结果（`hole-analysis-evidence`） | VDB/UCDB 等覆盖率数据库和 xverif 结构化分析报告，二者都必须登记 |
+| `VCASE` | 用例与验证点对应表（`case-matrix`）、用例实现（`case-implementation`） | 每个已实现用例的定向运行结果（`targeted-evidence`） | 源码和构建日志；定向运行必须有 xverif 仿真日志、WavePeek 波形或 xverif 事务轨迹，以及保存的分析结果 |
+| `VREG` | 回归运行规则（`regression-policy`）、运行和收集工具已可用（`executor-ready`） | 批量执行结果（`execution-evidence`）、每个失败的分析结果（`triage-evidence`）、全部必需证据都对应当前项目版本（`fresh-evidence`） | xverif 检查的运行清单、批量仿真日志、重跑日志和结构化分析报告 |
 
 各工作域的自动[退出条件](glossary.md#desired-current)如下。这里的“退出”是进入
 `SATISFIED`，不是最终[签核（sign-off）](glossary.md#baseline)：
@@ -740,9 +763,22 @@ verif-harness reachability VSTIM_NODE results/stimulus-reachability.json
 和激励序列 SHA-256。命令根据这些字段生成 PASS/FAIL。同一 test、seed 和配置至少有两次无错误
 运行，且激励序列 SHA-256 一致，才满足“可以稳定复现”这个目标。模板见
 `reachability/stimulus-reachability.example.json`。Functional coverage、SVA cover property
-和波形可以旁证，但不能作为关闭 VSTIM 的唯一证据，因此 VSTIM 不需要等待完整 VCOV/VCHK。
+不能作为关闭 VSTIM 的唯一证据。报告还必须引用 xverif 分析过的仿真日志，并引用 WavePeek
+分析过的波形或 xverif 分析过的事务轨迹，并保存对应工具的结构化分析结果；这些原始产物仍不能
+替代 probe 计数和复跑一致性。
+VSTIM 因此不需要等待完整 VCOV/VCHK。
 
-VDOC 正文使用 `docs review`。只有没有标准证据格式的自定义目标才允许通用 `prove`：
+VDOC 正文使用 `docs review`。Planner 创建的 VENV/VSTIM/VCHK/VCOV/VCASE/VREG 自定义目标也必须
+在规划时指定一个现有专用 evidence claim，不能用通用 `prove`：
+
+```text
+# Agent：一个 --desired 对应一个 --evidence-claim；Human 无需手工拼接
+verif-harness plan VCHK \
+  --desired "backpressure 下 scoreboard 无遗漏比较" \
+  --evidence-claim scoreboard-evidence
+```
+
+只有用底层 `record node` 创建、且确实没有标准证据格式的扩展节点才允许通用 `prove`：
 
 ```text
 # Agent：仅对没有标准证据格式的自定义目标调用 CLI
@@ -751,7 +787,7 @@ verif-harness prove CUSTOM_NODE results/custom-audit.json
 verif-harness prove CUSTOM_NODE results/custom-failure.json --fail --kind custom-audit
 ```
 
-通用 `prove` 接受调用方 verdict，因此不能用于标准 Workstream desired node。
+通用 `prove` 接受调用方 verdict，因此不能用于 Planner 创建的实现类 Workstream desired node。
 
 若自定义目标确实依赖其他工作域的一项能力，才手工登记 node 级依赖：
 
@@ -1074,6 +1110,57 @@ waiver 只允许用于已规划 Workstream node，必须提供理由；Agent 不
 waive。单 Workstream baseline 和 final baseline 都保留旧版本，后续变化必须重新验证并创建
 新 baseline，不能改写历史。
 
+### 4.7 在完成条件检查之前实时查看和参与
+
+Human 不需要等到某个 Workstream 满足全部[完成条件](glossary.md#gap-action)才参与。启动本机
+[Dashboard](glossary.md#dashboard) 后，可以随时查看七个 Workstream、每个目标节点、当前活动、
+证据历史、待处理问题、依赖和按节点数量计算的进度。界面中的进度只说明当前必需节点已有多少
+达到 `VALID/WAIVED`，不代表仿真覆盖率，也不代替工程判断。
+
+```text
+# Human：在当前 Agent 对话中提出“打开 Dashboard”；通常不直接输入 shell 命令
+# Agent：确认项目已 bootstrap 后启动本机服务并把地址展示给 Human
+# Engine：从同一个 model.sqlite3 读取状态，状态变化时通过浏览器连接推送新快照
+verif-harness dashboard --open-browser
+```
+
+实时显示需要 Agent 或项目工具把正在做的工作登记为
+[Activity（当前活动）](glossary.md#dashboard)。登记活动不会把目标改成 `VALID`；最终结论仍必须来自
+规定格式的证据或 Human 明确作出的评审、豁免和冻结决定。
+
+```text
+# Agent：开始一个有边界的实现、编译、仿真或分析动作时登记
+verif-harness activity start NODE \
+  --operation "compile environment" --actor codex --total 3
+
+# Agent：工具产生新进展时更新；WAITING_FOR_HUMAN 表示问题已显示，当前动作先不继续
+verif-harness activity update ACTIVITY_ID \
+  --status RUNNING --current 2 --message "elaboration completed"
+verif-harness activity update ACTIVITY_ID \
+  --status WAITING_FOR_HUMAN --message "需要确认 reset 释放规则"
+
+# Agent：工作真正结束后登记结果；这仍不是验证证据
+verif-harness activity update ACTIVITY_ID --status COMPLETED --current 3
+```
+
+Human 可以从界面选择 Workstream 或节点，提交评论、要求修改、要求说明或调整优先级。
+这些输入进入[人工操作记录](glossary.md#dashboard)，立即出现在 Dashboard 和后续 Agent 会话中；
+它们不会绕过 `evidence` 直接修改节点状态。Human 也可在界面中提交 Workstream 评审、豁免；
+豁免必须再次确认并填写 reviewer 与 reason。所有写操作只允许从打开页面时取得的本机会话令牌
+提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。
+
+三种角色在实时查看中的边界：
+
+| 角色 | 实际工作 |
+| --- | --- |
+| **Human** | 随时查看状态、证据和当前活动；提出评论/修改/澄清/优先级；在看清影响后作出评审、豁免或冻结决定 |
+| **Agent** | 启动 Dashboard；在开始、等待和结束工程动作时更新 Activity；解释 Human 输入并执行后续工作；不得伪造进度 |
+| **Engine** | 从 SQLite 生成结构化快照；状态改变时刷新页面；校验并保存 Human 写入；不自行运行编译、仿真或作工程结论 |
+
+Dashboard 停止或 Agent 断线不会丢失已经保存的节点、证据、Activity 和人工操作记录。新会话进入
+项目后可再次运行 `dashboard --open-browser`；未登记到 CLI 的终端输出或进程内部百分比无法恢复。
+如果工具长时间运行，应持续登记 Activity 或由项目执行系统保留日志，再由新 Agent 根据真实状态更新。
+
 ## 5. 状态、文件与治理边界
 
 这里的状态来自 [Verification Knowledge Model](glossary.md#subsystems)。
@@ -1115,6 +1202,7 @@ waive。单 Workstream baseline 和 final baseline 都保留旧版本，后续�
 ├── project.json                  # bootstrap manifest
 ├── inventory.json                # 从数据库生成、供人查看的文件清单
 ├── model.md                      # 从数据库生成、供人查看的项目状态
+├── model.sqlite3                 # 也保存 Dashboard Activity 与人工操作记录
 ├── workstreams/<name>/
 │   ├── desired-state.json        # 从数据库生成的当前目标版本
 │   └── plan.md                   # 从数据库生成的简洁阅读文件
@@ -1166,6 +1254,25 @@ verif-harness bootstrap [OPTIONS]
 无参数显示全局模型、Workstream 和 ranked actions；指定 Workstream 只显示其 plan 与
 只读 closure。WORKSTREAM 为 `VDOC/VENV/VSTIM/VCHK/VCOV/VCASE/VREG`。
 
+### `dashboard`
+
+启动供 Human 实时查看和参与的本机 Web 界面；页面状态来自同一份 SQLite 模型。
+
+```text
+verif-harness dashboard [--host 127.0.0.1|localhost] [--port PORT] [--open-browser]
+verif-harness dashboard --snapshot
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--host` | 监听地址；只接受 `127.0.0.1` 或 `localhost`，默认 `127.0.0.1` |
+| `--port` | 本机端口，默认 `8765`；`0` 表示由操作系统选择空闲端口 |
+| `--open-browser` | 启动后打开默认浏览器 |
+| `--snapshot` | 只输出一次完整 JSON 快照后退出，适合 CI 或自定义前端 |
+
+页面通过本机事件流接收状态更新，不轮询外部服务。关闭页面或停止 Dashboard 不会停止仿真，
+也不会清除 SQLite 状态。Dashboard 不是证据生产工具；它只展示或提交受控的 Human 输入。
+
 ### `plan WORKSTREAM`
 
 开始一个 Workstream 或需要修改它的目标时使用。命令先生成待评审方案，不会直接实现代码。
@@ -1173,13 +1280,14 @@ verif-harness bootstrap [OPTIONS]
 
 ```text
 verif-harness plan VCHK [--objective TEXT] [--desired TEXT] \
-  [--exit TEXT] [--decision TEXT]
+  [--evidence-claim CLAIM] [--exit TEXT] [--decision TEXT]
 ```
 
 | 参数 | 说明 |
 | --- | --- |
 | `--objective TEXT` | 覆盖模板目标；省略时用内置目标 |
 | `--desired TEXT` | 自定义 required desired state；可重复；一旦提供则替代模板 desired 列表 |
+| `--evidence-claim CLAIM` | 与每个自定义 `--desired` 一一对应；确定报告格式、原始产物类型和分析器；实现类 Workstream 不允许省略 |
 | `--exit TEXT` | 自定义退出标准；可重复；省略时用模板 |
 | `--decision TEXT` | 记录已确认决策；可重复 |
 | `--document-root PATH` | 仅用于 VDOC；Agent 将对话确认的验证文档输出目录传给 Engine，Human 通常不直接填写 |
@@ -1255,7 +1363,7 @@ verif-harness evidence SUBJECT SOURCE [--claim CLAIM]
 ```
 
 标准 node 从 key 自动确定[要证明的内容（claim）](glossary.md#evidence-format)；自定义 node
-必须显式给出。命令分别校验
+在规划时已经由 `--evidence-claim` 固定，不能在登记时换成较弱 claim。命令分别校验
 `EnvironmentEvidence/1`、`StimulusCapabilityEvidence/1`、`StimulusReachabilityEvidence/1`、
 `CheckingEvidence/1`、`CoverageEvidence/1`、
 `TestcaseEvidence/1` 或 `RegressionEvidence/1`，然后从内容推导 verdict。VDOC 不接受该
@@ -1263,7 +1371,9 @@ verif-harness evidence SUBJECT SOURCE [--claim CLAIM]
 
 每个 claim 要提供哪些字段、原始数据来自哪里、什么条件下可以退出，统一见前面的
 [各 Workstream 的证据形式与退出条件](#各-workstream-的证据形式与退出条件)。字段名称的
-中文解释见[证据 JSON 常见字段](glossary.md#evidence-format)。
+中文解释见[证据 JSON 常见字段](glossary.md#evidence-format)。当前 desired-state JSON 和
+`plan.md` 会直接列出该节点的 `evidence_contract`：缺少要求的 simulation log、波形/事务轨迹、
+coverage database 或分析器时，报告会登记为 FAIL，closure 不会将节点视为满足。
 
 ### `changed PATH`
 
@@ -1339,6 +1449,40 @@ verif-harness closure evaluate --workstream VCHK
 ```
 
 无 Workstream 时重算全局 closure 和 ranked actions；局部形式只计算指定 Workstream。
+
+### `activity`
+
+Agent 用它登记当前正在执行什么，让 Human 不必等到任务结束才能知道进展。Activity 与节点关联，
+但绝不直接改变节点 validity。
+
+```text
+verif-harness activity start NODE --operation TEXT --actor NAME \
+  [--message TEXT] [--total N] [--log-path PATH]
+verif-harness activity update ACTIVITY_ID \
+  --status PENDING|RUNNING|WAITING_FOR_HUMAN|COMPLETED|FAILED|CANCELLED \
+  [--message TEXT] [--current N] [--total N] [--log-path PATH]
+verif-harness activity list [--workstream WORKSTREAM] [--node NODE] [--active]
+```
+
+`--current/--total` 只表示该 Activity 自己公开的步骤数；不得拿主观百分比冒充覆盖率或完成条件。
+`--log-path` 必须位于项目内。结束状态不能再次改写，需要继续工作时创建新的 Activity。
+
+### `human-action`
+
+保存 Human 在 Dashboard 或对话中针对 Workstream/节点提出的输入，不直接批准证据或改变节点状态。
+
+```text
+verif-harness human-action add TARGET \
+  --action comment|request-change|clarify|prioritize|acknowledge \
+  --reviewer NAME --reason TEXT
+verif-harness human-action resolve ID --reviewer NAME --resolution TEXT \
+  [--status resolved|superseded]
+verif-harness human-action list [--status open|recorded|resolved|superseded]
+```
+
+`request-change/clarify/prioritize` 会保持 `OPEN`，直到 Agent/Human 明确记录处理结果；
+`comment/acknowledge` 作为已经记录的信息保存。正式 Workstream 审批仍使用 `review`，节点豁免仍使用
+`waive`，不能用 human-action 代替。
 
 ### `reason`
 

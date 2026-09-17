@@ -30,6 +30,28 @@
 
 这些名字表示职责，不要求用户启动五个进程。
 
+<a id="dashboard"></a>
+## Dashboard、Activity、人工操作记录
+
+**Dashboard（实时项目看板）**是只在本机打开的 Web 页面。它把 SQLite 中已经登记的
+Workstream、节点状态、完成条件、证据、问题、当前活动和人工操作记录分层展示。状态保存后，
+页面通过浏览器事件连接刷新；“实时”不表示 verif-harness 会偷看任意终端、进程、文件或波形。
+
+**Activity（当前活动）**是 Agent 或工具主动登记的一段在做工作，例如“编译 VENV”或
+“运行 testcase seed 17”。它包含关联节点、执行者、状态、可选步骤数和日志路径。
+`RUNNING` 表示工作仍在执行，`WAITING_FOR_HUMAN` 表示问题已经交给 Human、这段工作先不继续，
+`COMPLETED/FAILED/CANCELLED` 表示这段活动结束。Activity 是进度说明，不是 evidence，不能把
+目标直接变成 `VALID`。
+
+**Human action（人工操作记录）**保存 Human 随时提出的评论、修改要求、澄清问题、优先级调整或
+确认已知信息。它可以针对整个 Workstream，也可以针对单个节点。需要后续处理的记录保持 `OPEN`；
+Agent/Human 处理后写入 resolution。它不同于正式 `review`、`waiver` 和 `freeze`，不会自行批准
+计划、接受未满足目标或保存基线。
+
+**Progress（看板进度）**默认是“本轮 required 节点中，`VALID/WAIVED` 的数量 / required 总数”。
+它不是 functional coverage、code coverage、仿真完成百分比或工期预测。Activity 的
+`current/total` 也只表示该活动自己声明的有限步骤数。
+
 <a id="project-setup"></a>
 ## 项目路径和启动相关词
 
@@ -172,6 +194,12 @@ Agent 会话，由 Agent 展示状态并登记证据。
 解析程序，由项目工具或 adapter 生成 JSON。应优先使用工具原生 JSON、XML、JUnit 或正式
 导出格式；自由文本日志解析只是兼容方案，LLM 的文字总结不能代替按固定规则提取字段的程序。
 
+**Artifact kind（原始产物类型）**明确说明引用文件是 `source`、`build-log`、
+`simulation-log`、`waveform`、`transaction-trace`、`coverage-database`、
+`regression-manifest` 还是 `analysis-report`。**Analyzed by（分析工具）**说明哪个确定性工具
+读取了该产物；标准合同使用 `xverif` 检查源码、构建/仿真日志、事务轨迹、覆盖率数据库和回归
+清单，使用 `wavepeek` 检查波形。仅有文件路径或在报告中写 PASS 不满足证据准入规则。
+
 <a id="evidence-format"></a>
 **Evidence schema（JSON 格式规范）**定义报告必须有哪些字段、字段类型和格式版本，例如
 `CheckingEvidence/1`。**Claim（要证明的内容）**表示报告对应哪个标准节点，例如
@@ -179,9 +207,18 @@ Agent 会话，由 Agent 展示状态并登记证据。
 内容。**Validator（自动校验程序）**检查 JSON 格式、该 claim 的规则、文件 SHA-256、项目
 revision、前置依赖和相关证据是否一致，再根据检查结果生成 verdict。
 
+**Evidence admission policy（证据准入规则）**随每个 desired node 写入当前计划，明确该节点
+允许使用哪个 claim、至少需要哪些原始产物类型，以及必须由哪个分析器处理。例如
+`scoreboard-evidence` 要求 xverif 仿真日志，并要求 WavePeek 波形或 xverif 事务轨迹；
+同时还要保存 xverif 或 WavePeek 生成的 `analysis-report`；`hole-analysis-evidence` 要求覆盖率数据库
+和 xverif 分析报告。缺少任一项时，即使结果字段声称
+没有错误，validator 也生成 FAIL，closure 不会关闭该节点。
+其中 `analysis-report` 必须是 xverif/WavePeek adapter 的运行回执，包含格式版本、请求
+SHA-256、操作名称、工具身份、`state=PASS` 和空 blocker；普通 JSON 中手写 PASS 会被拒绝。
+
 **Verdict（判定）**是 pass/fail 等结论。标准 Workstream 的 `evidence` 命令由专用 validator
-从报告内容推导 verdict；只有没有标准证据格式的自定义目标，才使用通用 `prove`
-并接受调用方给出的结果。
+从报告内容推导 verdict；Planner 创建的实现类自定义目标也必须选择一个专用 claim。只有通过
+底层接口创建、确实没有标准证据格式的扩展节点，才使用通用 `prove` 并接受调用方给出的结果。
 VSTIM 的 **Reachability evidence（可达性证据）**由工作域自身的 probe 在 DUT 输入接受边界
 记录 generated/driven/accepted/hits，并由 `reachability` 命令推导 verdict。Functional
 coverage、cover property 和波形是旁证，不能单独证明 VSTIM closure。

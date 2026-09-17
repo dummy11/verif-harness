@@ -35,6 +35,7 @@ def main() -> int:
     )
     required_files = (
         "verif_harness/__init__.py", "verif_harness/cli.py", "verif_harness/store.py",
+        "verif_harness/dashboard.py", "verif_harness/dashboard.html", "verif_harness/evidence_policy.py",
         "scripts/verif_harness.py", "skills/verif-harness/scripts/verif-harness",
         "deps/runtime.lock.json", "deps/runtime-requirements.lock",
         "deps/xverif.lock.json", "deps/wavepeek.lock.json",

@@ -2,7 +2,9 @@
   "schema": "StimulusReachabilityEvidence/1",
   "revision": "git-or-model-revision",
   "artifacts": [
-    {"path": "results/stimulus/probe.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
+    {"path": "results/stimulus/run.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "simulation-log", "analyzed_by": ["xverif"]},
+    {"path": "results/stimulus/probe.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "transaction-trace", "analyzed_by": ["xverif"]},
+    {"path": "results/stimulus/xverif-analysis.json", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "analysis-report", "analyzed_by": ["xverif"]}
   ],
   "producer": {
     "kind": "vstim-probe",

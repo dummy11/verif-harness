@@ -6,7 +6,15 @@
   "artifacts": [
     {
       "path": "results/stimulus/input_sequence.sv",
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "source",
+      "analyzed_by": ["xverif"]
+    },
+    {
+      "path": "results/stimulus/compile.log",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "kind": "build-log",
+      "analyzed_by": ["xverif"]
     }
   ],
   "result": {

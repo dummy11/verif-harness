@@ -4,8 +4,8 @@
   "revision": "git-or-model-revision",
   "tool": "coverage exporter version",
   "artifacts": [
-    {"path": "results/coverage/merge.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
-    {"path": "results/coverage/database.ucdb", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+    {"path": "results/coverage/analysis.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "analysis-report", "analyzed_by": ["xverif"]},
+    {"path": "results/coverage/database.ucdb", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "coverage-database", "analyzed_by": ["xverif"]}
   ],
   "result": {
     "items": [

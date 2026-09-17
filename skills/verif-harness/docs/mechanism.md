@@ -108,18 +108,22 @@ Verification Closure Engine 将它与 required desired state 对比，生成 [ac
 [schema](glossary.md#evidence-format)、执行该 claim 的[自动校验](glossary.md#evidence-format)，
 并从内容生成 verdict，通用入口不能绕过。
 格式错误不登记；格式正确但没有达到工程条件时登记 FAIL。VDOC 使用绑定正文文件指纹的
-`docs review`。通用 `prove` 只用于没有标准证据格式的自定义目标，并接受调用方给出的 verdict。
+`docs review`。Planner 创建的实现类自定义目标也必须在规划时绑定专用 claim；通用 `prove`
+只用于底层接口创建且没有标准证据格式的扩展节点，并接受调用方给出的 verdict。
 SHA-256 只确认文件内容是否变化，不代表功能正确，也不表示系统正在持续监控文件。
 
 工具[原始输出](glossary.md#evidence-source)与系统能够登记为验证结论的证据不是同一个概念：编译成功通常只支持
 capability；仿真日志中的非零 comparison、零 mismatch、scenario accepted 等运行事实支持
-closure-evidence；VDB/UCDB 需要先导出覆盖项、命中次数、合并结果和排除项；波形主要用于
-调试或补充说明。当前控制面尚未提供支持所有仿真器的通用 log/VDB/UCDB 解析程序，由项目
+closure-evidence；VDB/UCDB 需要先导出覆盖项、命中次数、合并结果和排除项。运行类节点还
+要求 WavePeek 波形或 xverif 事务轨迹作为动态行为分析输入，并登记 xverif 或 WavePeek
+实际生成的结构化分析结果文件；它们不能代替 typed result。
+当前控制面尚未提供支持所有仿真器的通用 log/VDB/UCDB 解析程序，由项目
 工具或 adapter 生成固定格式 JSON；不能让 Agent 用自然语言“阅读后宣布 PASS”。
 
 所有标准 JSON 使用[公共字段](glossary.md#evidence-format)：`schema` 标识格式版本，`claim`
 标识要证明的内容，`revision` 绑定项目状态，`tool` 记录生产程序，`artifacts[]` 用项目相对
-路径和 SHA-256 绑定原始文件，`result` 保存 Workstream 专用事实。VSTIM reachability 使用
+路径、SHA-256、artifact kind 和 `analyzed_by` 绑定原始文件与分析器，`result` 保存
+Workstream 专用事实。VSTIM reachability 使用
 同等严格的专用格式，
 其中 producer 和 observation boundary 另有固定约束。
 

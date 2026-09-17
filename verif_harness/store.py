@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
+from .evidence_policy import policy_for
 from .reachability import ReachabilityError, validate_reachability
 
 
@@ -28,6 +29,11 @@ DOCUMENT_ITEM_KINDS = {
     "human-decision", "provisional", "assumption", "external-open-question",
 }
 DOCUMENT_ITEM_STATUSES = {"PENDING", "ACTIVE", "RESOLVED", "SUPERSEDED"}
+ACTIVITY_STATUSES = {
+    "PENDING", "RUNNING", "WAITING_FOR_HUMAN", "COMPLETED", "FAILED", "CANCELLED",
+}
+HUMAN_ACTIONS = {"COMMENT", "REQUEST_CHANGE", "CLARIFY", "PRIORITIZE", "ACKNOWLEDGE"}
+HUMAN_ACTION_STATUSES = {"OPEN", "RECORDED", "RESOLVED", "SUPERSEDED"}
 AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
 AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
@@ -563,6 +569,18 @@ CREATE TABLE IF NOT EXISTS document_items (
   anchor TEXT, status TEXT NOT NULL, owner TEXT, review_trigger TEXT,
   affects_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS activities (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT, operation TEXT NOT NULL,
+  status TEXT NOT NULL, actor TEXT NOT NULL, message TEXT NOT NULL,
+  progress_current INTEGER, progress_total INTEGER, log_path TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, ended_at TEXT
+);
+CREATE TABLE IF NOT EXISTS human_actions (
+  id TEXT PRIMARY KEY, target TEXT NOT NULL, target_type TEXT NOT NULL,
+  action TEXT NOT NULL, status TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL,
+  payload_json TEXT NOT NULL, resolved_by TEXT, resolution TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 """
 
 
@@ -574,6 +592,7 @@ class ProjectStore:
         self.root = self.root.resolve()
         self.state = self.root / STATE_DIR
         self.database = self.state / "model.sqlite3"
+        self._dashboard_schema_ready = False
 
     @property
     def initialized(self) -> bool:
@@ -595,7 +614,14 @@ class ProjectStore:
             raise HarnessError("检测到不兼容的 v1 开发态数据库；请移走 .verif-harness 后重新 bootstrap")
         connection.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
         connection.commit()
+        self._dashboard_schema_ready = True
         return connection
+
+    def ensure_dashboard_schema(self) -> None:
+        """Install additive monitoring tables once per store instance."""
+        if not self._dashboard_schema_ready:
+            with self.connect():
+                pass
 
     def read_connect(self) -> sqlite3.Connection:
         self.require()
@@ -862,6 +888,7 @@ class ProjectStore:
     def design_workstream(
         self, workstream: str, objective: str | None, desired: list[str],
         exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
+        evidence_claims: list[str] | None = None,
     ) -> dict[str, Any]:
         self.require()
         name = self.normalize_workstream(workstream)
@@ -869,11 +896,36 @@ class ProjectStore:
             raise HarnessError("--document-root 只适用于 VDOC")
         template = WORKSTREAM_TEMPLATES[name]
         objective_value = objective.strip() if objective and objective.strip() else template["objective"]
-        desired_specs = (
-            [(f"custom-{index:03d}", title, "reason", "capability")
-             for index, title in enumerate(desired, 1)]
-            if desired else template_nodes(template)
-        )
+        selected_claims = list(evidence_claims or [])
+        if desired:
+            if name == "VDOC":
+                if selected_claims and (
+                    len(selected_claims) != len(desired)
+                    or set(selected_claims) != {"document-review"}
+                ):
+                    raise HarnessError("自定义 VDOC 目标的 evidence claim 只能是 document-review")
+                desired_specs = [
+                    (f"custom-{index:03d}", title, "review", "capability", "document-review")
+                    for index, title in enumerate(desired, 1)
+                ]
+            elif len(selected_claims) != len(desired):
+                raise HarnessError("每个自定义 --desired 必须按相同顺序提供一个 --evidence-claim")
+            else:
+                supported_claims = set(CLAIMS[name].values())
+                if name == "VSTIM":
+                    supported_claims.update({"reachability-evidence", "determinism-evidence"})
+                unsupported = sorted(set(selected_claims) - supported_claims)
+                if unsupported:
+                    raise HarnessError(
+                        f"{name} 不支持 evidence claim: {', '.join(unsupported)}；可选值: "
+                        + ", ".join(sorted(supported_claims))
+                    )
+                desired_specs = [
+                    (f"custom-{index:03d}", title, "evidence", "capability", claim)
+                    for index, (title, claim) in enumerate(zip(desired, selected_claims), 1)
+                ]
+        else:
+            desired_specs = [(*item, item[0]) for item in template_nodes(template)]
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -901,12 +953,29 @@ class ProjectStore:
             connection.execute("UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE workstream=? AND type='desired-state'",
                                (Validity.STALE.value, now(), name))
             desired_rows = []
-            for key, title, suggested_mode, role in desired_specs:
+            for key, title, suggested_mode, role, evidence_claim in desired_specs:
                 node_id = f"workstream:{name}:r{revision}:desired:{key}"
                 row = {"id": node_id, "key": key, "title": title, "role": role,
-                       "required": True, "suggested_mode": suggested_mode}
+                       "required": True, "suggested_mode": suggested_mode,
+                       "evidence_claim": evidence_claim}
                 if name == "VDOC" and not desired:
                     row["document"] = vdoc_document_contract(key)
+                    row["evidence_contract"] = {
+                        "version": "DocumentReviewPolicy/1", "claim": "document-review",
+                        "required": ["current document SHA-256", "Human APPROVE review"],
+                    }
+                elif name == "VDOC":
+                    row["evidence_contract"] = {
+                        "version": "DocumentReviewPolicy/1", "claim": "document-review",
+                        "required": ["review artifact", "Human approval provenance"],
+                    }
+                else:
+                    contract = policy_for(name, evidence_claim)
+                    if contract is None:
+                        raise HarnessError(
+                            f"{name}/{evidence_claim} 缺少 evidence admission policy；不能创建无证据合同的目标"
+                        )
+                    row["evidence_contract"] = contract
                 desired_rows.append(row)
                 self.upsert_node(connection, node_id, "desired-state", title, Validity.UNKNOWN, name, row)
             connection.execute("""
@@ -948,7 +1017,8 @@ class ProjectStore:
         result["decision_log"] = decisions
         result["default_dependency_count"] = default_dependency_count
         result["questions_for_human"] = [
-            f"请确认 `{key}`：{title}" for key, title, _mode, _role in desired_specs
+            f"请确认 `{key}`：{title}；证据合同 `{evidence_claim}` 是否适用"
+            for key, title, _mode, _role, evidence_claim in desired_specs
         ] if not decisions else []
         result["auto_closure"] = self.evaluate_closure(name)
         return result
@@ -974,7 +1044,193 @@ class ProjectStore:
             names = [row["name"] for row in connection.execute("SELECT name FROM workstreams ORDER BY name")]
         return [self.workstream(name) for name in names]
 
+    @staticmethod
+    def _validate_progress(current: int | None, total: int | None) -> None:
+        if current is not None and current < 0:
+            raise HarnessError("activity progress current 不能小于 0")
+        if total is not None and total <= 0:
+            raise HarnessError("activity progress total 必须大于 0")
+        if current is not None and total is not None and current > total:
+            raise HarnessError("activity progress current 不能大于 total")
+
+    def create_activity(
+        self, node_id: str, operation: str, actor: str, message: str = "",
+        total: int | None = None, log_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Record bounded Agent/tool work without changing verification validity."""
+        self.require()
+        if not operation.strip() or not actor.strip():
+            raise HarnessError("activity operation 和 actor 不能为空")
+        self._validate_progress(0 if total is not None else None, total)
+        normalized_log = relative_path(self.root, log_path) if log_path else None
+        activity_id = f"activity:{uuid.uuid4().hex[:12]}"
+        timestamp = now()
+        with self.connect() as connection:
+            node = connection.execute(
+                "SELECT workstream FROM nodes WHERE id=?", (node_id,),
+            ).fetchone()
+            if node is None:
+                raise HarnessError(f"未知 node: {node_id}")
+            connection.execute(
+                """INSERT INTO activities
+                   (id,node_id,workstream,operation,status,actor,message,
+                    progress_current,progress_total,log_path,created_at,updated_at,ended_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (activity_id, node_id, node["workstream"], operation.strip(), "RUNNING",
+                 actor.strip(), message.strip(), 0 if total is not None else None, total,
+                 normalized_log, timestamp, timestamp, None),
+            )
+        return self.activity(activity_id)
+
+    def activity(self, activity_id: str) -> dict[str, Any]:
+        self.require()
+        with self.read_connect() as connection:
+            row = connection.execute("SELECT * FROM activities WHERE id=?", (activity_id,)).fetchone()
+        if row is None:
+            raise HarnessError(f"未知 activity: {activity_id}")
+        return dict(row)
+
+    def activities(
+        self, workstream: str | None = None, node_id: str | None = None,
+        active_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        self.require()
+        self.ensure_dashboard_schema()
+        filters: list[str] = []
+        values: list[Any] = []
+        if workstream:
+            filters.append("workstream=?")
+            values.append(self.normalize_workstream(workstream))
+        if node_id:
+            filters.append("node_id=?")
+            values.append(node_id)
+        if active_only:
+            filters.append("status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN')")
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        with self.read_connect() as connection:
+            return [dict(row) for row in connection.execute(
+                "SELECT * FROM activities" + where + " ORDER BY created_at DESC", values,
+            )]
+
+    def update_activity(
+        self, activity_id: str, status: str, message: str | None = None,
+        current: int | None = None, total: int | None = None,
+        log_path: str | None = None,
+    ) -> dict[str, Any]:
+        self.require()
+        selected = status.upper()
+        if selected not in ACTIVITY_STATUSES:
+            raise HarnessError("activity status 必须是 " + ", ".join(sorted(ACTIVITY_STATUSES)))
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM activities WHERE id=?", (activity_id,)).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 activity: {activity_id}")
+            if row["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                raise HarnessError("已结束的 activity 不能再次更新")
+            new_current = current if current is not None else row["progress_current"]
+            new_total = total if total is not None else row["progress_total"]
+            self._validate_progress(new_current, new_total)
+            normalized_log = relative_path(self.root, log_path) if log_path else row["log_path"]
+            timestamp = now()
+            ended_at = timestamp if selected in {"COMPLETED", "FAILED", "CANCELLED"} else None
+            connection.execute(
+                """UPDATE activities SET status=?,message=?,progress_current=?,progress_total=?,
+                   log_path=?,updated_at=?,ended_at=? WHERE id=?""",
+                (selected, row["message"] if message is None else message.strip(),
+                 new_current, new_total, normalized_log, timestamp, ended_at, activity_id),
+            )
+        return self.activity(activity_id)
+
+    def add_human_action(
+        self, target: str, action: str, reviewer: str, reason: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist Human input without silently changing node validity or plan lifecycle."""
+        self.require()
+        selected = action.upper().replace("-", "_")
+        if selected not in HUMAN_ACTIONS:
+            raise HarnessError("human action 必须是 " + ", ".join(sorted(HUMAN_ACTIONS)))
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("human action reviewer 和 reason 不能为空")
+        with self.connect() as connection:
+            node = connection.execute("SELECT 1 FROM nodes WHERE id=?", (target,)).fetchone()
+            workstream = connection.execute("SELECT 1 FROM workstreams WHERE name=?", (target.upper(),)).fetchone()
+            if node is not None:
+                normalized_target, target_type = target, "node"
+            elif workstream is not None:
+                normalized_target, target_type = target.upper(), "workstream"
+            else:
+                raise HarnessError(f"human action target 不是已知 node 或 Workstream: {target}")
+            action_id = f"human:{uuid.uuid4().hex[:12]}"
+            timestamp = now()
+            status = "RECORDED" if selected in {"COMMENT", "ACKNOWLEDGE"} else "OPEN"
+            connection.execute(
+                """INSERT INTO human_actions
+                   (id,target,target_type,action,status,reviewer,reason,payload_json,
+                    resolved_by,resolution,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (action_id, normalized_target, target_type, selected, status, reviewer.strip(),
+                 reason.strip(), json_text(payload or {}), None, None, timestamp, timestamp),
+            )
+        return self.human_action(action_id)
+
+    def human_action(self, action_id: str) -> dict[str, Any]:
+        self.require()
+        with self.read_connect() as connection:
+            row = connection.execute("SELECT * FROM human_actions WHERE id=?", (action_id,)).fetchone()
+        if row is None:
+            raise HarnessError(f"未知 human action: {action_id}")
+        result = dict(row)
+        result["payload"] = json.loads(result.pop("payload_json"))
+        return result
+
+    def human_actions(self, status: str | None = None) -> list[dict[str, Any]]:
+        self.require()
+        self.ensure_dashboard_schema()
+        values: tuple[Any, ...] = ()
+        where = ""
+        if status:
+            selected = status.upper()
+            if selected not in HUMAN_ACTION_STATUSES:
+                raise HarnessError("human action status 必须是 " + ", ".join(sorted(HUMAN_ACTION_STATUSES)))
+            where = " WHERE status=?"
+            values = (selected,)
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                "SELECT * FROM human_actions" + where + " ORDER BY created_at DESC", values,
+            )]
+        for row in rows:
+            row["payload"] = json.loads(row.pop("payload_json"))
+        return rows
+
+    def resolve_human_action(
+        self, action_id: str, reviewer: str, resolution: str,
+        status: str = "RESOLVED",
+    ) -> dict[str, Any]:
+        self.require()
+        selected = status.upper()
+        if selected not in {"RESOLVED", "SUPERSEDED"}:
+            raise HarnessError("human action 只能解析为 RESOLVED 或 SUPERSEDED")
+        if not reviewer.strip() or not resolution.strip():
+            raise HarnessError("解析 human action 必须提供 reviewer 和 resolution")
+        with self.connect() as connection:
+            row = connection.execute("SELECT status FROM human_actions WHERE id=?", (action_id,)).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 human action: {action_id}")
+            if row["status"] not in {"OPEN", "RECORDED"}:
+                raise HarnessError("human action 已经关闭")
+            connection.execute(
+                """UPDATE human_actions SET status=?,resolved_by=?,resolution=?,updated_at=?
+                   WHERE id=?""",
+                (selected, reviewer.strip(), resolution.strip(), now(), action_id),
+            )
+        return self.human_action(action_id)
+
     def review_workstream(self, workstream: str, verdict: str, reviewer: str, reason: str) -> dict[str, Any]:
+        if verdict not in {"approve", "reject", "modify", "clarify"}:
+            raise HarnessError("workstream verdict 必须是 approve/reject/modify/clarify")
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("workstream review 必须提供 reviewer 和 reason")
         plan = self.workstream(workstream)
         lifecycle = {"approve": "ACTIVE", "reject": "REVISE", "modify": "REVISE", "clarify": "REVISE"}[verdict]
         with self.connect() as connection:
@@ -1480,7 +1736,9 @@ class ProjectStore:
                 artifact_node = f"file:{artifact['path']}"
                 if connection.execute("SELECT 1 FROM nodes WHERE id=?", (artifact_node,)).fetchone() is None:
                     self.upsert_node(connection, artifact_node, "artifact", artifact["path"], Validity.VALID,
-                                     data={"path": artifact["path"], "kind": "native-evidence",
+                                     data={"path": artifact["path"],
+                                           "kind": artifact.get("kind", "native-evidence"),
+                                           "analyzed_by": artifact.get("analyzed_by", []),
                                            "digest": artifact["sha256"]})
                 if artifact_node != subject:
                     connection.execute("INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
@@ -1495,8 +1753,38 @@ class ProjectStore:
                 "digest": digest, "verdict": verdict.upper(), "data": data or {},
                 "auto_closure": self.reconcile()}
 
-    def _verify_evidence_artifacts(self, artifacts: list[dict[str, str]]) -> list[dict[str, str]]:
-        verified: list[dict[str, str]] = []
+    def _verify_analysis_receipt(self, path: Path, artifact: dict[str, Any]) -> None:
+        """Reject analyzer labels that are not backed by an adapter PASS receipt."""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HarnessError(f"analysis-report 不是有效 JSON: {artifact['path']}: {exc}") from exc
+        if not isinstance(payload, dict) or payload.get("adapter_schema_version") != 1:
+            raise HarnessError(f"analysis-report 缺少 adapter_schema_version=1: {artifact['path']}")
+        if payload.get("state") != "PASS" or payload.get("blockers") != []:
+            raise HarnessError(f"analysis-report 不是无 blocker 的 PASS 回执: {artifact['path']}")
+        request_digest = payload.get("request_sha256")
+        if not isinstance(request_digest, str) or len(request_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in request_digest
+        ):
+            raise HarnessError(f"analysis-report request_sha256 无效: {artifact['path']}")
+        if not isinstance(payload.get("operation"), str) or not payload["operation"].strip():
+            raise HarnessError(f"analysis-report 缺少 operation: {artifact['path']}")
+        identity = payload.get("tool_identity")
+        if not isinstance(identity, dict) or identity.get("state") != "PASS":
+            raise HarnessError(f"analysis-report tool_identity 不是 PASS: {artifact['path']}")
+        analyzers = set(artifact.get("analyzed_by", []))
+        if "xverif" in analyzers:
+            if not isinstance(payload.get("tool"), str) or not payload["tool"].strip():
+                raise HarnessError(f"xverif analysis-report 缺少 tool: {artifact['path']}")
+        elif "wavepeek" in analyzers:
+            if not identity.get("binary_sha256"):
+                raise HarnessError(f"WavePeek analysis-report 缺少 binary_sha256: {artifact['path']}")
+        else:
+            raise HarnessError(f"analysis-report 必须由 xverif 或 wavepeek 生成: {artifact['path']}")
+
+    def _verify_evidence_artifacts(self, artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        verified: list[dict[str, Any]] = []
         for artifact in artifacts:
             relative = relative_path(self.root, artifact["path"])
             path = self.root / relative
@@ -1505,7 +1793,10 @@ class ProjectStore:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != artifact["sha256"]:
                 raise HarnessError(f"native evidence artifact digest 不匹配: {artifact['path']}")
-            verified.append({"path": relative, "sha256": digest})
+            normalized = {**artifact, "path": relative, "sha256": digest}
+            if normalized.get("kind") == "analysis-report":
+                self._verify_analysis_receipt(path, normalized)
+            verified.append(normalized)
         return verified
 
     def _apply_revision_check(self, summary: dict[str, Any]) -> None:
@@ -1705,10 +1996,14 @@ class ProjectStore:
         if row["workstream"] != "VSTIM":
             raise HarnessError("reachability evidence 只能绑定到 VSTIM node")
         node_data = json.loads(row["data_json"])
-        inferred = {
+        inferred_by_contract = {
             "reachability-evidence": "reachability",
             "determinism-evidence": "determinism",
-        }.get(node_data.get("key"))
+        }
+        inferred = (
+            inferred_by_contract.get(node_data.get("key"))
+            or inferred_by_contract.get(node_data.get("evidence_claim"))
+        )
         if inferred is None and node_data.get("key") in CLAIMS.get("VSTIM", {}):
             raise HarnessError(
                 f"标准 VSTIM capability node {node_data.get('key')} 必须使用 StimulusCapabilityEvidence/1"
@@ -1777,7 +2072,7 @@ class ProjectStore:
             return self.add_reachability_evidence(subject, source, claim)
         if workstream not in CLAIMS:
             raise HarnessError("evidence 专用入口只适用于 VENV/VSTIM/VCHK/VCOV/VCASE/VREG；VDOC 使用 docs review")
-        inferred = CLAIMS[workstream].get(node_data.get("key"))
+        inferred = node_data.get("evidence_claim") or CLAIMS[workstream].get(node_data.get("key"))
         if inferred is not None and claim is not None and claim != inferred:
             raise HarnessError(
                 f"标准 node {node_data.get('key')} 的 claim 固定为 {inferred}，不能改为 {claim}"
@@ -1935,7 +2230,13 @@ class ProjectStore:
             node = connection.execute("SELECT status FROM nodes WHERE id=?", (item["id"],)).fetchone()
             if node is None or node["status"] != Validity.VALID.value:
                 continue
-            claim = reachability_claims.get(key) or CLAIMS.get(workstream, {}).get(key)
+            contract_claim = item.get("evidence_claim")
+            claim = (
+                reachability_claims.get(key)
+                or reachability_claims.get(contract_claim)
+                or contract_claim
+                or CLAIMS.get(workstream, {}).get(key)
+            )
             if claim is None:
                 continue
             validation = self._latest_pass_validation(connection, item["id"])
@@ -2129,6 +2430,155 @@ class ProjectStore:
                           "content_changed": [row["path"] for row in document_rows if row["content_changed"]]},
         }
 
+    def dashboard_snapshot(self) -> dict[str, Any]:
+        """Return one coherent, Human-readable control-plane snapshot for the local dashboard."""
+        self.require()
+        # Adding dashboard tables is a backward-compatible schema extension for existing v1 projects.
+        self.ensure_dashboard_schema()
+        summary = self.status()
+        model = self.model()
+        activities = self.activities()
+        human_actions = self.human_actions()
+        documents = self.documents()
+        with self.read_connect() as connection:
+            reviews = [dict(row) for row in connection.execute(
+                "SELECT * FROM reviews ORDER BY created_at DESC"
+            )]
+            baselines = [dict(row) for row in connection.execute(
+                "SELECT * FROM baselines ORDER BY created_at DESC"
+            )]
+            events = [dict(row) for row in connection.execute(
+                "SELECT * FROM events ORDER BY created_at DESC LIMIT 200"
+            )]
+        for event in events:
+            event["payload"] = json.loads(event.pop("payload_json"))
+
+        nodes = {item["id"]: item for item in model["nodes"]}
+        evidence_by_subject: dict[str, list[dict[str, Any]]] = {}
+        for item in model["evidence"]:
+            evidence_by_subject.setdefault(item["subject"], []).append(item)
+        findings_by_subject: dict[str, list[dict[str, Any]]] = {}
+        for item in model["findings"]:
+            findings_by_subject.setdefault(item["subject"], []).append(item)
+        activities_by_node: dict[str, list[dict[str, Any]]] = {}
+        for item in activities:
+            activities_by_node.setdefault(item["node_id"], []).append(item)
+        incoming: dict[str, list[dict[str, Any]]] = {}
+        outgoing: dict[str, list[dict[str, Any]]] = {}
+        for item in model["edges"]:
+            incoming.setdefault(item["target"], []).append(item)
+            outgoing.setdefault(item["source"], []).append(item)
+        closure_by_workstream = {item["workstream"]: item for item in summary["closures"]}
+
+        workstream_views: list[dict[str, Any]] = []
+        current_desired_ids: set[str] = set()
+        for plan in summary["workstreams"]:
+            desired_nodes: list[dict[str, Any]] = []
+            counts: dict[str, int] = {}
+            required_total = 0
+            satisfied = 0
+            desired_ids = {item["id"] for item in plan["desired_state"]}
+            current_desired_ids.update(desired_ids)
+            for desired in plan["desired_state"]:
+                node = nodes.get(desired["id"], {
+                    "id": desired["id"], "type": "desired-state", "title": desired["title"],
+                    "workstream": plan["workstream"], "status": Validity.UNKNOWN.value,
+                    "updated_at": plan["updated_at"],
+                })
+                status = node["status"]
+                counts[status] = counts.get(status, 0) + 1
+                if desired.get("required", True):
+                    required_total += 1
+                    if status in {Validity.VALID.value, Validity.WAIVED.value}:
+                        satisfied += 1
+                desired_nodes.append({
+                    **node,
+                    "key": desired.get("key"),
+                    "role": desired.get("role", "capability"),
+                    "required": desired.get("required", True),
+                    "suggested_mode": desired.get("suggested_mode"),
+                    "evidence_claim": desired.get("evidence_claim"),
+                    "evidence_contract": desired.get("evidence_contract"),
+                    "evidence": evidence_by_subject.get(desired["id"], []),
+                    "findings": findings_by_subject.get(desired["id"], []),
+                    "activities": activities_by_node.get(desired["id"], []),
+                    "incoming": incoming.get(desired["id"], []),
+                    "outgoing": outgoing.get(desired["id"], []),
+                })
+            workstream_views.append({
+                "workstream": plan["workstream"],
+                "display_name": plan["display_name"],
+                "lifecycle": plan["lifecycle"],
+                "revision": plan["revision"],
+                "objective": plan["objective"],
+                "exit_criteria": plan["exit_criteria"],
+                "updated_at": plan["updated_at"],
+                "progress": {
+                    "required": required_total,
+                    "satisfied": satisfied,
+                    "remaining": max(required_total - satisfied, 0),
+                    "counts": counts,
+                },
+                "nodes": desired_nodes,
+                "closure": closure_by_workstream.get(plan["workstream"], {
+                    "workstream": plan["workstream"], "ready": False,
+                    "lifecycle": plan["lifecycle"], "actions": [],
+                }),
+                "activities": [item for item in activities if item["node_id"] in desired_ids],
+                "human_actions": [item for item in human_actions if (
+                    item["target"] == plan["workstream"] or item["target"] in desired_ids
+                )],
+                "reviews": [item for item in reviews if item["workstream"] == plan["workstream"]],
+            })
+
+        current_node_status: dict[str, int] = {}
+        for node_id in current_desired_ids:
+            status = nodes.get(node_id, {}).get("status", Validity.UNKNOWN.value)
+            current_node_status[status] = current_node_status.get(status, 0) + 1
+        historical_desired_ids = {
+            item["id"] for item in model["nodes"]
+            if item["type"] == "desired-state" and item["id"] not in current_desired_ids
+        }
+        current_findings = [
+            item for item in model["findings"]
+            if item["subject"] not in historical_desired_ids
+        ]
+        current_activities = [item for item in activities if item["node_id"] in current_desired_ids]
+        current_human_actions = [item for item in human_actions if (
+            item["target"] in current_desired_ids
+            or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
+        )]
+
+        payload: dict[str, Any] = {
+            "schema": "VerificationDashboard/1",
+            "project": {
+                "name": summary["project"],
+                "runtime": summary["runtime"],
+                "lifecycle": summary["lifecycle"],
+                "baseline_revision": summary["baseline_revision"],
+                "root": str(self.root),
+            },
+            # Dashboard totals describe the active desired-state revisions. The full model and
+            # audit histories remain available below, but stale revisions must not look active.
+            "node_status": current_node_status,
+            "current_node_count": len(current_desired_ids),
+            "open_findings": sum(item["status"] == "OPEN" for item in current_findings),
+            "documents_summary": summary["documents"],
+            "workstreams": workstream_views,
+            "model": model,
+            "documents": documents,
+            "activities": current_activities,
+            "activity_history": activities,
+            "human_actions": current_human_actions,
+            "human_action_history": human_actions,
+            "reviews": reviews,
+            "baselines": baselines,
+            "events": events,
+        }
+        payload["version"] = hashlib.sha256(json_text(payload).encode("utf-8")).hexdigest()[:16]
+        payload["generated_at"] = now()
+        return payload
+
     def write_model_projection(self) -> None:
         if not self.initialized:
             return
@@ -2158,8 +2608,19 @@ class ProjectStore:
                  f"- Model nodes: {plan['planning_context']['model_summary']['node_count']}",
                  f"- Open findings: {plan['planning_context']['model_summary']['open_findings']}",
                  "", "## Desired State", ""]
-        lines.extend(f"- [ ] `{item['key']}` ({item.get('role', 'capability')}) {item['title']}"
-                     for item in plan["desired_state"])
+        for item in plan["desired_state"]:
+            contract = item.get("evidence_contract") or {}
+            claim = contract.get("claim") or item.get("evidence_claim") or "未指定"
+            lines.append(
+                f"- [ ] `{item['key']}` ({item.get('role', 'capability')}) {item['title']} "
+                f"— evidence claim: `{claim}`"
+            )
+            for evidence_requirement in contract.get("requirements", []):
+                alternatives = " 或 ".join(
+                    f"`{choice['kind']}` / `{choice['analyzer']}`"
+                    for choice in evidence_requirement.get("alternatives", [])
+                )
+                lines.append(f"  - {evidence_requirement['label']}：{alternatives}")
         documents = [item for item in plan["desired_state"] if item.get("document")]
         if documents:
             lines.extend(["", "## Document Deliverables", "",

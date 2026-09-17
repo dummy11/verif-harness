@@ -8,6 +8,7 @@ from pathlib import Path
 from verif_harness.evidence_contracts import (
     EvidenceContractError, SCHEMAS, validate_workstream_evidence,
 )
+from verif_harness.evidence_policy import policy_for
 
 
 DIGEST = "a" * 64
@@ -15,9 +16,17 @@ DIGEST = "a" * 64
 
 class EvidenceContractsTest(unittest.TestCase):
     def validate(self, workstream: str, claim: str, result: dict) -> dict:
+        policy = policy_for(workstream, claim)
+        artifacts = []
+        for index, item in enumerate(policy["requirements"]):
+            selected = item["alternatives"][0]
+            artifacts.append({
+                "path": f"results/native-{index}", "sha256": DIGEST,
+                "kind": selected["kind"], "analyzed_by": [selected["analyzer"]],
+            })
         payload = {
             "schema": SCHEMAS[workstream], "claim": claim, "revision": "revision-1",
-            "tool": "test-tool/1", "artifacts": [{"path": "results/native.log", "sha256": DIGEST}],
+            "tool": "test-tool/1", "artifacts": artifacts,
             "result": result,
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -153,6 +162,25 @@ class EvidenceContractsTest(unittest.TestCase):
         })
         self.assertFalse(summary["ready"])
         self.assertTrue(summary["blockers"])
+
+    def test_missing_required_artifact_or_analyzer_blocks_admission(self) -> None:
+        payload = {
+            "schema": "CheckingEvidence/1", "claim": "scoreboard-evidence",
+            "revision": "revision-1", "tool": "test-tool/1",
+            "artifacts": [{
+                "path": "results/run.log", "sha256": DIGEST,
+                "kind": "simulation-log", "analyzed_by": ["xverif"],
+            }],
+            "result": {"engaged": True, "comparisons": 2, "mismatches": 0,
+                       "residual": 0, "implementation_digest": DIGEST},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            summary = validate_workstream_evidence(path, "VCHK", "scoreboard-evidence")
+        self.assertFalse(summary["ready"])
+        self.assertTrue(any("波形数据库" in item for item in summary["blockers"]))
+        self.assertTrue(any("结构化分析结果" in item for item in summary["blockers"]))
 
     def test_environment_smoke_requires_clock_reset_observation_and_clean_exit(self) -> None:
         summary = self.validate("VENV", "environment-smoke-evidence", {

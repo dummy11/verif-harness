@@ -53,6 +53,8 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - 可编辑验证文档与 SQLite 状态分离；`docs sync` 用 SHA-256 判断文档是否修改，并按需生成
   [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
+- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：按 Workstream 和节点查看
+  当前工作、完成条件、证据、问题与进度，并可随时提交评审意见；不必等到 closure 才参与。
 
 ## 运行逻辑
 
@@ -100,7 +102,8 @@ Coverage、cover property 和波形只能作为 VSTIM 补充材料。Planner 把
 编译 log、仿真 log、回归 manifest、VDB/UCDB 和波形只是
 [工具原始输出](skills/verif-harness/docs/glossary.md#evidence-source)，不直接等于验证结论。
 项目 adapter/extractor 将明确事实转换成绑定 revision 与原始文件 SHA-256 的 JSON 报告，
-再由专用 validator 决定节点状态；当前没有内置支持所有工具格式的 extractor。具体形式和
+动态运行目标还必须同时登记 xverif 或 WavePeek 生成的结构化分析结果；再由专用 validator
+决定节点状态。当前没有内置支持所有工具格式的 extractor。具体形式和
 退出条件见[用户指南](skills/verif-harness/docs/user_guide.md#步骤-4把工程结果登记为证据)。
 
 ## 五个核心子系统

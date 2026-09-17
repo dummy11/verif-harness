@@ -8,12 +8,16 @@ from `stimulus-reachability.example.json`.
 
 This command derives PASS/FAIL from the report; callers do not supply a verdict.
 It accepts only `producer.kind=vstim-probe`. Functional coverage, SVA cover
-properties, waveforms, and checker results may corroborate the result, but none
-is the sole authority for VSTIM closure. This keeps VSTIM independent from the
-completion of VCOV or VCHK.
+properties, waveforms, and checker results are not the sole authority for VSTIM
+closure. The report must include an xverif-analyzed simulation log plus either
+a WavePeek-analyzed waveform or an xverif-analyzed transaction trace, and must
+store the corresponding xverif or WavePeek analysis result as an
+`analysis-report`; these inputs still do not replace the probe counters. This keeps VSTIM independent
+from the completion of VCOV or VCHK.
 
 The report records its project revision and every native probe artifact as
-`{path, sha256}`. Registration verifies project-local existence and digest;
+`{path, sha256, kind, analyzed_by}`. Registration verifies project-local
+existence, digest, artifact class, and admission policy;
 artifact changes later invalidate the VSTIM target.
 
 For the standard `reachability-evidence` and `determinism-evidence` desired

@@ -51,6 +51,8 @@ state. In addition to the core model, it stores:
 - semantic-document paths, content digests, revisions, reviews, governance-item
   lifecycle and links to desired state;
 - change events, causal findings, validity, and closure actions.
+- bounded Agent/tool Activity records and Human comments or requested changes
+  used by the local real-time Dashboard; these records do not establish node validity.
 
 `plan VDOC` creates missing Markdown templates but never overwrites existing
 semantic documents. `docs sync` detects content changes by digest; `docs status`
@@ -67,6 +69,12 @@ CLI to change state rather than editing configuration or projections manually.
 Explicit RTL roots, DUT top files, and specification inputs may live outside the
 project root and are stored as absolute read-only identities. Control state,
 verification outputs, and generated projections remain inside the project root.
+
+The local Dashboard is a view and controlled Human-input surface over this same
+model. It uses server-sent events to refresh Workstream/node/evidence/activity
+views, binds only to loopback, and routes reviews, waivers, and freezes through
+the existing store APIs. It is not another verification engine and does not infer
+progress from unregistered terminal processes.
 
 Bootstrap also creates or refreshes only a marked verif-harness block in the
 project-root `AGENTS.md`. The block is a routing and authority projection, not a
@@ -123,6 +131,8 @@ Compiler/simulation logs, regression manifests, waveform files, and VDB/UCDB
 databases are raw artifacts rather than evidence verdicts. Project adapters or
 collectors convert them into typed JSON reports that bind the current project
 revision and native-artifact SHA-256 values. The control plane validates schema,
-claim semantics, dependencies, and cross-evidence exit predicates before it
-derives PASS/FAIL. v1 does not yet ship one universal extractor for every EDA
-vendor format.
+claim-specific artifact/analyzer admission policy, dependencies, and
+cross-evidence exit predicates before it derives PASS/FAIL. Runtime claims bind
+the raw simulation/coverage data and a stored xverif or WavePeek analysis report;
+an `analyzed_by` label without the required analysis-report artifact cannot close
+the node. v1 does not yet ship one universal extractor for every EDA vendor format.

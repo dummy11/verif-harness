@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .evidence_policy import ARTIFACT_KINDS, validate_artifact_policy
+
 
 SCHEMA = "StimulusReachabilityEvidence/1"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -40,7 +42,7 @@ def validate_reachability(path: Path) -> dict[str, Any]:
     artifact_items = payload.get("artifacts")
     if not isinstance(artifact_items, list) or not artifact_items:
         raise ReachabilityError("artifacts 必须是非空对象数组")
-    artifacts: list[dict[str, str]] = []
+    artifacts: list[dict[str, Any]] = []
     artifact_paths: set[str] = set()
     for index, artifact in enumerate(artifact_items):
         if not isinstance(artifact, dict):
@@ -52,7 +54,23 @@ def validate_reachability(path: Path) -> dict[str, Any]:
         if artifact_path in artifact_paths:
             raise ReachabilityError(f"artifacts path 重复: {artifact_path}")
         artifact_paths.add(artifact_path)
-        artifacts.append({"path": artifact_path, "sha256": artifact_digest})
+        artifact_kind = _nonempty(artifact.get("kind"), f"artifacts[{index}].kind")
+        if artifact_kind not in ARTIFACT_KINDS:
+            raise ReachabilityError(
+                f"artifacts[{index}].kind 必须是 " + ", ".join(sorted(ARTIFACT_KINDS))
+            )
+        analyzed_by = artifact.get("analyzed_by")
+        if not isinstance(analyzed_by, list) or not analyzed_by:
+            raise ReachabilityError(f"artifacts[{index}].analyzed_by 必须是非空字符串数组")
+        normalized_analyzers = [
+            _nonempty(item, f"artifacts[{index}].analyzed_by[]") for item in analyzed_by
+        ]
+        if len(normalized_analyzers) != len(set(normalized_analyzers)):
+            raise ReachabilityError(f"artifacts[{index}].analyzed_by 不能重复")
+        artifacts.append({
+            "path": artifact_path, "sha256": artifact_digest,
+            "kind": artifact_kind, "analyzed_by": normalized_analyzers,
+        })
 
     producer = payload.get("producer")
     if not isinstance(producer, dict):
@@ -138,7 +156,10 @@ def validate_reachability(path: Path) -> dict[str, Any]:
     if not required_scenarios:
         raise ReachabilityError("至少需要一个 required scenario")
     missing = sorted(required_scenarios - reached_scenarios)
-    reachability_ready = not missing
+    admission_policy, admission_blockers = validate_artifact_policy(
+        "VSTIM", "reachability-evidence", artifacts,
+    )
+    reachability_ready = not missing and not admission_blockers
 
     deterministic_scenarios: set[str] = set()
     mismatched_groups: list[str] = []
@@ -169,6 +190,8 @@ def validate_reachability(path: Path) -> dict[str, Any]:
         "schema": SCHEMA,
         "revision": revision,
         "artifacts": artifacts,
+        "admission_policy": admission_policy,
+        "blockers": admission_blockers,
         "producer": {"kind": "vstim-probe", "name": producer_name, "version": producer_version},
         "observation": {"boundary": boundary, "point": point, "predicate": predicate},
         "run_count": len(normalized_runs),

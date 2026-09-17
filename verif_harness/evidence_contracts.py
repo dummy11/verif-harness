@@ -8,6 +8,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
+from .evidence_policy import ARTIFACT_KINDS, validate_artifact_policy
+
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ID = re.compile(r"^[A-Za-z0-9_.:-]+$")
@@ -142,15 +144,27 @@ def _base(path: Path, workstream: str, expected_claim: str) -> tuple[dict[str, A
     artifact_items = _objects(payload.get("artifacts"), "artifacts")
     if not artifact_items:
         raise EvidenceContractError("artifacts 不能为空")
-    artifacts: list[dict[str, str]] = []
+    artifacts: list[dict[str, Any]] = []
     artifact_paths: set[str] = set()
     for index, artifact in enumerate(artifact_items):
         artifact_path = _text(artifact.get("path"), f"artifacts[{index}].path")
         if artifact_path in artifact_paths:
             raise EvidenceContractError(f"artifacts path 重复: {artifact_path}")
         artifact_paths.add(artifact_path)
-        artifacts.append({"path": artifact_path,
-                          "sha256": _digest(artifact.get("sha256"), f"artifacts[{index}].sha256")})
+        kind = _text(artifact.get("kind"), f"artifacts[{index}].kind")
+        if kind not in ARTIFACT_KINDS:
+            raise EvidenceContractError(
+                f"artifacts[{index}].kind 必须是 " + ", ".join(sorted(ARTIFACT_KINDS))
+            )
+        analyzed_by = _strings(
+            artifact.get("analyzed_by"), f"artifacts[{index}].analyzed_by", unique=True,
+        )
+        artifacts.append({
+            "path": artifact_path,
+            "sha256": _digest(artifact.get("sha256"), f"artifacts[{index}].sha256"),
+            "kind": kind,
+            "analyzed_by": analyzed_by,
+        })
     result = payload.get("result")
     if not isinstance(result, dict):
         raise EvidenceContractError("result 必须是对象")
@@ -158,10 +172,16 @@ def _base(path: Path, workstream: str, expected_claim: str) -> tuple[dict[str, A
         "schema": expected_schema, "workstream": workstream, "claim": claim,
         "revision": revision, "tool": tool, "artifacts": artifacts,
     }
+    admission_policy, admission_blockers = validate_artifact_policy(
+        workstream, expected_claim, artifacts,
+    )
+    normalized["admission_policy"] = admission_policy
+    normalized["admission_blockers"] = admission_blockers
     return payload, result, normalized
 
 
 def _finish(normalized: dict[str, Any], blockers: list[str], facts: dict[str, Any]) -> dict[str, Any]:
+    blockers = [*normalized.pop("admission_blockers", []), *blockers]
     normalized.update({"ready": not blockers, "blockers": blockers, "facts": facts})
     return normalized
 
