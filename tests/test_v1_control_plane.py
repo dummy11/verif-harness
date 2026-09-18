@@ -570,9 +570,37 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
         self.bootstrap()
-        plan = self.design("VDOC")
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{
+                "key": "dut-reset-plan", "title": "DUT reset 验证文档方案",
+                "role": "document-writing-plan", "parent_key": "verification-plan",
+                "document_key": "verification-plan",
+                "required": True,
+                "statement": "当前 DUT reset 行为和验证边界已写入验证计划。",
+                "purpose": "让后续环境、检查和用例使用相同的 reset 语义。",
+                "scope": ["DUT reset 极性、同步方式、保持和释放行为"],
+                "acceptance_criteria": ["每个 reset 域都有来源、预期行为和验证责任"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#reset"],
+                "work_content": ["列出 DUT reset 域和验证场景"],
+                "implementation_approach": ["从 DUT 顶层和已确认规格交叉核对"],
+                "deliverables": ["验证计划中的 reset 方案章节"],
+                "progress_measures": [{
+                    "id": "reset-domains-reviewed", "label": "已确认 reset 域",
+                    "unit": "域", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }],
+        }
+        proposal_path = self.root / "vdoc-review-proposal.json"
+        proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+        plan = self.design("VDOC", "--desired-file", str(proposal_path))
         revision = plan["revision"]
-        node_id = plan["desired_state"][0]["id"]
+        node_id = next(
+            item["id"] for item in plan["desired_state"]
+            if item["key"] == "dut-reset-plan"
+        )
         activity = self.run_cli(
             "activity", "start", node_id, "--operation", "prepare-vdoc-review",
         )
@@ -962,6 +990,14 @@ class V1ControlPlaneTest(unittest.TestCase):
         for plan in plans.values():
             template = plan["template"]
             roles = {desired["key"]: desired["role"] for desired in plan["desired_state"]}
+            if plan["workstream"] == "VDOC":
+                self.assertEqual(template["document_catalogs"], [
+                    key for key, role in roles.items() if role == "document-catalog"
+                ])
+                self.assertEqual(template["capabilities"], [])
+                self.assertEqual(template["closure_evidence"], [])
+                self.assertEqual(set(roles.values()), {"document-catalog"})
+                continue
             self.assertEqual(template["capabilities"], [
                 key for key, role in roles.items() if role == "capability"
             ])

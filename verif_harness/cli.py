@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     dependency.add_argument("prerequisite", help="必须先 VALID/WAIVED 的 prerequisite node")
     validity = record_commands.add_parser("status"); project_argument(validity)
     validity.add_argument("node_id")
-    validity.add_argument("status", choices=[item.value for item in Validity if item not in {Validity.VALID, Validity.WAIVED}])
+    validity.add_argument("status", choices=[item.value for item in Validity if item not in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}])
     evidence = record_commands.add_parser("evidence"); project_argument(evidence)
     evidence.add_argument("--subject", required=True); evidence.add_argument("--kind", required=True)
     evidence.add_argument("--source", required=True); evidence.add_argument("--verdict", choices=("pass", "fail"), required=True)

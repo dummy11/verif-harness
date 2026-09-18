@@ -46,6 +46,7 @@ class HarnessError(ValueError):
 
 class Validity(str, Enum):
     VALID = "VALID"
+    PROVISIONAL = "PROVISIONAL"
     STALE = "STALE"
     INVALID = "INVALID"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
@@ -57,6 +58,7 @@ class Validity(str, Enum):
 
 VALIDITY_DESCRIPTIONS = {
     Validity.VALID.value: "已有有效材料",
+    Validity.PROVISIONAL.value: "负责人暂定接受；允许带风险推进但不能关闭",
     Validity.STALE.value: "内容变化后尚未重新检查",
     Validity.INVALID.value: "当前检查未通过",
     Validity.REVIEW_REQUIRED.value: "需要人工复核",
@@ -79,6 +81,41 @@ VDOC_DOCUMENTS = {
     "testcase-list": ("testcase_list.md", "列清每个测试用例要验证的内容、使用的场景、检查方法和运行方式", ["VDOC", "VCASE", "VREG"]),
 }
 
+VDOC_PLAN_CONTENT = {
+    "verification-workflow": [
+        "定义文档编写、评审、修改、失效重验和冻结流程",
+        "明确 Human、Agent 与 Engine 的职责以及决定、问题和例外的记录方式",
+    ],
+    "verification-plan": [
+        "列出 DUT 验证范围、功能目标、主要风险和明确不纳入范围的内容",
+        "定义激励、检查、覆盖、用例和回归策略及项目级完成标准",
+    ],
+    "feature-matrix": [
+        "为验证点建立稳定编号并关联规格来源",
+        "映射每个验证点的激励、检查方法、覆盖目标和测试用例",
+    ],
+    "tb-architecture": [
+        "定义验证环境拓扑、接口、时钟复位、配置传递和组件职责",
+        "说明激励与观测数据流、构建边界和关键可观测点",
+    ],
+    "reference-model": [
+        "说明参考模型适用范围、输入输出、数值行为和接入方式",
+        "定义对齐、屏蔽、容差、比较时机和异常处理规则",
+    ],
+    "coverage-plan": [
+        "定义 coverpoint、bin、cross、采样时机以及 illegal/ignore 规则",
+        "说明覆盖目标、未覆盖项分析、排除与关闭标准",
+    ],
+    "assertion-plan": [
+        "列出需要检查的协议和关键性质及其时钟、复位和 bind 位置",
+        "定义 attempts、failure、vacuity、覆盖和例外处理要求",
+    ],
+    "testcase-list": [
+        "列出测试用例编号、目标、前置条件、场景、配置和随机种子策略",
+        "关联检查方法、覆盖目标、单测入口和回归分组",
+    ],
+}
+
 
 def vdoc_document_contract(key: str) -> dict[str, Any]:
     filename, _title, workstreams = VDOC_DOCUMENTS[key]
@@ -90,11 +127,18 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
     "VDOC": {
         "name": "Verification Documentation",
         "objective": "持续维护验证范围、环境结构、检查方法和完成标准，让相关人员可以直接评审",
-        "capabilities": [(key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()],
+        # These rows are internal document containers and dependency anchors.
+        # DUT-specific public VDOC nodes are proposed beneath the containers.
+        "document_catalogs": [
+            (key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()
+        ],
         # VDOC 的 closure proof 是绑定到每份正文 revision 的 Human review，
         # 不是可由工具报告自动置为 PASS 的聚合 evidence node。
         "closure_evidence": [],
-        "exit": ["所有必需文档都已通过评审，或负责人已明确接受例外", "没有尚未处理的严重问题或工程决定"],
+        "exit": [
+            "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
+            "所有文档交付节点中的 Human 确认项、修改要求和阻塞问题均已关闭",
+        ],
     },
     "VENV": {
         "name": "Verification Environment",
@@ -187,7 +231,10 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
 def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
     """Flatten explicit template sections without inferring role from a node name."""
     return [
-        *((key, title, mode, "capability") for key, title, mode in template["capabilities"]),
+        *((key, title, mode, "document-catalog")
+          for key, title, mode in template.get("document_catalogs", [])),
+        *((key, title, mode, "capability")
+          for key, title, mode in template.get("capabilities", [])),
         *((key, title, mode, "closure-evidence")
           for key, title, mode in template["closure_evidence"]),
     ]
@@ -195,7 +242,7 @@ def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
 
 DESIRED_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 PROJECT_NODE_ROLES: dict[str, set[str]] = {
-    "VDOC": {"document-section", "engineering-decision"},
+    "VDOC": {"document-writing-plan", "document-deliverable"},
     "VENV": {"environment-component", "interface", "clock-reset-domain", "observation-path"},
     "VSTIM": {"stimulus-feature", "stimulus-scenario"},
     "VCHK": {"checking-goal", "checker", "reference-path", "assertion-group"},
@@ -241,6 +288,40 @@ WORKSTREAM_DEFINITION_CONTEXT: dict[str, dict[str, Any]] = {
     },
 }
 
+ASIC_NODE_CONTENT: dict[tuple[str, str], tuple[list[str], list[str]]] = {
+    ("VENV", "interface-ready"): (["核对 DUT 端口方向、位宽、协议角色和 modport/clocking block 映射", "连接 DUT interface、driver 与 monitor，并检查所有必需信号可驱动或可观测"], ["与 DUT 端口一致的 interface 和连接清单"]),
+    ("VENV", "clock-reset-ready"): (["识别 DUT 的时钟域、频率/相位关系、复位极性与同步方式", "实现启动、复位保持、释放和跨时钟复位次序，并检查复位后的稳定状态"], ["时钟复位控制及 reset/idle 检查结果"]),
+    ("VENV", "topology-ready"): (["按 DUT 接口和数据流连接 agent、sequencer、monitor、scoreboard 与 coverage collector", "核对 active/passive 模式、配置传递、虚接口和分析端口连接"], ["与 DUT 验证结构对应的 TB 拓扑"]),
+    ("VENV", "build-ready"): (["确定 DUT RTL、bind、interface、package、UVC、env 和 test 的编译顺序", "完成 compile/elaboration，确认顶层、参数、宏和 timescale 与当前 DUT 配置一致"], ["当前 DUT 配置的 filelist、构建入口和编译/装载结果"]),
+    ("VENV", "run-ready"): (["启动最小测试并执行 DUT 时钟、复位、idle 和结束流程", "检查 timeout、objection、错误计数和退出码能真实反映运行结果"], ["当前 DUT 的最小可运行测试入口和 smoke 结果"]),
+    ("VENV", "observation-ready"): (["确定 DUT 输入、输出、握手、关键状态和错误路径的观测点", "确认 monitor、transaction trace 或 waveform 能还原一次实际 DUT 交互"], ["DUT 观测路径和可复现的观测记录"]),
+    ("VENV", "environment-smoke-evidence"): (["在当前 RTL 与 TB 配置上运行 reset/idle smoke", "保存启动、复位释放、结束、错误计数和关键观测证据"], ["当前代码版本的环境 smoke 日志与观测证据"]),
+    ("VSTIM", "transaction-contract"): (["定义与 DUT 接口对应的 transaction 字段、合法值、顺序和握手语义", "明确约束、默认值、非法输入以及 transaction 到引脚的映射"], ["DUT 输入 transaction 与协议驱动合同"]),
+    ("VSTIM", "stimulus-implementation"): (["实现 sequence/item/driver，使计划中的 DUT 功能输入可生成并正确驱动", "处理 backpressure、并发、延迟、复位中断和错误注入"], ["可重复驱动 DUT 的激励实现"]),
+    ("VSTIM", "corner-scenarios"): (["实现规格定义的边界值、错误、并发、流控和状态转换场景", "将每个场景关联到验证点、checker、coverage 和 testcase"], ["DUT 边界与异常场景清单及激励入口"]),
+    ("VSTIM", "reachability-evidence"): (["运行定向激励并确认目标 transaction 已到达 DUT 接收边界", "通过 monitor、transaction trace 或 waveform 核对场景条件真实成立"], ["目标场景到达 DUT 的运行证据"]),
+    ("VSTIM", "determinism-evidence"): (["固定 testcase、seed、配置和 RTL 版本重复运行激励", "比较输入 transaction 序列与关键时序，确认可重放性"], ["同配置重复运行的一致性证据"]),
+    ("VCHK", "compare-policy"): (["定义 DUT 结果的数值、位级、顺序、时间、异常与允许误差规则", "明确 unknown、mask、饱和/舍入、乱序、丢弃和复位清空策略"], ["与 DUT 输出语义对应的比较合同"]),
+    ("VCHK", "reference-model"): (["将 DUT 输入 transaction 转换为参考模型输入，并取得可比较的期望结果", "处理数据格式、对齐、状态、延迟、mask 和模型错误"], ["参考模型适配器及输入输出映射"]),
+    ("VCHK", "scoreboard"): (["关联 DUT 实际输出与期望结果，并按比较合同完成匹配", "报告 transaction 身份、字段差异、时序和上下文，处理复位与 flush"], ["覆盖必需 DUT 功能的 scoreboard/checker"]),
+    ("VCHK", "assertions"): (["实现规格中的协议、时序、稳定性、互斥和错误响应性质", "绑定到正确 DUT 层级和时钟复位域，并防止 vacuous pass"], ["与 DUT 信号和规格规则对应的 SVA/bind"]),
+    ("VCHK", "reference-model-evidence"): (["在实际仿真中证明参考模型收到输入并产生期望结果", "核对 compare 次数、差异、模型版本和当前 DUT 配置"], ["参考模型参与当前 DUT 比对的运行证据"]),
+    ("VCHK", "scoreboard-evidence"): (["证明 scoreboard 实际接收 expected/actual transaction 并执行比较", "检查比较次数、未匹配队列、失败和复位清空行为"], ["scoreboard 非空运行和比较结果"]),
+    ("VCHK", "assertion-evidence"): (["证明断言已编译、bind/elaborate 并在实际运行中产生 attempts", "检查 failure、vacuity、disable 条件和必要 cover property"], ["当前 DUT 运行中的断言尝试与结果"]),
+    ("VCOV", "coverage-model"): (["把 DUT 功能、状态、配置、错误和交互场景映射为 coverpoint/bin/cross", "定义采样事件、iff、illegal/ignore bin 和每项覆盖目标来源"], ["与验证点对应的功能覆盖模型"]),
+    ("VCOV", "coverage-collection"): (["配置当前 DUT/testbench 的功能、代码和断言覆盖收集", "确认数据库、merge 范围、RTL 版本、配置和测试清单可追溯"], ["可重复生成和合并的覆盖率配置"]),
+    ("VCOV", "coverage-collection-evidence"): (["收集当前 RTL 与验证配置对应的 coverage database", "核对 planned/mapped/hit 数量、数据库完整性和版本一致性"], ["当前版本的覆盖率数据库和导出报告"]),
+    ("VCOV", "hole-analysis-evidence"): (["逐项分析未命中的 DUT 功能、状态、bin、cross 和代码范围", "记录补测、不可达证明、模型修正或 Human waiver"], ["未覆盖项根因和关闭记录"]),
+    ("VCASE", "case-matrix"): (["将每个 DUT 验证点和必需场景映射到一个或多个 testcase", "关联激励、checker、coverage、配置和预期结果"], ["验证点到 testcase 的可追溯矩阵"]),
+    ("VCASE", "case-implementation"): (["实现 testcase/vseq 配置、场景组合、结束条件和错误检查", "保证单个用例可独立运行并能定位对应 DUT 功能问题"], ["已注册且可独立执行的 testcase"]),
+    ("VCASE", "targeted-evidence"): (["在当前 RTL 与 TB 版本上单独运行新增或修改的 testcase", "保存 seed、配置、结果、checker 活动和覆盖命中"], ["testcase 定向运行记录"]),
+    ("VREG", "regression-policy"): (["定义 smoke、daily 和 full regression 的 testcase、seed、配置、超时和资源边界", "明确失败重跑、已知失败、结果保留和准入规则"], ["面向当前 DUT 的回归策略与清单规则"]),
+    ("VREG", "executor-ready"): (["配置 DUT/TB 构建、隔离运行、seed 传递、timeout 和结果收集", "验证并发运行、失败退出码和工件路径不会相互污染"], ["可重复执行当前 DUT 回归的 runner"]),
+    ("VREG", "execution-evidence"): (["按评审清单运行当前 DUT 的必需 testcase 和 seed", "保存 RTL/TB 版本、配置、逐用例状态、耗时和工件索引"], ["当前代码版本的回归 manifest 与结果"]),
+    ("VREG", "triage-evidence"): (["按 DUT 现象和签名归类失败，并使用相同 seed/config 重跑", "记录首个错误、相关 checker/波形、责任归属和处理结论"], ["失败分类、同 seed 重跑和处理记录"]),
+    ("VREG", "fresh-evidence"): (["核对所有必需验证点关联的结果来自当前 RTL、TB、配置和计划版本", "标记过期、缺失或被新变更影响的运行证据"], ["当前版本验证结果的新鲜度审计"]),
+}
+
 
 def desired_definition(
     workstream: str, key: str, title: str, role: str,
@@ -255,7 +336,7 @@ def desired_definition(
         if label:
             criteria.append(label)
     criteria.append("所有前置工作都已完成，或负责人已明确接受例外")
-    return {
+    definition = {
         "statement": f"{title}。需要检查实际内容和支持材料；仅有文件，或某个命令运行成功，都不能说明这项工作已经完成。",
         "purpose": context["purpose"],
         "scope": list(context["scope"]),
@@ -295,6 +376,55 @@ def desired_definition(
             "汇总完成这项工作所需的运行结果；原始日志、波形或数据库作为支持材料"
         ),
     }
+    asic_content = ASIC_NODE_CONTENT.get((workstream, key))
+    if asic_content is not None:
+        work_content, deliverables = asic_content
+        evidence_node = role == "closure-evidence"
+        definition.update({
+            "work_content": list(work_content),
+            "implementation_approach": [
+                "从已评审的验证文档、只读 DUT RTL 和规格中解析本节点对应的实际接口、信号、功能、场景或结果",
+                (
+                    "在当前 RTL、TB、testcase、seed 和配置上执行并保存可追溯的原始证据"
+                    if evidence_node else
+                    "按当前 DUT 的协议、时序、数据格式和验证架构实现，并通过编译、装载或定向运行检查"
+                ),
+            ],
+            "deliverables": list(deliverables),
+            "progress_measures": [{
+                "id": "dut-verification-objects",
+                "label": f"{title}中已满足的 DUT 验证对象数量",
+                "unit": "项",
+                "target": "以已评审的验证点、接口、场景或运行清单为准",
+                "source": (
+                    "当前 RTL/TB/config 对应的仿真、波形、覆盖率或回归证据"
+                    if evidence_node else
+                    "当前 DUT 对应的实现、映射和结构化检查结果"
+                ),
+            }],
+            "quality_checks": [
+                "所有对象都能追溯到当前 DUT 的规格、RTL 接口或已评审验证点",
+                (
+                    "证据来自当前 RTL、TB、testcase、seed 和配置，且没有空运行、vacuous 或过期结果"
+                    if evidence_node else
+                    "实现与 DUT 的协议、时序、数据格式和验证架构一致，且没有尚未处理的工程问题"
+                ),
+            ],
+            "role_description": (
+                "当前 DUT 验证运行结果节点；必须用真实仿真、波形、覆盖率或回归证据证明"
+                if evidence_node else
+                "当前 DUT 验证能力节点；必须绑定具体接口、功能、场景、checker、coverage 或 testcase"
+            ),
+        })
+    if workstream == "VDOC" and key in VDOC_PLAN_CONTENT:
+        filename = VDOC_DOCUMENTS[key][0]
+        definition.update({
+            "scope": [f"{filename} 中需要由验证团队评审的当前工程定义"],
+            "work_content": list(VDOC_PLAN_CONTENT[key]),
+            "deliverables": [f"当前项目的 {filename} 可评审正文"],
+            "role_description": "当前 DUT 的正式验证文档实施方案；内容必须绑定实际规格、接口、验证点和工程决定",
+        })
+    return definition
 
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
@@ -745,6 +875,26 @@ CREATE TABLE IF NOT EXISTS node_closure_reviews (
   revision INTEGER NOT NULL, assessment_digest TEXT NOT NULL, verdict TEXT NOT NULL,
   reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS node_plan_reviews (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
+  revision INTEGER NOT NULL, definition_digest TEXT NOT NULL, verdict TEXT NOT NULL,
+  reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS node_plan_section_reviews (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
+  revision INTEGER NOT NULL, definition_digest TEXT NOT NULL, section TEXT NOT NULL,
+  verdict TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_delivery_reviews (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
+  revision INTEGER NOT NULL, definition_digest TEXT NOT NULL,
+  document_id TEXT NOT NULL, semantic_revision INTEGER NOT NULL,
+  document_digest TEXT NOT NULL, verdict TEXT NOT NULL,
+  reviewer TEXT NOT NULL, notes TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_delivery_provisionals (
+  review_id TEXT PRIMARY KEY, owner TEXT NOT NULL, review_trigger TEXT NOT NULL
+);
 """
 
 
@@ -1121,8 +1271,13 @@ class ProjectStore:
             missing = [field for field, value in values.items() if not value]
             if missing:
                 raise HarnessError(f"{prefix} 缺少非空字段: {', '.join(missing)}")
-            role = str(item.get("role", "project-goal")).strip()
-            allowed_roles = {"project-goal", "closure-evidence", *PROJECT_NODE_ROLES[workstream]}
+            default_role = "document-writing-plan" if workstream == "VDOC" else "project-goal"
+            role = str(item.get("role", default_role)).strip()
+            allowed_roles = (
+                PROJECT_NODE_ROLES[workstream]
+                if workstream == "VDOC"
+                else {"project-goal", "closure-evidence", *PROJECT_NODE_ROLES[workstream]}
+            )
             if role not in allowed_roles:
                 raise HarnessError(
                     f"{prefix}.role 必须是 " + ", ".join(sorted(allowed_roles))
@@ -1130,6 +1285,12 @@ class ProjectStore:
             parent_key = str(item.get("parent_key", "")).strip()
             if not parent_key:
                 raise HarnessError(f"{prefix}.parent_key 必须指向模板或 proposal 节点")
+            document_key = str(item.get("document_key", "")).strip()
+            if workstream == "VDOC" and document_key not in VDOC_DOCUMENTS:
+                raise HarnessError(
+                    f"{prefix}.document_key 必须明确指定一份固定 VDOC 文档目录: "
+                    + ", ".join(VDOC_DOCUMENTS)
+                )
             claim = values["evidence_claim"]
             if workstream == "VDOC":
                 if claim != "document-review":
@@ -1181,9 +1342,19 @@ class ProjectStore:
                 "quality_checks": lists["quality_checks"],
                 "suggested_mode": values["suggested_mode"],
                 "evidence_claim": claim, "role": role, "parent_key": parent_key,
+                "document_key": document_key or None,
+                "content_kind": (
+                    "writing-plan" if role == "document-writing-plan"
+                    else "semantic-acceptance" if role == "document-deliverable"
+                    else "work-item"
+                ),
                 "required": required, "definition_origin": "project-proposal",
                 "definition_status": "REVIEW_CANDIDATE",
                 "role_description": (
+                    "当前 DUT 的文档撰写方案节点；目标、内容、工程决定、输入和交付区块分别审批"
+                    if workstream == "VDOC" and role == "document-writing-plan" else
+                    "一份正式验证文档中的独立语义验收单元；与同一文档的其他交付节点分别审批"
+                    if workstream == "VDOC" else
                     "项目级完成条件证据节点" if role == "closure-evidence"
                     else f"项目级 {role} 节点"
                 ),
@@ -1204,6 +1375,15 @@ class ProjectStore:
                     raise HarnessError(f"desired-state proposal 存在 parent 循环: {item['key']}")
                 visited.add(cursor)
                 cursor = parents[cursor]
+            if workstream == "VDOC":
+                if cursor not in VDOC_DOCUMENTS:
+                    raise HarnessError(
+                        f"{item['key']} 的 parent_key 链必须归属于一份固定 VDOC 文档目录"
+                    )
+                if item["document_key"] != cursor:
+                    raise HarnessError(
+                        f"{item['key']} 的 document_key={item['document_key']} 与 parent_key 归属 {cursor} 不一致"
+                    )
         return normalized, relative
 
     def design_workstream(
@@ -1229,7 +1409,7 @@ class ProjectStore:
                     raise HarnessError("自定义 VDOC 目标的 evidence claim 只能是 document-review")
                 desired_specs = [{
                     "key": f"custom-{index:03d}", "title": title, "suggested_mode": "review",
-                    "role": "capability", "evidence_claim": "document-review", "required": True,
+                    "role": "document-writing-plan", "evidence_claim": "document-review", "required": True,
                 } for index, title in enumerate(desired, 1)]
             elif len(selected_claims) != len(desired):
                 raise HarnessError("每个自定义 --desired 必须按相同顺序提供一个 --evidence-claim")
@@ -1297,7 +1477,9 @@ class ProjectStore:
                        "required": spec.get("required", True), "suggested_mode": suggested_mode,
                        "evidence_claim": evidence_claim,
                        "parent_key": spec.get("parent_key"),
-                       "parent_id": key_to_id.get(spec.get("parent_key"))}
+                       "parent_id": key_to_id.get(spec.get("parent_key")),
+                       "document_key": spec.get("document_key"),
+                       "content_kind": spec.get("content_kind")}
                 if name == "VDOC" and not desired:
                     if key in VDOC_DOCUMENTS:
                         row["document"] = vdoc_document_contract(key)
@@ -1361,9 +1543,13 @@ class ProjectStore:
         result = self.workstream(name)
         result["template"] = {
             "name": template["name"],
-            "capabilities": [item[0] for item in template["capabilities"]],
+            "capabilities": [item[0] for item in template.get("capabilities", [])],
             "closure_evidence": [item[0] for item in template["closure_evidence"]],
         }
+        if name == "VDOC":
+            result["template"]["document_catalogs"] = [
+                item[0] for item in template["document_catalogs"]
+            ]
         if name == "VDOC":
             result["document_guidance"] = {
                 "instructions": "vplan/vdoc.md",
@@ -1602,6 +1788,33 @@ class ProjectStore:
         plan = self.workstream(workstream)
         lifecycle = {"approve": "ACTIVE", "reject": "REVISE", "modify": "REVISE", "clarify": "REVISE"}[verdict]
         with self.connect() as connection:
+            if plan["workstream"] == "VDOC" and verdict == "approve":
+                open_targets = {
+                    row["target"] for row in connection.execute(
+                        "SELECT target FROM human_actions WHERE status='OPEN'"
+                    )
+                }
+                blocked = [
+                    item["id"] for item in plan["desired_state"]
+                    if item.get("required", True) and item["id"] in open_targets
+                ]
+                if blocked:
+                    raise HarnessError(
+                        "VDOC 文档节点仍有待确认事项，不能批量批准实施方案: "
+                        + "、".join(blocked)
+                    )
+                timestamp = now()
+                for item in self._vdoc_plan_desired(plan):
+                    if not item.get("required", True):
+                        continue
+                    digest = self._node_plan_digest(plan, item)
+                    for section in self._node_plan_sections(connection, item["id"]):
+                        connection.execute(
+                            "INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (f"plan-section-review:{uuid.uuid4().hex[:12]}", item["id"],
+                             "VDOC", plan["revision"], digest, section, "APPROVE",
+                             reviewer.strip(), reason.strip(), timestamp),
+                        )
             review_id = uuid.uuid4().hex
             connection.execute("INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
                                (review_id, plan["workstream"], plan["revision"], verdict.upper(), reviewer, reason, now()))
@@ -1612,6 +1825,237 @@ class ProjectStore:
                   "verdict": verdict.upper(), "lifecycle": lifecycle}
         result["auto_closure"] = self.evaluate_closure(plan["workstream"])
         return result
+
+    @staticmethod
+    def _node_plan_digest(plan: dict[str, Any], desired: dict[str, Any]) -> str:
+        if desired.get("definition_origin") == "template":
+            current_titles = {
+                key: title for key, title, _mode, _role
+                in template_nodes(WORKSTREAM_TEMPLATES[plan["workstream"]])
+            }
+            if desired.get("key") in current_titles:
+                title = current_titles[desired["key"]]
+                desired = {
+                    **desired,
+                    **desired_definition(
+                        plan["workstream"], desired["key"], title,
+                        desired.get("role", "capability"),
+                        desired.get("evidence_contract") or {}, "template",
+                    ),
+                    "title": title,
+                }
+        payload = {
+            "workstream": plan["workstream"],
+            "revision": plan["revision"],
+            "node": desired,
+        }
+        return hashlib.sha256(json_text(payload).encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _node_plan_sections(connection: sqlite3.Connection, node_id: str) -> list[str]:
+        sections = ["human-confirmations", "planned-content", "inputs-scope-deliverable"]
+        has_dependencies = connection.execute(
+            "SELECT 1 FROM edges WHERE source=? OR target=? LIMIT 1",
+            (node_id, node_id),
+        ).fetchone()
+        if has_dependencies is not None:
+            sections.append("dependencies-impact")
+        return sections
+
+    @staticmethod
+    def _vdoc_public_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            item for item in plan["desired_state"]
+            if item.get("role") in PROJECT_NODE_ROLES["VDOC"]
+        ]
+
+    @staticmethod
+    def _vdoc_writing_plan_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            item for item in plan["desired_state"]
+            if item.get("role") == "document-writing-plan"
+        ]
+
+    @staticmethod
+    def _vdoc_delivery_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            item for item in plan["desired_state"]
+            if item.get("role") == "document-deliverable"
+        ]
+
+    @staticmethod
+    def _vdoc_document_key(
+        plan: dict[str, Any], desired: dict[str, Any],
+    ) -> str | None:
+        explicit = desired.get("document_key")
+        if explicit in VDOC_DOCUMENTS:
+            return str(explicit)
+        by_key = {item["key"]: item for item in plan["desired_state"]}
+        cursor = desired
+        visited: set[str] = set()
+        while cursor.get("parent_key"):
+            parent_key = str(cursor["parent_key"])
+            if parent_key in VDOC_DOCUMENTS:
+                return parent_key
+            if parent_key in visited or parent_key not in by_key:
+                return None
+            visited.add(parent_key)
+            cursor = by_key[parent_key]
+        return desired.get("key") if desired.get("key") in VDOC_DOCUMENTS else None
+
+    @staticmethod
+    def _vdoc_plan_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
+        return ProjectStore._vdoc_writing_plan_desired(plan)
+
+    def node_plan_review_state(
+        self, node_id: str, plan: dict[str, Any] | None = None,
+        desired: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.ensure_dashboard_schema()
+        if plan is None or desired is None:
+            for candidate in self.workstreams():
+                match = next(
+                    (item for item in candidate["desired_state"] if item["id"] == node_id),
+                    None,
+                )
+                if match is not None:
+                    plan, desired = candidate, match
+                    break
+        if plan is None or desired is None:
+            raise HarnessError(f"未知当前计划节点: {node_id}")
+        digest = self._node_plan_digest(plan, desired)
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT id,node_id,workstream,revision,definition_digest,section,
+                          verdict,reviewer,reason,created_at
+                   FROM node_plan_section_reviews WHERE node_id=? ORDER BY rowid""",
+                (node_id,),
+            )]
+            required_sections = self._node_plan_sections(connection, node_id)
+        section_states: list[dict[str, Any]] = []
+        for section in required_sections:
+            section_rows = [row for row in rows if row["section"] == section]
+            current = next((row for row in reversed(section_rows) if (
+                row["revision"] == plan["revision"]
+                and row["definition_digest"] == digest
+            )), None)
+            section_status = "PENDING"
+            if current is not None:
+                section_status = (
+                    "APPROVED" if current["verdict"] == "APPROVE"
+                    else "CHANGES_REQUESTED"
+                )
+            section_states.append({
+                "section": section,
+                "status": section_status,
+                "current_review": current,
+                "reviews": section_rows,
+            })
+        if section_states and all(item["status"] == "APPROVED" for item in section_states):
+            status = "APPROVED"
+        elif any(item["status"] == "CHANGES_REQUESTED" for item in section_states):
+            status = "CHANGES_REQUESTED"
+        else:
+            status = "PENDING"
+        return {
+            "node_id": node_id,
+            "workstream": plan["workstream"],
+            "revision": plan["revision"],
+            "definition_digest": digest,
+            "status": status,
+            "sections": section_states,
+            "reviews": rows,
+        }
+
+    def review_node_plan_section(
+        self, node_id: str, section: str, definition_digest: str, verdict: str,
+        reviewer: str, reason: str,
+    ) -> dict[str, Any]:
+        selected = verdict.lower()
+        if selected not in {"approve", "reject", "modify", "clarify"}:
+            raise HarnessError("node plan section verdict 必须是 approve/reject/modify/clarify")
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("node plan review 必须提供 reviewer 和 reason")
+        state = self.node_plan_review_state(node_id)
+        if state["workstream"] != "VDOC":
+            raise HarnessError("节点级实施方案审批当前只适用于 VDOC 项目方案节点")
+        if state["definition_digest"] != definition_digest:
+            raise HarnessError("文档实施方案已变化；请刷新 Dashboard 后重新审批")
+        allowed_sections = {item["section"] for item in state["sections"]}
+        if section not in allowed_sections:
+            raise HarnessError("未知或当前不需要审批的文档实施方案区块")
+        plan = self.workstream("VDOC")
+        timestamp = now()
+        with self.connect() as connection:
+            if selected == "approve" and section == "human-confirmations":
+                unresolved = connection.execute(
+                    "SELECT COUNT(*) count FROM human_actions WHERE target=? AND status='OPEN'",
+                    (node_id,),
+                ).fetchone()["count"]
+                if unresolved:
+                    raise HarnessError("该文档节点仍有待确认事项；请先处理后再批准实施方案")
+            review_id = f"plan-section-review:{uuid.uuid4().hex[:12]}"
+            connection.execute(
+                "INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (review_id, node_id, "VDOC", plan["revision"], definition_digest,
+                 section, selected.upper(), reviewer.strip(), reason.strip(), timestamp),
+            )
+            required = [
+                item for item in self._vdoc_plan_desired(plan)
+                if item.get("required", True)
+            ]
+            approved = 0
+            has_changes_requested = False
+            for item in required:
+                digest = self._node_plan_digest(plan, item)
+                section_approved = True
+                for required_section in self._node_plan_sections(connection, item["id"]):
+                    latest = connection.execute(
+                        """SELECT verdict FROM node_plan_section_reviews
+                           WHERE node_id=? AND revision=? AND definition_digest=? AND section=?
+                           ORDER BY rowid DESC LIMIT 1""",
+                        (item["id"], plan["revision"], digest, required_section),
+                    ).fetchone()
+                    if latest is None or latest["verdict"] != "APPROVE":
+                        section_approved = False
+                        if latest is not None:
+                            has_changes_requested = True
+                        break
+                if section_approved:
+                    approved += 1
+            all_approved = approved == len(required)
+            lifecycle = "ACTIVE" if all_approved else (
+                "REVISE" if has_changes_requested else "REVIEW"
+            )
+            connection.execute(
+                "UPDATE workstreams SET lifecycle=?,updated_at=? WHERE name='VDOC'",
+                (lifecycle, timestamp),
+            )
+            if all_approved:
+                existing = connection.execute(
+                    "SELECT id FROM reviews WHERE workstream='VDOC' AND revision=? AND verdict='APPROVE'",
+                    (plan["revision"],),
+                ).fetchone()
+                if existing is None:
+                    connection.execute(
+                        "INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
+                        (f"review:{uuid.uuid4().hex[:12]}", "VDOC", plan["revision"],
+                         "APPROVE", reviewer.strip(),
+                         "所有必需文档节点的当前实施方案均已由 Human 审批通过", timestamp),
+                    )
+        self.write_workstream_projection("VDOC")
+        refreshed = self.node_plan_review_state(node_id)
+        return {
+            "review_id": review_id,
+            "node_id": node_id,
+            "section": section,
+            "verdict": selected.upper(),
+            "reviewer": reviewer.strip(),
+            "reason": reason.strip(),
+            "plan_review": refreshed,
+            "lifecycle": self.workstream("VDOC")["lifecycle"],
+            "auto_closure": self.evaluate_closure("VDOC"),
+        }
 
     def await_human_review(
         self, workstream: str, revision: int | None = None,
@@ -1957,7 +2401,216 @@ class ProjectStore:
                 for item in items:
                     item["affects"] = json.loads(item.pop("affects_json"))
                 row["governance_items"] = items
+        try:
+            plan = self.workstream("VDOC")
+        except HarnessError:
+            plan = None
+        for row in rows:
+            row["document_key"] = row["id"].removeprefix("document:vdoc:")
+            row["delivery_nodes"] = []
+            if plan is None:
+                continue
+            row["delivery_nodes"] = [
+                {
+                    "id": item["id"], "key": item["key"], "title": item["title"],
+                    "required": item.get("required", True),
+                    "role": item.get("role"),
+                    "document_key": self._vdoc_document_key(plan, item),
+                    "acceptance_criteria": item.get("acceptance_criteria", []),
+                    "work_content": item.get("work_content", []),
+                }
+                for item in self._vdoc_delivery_desired(plan)
+                if self._vdoc_document_key(plan, item) == row["document_key"]
+            ]
         return rows
+
+    def document_delivery_review_state(
+        self, node_id: str, plan: dict[str, Any] | None = None,
+        desired: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return revision-bound review state for one semantic delivery node."""
+        self.ensure_dashboard_schema()
+        if plan is None:
+            plan = self.workstream("VDOC")
+        if desired is None:
+            desired = next(
+                (item for item in plan["desired_state"] if item["id"] == node_id), None,
+            )
+        if desired is None or desired.get("role") != "document-deliverable":
+            raise HarnessError(f"未知当前文档交付节点: {node_id}")
+        document_key = self._vdoc_document_key(plan, desired)
+        if document_key is None:
+            raise HarnessError(f"文档交付节点未明确归属文档: {node_id}")
+        document = self.documents(f"document:vdoc:{document_key}")[0]
+        definition_digest = self._node_plan_digest(plan, desired)
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT id,node_id,workstream,revision,definition_digest,document_id,
+                          semantic_revision,document_digest,verdict,reviewer,notes,created_at
+                   FROM document_delivery_reviews WHERE node_id=? ORDER BY rowid""",
+                (node_id,),
+            )]
+            provisional_details = {
+                row["review_id"]: dict(row) for row in connection.execute(
+                    "SELECT review_id,owner,review_trigger FROM document_delivery_provisionals"
+                )
+            }
+        for row in rows:
+            row["provisional"] = provisional_details.get(row["id"])
+        current = next((row for row in reversed(rows) if (
+            row["revision"] == plan["revision"]
+            and row["definition_digest"] == definition_digest
+            and row["document_id"] == document["id"]
+            and row["semantic_revision"] == document["semantic_revision"]
+            and row["document_digest"] == document["digest"]
+        )), None)
+        status = "PENDING"
+        if current is not None:
+            status = (
+                "APPROVED" if current["verdict"] == "APPROVE"
+                else "PROVISIONAL" if current["verdict"] == "PROVISIONAL"
+                else "CHANGES_REQUESTED"
+            )
+        if not document["exists"] or document["content_changed"]:
+            status = "PENDING"
+            current = None
+        return {
+            "node_id": node_id,
+            "workstream": "VDOC",
+            "revision": plan["revision"],
+            "definition_digest": definition_digest,
+            "document_key": document_key,
+            "document_id": document["id"],
+            "document_path": document["path"],
+            "semantic_revision": document["semantic_revision"],
+            "document_digest": document["digest"],
+            "status": status,
+            "current_review": current,
+            "reviews": rows,
+        }
+
+    def review_document_delivery(
+        self, node_id: str, definition_digest: str, document_digest: str,
+        verdict: str, reviewer: str, notes: str,
+        provisional_owner: str = "", review_trigger: str = "",
+    ) -> dict[str, Any]:
+        selected = verdict.lower()
+        if selected not in {"approve", "provisional", "reject", "modify", "clarify"}:
+            raise HarnessError("document delivery verdict 必须是 approve/provisional/reject/modify/clarify")
+        if not reviewer.strip() or not notes.strip():
+            raise HarnessError("文档交付节点评审必须提供 reviewer 和 notes")
+        if selected == "provisional" and (
+            not provisional_owner.strip() or not review_trigger.strip()
+        ):
+            raise HarnessError("暂定接受必须填写责任人和重新评审触发条件")
+        plan = self.workstream("VDOC")
+        desired = next(
+            (item for item in plan["desired_state"] if item["id"] == node_id), None,
+        )
+        if desired is None or desired.get("role") != "document-deliverable":
+            raise HarnessError(f"未知当前文档交付节点: {node_id}")
+        if plan["lifecycle"] not in {"ACTIVE", "SATISFIED", "PARTIALLY_STALE"}:
+            raise HarnessError("必须先批准当前 VDOC 文档撰写方案，再验收文档交付节点")
+        document_key = self._vdoc_document_key(plan, desired)
+        document_id = f"document:vdoc:{document_key}"
+        self.sync_documents([document_id])
+        state = self.document_delivery_review_state(node_id, plan, desired)
+        if state["definition_digest"] != definition_digest:
+            raise HarnessError("文档交付节点定义已变化；请刷新 Dashboard 后重新审批")
+        if state["document_digest"] != document_digest:
+            raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
+        document = self.documents(document_id)[0]
+        pending_items = [
+            item for item in document["governance_items"]
+            if item["kind"] in {"human-decision", "external-open-question"}
+            and item["status"] in {"PENDING", "ACTIVE"}
+        ]
+        with self.read_connect() as connection:
+            pending_confirmations = [dict(row) for row in connection.execute(
+                """SELECT id,action,reviewer,reason,created_at FROM human_actions
+                   WHERE target=? AND status='OPEN' ORDER BY created_at""",
+                (node_id,),
+            )]
+        if selected == "approve" and (pending_items or pending_confirmations):
+            blockers = [item["id"] for item in pending_items]
+            blockers.extend(item["id"] for item in pending_confirmations)
+            raise HarnessError(
+                "交付节点仍有待 Human 确认的问题、工程决定或 Agent 分析事项（"
+                + "、".join(blockers) + "）；逐项处理后才能批准交付节点"
+            )
+        timestamp = now()
+        review_id = f"delivery-review:{uuid.uuid4().hex[:12]}"
+        node_status = (
+            Validity.VALID.value if selected == "approve"
+            else Validity.PROVISIONAL.value if selected == "provisional"
+            else Validity.REVIEW_REQUIRED.value
+        )
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO document_delivery_reviews VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (review_id, node_id, "VDOC", plan["revision"], definition_digest,
+                 document["id"], document["semantic_revision"], document["digest"],
+                 selected.upper(), reviewer.strip(), notes.strip(), timestamp),
+            )
+            if selected == "provisional":
+                connection.execute(
+                    "INSERT INTO document_delivery_provisionals VALUES(?,?,?)",
+                    (review_id, provisional_owner.strip(), review_trigger.strip()),
+                )
+            connection.execute(
+                "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                (node_status, timestamp, node_id),
+            )
+            related = [
+                item for item in self._vdoc_delivery_desired(plan)
+                if item.get("required", True)
+                and self._vdoc_document_key(plan, item) == document_key
+            ]
+            all_approved = bool(related)
+            all_usable = bool(related)
+            has_provisional = False
+            for item in related:
+                digest = self._node_plan_digest(plan, item)
+                latest = connection.execute(
+                    """SELECT verdict FROM document_delivery_reviews
+                       WHERE node_id=? AND revision=? AND definition_digest=?
+                         AND document_id=? AND semantic_revision=? AND document_digest=?
+                       ORDER BY rowid DESC LIMIT 1""",
+                    (item["id"], plan["revision"], digest, document["id"],
+                     document["semantic_revision"], document["digest"]),
+                ).fetchone()
+                if latest is None or latest["verdict"] not in {"APPROVE", "PROVISIONAL"}:
+                    all_usable = False
+                if latest is not None and latest["verdict"] == "PROVISIONAL":
+                    has_provisional = True
+                if latest is None or latest["verdict"] != "APPROVE":
+                    all_approved = False
+            document_status = (
+                Validity.VALID.value if all_approved
+                else Validity.PROVISIONAL.value if all_usable and has_provisional
+                else Validity.REVIEW_REQUIRED.value
+            )
+            connection.execute(
+                "UPDATE documents SET status=?,updated_at=? WHERE id=?",
+                (document_status, timestamp, document["id"]),
+            )
+            connection.execute(
+                "UPDATE nodes SET status=?,updated_at=? WHERE id IN (?,?,?)",
+                (document_status, timestamp, document["id"], document["desired_id"],
+                 f"file:{document['path']}"),
+            )
+        self.write_model_projection()
+        self.write_workstream_projection("VDOC")
+        return {
+            "review_id": review_id,
+            "node_id": node_id,
+            "verdict": selected.upper(),
+            "reviewer": reviewer.strip(),
+            "notes": notes.strip(),
+            "delivery_review": self.document_delivery_review_state(node_id),
+            "document": self.documents(document_id)[0],
+            "auto_closure": self.evaluate_closure("VDOC"),
+        }
 
     def document_content(self, selector: str) -> dict[str, Any]:
         """Read one registered VDOC body for the loopback Dashboard review surface."""
@@ -1986,6 +2639,16 @@ class ProjectStore:
             rows = [unique[key] for key in sorted(unique)]
         if not rows:
             raise HarnessError("尚未登记语义文档；先执行 plan VDOC")
+        try:
+            plan = self.workstream("VDOC")
+        except HarnessError:
+            plan = None
+        delivery_ids_by_document: dict[str, list[str]] = {}
+        if plan is not None:
+            for item in self._vdoc_delivery_desired(plan):
+                key = self._vdoc_document_key(plan, item)
+                if key is not None:
+                    delivery_ids_by_document.setdefault(key, []).append(item["id"])
         changed: list[tuple[str, int]] = []
         missing: list[str] = []
         newly_missing: list[str] = []
@@ -1998,6 +2661,11 @@ class ProjectStore:
                                        (Validity.INVALID.value, now(), row["id"]))
                     connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
                                        (Validity.INVALID.value, now(), row["id"]))
+                    for node_id in delivery_ids_by_document.get(row["document_key"], []):
+                        connection.execute(
+                            "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                            (Validity.INVALID.value, now(), node_id),
+                        )
                     missing.append(row["path"])
                     if row["status"] != Validity.INVALID.value:
                         newly_missing.append(row["path"])
@@ -2008,11 +2676,21 @@ class ProjectStore:
                 )
                 if observed_changed:
                     changed.append((row["path"], result["semantic_revision"]))
+                    for node_id in delivery_ids_by_document.get(row["document_key"], []):
+                        connection.execute(
+                            "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                            (Validity.REVIEW_REQUIRED.value, now(), node_id),
+                        )
                 elif row["status"] == Validity.INVALID.value:
                     connection.execute("UPDATE documents SET status=?,updated_at=? WHERE id=?",
                                        (Validity.REVIEW_REQUIRED.value, now(), row["id"]))
                     connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?",
                                        (Validity.REVIEW_REQUIRED.value, now(), row["id"]))
+                    for node_id in delivery_ids_by_document.get(row["document_key"], []):
+                        connection.execute(
+                            "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                            (Validity.REVIEW_REQUIRED.value, now(), node_id),
+                        )
                     restored.append((row["path"], result["semantic_revision"]))
         for path, revision in changed:
             self.record_change(path, "modify", f"document-r{revision}")
@@ -2297,8 +2975,8 @@ class ProjectStore:
         self.require()
         if not node_id.strip() or any(character.isspace() for character in node_id):
             raise HarnessError("node ID 不能为空或包含空白")
-        if status in {Validity.VALID, Validity.WAIVED}:
-            raise HarnessError("新 node 不能直接声明 VALID/WAIVED；必须提供 evidence 或 Human waiver")
+        if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
+            raise HarnessError("新 node 不能直接声明 VALID/PROVISIONAL/WAIVED；必须提供对应 evidence 或 Human review")
         name = self.normalize_workstream(workstream) if workstream else None
         with self.connect() as connection:
             if connection.execute("SELECT 1 FROM nodes WHERE id=?", (node_id,)).fetchone() is not None:
@@ -2357,8 +3035,8 @@ class ProjectStore:
 
     def set_status(self, node_id: str, status: Validity) -> dict[str, Any]:
         self.require()
-        if status in {Validity.VALID, Validity.WAIVED}:
-            raise HarnessError("VALID 必须由 evidence 建立，WAIVED 必须由 Human review 建立")
+        if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
+            raise HarnessError("VALID 必须由 evidence 建立，PROVISIONAL/WAIVED 必须由 Human review 建立")
         with self.connect() as connection:
             changed = connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
             if changed.rowcount != 1:
@@ -2532,7 +3210,9 @@ class ProjectStore:
                 """SELECT nodes.id,nodes.status FROM edges JOIN nodes ON nodes.id=edges.target
                    WHERE edges.source=? AND edges.relation='DEPENDS_ON'""", (subject,)
             ):
-                if dependency["status"] not in {Validity.VALID.value, Validity.WAIVED.value}:
+                if dependency["status"] not in {
+                    Validity.VALID.value, Validity.PROVISIONAL.value, Validity.WAIVED.value,
+                }:
                     blockers.append(f"prerequisite {dependency['id']} 当前为 {dependency['status']}")
         return blockers
 
@@ -2978,7 +3658,7 @@ class ProjectStore:
                        ORDER BY nodes.id""", (desired["id"],)
                 )]
                 blockers = [item for item in dependencies if item["status"] not in {
-                    Validity.VALID.value, Validity.WAIVED.value,
+                    Validity.VALID.value, Validity.PROVISIONAL.value, Validity.WAIVED.value,
                 }]
                 expected_dependencies = [
                     prerequisite for dependent, prerequisite in DEFAULT_DEPENDENCIES
@@ -3022,9 +3702,33 @@ class ProjectStore:
                 actions.append({"kind": "RESOLVE_FINDING", "target": row["subject"], "priority": 5,
                                 "executor": "reasoning", "suggested_mode": "reason", "reason": row["details"]})
             if plan["lifecycle"] in {"REVIEW", "REVISE"}:
-                actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
-                                "executor": "human", "suggested_mode": "plan",
-                                "reason": "当前工作计划等待负责人评审"})
+                if name == "VDOC":
+                    vdoc_plan_nodes = self._vdoc_writing_plan_desired(plan)
+                    if not vdoc_plan_nodes:
+                        actions.append({
+                            "kind": "REFINE_DESIRED_STATE", "target": "workstream:VDOC",
+                            "priority": 1, "executor": "reasoning", "suggested_mode": "plan",
+                            "reason": (
+                                "请先根据当前 DUT、规格、接口和验证目标形成项目级 VDOC 方案节点；"
+                                "固定文档交付分类不作为实施方案节点"
+                            ),
+                        })
+                    for desired in vdoc_plan_nodes:
+                        if not desired.get("required", True):
+                            continue
+                        review_state = self.node_plan_review_state(
+                            desired["id"], plan, desired,
+                        )
+                        if review_state["status"] != "APPROVED":
+                            actions.append({
+                                "kind": "HUMAN_REVIEW", "target": desired["id"],
+                                "priority": 1, "executor": "human", "suggested_mode": "plan",
+                                "reason": "当前 DUT 的文档实施方案节点等待负责人审批",
+                            })
+                else:
+                    actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
+                                    "executor": "human", "suggested_mode": "plan",
+                                    "reason": "当前工作计划等待负责人评审"})
             actions.sort(key=lambda item: (item["priority"], item["target"], item["kind"]))
             unique_actions: list[dict[str, Any]] = []
             seen_action_ids: set[str] = set()
@@ -3123,6 +3827,10 @@ class ProjectStore:
         return {
             "project": manifest["project_name"], "baseline_revision": manifest.get("baseline_revision"),
             "runtime": manifest.get("runtime"), "lifecycle": "ACTIVE",
+            "dut": manifest.get("dut", {}),
+            "rtl_roots": manifest.get("rtl_roots", []),
+            "docs_roots": manifest.get("docs_roots", []),
+            "verif_root": manifest.get("verif_root"),
             "workstreams": plans, "closures": [self.evaluate_closure(item["workstream"], persist=False) for item in plans],
             "node_status": counts, "open_findings": sum(item["status"] == "OPEN" for item in model["findings"]),
             "documents": {"count": len(document_rows), "status": document_status,
@@ -3141,6 +3849,9 @@ class ProjectStore:
         documents = self.documents()
         documents_by_desired = {
             item["desired_id"]: item for item in documents if item.get("desired_id")
+        }
+        documents_by_key = {
+            item["document_key"]: item for item in documents if item.get("document_key")
         }
         pending_document_items: list[dict[str, Any]] = []
         for document in documents:
@@ -3194,6 +3905,22 @@ class ProjectStore:
             required_total = 0
             satisfied = 0
             desired_ids = {item["id"] for item in plan["desired_state"]}
+            vdoc_plan_ids = {
+                item["id"] for item in plan["desired_state"]
+                if plan["workstream"] == "VDOC"
+                and item.get("role") == "document-writing-plan"
+            }
+            vdoc_delivery_ids = {
+                item["id"] for item in plan["desired_state"]
+                if plan["workstream"] == "VDOC"
+                and item.get("role") == "document-deliverable"
+            }
+            implementation_ids = (
+                vdoc_plan_ids | vdoc_delivery_ids if plan["workstream"] == "VDOC" else {
+                    item["id"] for item in plan["desired_state"]
+                    if item.get("definition_origin") != "template"
+                }
+            )
             workstream_closure = closure_by_workstream.get(plan["workstream"], {
                 "workstream": plan["workstream"], "ready": False,
                 "lifecycle": plan["lifecycle"], "actions": [],
@@ -3210,8 +3937,9 @@ class ProjectStore:
                     "updated_at": plan["updated_at"],
                 })
                 status = node["status"]
-                counts[status] = counts.get(status, 0) + 1
-                if desired.get("required", True):
+                if desired["id"] in implementation_ids:
+                    counts[status] = counts.get(status, 0) + 1
+                if desired["id"] in implementation_ids and desired.get("required", True):
                     required_total += 1
                     if status in {Validity.VALID.value, Validity.WAIVED.value}:
                         satisfied += 1
@@ -3235,8 +3963,29 @@ class ProjectStore:
                         ),
                         "title": display_title,
                     }
+                document_key = (
+                    self._vdoc_document_key(plan, desired)
+                    if plan["workstream"] == "VDOC" else None
+                )
+                mapped_document = (
+                    documents_by_desired.get(desired["id"])
+                    or documents_by_key.get(document_key)
+                )
+                delivery_review = (
+                    self.document_delivery_review_state(desired["id"], plan, desired)
+                    if desired["id"] in vdoc_delivery_ids else None
+                )
+                if delivery_review is not None:
+                    status = (
+                        Validity.VALID.value
+                        if delivery_review["status"] == "APPROVED"
+                        else Validity.PROVISIONAL.value
+                        if delivery_review["status"] == "PROVISIONAL"
+                        else Validity.REVIEW_REQUIRED.value
+                    )
                 desired_nodes.append({
                     **node,
+                    "status": status,
                     "title": display_definition.get("title", node["title"]),
                     "key": desired.get("key"),
                     "role": desired.get("role", "capability"),
@@ -3246,6 +3995,8 @@ class ProjectStore:
                     "evidence_contract": desired.get("evidence_contract"),
                     "parent_key": desired.get("parent_key"),
                     "parent_id": desired.get("parent_id"),
+                    "document_key": document_key,
+                    "content_kind": desired.get("content_kind"),
                     "statement": display_definition.get("statement"),
                     "purpose": display_definition.get("purpose"),
                     "scope": display_definition.get("scope", []),
@@ -3263,9 +4014,17 @@ class ProjectStore:
                     "evidence": node_evidence,
                     "findings": findings_by_subject.get(desired["id"], []),
                     "activities": activities_by_node.get(desired["id"], []),
+                    "human_actions": [
+                        item for item in human_actions if item["target"] == desired["id"]
+                    ],
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
-                    "document": documents_by_desired.get(desired["id"]),
+                    "document": mapped_document,
+                    "plan_review": (
+                        self.node_plan_review_state(desired["id"], plan, desired)
+                        if desired["id"] in vdoc_plan_ids else None
+                    ),
+                    "delivery_review": delivery_review,
                     # This is the Engine's current, reproducible explanation for why the
                     # node is or is not closed.  It is deliberately separate from the raw
                     # status so a Human can review the reasoning rather than a badge.
@@ -3335,6 +4094,10 @@ class ProjectStore:
                     "counts": counts,
                 },
                 "nodes": desired_nodes,
+                "plan_node_count": len(vdoc_plan_ids) if plan["workstream"] == "VDOC" else len(implementation_ids),
+                "writing_plan_node_count": len(vdoc_plan_ids),
+                "delivery_node_count": len(vdoc_delivery_ids),
+                "catalog_node_count": len(desired_ids - implementation_ids),
                 "closure": workstream_closure,
                 "activities": [item for item in activities if item["node_id"] in desired_ids],
                 "human_actions": workstream_human_actions,
@@ -3371,6 +4134,10 @@ class ProjectStore:
                 "lifecycle": summary["lifecycle"],
                 "baseline_revision": summary["baseline_revision"],
                 "root": str(self.root),
+                "dut": summary["dut"],
+                "rtl_roots": summary["rtl_roots"],
+                "docs_roots": summary["docs_roots"],
+                "verif_root": summary["verif_root"],
             },
             # Dashboard totals describe the active desired-state revisions. The full model and
             # audit histories remain available below, but stale revisions must not look active.

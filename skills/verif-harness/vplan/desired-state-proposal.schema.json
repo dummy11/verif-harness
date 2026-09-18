@@ -5,6 +5,32 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "workstream", "nodes"],
+  "allOf": [
+    {
+      "if": {"properties": {"workstream": {"const": "VDOC"}}},
+      "then": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "properties": {
+                "role": {
+                  "enum": ["document-writing-plan", "document-deliverable"]
+                },
+                "document_key": {
+                  "enum": [
+                    "verification-workflow", "verification-plan", "feature-matrix",
+                    "tb-architecture", "reference-model", "coverage-plan",
+                    "assertion-plan", "testcase-list"
+                  ]
+                }
+              },
+              "required": ["document_key"]
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "schema": {"const": "DesiredStateProposal/1"},
     "workstream": {"enum": ["VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]},
@@ -25,6 +51,7 @@
           "title": {"type": "string", "minLength": 1},
           "role": {"type": "string", "minLength": 1},
           "parent_key": {"type": "string", "minLength": 1},
+          "document_key": {"type": "string", "minLength": 1},
           "required": {"type": "boolean", "default": true},
           "statement": {"type": "string", "minLength": 1},
           "purpose": {"type": "string", "minLength": 1},

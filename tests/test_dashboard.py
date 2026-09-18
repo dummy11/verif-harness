@@ -54,21 +54,70 @@ class DashboardTest(unittest.TestCase):
         with self.get("/") as response:
             html = response.read().decode("utf-8")
         self.assertIn("验证项目看板", html)
-        self.assertIn("项目验证总览", html)
+        self.assertIn("验证项目总览", html)
+        self.assertIn("当前验证项目、DUT 验证对象", html)
+        self.assertNotIn('id="global-action"', html)
         self.assertIn("等待人工处理", html)
-        self.assertIn("工作项", html)
+        self.assertIn("['工作流', s.workstreams.length", html)
+        self.assertIn("['工作节点', s.current_node_count", html)
+        self.assertIn("<h2>工作节点</h2>", html)
+        self.assertIn("个工作节点 · 点击名称查看详情", html)
         self.assertIn("要达到什么", html)
         self.assertIn("实际进度", html)
         self.assertIn("完成条件与当前依据", html)
-        self.assertIn("评审完成判断", html)
-        self.assertIn("查看并评审文档", html)
-        self.assertIn("这类验证工作何时算完成", html)
+        self.assertIn("确认节点完成判断", html)
+        self.assertIn("在新标签页验收本交付节点", html)
+        self.assertIn("审批文档撰写方案", html)
+        self.assertIn("调整文档", html)
+        self.assertIn("请审批文档撰写方案", html)
+        self.assertIn("本次审批对象：工作流实施方案", html)
+        self.assertIn("这一步审批的是实施方案，不是实施内容", html)
+        self.assertIn("基于当前 DUT 分解的方案节点", html)
+        self.assertIn("不作为实施方案节点计数", html)
+        self.assertIn("尚未根据当前 DUT", html)
+        self.assertIn("整体退出条件", html)
+        self.assertIn("批准实施方案并开始工作", html)
+        self.assertIn("提交实施方案审批", html)
+        self.assertIn("review-plan-node", html)
+        self.assertIn("openNodePlanReviewTab", html)
+        self.assertIn("data-plan-section-form", html)
+        self.assertIn("提交本区块审批", html)
+        self.assertIn("/api/reviews/node-plan-section", html)
+        self.assertIn("这条工作流何时算完成", html)
+        self.assertIn("VDOC Human–Agent–Engine 评审闭环与收敛", html)
+        self.assertIn("当前重新评审原因", html)
+        self.assertIn("当前收敛条件", html)
+        self.assertIn("Agent 分析 → Engine 登记版本 → Human 评审", html)
+        self.assertIn("所有必需文档交付节点均已批准（暂定不计）", html)
+        self.assertIn("function vdocConvergenceHtml(w, openHuman)", html)
+        self.assertIn("项目与验证对象", html)
+        self.assertIn("function projectContextHtml(compact=false)", html)
+        self.assertIn("仅显示评审和意见记录中的身份", html)
+        self.assertIn("只校验与聚合，不代替 Human 审批", html)
+        self.assertIn("<th>节点名称</th><th>节点类型</th><th>状态 / 进度</th>", html)
+        self.assertIn("function nodeProgressHtml(n)", html)
+        self.assertIn("点击名称查看详情", html)
+        self.assertIn("'document-writing-plan':'文档撰写方案'", html)
+        self.assertIn("'document-deliverable':'文档交付'", html)
+        self.assertNotIn("<th>要完成什么</th><th>当前结论</th><th>已有什么</th><th>下一步</th>", html)
+        self.assertIn("data-review-workstream", html)
+        self.assertIn("button.dataset.reviewWorkstream", html)
+        self.assertIn("openWorkstreamReviewTab(button.dataset.reviewWorkstream)", html)
+        self.assertIn("window.open(url.toString(), '_blank', 'noopener')", html)
+        self.assertIn("renderWorkstreamReview(workstream(state.reviewWorkstream))", html)
+        self.assertIn("$('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream)", html)
+        self.assertIn("review-page-form", html)
+        self.assertNotIn("function openReviewModal", html)
         self.assertNotIn("评审节点完成判断", html)
+        self.assertIn("w.workstream === 'VDOC'", html)
         self.assertNotIn("__VERIF_DASHBOARD_TOKEN__", html)
         self.assertNotIn("https://", html)
         with self.get("/api/snapshot") as response:
             snapshot = json.loads(response.read())
         self.assertEqual(snapshot["schema"], "VerificationDashboard/1")
+        self.assertEqual(snapshot["project"]["dut"], {"top_module": "dut", "top_file": "rtl/dut.sv"})
+        self.assertEqual(snapshot["project"]["rtl_roots"], ["rtl"])
+        self.assertEqual(snapshot["project"]["verif_root"], "verification")
         self.assertEqual(snapshot["workstreams"][0]["workstream"], "VCHK")
         self.assertTrue(snapshot["workstreams"][0]["nodes"])
         self.assertIn("closure", snapshot["workstreams"][0])
@@ -81,6 +130,8 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(node["progress_measures"][0]["unit"], "项")
         self.assertEqual(snapshot["waiting_for_human"][0]["action"], "HUMAN_REVIEW")
         self.assertEqual(snapshot["waiting_for_human"][0]["source"], "closure")
+        self.assertEqual(snapshot["waiting_for_human"][0]["target_type"], "workstream")
+        self.assertEqual(snapshot["waiting_for_human"][0]["target"], "workstream:VCHK")
         self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
         self.assertEqual(snapshot["version"], self.store.dashboard_snapshot()["version"])
 
@@ -113,6 +164,18 @@ class DashboardTest(unittest.TestCase):
 
     def test_vdoc_questions_are_waiting_and_document_can_be_reviewed_from_node(self) -> None:
         plan = self.store.design_workstream("VDOC", None, [], [], [])
+        before_review = self.store.dashboard_snapshot()
+        vdoc_before_review = next(
+            item for item in before_review["workstreams"] if item["workstream"] == "VDOC"
+        )
+        self.assertEqual(vdoc_before_review["plan_node_count"], 0)
+        self.assertEqual(vdoc_before_review["progress"]["required"], 0)
+        self.assertFalse(any(node["plan_review"] for node in vdoc_before_review["nodes"]))
+        self.assertEqual(vdoc_before_review["waiting_for_human"], [])
+        self.assertTrue(any(
+            action["kind"] == "REFINE_DESIRED_STATE"
+            for action in vdoc_before_review["closure"]["actions"]
+        ))
         self.store.review_workstream("VDOC", "approve", "alice", "同意当前文档范围")
         document = self.store.documents()[0]
         self.store.track_document_item(
@@ -147,6 +210,272 @@ class DashboardTest(unittest.TestCase):
                 "notes": "试图忽略待回答问题",
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+    def test_vdoc_plan_sections_are_reviewed_independently_and_aggregate(self) -> None:
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [
+                {
+                    "key": "dut-interface-scope", "title": "DUT 接口验证范围",
+                    "role": "document-writing-plan", "parent_key": "verification-plan",
+                    "document_key": "verification-plan",
+                    "required": True,
+                    "statement": "当前 DUT 的接口、协议角色和验证边界已在验证计划中明确。",
+                    "purpose": "让环境、激励和检查节点使用同一组 DUT 接口边界。",
+                    "scope": ["当前 DUT 顶层接口、时钟复位域和协议角色"],
+                    "acceptance_criteria": ["每个必需接口都有规格来源和验证责任"],
+                    "source_refs": ["rtl/dut.sv", "verification_plan.md#dut-interface-scope"],
+                    "work_content": ["逐项列出 DUT 端口、方向、位宽、协议角色和验证责任"],
+                    "implementation_approach": ["从 DUT 顶层和已确认规格提取接口并交叉核对"],
+                    "deliverables": ["验证计划中的 DUT 接口范围表"],
+                    "progress_measures": [{
+                        "id": "interfaces-reviewed", "label": "已确认接口",
+                        "unit": "接口", "target": "全部必需接口", "source": "verification_plan.md",
+                    }],
+                    "quality_checks": ["不存在无规格来源或无验证责任的必需接口"],
+                    "suggested_mode": "review", "evidence_claim": "document-review",
+                },
+                {
+                    "key": "dut-error-flow", "title": "DUT 错误响应验证方案",
+                    "role": "document-writing-plan", "parent_key": "feature-matrix",
+                    "document_key": "feature-matrix",
+                    "required": True,
+                    "statement": "当前 DUT 的错误输入、错误响应和检查方式已明确。",
+                    "purpose": "避免只覆盖正常数据流而遗漏 DUT 错误行为。",
+                    "scope": ["DUT 可报告或恢复的错误条件"],
+                    "acceptance_criteria": ["每类错误都有激励、检查和覆盖映射"],
+                    "source_refs": ["feature_matrix.md#error-flow"],
+                    "work_content": ["列出错误触发条件、预期响应和观测位置"],
+                    "implementation_approach": ["按错误类别建立验证点并关联 testcase/checker/coverage"],
+                    "deliverables": ["错误流验证点及其验证映射"],
+                    "progress_measures": [{
+                        "id": "error-flows-mapped", "label": "已映射错误流",
+                        "unit": "场景", "target": "全部必需错误流", "source": "feature_matrix.md",
+                    }],
+                    "quality_checks": ["错误响应与 DUT 规格一致且可观测"],
+                    "suggested_mode": "review", "evidence_claim": "document-review",
+                },
+                {
+                    "key": "dut-interface-table", "title": "DUT 接口范围表",
+                    "role": "document-deliverable", "parent_key": "dut-interface-scope",
+                    "document_key": "verification-plan", "required": True,
+                    "statement": "验证计划正文已经列出当前 DUT 的必需接口和验证责任。",
+                    "purpose": "独立验收验证计划中的接口范围语义。",
+                    "scope": ["verification_plan.md 的 DUT 接口范围表"],
+                    "acceptance_criteria": ["每个必需接口均有方向、位宽、协议角色和验证责任"],
+                    "source_refs": ["verification_plan.md#dut-interface-scope", "rtl/dut.sv"],
+                    "work_content": ["正文中的 DUT 接口、方向、位宽、协议角色和验证责任"],
+                    "implementation_approach": ["对照当前正文与 DUT 顶层接口逐项验收"],
+                    "deliverables": ["DUT 接口范围语义的独立验收结论"],
+                    "progress_measures": [{
+                        "id": "interfaces-accepted", "label": "已验收接口",
+                        "unit": "接口", "target": "全部必需接口", "source": "verification_plan.md",
+                    }],
+                    "quality_checks": ["不存在遗漏、方向错误或验证责任缺失"],
+                    "suggested_mode": "review", "evidence_claim": "document-review",
+                },
+                {
+                    "key": "dut-interface-boundary", "title": "DUT 接口验证边界",
+                    "role": "document-deliverable", "parent_key": "dut-interface-scope",
+                    "document_key": "verification-plan", "required": True,
+                    "statement": "验证计划正文已经明确当前 DUT 的接口验证边界。",
+                    "purpose": "独立验收纳入和排除范围。",
+                    "scope": ["verification_plan.md 的接口验证边界"],
+                    "acceptance_criteria": ["纳入范围、排除范围和理由均明确"],
+                    "source_refs": ["verification_plan.md#dut-interface-scope"],
+                    "work_content": ["正文中的接口纳入范围、排除范围及其理由"],
+                    "implementation_approach": ["阅读当前正文并核对范围是否覆盖计划对象"],
+                    "deliverables": ["接口验证边界语义的独立验收结论"],
+                    "progress_measures": [{
+                        "id": "boundaries-accepted", "label": "已验收边界",
+                        "unit": "项", "target": "全部边界", "source": "verification_plan.md",
+                    }],
+                    "quality_checks": ["范围边界没有含糊或相互矛盾"],
+                    "suggested_mode": "review", "evidence_claim": "document-review",
+                },
+                {
+                    "key": "dut-error-semantics", "title": "DUT 错误响应语义",
+                    "role": "document-deliverable", "parent_key": "dut-error-flow",
+                    "document_key": "feature-matrix", "required": True,
+                    "statement": "验证点矩阵正文已经描述当前 DUT 的错误响应语义。",
+                    "purpose": "独立验收错误触发、响应、检查和覆盖映射。",
+                    "scope": ["feature_matrix.md 的错误流验证点"],
+                    "acceptance_criteria": ["每类错误都有触发、预期响应、checker 和 coverage"],
+                    "source_refs": ["feature_matrix.md#error-flow"],
+                    "work_content": ["正文中的错误触发条件、预期响应、观测位置和验证映射"],
+                    "implementation_approach": ["按错误类别逐项阅读并核对语义闭环"],
+                    "deliverables": ["错误响应语义的独立验收结论"],
+                    "progress_measures": [{
+                        "id": "error-semantics-accepted", "label": "已验收错误流",
+                        "unit": "场景", "target": "全部必需错误流", "source": "feature_matrix.md",
+                    }],
+                    "quality_checks": ["错误流语义与 DUT 规格一致且可验证"],
+                    "suggested_mode": "review", "evidence_claim": "document-review",
+                },
+            ],
+        }
+        proposal_path = self.root / "vdoc-plan.json"
+        proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+        self.store.design_workstream(
+            "VDOC", None, [], [], [], desired_file=str(proposal_path),
+        )
+        snapshot = self.store.dashboard_snapshot()
+        vdoc = next(item for item in snapshot["workstreams"] if item["workstream"] == "VDOC")
+        plan_nodes = [node for node in vdoc["nodes"] if node["plan_review"]]
+        catalog_nodes = [node for node in vdoc["nodes"] if node["role"] == "document-catalog"]
+        delivery_nodes = [node for node in vdoc["nodes"] if node["delivery_review"]]
+        self.assertEqual(vdoc["plan_node_count"], 2)
+        self.assertEqual(vdoc["delivery_node_count"], 3)
+        self.assertEqual(vdoc["progress"]["required"], 5)
+        self.assertEqual(vdoc["exit_criteria"], [
+            "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
+            "所有文档交付节点中的 Human 确认项、修改要求和阻塞问题均已关闭",
+        ])
+        self.assertEqual(len(plan_nodes), 2)
+        self.assertEqual(len(catalog_nodes), 8)
+        self.assertEqual(len(delivery_nodes), 3)
+        self.assertEqual(
+            {node["role"] for node in plan_nodes}, {"document-writing-plan"},
+        )
+        self.assertEqual(
+            {node["role"] for node in catalog_nodes}, {"document-catalog"},
+        )
+        self.assertTrue(all(node["plan_review"] is None for node in delivery_nodes))
+        self.assertEqual(
+            len(next(node for node in catalog_nodes if node["key"] == "verification-plan")["document"]["delivery_nodes"]),
+            2,
+        )
+        first = plan_nodes[0]
+        self.assertEqual(first["plan_review"]["status"], "PENDING")
+        self.assertGreaterEqual(len(first["plan_review"]["sections"]), 3)
+
+        section = first["plan_review"]["sections"][0]["section"]
+        changed = self.post("/api/reviews/node-plan-section", {
+            "node": first["id"], "section": section,
+            "definition_digest": first["plan_review"]["definition_digest"],
+            "verdict": "modify", "reviewer": "alice",
+            "reason": "需要绑定当前 DUT 的接口和验证点",
+        }, self.server.write_token)["snapshot"]
+        changed_vdoc = next(item for item in changed["workstreams"] if item["workstream"] == "VDOC")
+        changed_first = next(item for item in changed_vdoc["nodes"] if item["id"] == first["id"])
+        self.assertEqual(changed_first["plan_review"]["status"], "CHANGES_REQUESTED")
+
+        for node in changed_vdoc["nodes"]:
+            if not node["plan_review"]:
+                continue
+            for item in node["plan_review"]["sections"]:
+                self.post("/api/reviews/node-plan-section", {
+                    "node": node["id"], "section": item["section"],
+                    "definition_digest": node["plan_review"]["definition_digest"],
+                    "verdict": "approve", "reviewer": "alice",
+                    "reason": "该区块已经结合当前 DUT 验证对象确认",
+                }, self.server.write_token)
+        final = self.store.dashboard_snapshot()
+        final_vdoc = next(item for item in final["workstreams"] if item["workstream"] == "VDOC")
+        self.assertEqual(final_vdoc["lifecycle"], "ACTIVE")
+        self.assertTrue(all(
+            node["plan_review"]["status"] == "APPROVED"
+            for node in final_vdoc["nodes"] if node["plan_review"] and node["required"]
+        ))
+        interface_scope = next(
+            node for node in final_vdoc["nodes"] if node["key"] == "dut-interface-scope"
+        )
+        self.assertTrue(any("端口" in item for item in interface_scope["work_content"]))
+        self.assertFalse(any(
+            "完成本节点所描述的实际工作" in item
+            for item in interface_scope["work_content"]
+        ))
+
+        refreshed_delivery = [
+            node for node in final_vdoc["nodes"]
+            if node["document_key"] == "verification-plan"
+            and node["role"] == "document-deliverable"
+        ]
+        confirmation = self.store.add_human_action(
+            refreshed_delivery[0]["id"], "CLARIFY", "agent-analysis",
+            "请确认接口 sideband 是否属于本次验证范围",
+            {"source": "agent-delivery-analysis"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/reviews/document-delivery", {
+                "node": refreshed_delivery[0]["id"],
+                "definition_digest": refreshed_delivery[0]["delivery_review"]["definition_digest"],
+                "document_digest": refreshed_delivery[0]["delivery_review"]["document_digest"],
+                "verdict": "approve", "reviewer": "alice", "notes": "尚未处理确认项",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
+        self.post("/api/human-actions/resolve", {
+            "id": confirmation["id"], "reviewer": "alice",
+            "resolution": "sideband 纳入范围并按接口表验收", "status": "RESOLVED",
+        }, self.server.write_token)
+
+        first_review = self.post("/api/reviews/document-delivery", {
+            "node": refreshed_delivery[0]["id"],
+            "definition_digest": refreshed_delivery[0]["delivery_review"]["definition_digest"],
+            "document_digest": refreshed_delivery[0]["delivery_review"]["document_digest"],
+            "verdict": "approve", "reviewer": "alice", "notes": "接口语义符合当前 DUT",
+        }, self.server.write_token)["snapshot"]
+        first_vdoc = next(item for item in first_review["workstreams"] if item["workstream"] == "VDOC")
+        verification_catalog = next(
+            node for node in first_vdoc["nodes"] if node["key"] == "verification-plan"
+        )
+        self.assertEqual(verification_catalog["document"]["effective_status"], "REVIEW_REQUIRED")
+        second = next(
+            node for node in first_vdoc["nodes"]
+            if node["key"] == "dut-interface-boundary"
+        )
+        second_review = self.post("/api/reviews/document-delivery", {
+            "node": second["id"],
+            "definition_digest": second["delivery_review"]["definition_digest"],
+            "document_digest": second["delivery_review"]["document_digest"],
+            "verdict": "approve", "reviewer": "alice", "notes": "验证边界明确",
+        }, self.server.write_token)["snapshot"]
+        second_vdoc = next(item for item in second_review["workstreams"] if item["workstream"] == "VDOC")
+        verification_catalog = next(
+            node for node in second_vdoc["nodes"] if node["key"] == "verification-plan"
+        )
+        self.assertEqual(verification_catalog["document"]["effective_status"], "VALID")
+
+        error_delivery = next(
+            node for node in second_vdoc["nodes"] if node["key"] == "dut-error-semantics"
+        )
+        provisional = self.post("/api/reviews/document-delivery", {
+            "node": error_delivery["id"],
+            "definition_digest": error_delivery["delivery_review"]["definition_digest"],
+            "document_digest": error_delivery["delivery_review"]["document_digest"],
+            "verdict": "provisional", "reviewer": "alice",
+            "notes": "错误码定义尚未冻结，暂按当前规格推进",
+            "provisional_owner": "bob", "review_trigger": "错误码规格冻结",
+        }, self.server.write_token)["snapshot"]
+        provisional_vdoc = next(
+            item for item in provisional["workstreams"] if item["workstream"] == "VDOC"
+        )
+        provisional_node = next(
+            node for node in provisional_vdoc["nodes"] if node["key"] == "dut-error-semantics"
+        )
+        self.assertEqual(provisional_node["status"], "PROVISIONAL")
+        self.assertEqual(provisional_node["delivery_review"]["status"], "PROVISIONAL")
+        self.assertEqual(
+            provisional_node["delivery_review"]["current_review"]["provisional"],
+            {"review_id": provisional_node["delivery_review"]["current_review"]["id"],
+             "owner": "bob", "review_trigger": "错误码规格冻结"},
+        )
+        self.assertEqual(provisional_node["document"]["effective_status"], "PROVISIONAL")
+        self.assertTrue(any(
+            action["target"] == provisional_node["id"]
+            for action in provisional_vdoc["closure"]["actions"]
+        ))
+
+        for removed_role in (
+            "project-goal", "closure-evidence", "capability", "document-goal",
+            "document-section", "engineering-decision",
+        ):
+            proposal["nodes"][0]["role"] = removed_role
+            proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "role 必须是"):
+                self.store.design_workstream(
+                    "VDOC", None, [], [], [], desired_file=str(proposal_path),
+                )
 
     def test_human_can_review_current_node_closure_assessment(self) -> None:
         node = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]

@@ -86,11 +86,11 @@
     .progress-text { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font-size: 12px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 8px; font-size: 11px; font-weight: 750; white-space: nowrap; }
-    .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED, .CLOSED, .SUPPORTED { color: var(--green); background: var(--green-bg); }
+    .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED, .CLOSED, .SUPPORTED, .APPROVED { color: var(--green); background: var(--green-bg); }
     .RUNNING { color: var(--blue); background: var(--blue-bg); }
     .INVALID, .FAILED, .NOT_SUPPORTED { color: var(--red); background: var(--red-bg); }
     .STALE, .REVALIDATION_REQUIRED, .PARTIALLY_STALE { color: var(--orange); background: var(--orange-bg); }
-    .REVIEW_REQUIRED, .REVIEW, .REVISE, .WAITING_FOR_HUMAN, .OPEN, .BLOCKED, .HUMAN_REVIEW_REQUIRED, .NOT_SATISFIED { color: var(--yellow); background: var(--yellow-bg); }
+    .REVIEW_REQUIRED, .PROVISIONAL, .REVIEW, .REVISE, .WAITING_FOR_HUMAN, .OPEN, .BLOCKED, .HUMAN_REVIEW_REQUIRED, .NOT_SATISFIED, .CHANGES_REQUESTED { color: var(--yellow); background: var(--yellow-bg); }
     .WAIVED { color: var(--purple); background: var(--purple-bg); }
     .UNKNOWN, .PENDING, .RECORDED, .CANCELLED { color: var(--gray); background: var(--gray-bg); }
     .two-col { grid-template-columns: minmax(0, 1.55fr) minmax(300px, .8fr); align-items: start; }
@@ -108,6 +108,13 @@
     .node-table th { padding: 10px 14px; text-align: left; color: var(--muted); background: var(--panel-2); font-size: 12px; }
     .node-table td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: top; }
     .node-table tr:hover td { background: var(--panel-2); }
+    .node-table th:first-child { width: 46%; }
+    .node-table th:nth-child(2) { width: 20%; }
+    .node-progress-cell { min-width: 240px; }
+    .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
+    .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
+    .node-progress-text { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .node-attention { margin-top: 6px; color: var(--amber); font-size: 12px; font-weight: 700; }
     .node-link { border: 0; padding: 0; color: var(--brand); background: transparent; text-align: left; font-weight: 700; }
     .tree-toggle { width: 22px; margin-left: -24px; border: 0; color: var(--muted); background: transparent; }
     .node-statement { max-width: 540px; margin-top: 4px; color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -165,18 +172,18 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col { grid-template-columns: 1fr; } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; } .brand { min-width: 0; } .brand small { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(3), .node-table td:nth-child(3) { display: none; } .metric-row { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; } .brand { min-width: 0; } .brand small { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><div class="logo">VH</div><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
-    <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索验证工作、工作项、支持材料或文件"></div>
+    <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件"></div>
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
     <button id="theme" class="icon-btn" title="切换明暗主题">◐</button>
   </header>
   <div class="layout">
-    <aside class="sidebar" id="sidebar"><div class="nav-label">验证工作</div></aside>
+    <aside class="sidebar" id="sidebar"><div class="nav-label">工作流</div></aside>
     <main id="main"><div class="empty">正在加载项目状态…</div></main>
   </div>
   <div id="drawer-backdrop" class="drawer-backdrop"><aside id="drawer" class="drawer"></aside></div>
@@ -185,20 +192,33 @@
 
   <script>
     const token = document.querySelector('meta[name="verif-token"]').content;
-    const state = { snapshot: null, workstream: null, node: null, connected: false, query: '', collapsedNodes: new Set() };
+    const state = {
+      snapshot: null,
+      workstream: null,
+      reviewWorkstream: new URLSearchParams(window.location.search).get('review-workstream'),
+      reviewPlanNode: new URLSearchParams(window.location.search).get('review-plan-node'),
+      reviewDeliveryNode: new URLSearchParams(window.location.search).get('review-delivery-node'),
+      reviseVdocPlan: new URLSearchParams(window.location.search).has('revise-vdoc-plan'),
+      node: null,
+      connected: false,
+      query: '',
+      collapsedNodes: new Set(),
+    };
     const $ = (selector) => document.querySelector(selector);
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
     const STATUS_LABELS = {
       VALID:'已通过检查', UNKNOWN:'尚无完成材料', INVALID:'检查未通过', STALE:'内容变化后尚未重新检查',
-      REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'需要人工复核', BLOCKED:'当前受阻', WAIVED:'已接受例外',
+      REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'需要人工复核', PROVISIONAL:'暂定接受', BLOCKED:'当前受阻', WAIVED:'已接受例外',
       REVIEW:'等待计划评审', REVISE:'需要修改计划', ACTIVE:'正在推进', SATISFIED:'已满足', BASELINED:'已建立基线',
       RUNNING:'正在执行', PENDING:'等待执行', WAITING_FOR_HUMAN:'等待人工决定', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消',
       OPEN:'待处理', RESOLVED:'已处理', CLOSED:'已满足', NOT_SATISFIED:'尚未满足', STALE_REVISION:'不是当前版本',
-      SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查'
+      SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查',
+      APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改'
     };
     const ROLE_LABELS = {
       capability:'通用工作汇总', 'closure-evidence':'需要核对的运行结果', 'project-goal':'项目目标',
-      'document-section':'文档中的具体内容', 'engineering-decision':'需要负责人确认的工程决定',
+      'document-writing-plan':'文档撰写方案', 'document-deliverable':'文档交付',
+      'document-catalog':'文档目录（内部）',
       'environment-component':'环境组件', interface:'接口接入', 'clock-reset-domain':'时钟复位域', 'observation-path':'观测路径',
       'stimulus-feature':'激励功能', 'stimulus-scenario':'激励场景',
       'checking-goal':'检查目标', checker:'结果检查模块', 'reference-path':'参考结果路径', 'assertion-group':'断言组',
@@ -320,8 +340,8 @@
         if (text.includes(source)) text = text.replaceAll(source, replacement);
       }
       return text
-        .replaceAll('Workstream revision', '工作计划版本')
-        .replaceAll('Workstream', '这类验证工作')
+        .replaceAll('Workstream revision', '工作流计划版本')
+        .replaceAll('Workstream', '工作流')
         .replaceAll('Human Review', '人工评审')
         .replaceAll('Human waiver', '负责人已接受例外')
         .replaceAll('prerequisite', '前置工作')
@@ -354,6 +374,9 @@
       const revision = snapshot.project.baseline_revision ? `代码版本 ${snapshot.project.baseline_revision.slice(0, 9)}` : '未记录代码版本';
       $('#project-meta').textContent = `${revision} · ${shortTime(snapshot.generated_at)}`;
       if (state.workstream && !workstream(state.workstream)) state.workstream = null;
+      if (state.reviewWorkstream && !workstream(state.reviewWorkstream)) state.reviewWorkstream = null;
+      if (state.reviewPlanNode && !findNode(state.reviewPlanNode)) state.reviewPlanNode = null;
+      if (state.reviewDeliveryNode && !findNode(state.reviewDeliveryNode)) state.reviewDeliveryNode = null;
       render();
     }
     async function initialLoad() {
@@ -365,18 +388,32 @@
     }
     function renderSidebar() {
       const items = state.snapshot?.workstreams || [];
-      $('#sidebar').innerHTML = `<div class="nav-label">验证工作</div>
+      $('#sidebar').innerHTML = `<div class="nav-label">工作流</div>
         <button class="nav-item ${state.workstream ? '' : 'active'}" data-nav="overview"><span class="nav-code">总览</span><span>项目状态</span></button>
         ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream ? 'active' : ''}" data-nav="${escapeHtml(w.workstream)}">
           <span class="nav-code">${escapeHtml(w.workstream)}</span><span>${escapeHtml(workstreamLabel(w.workstream))}</span><span class="nav-state ${escapeHtml(w.lifecycle)}"></span>
         </button>`).join('')}
         <div class="sidebar-foot">项目状态和评审记录保存在本地数据库中。本页不会直接更改验证结果。</div>`;
-      document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => { state.workstream = button.dataset.nav === 'overview' ? null : button.dataset.nav; state.node = null; render(); });
+      document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => {
+        const selected = button.dataset.nav === 'overview' ? null : button.dataset.nav;
+        if (state.reviewPlanNode) leaveNodePlanReview(selected || 'VDOC', false);
+        else if (state.reviewDeliveryNode) leaveDocumentDeliveryReview(selected || 'VDOC', false);
+        else if (state.reviseVdocPlan) leaveVdocRevisionRequest(selected || 'VDOC', false);
+        else if (state.reviewWorkstream) leaveWorkstreamReview(selected, false);
+        else state.workstream = selected;
+        state.node = null;
+        render();
+      });
     }
     function render() {
       if (!state.snapshot) return;
       renderSidebar();
-      state.workstream ? renderWorkstream(workstream(state.workstream)) : renderOverview();
+      if (state.reviewDeliveryNode) renderDocumentDeliveryReview(findNode(state.reviewDeliveryNode));
+      else if (state.reviseVdocPlan) renderVdocRevisionRequest();
+      else if (state.reviewPlanNode) renderNodePlanReview(findNode(state.reviewPlanNode));
+      else if (state.reviewWorkstream) renderWorkstreamReview(workstream(state.reviewWorkstream));
+      else if (state.workstream) renderWorkstream(workstream(state.workstream));
+      else renderOverview();
       if (state.node) renderDrawer(state.node);
     }
     function overviewMetrics() {
@@ -384,8 +421,8 @@
       const human = s.waiting_for_human || pendingHuman(s.human_actions);
       const risk = (s.node_status.INVALID || 0) + (s.node_status.REVALIDATION_REQUIRED || 0) + (s.node_status.STALE || 0);
       return [
-        ['验证工作', s.workstreams.length, `${s.workstreams.filter(w => w.lifecycle === 'BASELINED').length} 项已确定基线`],
-        ['工作项', s.current_node_count, `${s.node_status.VALID || 0} 项已通过检查 · ${s.node_status.WAIVED || 0} 项已接受例外`],
+        ['工作流', s.workstreams.length, `${s.workstreams.filter(w => w.lifecycle === 'BASELINED').length} 项已确定基线`],
+        ['工作节点', s.current_node_count, `${s.node_status.VALID || 0} 项已通过检查 · ${s.node_status.WAIVED || 0} 项已接受例外`],
         ['正在进行', activities.length, activities.some(a => a.status === 'WAITING_FOR_HUMAN') ? '存在等待人工的工作' : '实时工作记录'],
         ['等待人工处理', human.length, '文档问题、决定、评审或修改请求'],
         ['需要关注', risk, `${s.open_findings} 个待处理问题`],
@@ -393,15 +430,15 @@
     }
     function renderOverview() {
       const s = state.snapshot, metrics = overviewMetrics(), openHuman = s.waiting_for_human || pendingHuman(s.human_actions);
-      $('#main').innerHTML = `<div class="page-head"><div><h1>项目验证总览</h1><p>查看各类验证工作正在做什么、已经完成什么、还缺什么，以及哪些事项需要负责人处理。百分比只表示工作项数量，不等于功能覆盖率或整体完成度。</p></div><div class="page-actions"><button class="btn primary" id="global-action">提交意见</button></div></div>
+      $('#main').innerHTML = `<div class="page-head"><div><h1>验证项目总览</h1><p>查看当前验证项目、DUT 验证对象及各工作流正在做什么、已经完成什么、还缺什么，以及哪些事项需要负责人处理。百分比只表示工作节点数量，不等于功能覆盖率或整体完成度。</p></div></div>
+        ${projectContextHtml()}
         <div class="grid summary-grid">${metrics.map(m => `<article class="card metric"><div class="label">${escapeHtml(m[0])}</div><div class="value">${escapeHtml(m[1])}</div><div class="hint">${escapeHtml(m[2])}</div></article>`).join('')}</div>
-        <section class="section"><div class="section-head"><h2>验证工作</h2><span class="count">${s.workstreams.length}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划验证工作</div>'}</div></section>
+        <section class="section"><div class="section-head"><h2>工作流</h2><span class="count">${s.workstreams.length}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>
         <div class="grid two-col">
           <section class="section"><div class="section-head"><h2>当前工作</h2><span class="count">实时记录</span></div><div class="card list-card">${activityRows(s.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
           <section class="section"><div class="section-head"><h2>等待人工处理</h2><span class="count">${openHuman.length}</span></div><div class="card list-card attention">${humanRows(openHuman)}</div></section>
         </div>
         <section class="section"><div class="section-head"><h2>最近收到的支持材料</h2><span class="count">仅显示最新 12 条</span></div><div class="card list-card">${evidenceRows([...s.model.evidence].reverse().slice(0,12))}</div></section>`;
-      $('#global-action').onclick = () => openHumanModal(s.workstreams[0]?.workstream || '');
       bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
@@ -409,7 +446,7 @@
       const running = active.length, agentWaiting = active.filter(a => a.status === 'WAITING_FOR_HUMAN').length;
       const human = (w.waiting_for_human || pendingHuman(w.human_actions)).length;
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</strong>${statusBadge(w.lifecycle)}<span class="revision">计划 ${w.revision}</span></div>
-        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="progress" title="只按工作项数量计算，不代表整体验证质量"><span style="width:${p}%"></span></div><div class="progress-text"><span>${w.progress.satisfied}/${w.progress.required} 项已有明确完成结论</span><span>${p}%</span></div>
+        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="progress" title="只按工作节点数量计算，不代表整体验证质量"><span style="width:${p}%"></span></div><div class="progress-text"><span>${w.progress.satisfied}/${w.progress.required} 个工作节点已有明确完成结论</span><span>${p}%</span></div>
         <div class="chips"><span class="badge ${agentWaiting ? 'WAITING_FOR_HUMAN':'RUNNING'}">${agentWaiting ? `${agentWaiting} 项工作等待负责人决定` : `${running} 项当前工作`}</span><span class="badge ${human ? 'OPEN':'RECORDED'}">${human} 项等待负责人处理</span>${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(STATUS_LABELS[k] || k)}</span>`).join('')}</div></article>`;
     }
     function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => card.onclick = () => { state.workstream = card.dataset.workstream; render(); }); }
@@ -420,20 +457,60 @@
     function humanRows(items) {
       if (!items.length) return '<div class="empty">当前没有等待人工处理的事项</div>';
       return items.map(a => {
-        const title = `${humanActionLabel(a.action)}${a.item_id ? ` · ${a.item_id}` : ''}`;
-        const label = a.target && ['node','document-item'].includes(a.target_type)
-          ? `<button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
-          : `<div class="row-title">${escapeHtml(title)}</div>`;
-        return `<div class="list-row"><div>${label}<div class="row-meta">${escapeHtml(humanText(a.reason))} · ${escapeHtml(a.source === 'closure' ? '当前计划需要负责人评审' : a.source === 'document-item' ? '文档中尚未处理的事项' : a.reviewer)} · ${shortTime(a.created_at)}</div></div>${statusBadge(a.status)}</div>`;
+        const targetNode = findNode(a.target);
+        const planNodeReview = a.source === 'closure' && Boolean(targetNode?.plan_review);
+        const contextualAction = a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-writing-plan'
+          ? '请审批文档撰写方案'
+          : a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-deliverable'
+            ? '请验收文档交付内容'
+            : humanActionLabel(a.action);
+        const title = `${contextualAction}${a.item_id ? ` · ${a.item_id}` : ''}`;
+        const label = a.target_type === 'workstream'
+          ? `<button class="node-link" data-review-workstream="${escapeHtml(a.target.replace(/^workstream:/, ''))}">${escapeHtml(title)}</button>`
+          : planNodeReview
+            ? `<button class="node-link" data-review-plan-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
+          : a.target && ['node','document-item'].includes(a.target_type)
+            ? `<button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
+            : `<div class="row-title">${escapeHtml(title)}</div>`;
+        const context = a.source === 'closure' && targetNode?.role === 'document-writing-plan'
+          ? '文档撰写方案等待审批'
+          : a.source === 'closure' && targetNode?.role === 'document-deliverable'
+            ? '文档交付内容等待验收'
+            : a.source === 'closure'
+              ? '当前计划需要负责人评审'
+              : a.source === 'document-item'
+                ? '文档中尚未处理的事项'
+                : a.reviewer;
+        return `<div class="list-row"><div>${label}<div class="row-meta">${escapeHtml(humanText(a.reason))} · ${escapeHtml(context)} · ${shortTime(a.created_at)}</div></div>${statusBadge(a.status)}</div>`;
       }).join('');
     }
     function evidenceRows(items) {
       if (!items.length) return '<div class="empty">尚未收到支持材料</div>';
       return items.map(e => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(e.subject)}">${escapeHtml(artifactLabel(e.kind))}</button><div class="row-meta">${escapeHtml(e.source)} · ${shortTime(e.created_at)}</div></div>${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')}</div>`).join('');
     }
+    function projectContextHtml(compact=false) {
+      const s = state.snapshot, project = s.project || {}, dut = project.dut || {};
+      const nodeReviews = (s.workstreams || []).flatMap(w => (w.nodes || []).flatMap(n => [
+        ...(n.plan_review?.reviews || []), ...(n.delivery_review?.reviews || []),
+      ]));
+      const documentReviews = (s.documents || []).flatMap(document => document.reviews || []);
+      const reviewers = [...new Set([
+        ...(s.reviews || []).map(item => item.reviewer),
+        ...(s.human_action_history || []).map(item => item.reviewer),
+        ...nodeReviews.map(item => item.reviewer), ...documentReviews.map(item => item.reviewer),
+      ].filter(value => value && value !== '待处理'))];
+      const activeActors = [...new Set((s.activities || []).map(item => item.actor).filter(Boolean))];
+      const historicalActors = [...new Set((s.activity_history || []).map(item => item.actor).filter(Boolean))];
+      const actors = activeActors.length ? activeActors : historicalActors.slice(-3);
+      const revision = project.baseline_revision ? project.baseline_revision.slice(0, 12) : '未记录';
+      const roots = project.rtl_roots || [], specs = project.docs_roots || [];
+      return `<section class="section"><details class="detail-group" ${compact ? '' : 'open'}><summary>项目与验证对象</summary><div class="detail-group-body"><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))"><article class="card metric"><div class="label">项目</div><div class="value" style="font-size:18px">${escapeHtml(project.name || '未登记')}</div><div class="hint">${escapeHtml(project.lifecycle || '未登记状态')} · runtime ${escapeHtml(project.runtime || '未登记')}</div></article><article class="card metric"><div class="label">验证对象</div><div class="value" style="font-size:18px">${escapeHtml(dut.top_module || '未登记 DUT top')}</div><div class="hint">${escapeHtml(dut.top_file || '未登记 DUT top file')}</div></article><article class="card metric"><div class="label">当前代码基线</div><div class="value mono" style="font-size:18px">${escapeHtml(revision)}</div><div class="hint">评审结论必须对应当前节点和文档版本</div></article></div><details class="detail-group"><summary>查看项目详细信息、责任身份与路径</summary><div class="detail-group-body"><dl class="kv"><dt>Human reviewer</dt><dd>${escapeHtml(reviewers.join('、') || '尚无已登记评审人')}<div class="row-meta">仅显示评审和意见记录中的身份</div></dd><dt>Agent actor</dt><dd>${escapeHtml(actors.join('、') || '当前无已登记 Agent 活动')}</dd><dt>Engine</dt><dd>verif-harness<div class="row-meta">只校验与聚合，不代替 Human 审批</div></dd><dt>项目根目录</dt><dd class="mono">${escapeHtml(project.root || '未登记')}</dd><dt>只读 RTL 输入</dt><dd class="mono">${escapeHtml(roots.join('、') || '未登记')}</dd><dt>规格/文档输入</dt><dd class="mono">${escapeHtml(specs.join('、') || '未登记')}</dd><dt>验证输出目录</dt><dd class="mono">${escapeHtml(project.verif_root || '未登记')}</dd></dl></div></details></div></details></section>`;
+    }
     function nodeClass(n) {
-      if (n.document) return '文档工作项';
-      return n.definition_origin === 'project-proposal' ? '项目具体工作' : '通用工作汇总';
+      if (n.role === 'document-deliverable') return '文档交付节点';
+      if (n.role === 'document-writing-plan') return '文档撰写方案节点';
+      if (n.role === 'document-catalog') return '文档目录';
+      return n.definition_origin === 'project-proposal' ? '工作节点' : '固定分类';
     }
     function valueText(value) {
       if (value === undefined || value === null || value === '') return '尚无数据';
@@ -449,7 +526,10 @@
       return undefined;
     }
     function progressBrief(n) {
-      if (n.document) {
+      if (n.role === 'document-deliverable' && n.delivery_review) {
+        return `所属文档 ${n.document?.path || n.document_key} · ${STATUS_LABELS[n.delivery_review.status] || n.delivery_review.status}`;
+      }
+      if (n.role === 'document-catalog' && n.document) {
         const pending = (n.document.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status)).length;
         return `正文版本 ${n.document.semantic_revision} · ${pending} 个问题待处理 · ${STATUS_LABELS[n.document.effective_status] || n.document.effective_status}`;
       }
@@ -457,6 +537,41 @@
       if (!measure) return '未定义进度指标';
       const observed = observedMetric(n, measure);
       return `${humanText(measure.label)}：${valueText(observed)} / 目标 ${humanText(measure.target)} ${humanText(measure.unit)}`;
+    }
+    function numericProgressValue(value) {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string' && /^\s*\d+(?:\.\d+)?\s*$/.test(value)) return Number(value);
+      return null;
+    }
+    function nodeAttentionText(n) {
+      if (n.plan_review && n.plan_review.status !== 'APPROVED') return '等待实施方案审批';
+      if (n.delivery_review?.status === 'PROVISIONAL') return '暂定内容允许带风险推进，但不能完成关闭';
+      if (n.delivery_review && n.delivery_review.status !== 'APPROVED') return '等待文档交付内容验收';
+      const human = humanNeed(n);
+      if (human !== '当前不需要人工处理') return human;
+      const assessment = n.closure_assessment || {};
+      if ((assessment.dependency_blockers || []).length) return `被 ${assessment.dependency_blockers.length} 个前置节点阻塞`;
+      if ((assessment.open_findings || []).length) return `${assessment.open_findings.length} 个问题待处理`;
+      return '';
+    }
+    function nodeProgressHtml(n) {
+      const status = n.closure_assessment?.conclusion || n.status;
+      const measure = (n.progress_measures || [])[0];
+      const current = measure ? observedMetric(n, measure) : undefined;
+      const currentNumber = numericProgressValue(current);
+      const targetNumber = measure ? numericProgressValue(measure.target) : null;
+      const isClosed = ['CLOSED', 'VALID', 'WAIVED', 'APPROVED'].includes(status);
+      const ratio = currentNumber !== null && targetNumber !== null && targetNumber > 0
+        ? Math.max(0, Math.min(100, Math.round(currentNumber * 100 / targetNumber)))
+        : null;
+      const metric = measure && current !== undefined
+        ? `${humanText(measure.label)}：${valueText(current)} / ${humanText(measure.target)} ${humanText(measure.unit)}`
+        : isClosed ? '完成条件已满足；当前指标没有数值进度'
+          : measure ? `${humanText(measure.label)}：尚无数据 / 目标 ${humanText(measure.target)} ${humanText(measure.unit)}`
+            : '尚无可量化进度';
+      const bar = ratio === null ? '' : `<div class="node-progress-bar" title="${ratio}%"><span style="width:${ratio}%"></span></div>`;
+      const attention = nodeAttentionText(n);
+      return `<div class="node-progress-cell">${statusBadge(status)}${bar}<div class="node-progress-text">${escapeHtml(metric)}</div>${attention ? `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>` : ''}</div>`;
     }
     function progressHtml(n) {
       const measures = n.progress_measures || [];
@@ -486,6 +601,55 @@
       if (criteria.some(item => item.status === 'HUMAN_REVIEW_REQUIRED')) return '有完成条件需要负责人阅读内容后确认';
       return '当前不需要人工处理';
     }
+    function vdocConvergenceHtml(w, openHuman) {
+      if (w.workstream !== 'VDOC') return '';
+      const writingPlans = w.nodes.filter(n => n.role === 'document-writing-plan' && n.required);
+      const deliveries = w.nodes.filter(n => n.role === 'document-deliverable' && n.required);
+      const requiredNodes = [...writingPlans, ...deliveries];
+      const plansApproved = writingPlans.length > 0 && writingPlans.every(n => n.plan_review?.status === 'APPROVED');
+      const deliveriesApproved = deliveries.length > 0 && deliveries.every(n => n.delivery_review?.status === 'APPROVED');
+      const provisional = deliveries.filter(n => n.delivery_review?.status === 'PROVISIONAL');
+      const changedDocuments = [...new Set(requiredNodes.filter(n => n.document?.content_changed).map(n => n.document?.path).filter(Boolean))];
+      const openNodeInputs = requiredNodes.flatMap(n => n.human_actions || []).filter(item => item.status === 'OPEN');
+      const changeRequests = openNodeInputs.filter(item => ['REQUEST_CHANGE','CLARIFY'].includes(item.action));
+      const seenDocuments = new Map();
+      requiredNodes.forEach(n => { if (n.document?.id) seenDocuments.set(n.document.id, n.document); });
+      const openDocumentItems = [...seenDocuments.values()].flatMap(document => document.governance_items || [])
+        .filter(item => ['PENDING','ACTIVE'].includes(item.status));
+      const blockingFindings = requiredNodes.flatMap(n => n.findings || []).filter(item => item.status === 'OPEN');
+      const openConfirmations = openNodeInputs.length + openDocumentItems.length + blockingFindings.length;
+      const currentBindings = plansApproved && deliveriesApproved && changedDocuments.length === 0
+        && writingPlans.every(n => (n.plan_review?.sections || []).every(section => section.current_review?.revision === w.revision))
+        && deliveries.every(n => n.delivery_review?.current_review?.revision === w.revision);
+      const engineClosed = Boolean(w.closure?.ready);
+      const needsAgent = changeRequests.length > 0
+        || changedDocuments.length > 0
+        || writingPlans.some(n => n.plan_review?.status === 'CHANGES_REQUESTED')
+        || deliveries.some(n => n.delivery_review?.status === 'CHANGES_REQUESTED');
+      const phase = needsAgent
+        ? '等待 Agent 根据评审意见或内容变化重新分析'
+        : !plansApproved
+          ? '等待 Human 审批文档撰写方案'
+          : !deliveriesApproved
+            ? '等待 Human 验收文档交付节点'
+            : !engineClosed
+              ? '等待 Engine 检查依赖与退出条件'
+              : 'Human 与 Agent 已对当前内容达成一致，Engine 已确认收敛';
+      const reasons = [];
+      if (changeRequests.length) reasons.push(`${changeRequests.length} 项 Human 修改或说明请求等待 Agent 处理`);
+      if (changedDocuments.length) reasons.push(`${changedDocuments.length} 份文档正文已变化，旧验收不再适用于当前内容`);
+      if (provisional.length) reasons.push(`${provisional.length} 个交付节点仍为暂定接受`);
+      if (openConfirmations) reasons.push(`${openConfirmations} 项确认、文档问题或阻塞事项尚未关闭`);
+      if (!reasons.length) reasons.push('当前没有由意见或内容变化触发的重新评审原因');
+      const checklist = [
+        ['所有必需文档撰写方案区块均已批准', plansApproved],
+        ['所有必需文档交付节点均已批准（暂定不计）', deliveriesApproved],
+        ['Human 确认项、修改/说明请求和阻塞问题已关闭', openConfirmations === 0],
+        ['审批绑定当前工作流 revision 和当前文档正文', currentBindings],
+        ['Engine 当前 closure 检查通过', engineClosed],
+      ];
+      return `<section class="section"><details class="detail-group" open><summary>VDOC Human–Agent–Engine 评审闭环与收敛</summary><div class="detail-group-body"><div class="card metric"><div class="label">当前轮次 · 工作流版本 ${w.revision}</div><div class="value" style="font-size:18px">${escapeHtml(phase)}</div><div class="hint">Agent 分析 → Engine 登记版本 → Human 评审 → 有修改则 Agent 迭代 → Human 复审 → Engine 检查收敛</div></div><div class="notice" style="margin-top:12px"><strong>这里显示的是当前状态，不是另一套审批规则。</strong> Dashboard 记录意见和结论；Agent 在工作检查点读取反馈后分析修改，Engine 校验版本与退出条件，不代替 Human 作工程判断。</div><div class="grid two-col"><div><strong>当前重新评审原因</strong><ul class="exit-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div><strong>当前收敛条件</strong><div class="card list-card" style="margin-top:8px">${checklist.map(([label, satisfied]) => `<div class="list-row"><div>${escapeHtml(label)}</div>${statusBadge(satisfied ? 'APPROVED' : 'PENDING')}</div>`).join('')}</div></div></div><div class="row-meta" style="margin-top:12px">完整规范：skills/verif-harness/vplan/vdoc.md · 用户操作说明：skills/verif-harness/docs/user_guide.md</div></div></details></section>`;
+    }
     function criteriaTableHtml(n) {
       const assessment = n.closure_assessment || {};
       const results = assessment.acceptance_results || [];
@@ -498,15 +662,32 @@
       const p = percent(w.progress), openHuman = w.waiting_for_human || pendingHuman(w.human_actions), actions = w.closure.actions || [];
       const active = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
       const agentWaiting = active.filter(a => a.status === 'WAITING_FOR_HUMAN').length;
-      const concreteNodes = w.nodes.filter(n => n.definition_origin === 'project-proposal' || n.document).length;
-      const granularityNotice = concreteNodes ? '' : `<div class="notice"><strong>当前只列出了通用工作类别，还没有细分到本项目的具体工作。</strong> ${escapeHtml(WORKSTREAM_NODE_GUIDANCE[w.workstream] || '')} 细分完成前，这些数量不能用来判断项目的真实进度。</div>`;
-      $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button></div></div>
-        <div class="grid summary-grid"><article class="card metric"><div class="label">当前阶段</div><div class="value" style="font-size:18px">${statusBadge(w.lifecycle)}</div><div class="hint">计划版本 ${w.revision}</div></article><article class="card metric"><div class="label">必须完成的工作项</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 已有明确完成结论</div></article><article class="card metric"><div class="label">当前工作</div><div class="value">${active.length}</div><div class="hint">${agentWaiting ? `其中 ${agentWaiting} 项等待负责人决定` : '已登记的实时工作'}</div></article><article class="card metric"><div class="label">等待负责人处理</div><div class="value">${openHuman.length}</div><div class="hint">可随时查看和处理</div></article><article class="card metric"><div class="label">当前还要处理</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '完成条件已满足' : '仍有未完成事项'}</div></article></div>
-        ${granularityNotice}<div class="grid two-col"><section><div class="section-head"><h2>工作项</h2><span class="count">${concreteNodes} 个项目具体工作项 · 可展开查看细分内容</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>要完成什么</th><th>当前结论</th><th>已有什么</th><th>下一步</th></tr></thead><tbody>${nodeRows(w.nodes)}</tbody></table></div></section><aside><div class="section-head"><h2>这类验证工作何时算完成</h2></div><div class="card metric"><ul class="exit-list">${w.exit_criteria.map(x => `<li>${escapeHtml(humanText(x))}</li>`).join('')}</ul></div><div class="section"><div class="section-head"><h2>等待负责人处理</h2></div><div class="card list-card attention">${humanRows(openHuman)}</div></div></aside></div>
+      const planNodes = w.workstream === 'VDOC'
+        ? w.nodes.filter(n => ['document-writing-plan','document-deliverable'].includes(n.role))
+        : w.nodes.filter(n => n.definition_origin !== 'template');
+      const catalogNodes = w.nodes.filter(n => !planNodes.some(item => item.id === n.id));
+      const concreteNodes = planNodes.length;
+      const planRows = concreteNodes
+        ? nodeRows(planNodes)
+        : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+      const catalogLabel = w.workstream === 'VDOC' ? '正式文档目录' : '工作流固定分类';
+      const catalog = catalogNodes.length
+        ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
+        : '';
+      const granularityNotice = concreteNodes ? '' : `<div class="notice"><strong>当前只有固定分类，还没有按本项目 DUT 分解出实施节点。</strong> ${escapeHtml(WORKSTREAM_NODE_GUIDANCE[w.workstream] || '')} 节点数量必须由 DUT 接口、时钟域、功能、场景、检查、覆盖和回归对象决定。</div>`;
+      const headerActions = w.workstream === 'VDOC'
+        ? '<button class="btn" id="revise-vdoc-plan">调整文档</button><button class="btn primary" id="review-ws">审批文档撰写方案</button>'
+        : '<button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button>';
+      $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions">${headerActions}</div></div>
+        ${projectContextHtml(true)}
+        <div class="grid summary-grid"><article class="card metric"><div class="label">当前阶段</div><div class="value" style="font-size:18px">${statusBadge(w.lifecycle)}</div><div class="hint">计划版本 ${w.revision}</div></article><article class="card metric"><div class="label">必须完成的节点</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 已有明确完成结论</div></article><article class="card metric"><div class="label">当前工作</div><div class="value">${active.length}</div><div class="hint">${agentWaiting ? `其中 ${agentWaiting} 项等待负责人决定` : '已登记的实时工作'}</div></article><article class="card metric"><div class="label">等待负责人处理</div><div class="value">${openHuman.length}</div><div class="hint">可随时查看和处理</div></article><article class="card metric"><div class="label">当前还要处理</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '完成条件已满足' : '仍有未完成事项'}</div></article></div>
+        ${vdocConvergenceHtml(w, openHuman)}
+        ${granularityNotice}<div class="grid two-col"><section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section><aside><div class="section-head"><h2>这条工作流何时算完成</h2></div><div class="card metric"><ul class="exit-list">${w.exit_criteria.map(x => `<li>${escapeHtml(humanText(x))}</li>`).join('')}</ul></div><div class="section"><div class="section-head"><h2>等待负责人处理</h2></div><div class="card list-card attention">${humanRows(openHuman)}</div></div></aside></div>
         <section class="section"><div class="section-head"><h2>当前工作</h2></div><div class="card list-card">${activityRows(w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
         <section class="section"><div class="section-head"><h2>当前缺口与建议事项</h2><span class="count">系统只提出建议，不会代替人工决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
-      $('#human-action').onclick = () => openHumanModal(w.workstream);
-      $('#review-ws').onclick = () => openReviewModal(w);
+      if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
+      if ($('#revise-vdoc-plan')) $('#revise-vdoc-plan').onclick = openVdocRevisionRequestTab;
+      $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
       bindNodeLinks();
     }
     function nodeRows(nodes) {
@@ -518,20 +699,364 @@
       nodes.filter(n => !n.parent_id || !nodes.some(parent => parent.id === n.parent_id)).forEach(n => visit(n, 0));
       nodes.forEach(n => visit(n, 0));
       const filtered = ordered.filter(([n]) => !query || `${n.id} ${n.title} ${n.status} ${n.key} ${n.statement || ''}`.toLowerCase().includes(query));
-      if (!filtered.length) return '<tr><td colspan="4" class="empty">没有匹配的工作项</td></tr>';
+      if (!filtered.length) return '<tr><td colspan="3" class="empty">没有匹配的节点</td></tr>';
       return filtered.map(([n, depth]) => {
-        const conclusion = n.closure_assessment?.conclusion, action = nextAction(n), children = byParent.get(n.id) || [];
+        const children = byParent.get(n.id) || [];
         const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) ? '▸' : '▾'}</button>` : '';
-        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="node-statement">${escapeHtml(humanText(n.statement || '未登记具体目标'))}</div><div class="row-meta">${escapeHtml(nodeClass(n))} · ${escapeHtml(n.document ? '正式验证文档' : roleLabel(n.role))}${n.required ? '' : ' · 可选'}</div></div></td><td>${statusBadge(conclusion || n.status)}</td><td><div>${escapeHtml(progressBrief(n))}</div><div class="row-meta">${n.evidence.length} 条支持材料 · ${(n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)).length} 项当前工作</div></td><td><strong>${escapeHtml(action.label)}</strong><div class="row-meta">${escapeHtml(action.reason)}</div></td></tr>`;
+        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '必需节点' : '可选节点'}</div></td><td>${nodeProgressHtml(n)}</td></tr>`;
       }).join('');
     }
     function closureRows(items) {
       if (!items.length) return '<div class="empty">当前没有未完成项</div>';
-      return items.map(a => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(actionLabel(a.kind))}</button><div class="row-meta">${escapeHtml(humanText(a.reason))}${a.blocked_by?.length ? ` · 有 ${a.blocked_by.length} 项依赖的工作尚未完成` : ''}</div></div><span class="badge ${a.executor === 'human' ? 'WAITING_FOR_HUMAN' : 'PENDING'}">${escapeHtml(a.executor === 'human' ? '负责人处理' : a.executor === 'reasoning' ? '需要 Agent 分析' : '系统可以自动处理')}</span></div>`).join('');
+      return items.map(a => {
+        const link = a.kind === 'HUMAN_REVIEW' && a.target.startsWith('workstream:')
+          ? `<button class="node-link" data-review-workstream="${escapeHtml(a.target.replace(/^workstream:/, ''))}">${escapeHtml(actionLabel(a.kind))}</button>`
+          : `<button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(actionLabel(a.kind))}</button>`;
+        return `<div class="list-row"><div>${link}<div class="row-meta">${escapeHtml(humanText(a.reason))}${a.blocked_by?.length ? ` · 有 ${a.blocked_by.length} 项依赖的工作尚未完成` : ''}</div></div><span class="badge ${a.executor === 'human' ? 'WAITING_FOR_HUMAN' : 'PENDING'}">${escapeHtml(a.executor === 'human' ? '负责人处理' : a.executor === 'reasoning' ? '需要 Agent 分析' : '系统可以自动处理')}</span></div>`;
+      }).join('');
     }
     function bindNodeLinks() {
       document.querySelectorAll('[data-node]').forEach(button => button.onclick = event => { event.stopPropagation(); state.node = button.dataset.node; renderDrawer(state.node); });
+      document.querySelectorAll('[data-review-workstream]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        openWorkstreamReviewTab(button.dataset.reviewWorkstream);
+      });
+      document.querySelectorAll('[data-review-plan-node]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        openNodePlanReviewTab(button.dataset.reviewPlanNode);
+      });
+      document.querySelectorAll('[data-review-delivery-node]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        openDocumentDeliveryReviewTab(button.dataset.reviewDeliveryNode);
+      });
       document.querySelectorAll('[data-toggle-node]').forEach(button => button.onclick = event => { event.stopPropagation(); const id = button.dataset.toggleNode; state.collapsedNodes.has(id) ? state.collapsedNodes.delete(id) : state.collapsedNodes.add(id); renderWorkstream(workstream(state.workstream)); });
+    }
+
+    function openWorkstreamReviewTab(name) {
+      if (!workstream(name)) { toast(`找不到工作流 ${name}`, true); return; }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.delete('review-delivery-node');
+      url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.set('review-workstream', name);
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+
+    function openNodePlanReviewTab(nodeId) {
+      const node = findNode(nodeId);
+      if (!node?.plan_review || node.workstream !== 'VDOC') { toast('找不到当前 DUT 的 VDOC 实施方案节点', true); return; }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-workstream');
+      url.searchParams.delete('review-delivery-node');
+      url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.set('review-plan-node', nodeId);
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+
+    function openDocumentDeliveryRevisionTab(nodeId) {
+      const node = findNode(nodeId);
+      if (!node || node.role !== 'document-deliverable') { toast('找不到当前文档交付节点', true); return; }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-workstream');
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.delete('review-delivery-node');
+      url.searchParams.set('revise-vdoc-plan', '1');
+      url.searchParams.set('document-key', node.document_key);
+      url.searchParams.set('node-type', 'document-deliverable');
+      url.searchParams.set('node-id', nodeId);
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+
+    function openDocumentDeliveryReviewTab(nodeId) {
+      const node = findNode(nodeId);
+      if (!node?.delivery_review || node.role !== 'document-deliverable') { toast('找不到当前文档交付节点', true); return; }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-workstream');
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.set('review-delivery-node', nodeId);
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+
+    function openVdocRevisionRequestTab() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-workstream');
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.delete('review-delivery-node');
+      url.searchParams.delete('document-key');
+      url.searchParams.delete('node-type');
+      url.searchParams.delete('node-id');
+      url.searchParams.set('revise-vdoc-plan', '1');
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+
+    function leaveNodePlanReview(name='VDOC', renderNow=true) {
+      state.reviewPlanNode = null;
+      state.reviewWorkstream = name;
+      state.workstream = name;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.set('review-workstream', name);
+      window.history.replaceState({}, '', url);
+      if (renderNow) render();
+    }
+
+    function leaveDocumentDeliveryReview(name='VDOC', renderNow=true) {
+      state.reviewDeliveryNode = null;
+      state.workstream = name;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-delivery-node');
+      window.history.replaceState({}, '', url);
+      if (renderNow) render();
+    }
+
+    function leaveVdocRevisionRequest(name='VDOC', renderNow=true) {
+      state.reviseVdocPlan = false;
+      state.workstream = name;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.delete('document-key');
+      url.searchParams.delete('node-type');
+      url.searchParams.delete('node-id');
+      window.history.replaceState({}, '', url);
+      if (renderNow) render();
+    }
+
+    function leaveWorkstreamReview(name, renderNow=true) {
+      state.reviewWorkstream = null;
+      state.workstream = name;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('review-workstream');
+      url.searchParams.delete('review-plan-node');
+      url.searchParams.delete('review-delivery-node');
+      url.searchParams.delete('revise-vdoc-plan');
+      window.history.replaceState({}, '', url);
+      if (renderNow) render();
+    }
+
+    function workstreamReviewForm(w, formId) {
+      return `<form id="${formId}"><div class="field"><label>实施方案审批结论</label><select name="verdict"><option value="approve">批准实施方案并开始工作</option><option value="modify">要求修改实施方案</option><option value="clarify">要求进一步说明实施方案</option><option value="reject">不同意当前实施方案</option></select></div><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批理由</label><textarea name="reason" placeholder="说明同意的范围，或明确需要修改、说明的内容" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-cancel-review>返回方案页面</button><button class="btn primary">提交实施方案审批</button></div></form>`;
+    }
+
+    function planListHtml(items, empty='未登记') {
+      return (items || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || `<li>${escapeHtml(empty)}</li>`;
+    }
+
+    function workstreamPlanSnapshotHtml(w) {
+      const planNodes = w.workstream === 'VDOC'
+        ? (w.nodes || []).filter(n => n.plan_review)
+        : (w.nodes || []).filter(n => n.definition_origin !== 'template');
+      const nodes = planNodes.map(n => {
+        const document = n.document?.path ? `<div class="row-meta">对应文档：${escapeHtml(n.document.path)}</div>` : '';
+        const planReview = n.plan_review;
+        const reviewStatus = planReview ? statusBadge(planReview.status) : '';
+        const reviewAction = w.workstream === 'VDOC' && n.plan_review
+          ? `<button class="btn primary" data-review-plan-node="${escapeHtml(n.id)}">在新标签页审批本节点方案</button>`
+          : '';
+        const details = w.workstream === 'VDOC'
+          ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul><strong>交付对象</strong><ul>${planListHtml(n.deliverables)}</ul>`
+          : `<strong>工作范围</strong><ul>${planListHtml(n.scope)}</ul><strong>具体工作</strong><ul>${planListHtml(n.work_content)}</ul><strong>实现方式</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>交付内容</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案完成标准</strong><ul>${planListHtml(n.acceptance_criteria, '尚未登记完成标准')}</ul>`;
+        return `<details class="detail-group"><summary>${escapeHtml(humanText(n.title))}${n.required ? '' : '（可选）'} ${reviewStatus}</summary><div class="detail-group-body"><div class="detail-card"><dl class="kv"><dt>要达到什么</dt><dd>${escapeHtml(humanText(n.statement || '未登记具体目标'))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd></dl>${document}${details}<div class="page-actions" style="margin-top:12px">${reviewAction}</div></div></div></details>`;
+      }).join('') || '<div class="card empty">尚未根据当前 DUT、规格和验证目标形成实施方案工作节点，不能据此开始实施。请先由 Agent 完成验证对象分解。</div>';
+      const documentOutputs = w.workstream === 'VDOC'
+        ? (w.nodes || []).filter(n => n.document).map(n => `<li><span class="mono">${escapeHtml(n.document.path)}</span> · ${escapeHtml(humanText(n.title))}</li>`).join('')
+        : '';
+      const vdocNotice = w.workstream === 'VDOC'
+        ? 'VDOC 需要逐个审批按当前 DUT 分解出的必需方案节点；节点数量随接口、功能、场景和待确认工程问题变化，全部通过后计划才进入可以实施的状态。'
+        : '批准后仅表示允许 Agent 按下列目标、节点、交付物和退出条件开始工作。';
+      return `<section class="section"><div class="section-head"><h2>本次审批对象：工作流实施方案</h2><span class="count">计划版本 ${w.revision}</span></div><div class="notice"><strong>这一步审批的是实施方案，不是实施内容。</strong> ${escapeHtml(vdocNotice)} 不表示文档正文、实现结果、仿真证据或节点完成状态已经通过验收。</div><div class="card"><dl class="kv"><dt>工作流</dt><dd>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</dd><dt>总体目标</dt><dd>${escapeHtml(humanText(w.objective || '未登记总体目标'))}</dd><dt>计划版本</dt><dd>${w.revision}</dd></dl></div><div class="section-head"><h2>基于当前 DUT 分解的方案节点</h2><span class="count">${planNodes.length} 项</span></div>${nodes}${documentOutputs ? `<details class="detail-group"><summary>查看文档交付分类（不作为实施方案节点计数）</summary><div class="detail-group-body card"><ul>${documentOutputs}</ul></div></details>` : ''}<div class="section-head"><h2>整体退出条件</h2></div><div class="card"><ul class="exit-list">${planListHtml(w.exit_criteria, '尚未登记整体退出条件')}</ul></div></section>`;
+    }
+
+    function bindWorkstreamReviewForm(w, formId) {
+      const form = $(`#${formId}`);
+      form.querySelector('[data-cancel-review]').onclick = () => leaveWorkstreamReview(w.workstream);
+      form.onsubmit = async event => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(event.target));
+        data.workstream = w.workstream;
+        rememberReviewer(data.reviewer);
+        await post('/api/reviews/workstream', data, '工作流评审已保存', () => leaveWorkstreamReview(w.workstream, false));
+      };
+    }
+
+    function renderWorkstreamReview(w) {
+      if (!w) { state.reviewWorkstream = null; return renderOverview(); }
+      state.workstream = w.workstream;
+      const hasPlanNodes = (w.plan_node_count || 0) > 0;
+      const reviewSection = !hasPlanNodes
+        ? `<section class="section"><div class="notice"><strong>当前不能审批。</strong> Agent 需要先根据 DUT RTL、规格、接口和验证点形成方案工作节点；固定验证分类不作为工作节点。</div></section>`
+        : w.workstream === 'VDOC'
+          ? `<section class="section"><div class="notice"><strong>VDOC 不使用一次性整体批准。</strong> 请通过每个工作节点的“在新标签页审批本节点方案”逐项处理。所有必需节点通过后，系统自动汇总计划状态。</div></section>`
+          : `<section class="section"><div class="section-head"><h2>提交实施方案审批</h2></div><div class="card" style="padding:20px;max-width:760px">${workstreamReviewForm(w, 'review-page-form')}</div></section>`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>审批 ${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}实施方案</h1><p>请先核对下方计划快照，再决定批准、修改、澄清或拒绝。</p></div></div>${workstreamPlanSnapshotHtml(w)}${reviewSection}`;
+      bindNodeLinks();
+      if (w.workstream !== 'VDOC' && hasPlanNodes) bindWorkstreamReviewForm(w, 'review-page-form');
+    }
+
+    function planSectionState(n, section) {
+      return (n.plan_review?.sections || []).find(item => item.section === section);
+    }
+
+    function planSectionReviewHtml(n, section, title, content, canApprove=true) {
+      const review = planSectionState(n, section);
+      if (!review) return '';
+      const approve = canApprove ? `<option value="approve">批准“${escapeHtml(title)}”</option>` : '';
+      const history = (review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '批准' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '不同意')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.reason)} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">这个区块尚未审批</div>';
+      const blocked = canApprove ? '' : '<div class="notice"><strong>这个区块暂时不能批准。</strong> 仍有待确认事项需要先处理。</div>';
+      return `<section class="section"><div class="section-head"><h2>${escapeHtml(title)}</h2>${statusBadge(review.status)}</div>${blocked}<div class="card">${content}</div><div class="card" style="padding:20px;margin-top:10px;max-width:760px"><form data-plan-section-form="${escapeHtml(section)}"><div class="field"><label>本区块审批结论</label><select name="verdict">${approve}<option value="modify">要求修改本区块</option><option value="clarify">要求进一步说明</option><option value="reject">不同意本区块方案</option></select></div><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批意见</label><textarea name="reason" placeholder="说明认可的内容，或明确需要修改、说明的部分" required></textarea></div><div class="modal-actions"><button class="btn primary">提交本区块审批</button></div></form></div><details class="detail-group"><summary>查看本区块审批历史</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
+    }
+
+    function renderNodePlanReview(n) {
+      if (!n || n.workstream !== 'VDOC' || !n.plan_review) {
+        state.reviewPlanNode = null;
+        return renderWorkstreamReview(workstream('VDOC'));
+      }
+      state.workstream = 'VDOC';
+      const pending = (n.human_actions || []).filter(item => item.status === 'OPEN');
+      const confirmations = pending.map(item => `<div class="list-row"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div>${statusBadge(item.status)}</div>`).join('') || '<div class="empty">当前没有尚待 Human 确认的方案事项</div>';
+      const outgoing = (n.outgoing || []).map(e => `<li>${escapeHtml(humanText(e.relation))} → ${escapeHtml(findNode(e.target)?.title || e.target)}</li>`).join('');
+      const incoming = (n.incoming || []).map(e => `<li>${escapeHtml(findNode(e.source)?.title || e.source)} → ${escapeHtml(humanText(e.relation))}</li>`).join('');
+      const confirmationSection = planSectionReviewHtml(
+        n, 'human-confirmations', '待确认的工程问题',
+        `<div class="list-card attention">${confirmations}</div>`, pending.length === 0,
+      );
+      const contentSection = planSectionReviewHtml(
+        n, 'planned-content', '计划写入的具体内容',
+        `<ul>${planListHtml(n.work_content)}</ul>`,
+      );
+      const inputsSection = planSectionReviewHtml(
+        n, 'inputs-scope-deliverable', '输入依据、范围和交付对象',
+        `<strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul><strong>交付对象</strong><ul>${planListHtml(n.deliverables)}</ul>`,
+      );
+      const dependencyContent = `${outgoing ? `<strong>需要先具备的内容</strong><ul>${outgoing}</ul>` : ''}${incoming ? `<strong>本方案变化后需要重新检查</strong><ul>${incoming}</ul>` : ''}`;
+      const dependencySection = planSectionReviewHtml(
+        n, 'dependencies-impact', '依赖和影响', dependencyContent,
+      );
+      $('#main').innerHTML = `<div class="page-head"><div><h1>审批文档实施方案</h1><p>${escapeHtml(humanText(n.title))} · VDOC 计划版本 ${n.plan_review.revision}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC 方案</button></div></div>
+        <div class="notice"><strong>审批对象是当前 DUT 的这一个文档实施方案节点，不是文档正文。</strong> 批准后允许 Agent 按方案编写或完善相关文档内容；正文完成后仍需单独验收。</div>
+        <section class="section"><div class="section-head"><h2>审批对象</h2>${statusBadge(n.plan_review.status)}</div><div class="card"><dl class="kv"><dt>验证对象节点</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd><dt>节点目标</dt><dd>${escapeHtml(humanText(n.statement || '未登记'))}</dd><dt>方案版本</dt><dd>${n.plan_review.revision}</dd><dt>是否必需</dt><dd>${n.required ? '是' : '否'}</dd></dl></div></section>
+        ${confirmationSection}${contentSection}${inputsSection}${dependencySection}
+        <section class="section"><div class="notice"><strong>节点通过规则：</strong>以上所有必审区块都必须针对当前方案版本批准；任一区块要求修改、要求说明或拒绝，节点方案均不能通过。</div></section>`;
+      $('[data-return-vdoc]').onclick = () => leaveNodePlanReview('VDOC');
+      document.querySelectorAll('[data-plan-section-form]').forEach(form => {
+        form.onsubmit = async event => {
+          event.preventDefault();
+          const data = Object.fromEntries(new FormData(event.target));
+          data.node = n.id;
+          data.section = form.dataset.planSectionForm;
+          data.definition_digest = n.plan_review.definition_digest;
+          rememberReviewer(data.reviewer);
+          await post('/api/reviews/node-plan-section', data, '实施方案区块审批已保存');
+        };
+      });
+    }
+
+    function renderVdocRevisionRequest() {
+      const w = workstream('VDOC');
+      if (!w) { state.reviseVdocPlan = false; return renderOverview(); }
+      state.workstream = 'VDOC';
+      const documents = (w.nodes || []).filter(n => n.role === 'document-catalog' && n.document);
+      const params = new URLSearchParams(window.location.search);
+      const initialDocument = params.get('document-key') || documents[0]?.key || '';
+      const initialType = params.get('node-type') || 'document-writing-plan';
+      const initialNode = params.get('node-id') || '';
+      const options = documents.map(n => `<option value="${escapeHtml(n.key)}" ${n.key === initialDocument ? 'selected' : ''}>${escapeHtml(humanText(n.title))} · ${escapeHtml(n.document.path)}</option>`).join('');
+      $('#main').innerHTML = `<div class="page-head"><div><h1>调整文档</h1><p>按“文档 → 节点类型 → 加/改/减节点”的顺序提交意图，由 Agent 生成新的 VDOC proposal 和差异。</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
+        <section class="section"><div class="notice"><strong>这里提交的是修订请求，不直接操作节点。</strong> 增加或修改由 Agent 分析后进入新方案版本；减少节点表示从下一版本移出并保留历史。</div><div class="card" style="padding:20px;max-width:820px"><form id="vdoc-revision-form"><div class="field"><label>1. 针对哪一个文档</label><select name="document_key" id="revision-document" required>${options}</select></div><div class="field"><label>2. 节点类型</label><select name="node_type" id="revision-node-type"><option value="document-writing-plan" ${initialType === 'document-writing-plan' ? 'selected' : ''}>文档撰写方案节点</option><option value="document-deliverable" ${initialType === 'document-deliverable' ? 'selected' : ''}>文档交付节点</option></select></div><div class="field"><label>3. 调整动作</label><select name="change_kind" id="revision-change-kind"><option value="add">增加节点</option><option value="modify" ${initialNode ? 'selected' : ''}>修改节点</option><option value="remove">减少节点（下一版本移出）</option></select></div><div class="field"><label>现有节点（修改或减少时必选）</label><select name="node_id" id="revision-node"></select></div><div class="field"><label>4. 调整内容</label><textarea name="reason" placeholder="说明需要增加、修改或移出的节点内容、原因、验收边界和预期影响" required></textarea></div><div class="field"><label>提出人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="modal-actions"><button type="button" class="btn" data-return-vdoc>取消</button><button class="btn primary">提交文档节点修订请求</button></div></form></div></section>`;
+      const refreshNodeOptions = () => {
+        const documentKey = $('#revision-document').value;
+        const nodeType = $('#revision-node-type').value;
+        const candidates = (w.nodes || []).filter(n => n.document_key === documentKey && n.role === nodeType);
+        $('#revision-node').innerHTML = `<option value="">请选择现有节点</option>${candidates.map(n => `<option value="${escapeHtml(n.id)}" ${n.id === initialNode ? 'selected' : ''}>${escapeHtml(humanText(n.title))}</option>`).join('')}`;
+      };
+      $('#revision-document').onchange = refreshNodeOptions;
+      $('#revision-node-type').onchange = refreshNodeOptions;
+      refreshNodeOptions();
+      document.querySelectorAll('[data-return-vdoc]').forEach(button => button.onclick = () => leaveVdocRevisionRequest('VDOC'));
+      $('#vdoc-revision-form').onsubmit = async event => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(event.target));
+        const selected = documents.find(n => n.key === values.document_key);
+        if (values.change_kind !== 'add' && !values.node_id) {
+          toast('修改或减少节点时必须选择一个现有节点', true);
+          return;
+        }
+        rememberReviewer(values.reviewer);
+        await post('/api/human-actions', {
+          target: values.node_id || 'VDOC', action: 'REQUEST_CHANGE', reviewer: values.reviewer,
+          reason: values.reason,
+          payload: {
+            request_type: 'vdoc-node-revision',
+            document_key: values.document_key,
+            document_path: selected?.document?.path || '',
+            node_type: values.node_type,
+            source_node_id: values.node_id || null,
+            change_kind: values.change_kind,
+          },
+        }, '文档节点修订请求已保存', () => leaveVdocRevisionRequest('VDOC', false));
+      };
+    }
+
+    async function renderDocumentDeliveryReview(n) {
+      if (!n || n.role !== 'document-deliverable' || !n.delivery_review) {
+        state.reviewDeliveryNode = null;
+        return renderWorkstream(workstream('VDOC'));
+      }
+      state.workstream = 'VDOC';
+      $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档交付节点</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div><div class="card empty">正在读取所属文档正文…</div>`;
+      $('[data-return-vdoc]').onclick = () => leaveDocumentDeliveryReview('VDOC');
+      try {
+        const response = await fetch(`/api/document?selector=${encodeURIComponent(n.delivery_review.document_id)}`);
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || response.statusText);
+        const current = body.document;
+        const pending = (current.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status) && ['human-decision','external-open-question'].includes(item.kind));
+        const confirmations = (n.human_actions || []).filter(item => item.status === 'OPEN');
+        const approveOption = pending.length || confirmations.length ? '' : '<option value="approve">批准这个交付节点</option>';
+        const history = (n.delivery_review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '批准' : item.verdict === 'PROVISIONAL' ? '暂定接受' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '拒绝')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes)}${item.provisional ? ` · 责任人：${escapeHtml(item.provisional.owner)} · 重审条件：${escapeHtml(item.provisional.review_trigger)}` : ''} · 文档版本 ${item.semantic_revision} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">这个交付节点尚未验收</div>';
+        const pendingNotice = pending.length || confirmations.length ? `<div class="notice"><strong>暂时不能批准。</strong> 仍有 ${pending.length + confirmations.length} 个问题、工程决定或 Agent 分析事项需要 Human 逐项处理。</div>` : '';
+        const confirmationRows = confirmations.map(item => `<div class="card" style="padding:18px;margin-bottom:10px"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · Agent/提出人：${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div><form data-delivery-confirmation="${escapeHtml(item.id)}" style="margin-top:14px"><div class="field"><label>Human 处理结论</label><select name="verdict"><option value="approve">确认该事项已经处理</option><option value="modify">要求修改相关正文或分析</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前处理方式</option></select></div><div class="field"><label>处理人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>处理意见</label><textarea name="resolution" required></textarea></div><button class="btn primary">提交本事项意见</button></form></div>`).join('') || '<div class="card empty">当前没有 Agent 分析后等待 Human 确认的事项</div>';
+        $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档交付节点</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-adjust-delivery>调整文档交付内容</button><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
+          <div class="notice"><strong>本次只验收这一项语义内容，不是整份文档。</strong> 同一文档的其他交付节点仍需独立验收；全部必需节点通过后，所属文档才会通过。</div>${pendingNotice}
+          <section class="section"><div class="section-head"><h2>交付节点与所属文档</h2>${statusBadge(n.delivery_review.status)}</div><div class="card"><dl class="kv"><dt>交付节点</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(current.title))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(current.path)}</dd><dt>文档标识</dt><dd class="mono">${escapeHtml(n.document_key)}</dd><dt>正文版本</dt><dd>${current.semantic_revision}</dd></dl><strong>实际需要验收的正文语义</strong><ul>${planListHtml(n.work_content)}</ul><strong>语义验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>Agent 分析结论与质量检查</strong><ul>${planListHtml([n.statement, ...(n.quality_checks || [])].filter(Boolean))}</ul></div></section>
+          <section class="section"><div class="section-head"><h2>Agent 分析后需要 Human 确认的事项</h2><span class="count">${confirmations.length} 项待处理</span></div>${confirmationRows}</section>
+          <section class="section"><div class="section-head"><h2>所属文档正文</h2></div><pre class="document-preview">${escapeHtml(body.content)}</pre></section>
+          <section class="section"><div class="section-head"><h2>提交本节点验收结论</h2></div><div class="card" style="padding:20px;max-width:820px"><form id="delivery-review-form"><div class="field"><label>结论</label><select name="verdict" id="delivery-verdict">${approveOption}<option value="provisional">暂定接受，允许带风险推进</option><option value="modify">要求修改本节点对应内容</option><option value="clarify">要求进一步说明</option><option value="reject">不同意本节点交付内容</option></select></div><div class="notice"><strong>暂定不等于批准。</strong> 暂定节点允许下游开始工作，但不会计入文档通过、工作流完成或最终冻结。</div><div class="field"><label>暂定责任人（选择“暂定接受”时必填）</label><input name="provisional_owner" placeholder="负责消除暂定状态的人"></div><div class="field"><label>重新评审触发条件（选择“暂定接受”时必填）</label><textarea name="review_trigger" placeholder="例如：规格冻结、接口确认、参考模型结果可用"></textarea></div><div class="field"><label>评审人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>评审意见</label><textarea name="notes" placeholder="只针对这个交付节点的验收范围给出意见" required></textarea></div><div class="modal-actions"><button class="btn primary">提交本节点验收</button></div></form></div><details class="detail-group"><summary>查看本节点验收历史</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
+        $('[data-return-vdoc]').onclick = () => leaveDocumentDeliveryReview('VDOC');
+        $('[data-adjust-delivery]').onclick = () => openDocumentDeliveryRevisionTab(n.id);
+        document.querySelectorAll('[data-delivery-confirmation]').forEach(form => {
+          form.onsubmit = async event => {
+            event.preventDefault();
+            const values = Object.fromEntries(new FormData(event.target));
+            rememberReviewer(values.reviewer);
+            if (values.verdict === 'approve') {
+              await post('/api/human-actions/resolve', {
+                id: form.dataset.deliveryConfirmation, reviewer: values.reviewer,
+                resolution: values.resolution, status: 'RESOLVED',
+              }, '待确认事项已处理');
+            } else {
+              await post('/api/human-actions', {
+                target: n.id,
+                action: values.verdict === 'clarify' ? 'CLARIFY' : 'REQUEST_CHANGE',
+                reviewer: values.reviewer,
+                reason: `${form.dataset.deliveryConfirmation}：${values.resolution}`,
+                payload: {source_confirmation: form.dataset.deliveryConfirmation, verdict: values.verdict},
+              }, 'Human 意见已保存；该事项保持待处理');
+            }
+          };
+        });
+        $('#delivery-review-form').onsubmit = async event => {
+          event.preventDefault();
+          const data = Object.fromEntries(new FormData(event.target));
+          data.node = n.id;
+          data.definition_digest = n.delivery_review.definition_digest;
+          data.document_digest = n.delivery_review.document_digest;
+          rememberReviewer(data.reviewer);
+          await post('/api/reviews/document-delivery', data, '文档交付节点评审已保存');
+        };
+      } catch (error) {
+        toast(`读取文档失败：${error}`, true);
+      }
     }
 
     function evidenceContractHtml(contract, evidence=[]) {
@@ -568,31 +1093,49 @@
       const pending = (document.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status));
       const items = (document.governance_items || []).map(item => `<div class="list-row"><div><strong>${escapeHtml(item.title)}</strong><div class="row-meta">${escapeHtml(item.id)} · ${escapeHtml(documentItemLabel(item.kind))}${item.anchor ? ` · ${escapeHtml(item.anchor)}` : ''}</div></div>${statusBadge(item.status === 'PENDING' ? 'OPEN' : item.status)}</div>`).join('') || '<div class="empty">没有登记文档内事项</div>';
       const reviews = (document.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '认可当前正文' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '拒绝')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes)} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">当前正文版本尚未评审</div>';
-      return `<div class="detail-card"><dl class="kv"><dt>文档</dt><dd class="mono">${escapeHtml(document.path)}</dd><dt>正文版本</dt><dd>${document.semantic_revision}</dd><dt>正文状态</dt><dd>${statusBadge(document.effective_status)}</dd><dt>待回答问题</dt><dd>${pending.length}</dd><dt>内容是否变化</dt><dd>${document.content_changed ? '是，需要重新同步和评审' : '否'}</dd></dl></div><strong>文档中的问题和决定</strong><div class="card list-card">${items}</div><strong>正文评审记录</strong><div class="card list-card">${reviews}</div>`;
+      const deliveries = (document.delivery_nodes || []).map(item => {
+        const node = findNode(item.id);
+        const state = node?.delivery_review?.status || 'PENDING';
+        return `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(item.id)}">${escapeHtml(humanText(item.title))}</button><div class="row-meta">${item.required ? '必需交付节点' : '可选交付节点'} · ${escapeHtml(item.document_key)}</div></div>${statusBadge(state)}</div>`;
+      }).join('') || '<div class="empty">这份文档尚未分解出语义交付节点</div>';
+      return `<div class="detail-card"><dl class="kv"><dt>文档</dt><dd class="mono">${escapeHtml(document.path)}</dd><dt>文档标识</dt><dd class="mono">${escapeHtml(document.document_key)}</dd><dt>正文版本</dt><dd>${document.semantic_revision}</dd><dt>正文状态</dt><dd>${statusBadge(document.effective_status)}</dd><dt>交付节点</dt><dd>${(document.delivery_nodes || []).length} 个</dd><dt>待回答问题</dt><dd>${pending.length}</dd><dt>内容是否变化</dt><dd>${document.content_changed ? '是，需要重新同步和评审' : '否'}</dd></dl></div><strong>该文档的语义交付节点</strong><div class="card list-card">${deliveries}</div><strong>文档中的问题和决定</strong><div class="card list-card">${items}</div><details class="detail-group"><summary>查看旧的整篇正文评审记录</summary><div class="detail-group-body card list-card">${reviews}</div></details>`;
     }
     function renderDrawer(id) {
-      const n = findNode(id); if (!n) { toast(`找不到工作项 ${id}`, true); return; }
+      const n = findNode(id); if (!n) { toast(`找不到节点 ${id}`, true); return; }
       const assessment = n.closure_assessment || {}, action = nextAction(n);
-      const genericNotice = n.document
-        ? '<div class="notice"><strong>这项工作对应一份正式验证文档。</strong> 具体工程内容以 Markdown 正文为准；待回答问题、工程决定和评审记录在下方单独展示。</div>'
+      const roleSpecificContent = n.role === 'document-writing-plan'
+        ? `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计交付</strong><ul>${planListHtml(n.deliverables)}</ul></div>`
+        : n.role === 'document-deliverable'
+          ? `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd></dl><strong>需要验收的正文语义</strong><ul>${planListHtml(n.work_content)}</ul><strong>语义验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul></div>`
+          : `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>上一级目标</dt><dd>${escapeHtml(n.parent_key || '无')}</dd><dt>最近更新</dt><dd>${shortTime(n.updated_at)}</dd></dl><strong>工作范围</strong><ul>${planListHtml(n.scope)}</ul><strong>具体工作</strong><ul>${planListHtml(n.work_content)}</ul><strong>实现方式</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>交付内容</strong><ul>${planListHtml(n.deliverables)}</ul><strong>依据来源</strong><ul>${planListHtml(n.source_refs)}</ul></div>`;
+      const genericNotice = n.role === 'document-deliverable'
+        ? `<div class="notice"><strong>这是所属文档中的一个独立语义交付节点。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}（${escapeHtml(n.document?.path || '路径未登记')}）。批准本节点不等于整份文档已经通过。</div>`
+        : n.role === 'document-writing-plan'
+          ? `<div class="notice"><strong>这是文档撰写方案，不是文档交付内容。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}（${escapeHtml(n.document?.path || '路径未登记')}）。</div>`
+        : n.document
+          ? '<div class="notice"><strong>这是正式文档目录。</strong> 目录用于组织多个语义交付节点，本身不是对外的 VDOC 工作节点。</div>'
         : n.definition_origin === 'project-proposal' ? '' : `<div class="notice"><strong>这是一项通用工作汇总。</strong> 它只用来提醒项目需要做这类工作，不代表具体功能或场景已经完成。</div>`;
       $('#drawer-backdrop').classList.add('open');
-      $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(n.document ? '正式验证文档' : roleLabel(n.role))} · ${escapeHtml(n.workstream || '未归属工作域')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">✕</button></div>
+      $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(roleLabel(n.role))} · ${escapeHtml(n.workstream || '未归属工作流')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">✕</button></div>
         ${genericNotice}<div class="node-summary-grid"><div class="summary-item wide"><div class="summary-label">要达到什么</div><div class="summary-value">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div></div><div class="summary-item"><div class="summary-label">当前完成判断</div><div class="summary-value">${statusBadge(assessment.conclusion || n.status)}<div class="compact-meta">${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</div></div></div><div class="summary-item"><div class="summary-label">实际进度</div><div class="summary-value">${escapeHtml(progressBrief(n))}</div></div><div class="summary-item"><div class="summary-label">当前最主要的问题</div><div class="summary-value">${escapeHtml(mainBlocker(n))}</div></div><div class="summary-item"><div class="summary-label">下一步</div><div class="summary-value">${escapeHtml(action.label)}<div class="compact-meta">${escapeHtml(action.reason)}</div></div></div><div class="summary-item wide"><div class="summary-label">是否需要人工处理</div><div class="summary-value">${escapeHtml(humanNeed(n))}</div></div></div>
-        <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${n.document ? '<button class="btn primary" id="document-review">查看并评审文档</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">评审完成判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
+        <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${n.plan_review ? '<button class="btn primary" id="node-plan-review-tab">在新标签页审批实施方案</button>' : ''}${n.delivery_review ? '<button class="btn" id="document-delivery-revision-tab">调整文档交付内容</button><button class="btn primary" id="document-delivery-review-tab">在新标签页验收本交付节点</button>' : ''}${n.role === 'document-catalog' && n.document ? '<button class="btn" id="document-review">查看旧式整篇评审</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">确认节点完成判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
         <section class="detail-block"><h3>完成条件与当前依据</h3>${criteriaTableHtml(n)}</section>
         <section class="detail-block"><h3>进度指标</h3>${progressHtml(n)}</section>
         ${n.document ? `<details class="detail-group" open><summary>文档正文、问题和评审状态</summary><div class="detail-group-body">${documentNodeHtml(n.document)}</div></details>` : ''}
-        <details class="detail-group"><summary>具体工作、实现方式和交付物</summary><div class="detail-group-body"><div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>上一级目标</dt><dd>${escapeHtml(n.parent_key || '无')}</dd><dt>最近更新</dt><dd>${shortTime(n.updated_at)}</dd></dl><strong>工作范围</strong><ul>${(n.scope || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记</li>'}</ul><strong>具体工作</strong><ul>${(n.work_content || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记</li>'}</ul><strong>实现方式</strong><ul>${(n.implementation_approach || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记</li>'}</ul><strong>交付内容</strong><ul>${(n.deliverables || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记</li>'}</ul><strong>依据来源</strong><ul>${(n.source_refs || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记</li>'}</ul></div></div></details>
+        <details class="detail-group"><summary>${n.role === 'document-writing-plan' ? '文档撰写方案内容' : n.role === 'document-deliverable' ? '文档语义交付内容' : '具体工作、实现方式和交付物'}</summary><div class="detail-group-body">${roleSpecificContent}</div></details>
         <details class="detail-group" open><summary>完成这项工作需要什么材料</summary><div class="detail-group-body">${evidenceContractHtml(n.evidence_contract, n.evidence || [])}</div></details>
         <details class="detail-group"><summary>完成判断的详细依据</summary><div class="detail-group-body">${closureAssessmentHtml(n.closure_assessment)}</div></details>
         <details class="detail-group"><summary>需要先完成的工作、会受影响的工作和当前进展</summary><div class="detail-group-body"><div class="detail-card"><strong>这项工作开始前需要完成</strong><ul>${(n.outgoing || []).map(e => `<li>${escapeHtml(e.relation)} → <span class="mono">${escapeHtml(e.target)}</span></li>`).join('') || '<li>无</li>'}</ul><strong>这项工作变化后需要重新检查</strong><ul>${(n.incoming || []).map(e => `<li><span class="mono">${escapeHtml(e.source)}</span> → ${escapeHtml(e.relation)}</li>`).join('') || '<li>无</li>'}</ul></div><div class="card list-card" style="margin-top:10px">${activityRows((n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></div></details>
         <details class="detail-group"><summary>待处理问题和支持材料原始记录</summary><div class="detail-group-body"><div class="card list-card">${(n.findings || []).map(f => `<div class="list-row"><div><div class="row-title">${escapeHtml(f.severity)} · ${escapeHtml(humanText(f.details))}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(f.id)}</pre></details></div>${statusBadge(f.status)}</div>`).join('') || '<div class="empty">没有待处理问题</div>'}</div>${(n.evidence || []).slice().reverse().map(e => `<details><summary>${escapeHtml(artifactLabel(e.kind))} · ${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')} · ${shortTime(e.created_at)}</summary><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre></details>`).join('') || '<div class="detail-card empty">尚无支持材料</div>'}</div></details>`;
       $('#close-drawer').onclick = closeDrawer;
       $('#node-comment').onclick = () => openHumanModal(n.id);
+      if ($('#node-plan-review-tab')) $('#node-plan-review-tab').onclick = () => openNodePlanReviewTab(n.id);
+      if ($('#document-delivery-review-tab')) $('#document-delivery-review-tab').onclick = () => openDocumentDeliveryReviewTab(n.id);
+      if ($('#document-delivery-revision-tab')) $('#document-delivery-revision-tab').onclick = () => openDocumentDeliveryRevisionTab(n.id);
       if ($('#node-closure-review')) $('#node-closure-review').onclick = () => openNodeClosureReviewModal(n);
       if ($('#document-review')) $('#document-review').onclick = () => openDocumentReviewModal(n.document);
       if ($('#node-waive')) $('#node-waive').onclick = () => openWaiveModal(n);
+      bindNodeLinks();
     }
     function closeDrawer() { state.node = null; $('#drawer-backdrop').classList.remove('open'); }
     function openModal(html) { $('#modal').innerHTML = html; $('#modal-backdrop').classList.add('open'); document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = closeModal); }
@@ -603,13 +1146,9 @@
       openModal(`<h2>提交意见</h2><p>可以随时评论、要求说明或要求调整。提交意见只会记录处理要求，不会把这项工作直接标记为已完成。</p><form id="human-form"><div class="field"><label>目标</label><input name="target" value="${escapeHtml(target)}" required></div><div class="field"><label>要做什么</label><select name="action"><option value="COMMENT">补充评论</option><option value="REQUEST_CHANGE">要求修改</option><option value="CLARIFY">要求说明</option><option value="PRIORITIZE">调整优先级</option><option value="ACKNOWLEDGE">确认已阅</option></select></div><div class="field"><label>评审人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>说明</label><textarea name="reason" placeholder="说明判断、依据和希望如何处理" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交</button></div></form>`);
       $('#human-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); rememberReviewer(data.reviewer); await post('/api/human-actions', data, '人工意见已保存'); };
     }
-    function openReviewModal(w) {
-      openModal(`<h2>评审 ${escapeHtml(w.workstream)} 计划版本 ${w.revision}</h2><p>可以随时评审当前计划。批准计划不表示实现和验证已经完成。</p><form id="review-form"><div class="field"><label>结论</label><select name="verdict"><option value="approve">同意当前计划</option><option value="modify">要求修改</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前计划</option></select></div><div class="field"><label>评审人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>理由</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交评审</button></div></form>`);
-      $('#review-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.workstream = w.workstream; rememberReviewer(data.reviewer); await post('/api/reviews/workstream', data, '工作域评审已保存'); };
-    }
     function openNodeClosureReviewModal(n) {
       const a = n.closure_assessment;
-      openModal(`<h2>评审这项工作的完成结论</h2><p><span class="mono">${escapeHtml(n.id)}</span> 当前判断：${statusBadge(a.conclusion)}。点击认可只表示您同意系统对现有材料的解释，不会补齐缺少的文档、日志、波形或覆盖率数据。</p><form id="node-closure-form"><div class="field"><label>结论</label><select name="verdict"><option value="approve">认可当前判断及依据</option><option value="modify">要求修改判断或补充材料</option><option value="clarify">要求进一步说明</option><option value="reject">当前判断不正确</option></select></div><div class="field"><label>评审人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>评审理由</label><textarea name="reason" placeholder="说明哪些材料支持这个结论，或哪里需要补充、修改" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交评审</button></div></form>`);
+      openModal(`<h2>确认节点完成判断</h2><p><strong>确认对象：系统对当前节点完成状态的判断及其依据。</strong></p><p><span class="mono">${escapeHtml(n.id)}</span> 当前判断：${statusBadge(a.conclusion)}。点击认可只表示您同意系统对现有材料的解释，不会补齐缺少的文档、日志、波形或覆盖率数据。</p><form id="node-closure-form"><div class="field"><label>确认结论</label><select name="verdict"><option value="approve">认可当前判断及依据</option><option value="modify">要求修改判断或补充材料</option><option value="clarify">要求进一步说明</option><option value="reject">当前判断不正确</option></select></div><div class="field"><label>确认人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>确认理由</label><textarea name="reason" placeholder="说明哪些材料支持这个结论，或哪里需要补充、修改" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交完成判断确认</button></div></form>`);
       $('#node-closure-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.node = n.id; data.assessment_digest = a.digest; rememberReviewer(data.reviewer); await post('/api/reviews/node-closure', data, '节点完成判断评审已保存'); };
     }
     async function openDocumentReviewModal(document) {
@@ -630,8 +1169,8 @@
       openModal(`<h2>接受未满足项</h2><p>接受例外不等于验证通过。请确认风险、依据和影响；该操作会把节点标记为已接受例外。</p><form id="waive-form"><div class="field"><label>节点</label><input value="${escapeHtml(n.id)}" disabled></div><div class="field"><label>评审人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>理由和依据</label><textarea name="reason" required></textarea></div><div class="field"><label><input name="confirm" type="checkbox" style="width:auto" required> 我确认这是人工作出的明确工程决定</label></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn danger">确认接受例外</button></div></form>`);
       $('#waive-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.node = n.id; data.confirm = true; rememberReviewer(data.reviewer); await post('/api/waive', data, '例外决定已记录'); };
     }
-    async function post(path, data, success) {
-      try { const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)}); const body = await response.json(); if (!response.ok) throw new Error(body.error || response.statusText); setSnapshot(body.snapshot); closeModal(); toast(success); }
+    async function post(path, data, success, afterSuccess=null) {
+      try { const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)}); const body = await response.json(); if (!response.ok) throw new Error(body.error || response.statusText); if (afterSuccess) afterSuccess(body); setSnapshot(body.snapshot); closeModal(); toast(success); }
       catch (error) { toast(String(error), true); }
     }
     $('#drawer-backdrop').onclick = event => { if (event.target === $('#drawer-backdrop')) closeDrawer(); };

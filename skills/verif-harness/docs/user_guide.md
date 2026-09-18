@@ -230,10 +230,11 @@ verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不�
 
 ### VDOC 正式文档产出
 
-默认 `plan VDOC` 建立八个文档目标。每个目标记录文件名、Skill 模板路径，以及以后由哪个
-Workstream 维护。Engine 在独立验证文档目录中创建缺失模板，并登记文件路径、SHA-256 和
-目标关系，但绝不覆盖已有文档。Agent 再结合只读输入和用户对话完成正文；
-模板创建不表示内容已完成或批准。
+默认 `plan VDOC` 登记八份正式文档目录。它们是输出路径、维护责任和依赖锚点的内部固定分类，不是八个固定的
+实施方案节点，也不计入工作节点数量。Agent 必须同时根据当前 DUT、规格和验证目标形成
+`DesiredStateProposal/1`：例如某个接口范围、功能验证策略或尚待确认的错误响应决定。Engine 在
+独立验证文档目录中创建缺失模板，并登记文件路径、SHA-256 和目标关系，但绝不覆盖已有文档。
+Agent 再结合只读输入和用户对话完成正文；模板创建不表示内容已完成或批准。
 
 | 正式文档 | 内容 | 后续维护 |
 | --- | --- | --- |
@@ -249,10 +250,36 @@ Workstream 维护。Engine 在独立验证文档目录中创建缺失模板，�
 `code_coverage_waiver_manifest.md` 仅出现具体豁免候选时按需建立，由 VCOV 维护，
 不是初始 VDOC 的必需产物。所有模板见[VDOC 产出与模板索引](../vplan/vdoc.md)。
 
-“一份文档一个节点”只适合作为 VDOC 的顶层目录，不表示一份文档就是一项不可再分的工程工作。
-Dashboard 的文档节点还会展示该文档的正文版本、内容是否变化、开放问题、工程决定和评审记录。
+“一份文档一个分类”只适合作为 VDOC 的交付目录，不表示一份文档就是一个实施方案节点。
+Dashboard 的文档交付分类还会展示正文版本、内容是否变化、开放问题、工程决定和评审记录。
+真正需要审批的 VDOC 方案节点来自当前 DUT 的文档工作分解，因此可能少于、等于或多于八个。
+VDOC 对外只有两种节点类型：`document-writing-plan`（文档撰写方案）和
+`document-deliverable`（文档交付）。两者都必须用 `document_key` 明确归属一份文档；一份文档可以有多个方案节点和多个交付节点。方案节点描述准备怎样写，交付节点描述已经写出的、可独立验收的正文语义，二者不能复用同一内容模板。目标与范围、计划写入内容、待确认工程决定、输入依据、
+交付对象及依赖影响都是撰写方案节点内部可独立审批的区块，不再拆成其他节点类型。
+文档交付节点支持“暂定接受”，但必须填写责任人和重新评审触发条件。暂定内容允许下游带风险开始工作，
+不计入文档通过、工作域完成或最终冻结；暂定语义变化后，依赖它的工作必须重新检查。
 工程语义继续写在 Markdown 正文中，不复制到 SQLite，也不会为每个标题或段落建立节点。只有需要
 Human 明确回答、决定或持续跟踪的事项才使用 `docs track`；这些事项未处理时会计入“等待人工处理”。
+
+#### VDOC 怎样迭代并收敛
+
+VDOC 不是一次审批后直接完成，而是按当前版本反复执行以下闭环：Agent 根据 DUT、规格、现有正文和
+Human 意见分析并提出方案或正文修改；Engine 校验节点结构与文档映射，登记工作流 revision、节点
+定义摘要和正文摘要；Human 分别审批撰写方案区块或交付节点语义。Human 要求修改、说明或拒绝，
+或者 DUT、规格、节点定义、文档正文发生变化时，Agent 重新分析并提交下一版本，Engine 使不再匹配
+当前摘要的旧审批失效，Human 再评审新版本。Human 已批准且输入和内容没有变化时，Agent 不会为了
+制造新版本而无条件再迭代；Dashboard 也不会在后台自行启动 Agent。
+
+当前 VDOC 只有同时满足以下条件才算收敛：所有必需文档撰写方案节点的必需区块均已批准；所有必需
+文档交付节点均针对当前节点定义和当前正文批准；一份文档的全部必需语义验收内容已由其多个交付
+节点覆盖；Human 确认项、修改/说明请求、阻塞问题和开放工程决定均已关闭；没有暂定、过期、内容
+已变化或等待复审的必需节点与文档；Engine 的当前 closure 检查通过。`PROVISIONAL` 只允许下游带
+风险推进，不计入收敛或冻结。完整规范见
+[VDOC Human-Agent-Engine 评审闭环与收敛条件](../vplan/vdoc.md#human-agent-engine-review-loop-and-convergence)。
+
+Dashboard 的 VDOC 工作流页只展示这套规则的当前投影：当前 revision、当前轮到 Human、Agent 还是
+Engine、触发重新评审的原因，以及各项收敛条件是否满足。规范事实源仍是上面的 VDOC 文档；页面
+状态不能替代版本化规则或 Human 的工程判断。
 
 `verification_workflow.md` 只借鉴既有项目中可复用的文档优先、Human review、决策分类、
 变更影响和交叉文档同步机制。v1 不生成或引用 Stage 0–5、Spec Kit `spec/plan/tasks`、
@@ -304,13 +331,13 @@ Engine 在 Agent 调用 `docs sync` 后记录文件的新 SHA-256，把依赖旧
 | --- | --- | --- |
 | 0. 建立项目事实 | Human + Agent + Engine | Human 提供 DUT 信息；Agent 只读校验；Engine 通过 `bootstrap` 建立最小项目记录 |
 | 1. 读取当前状态 | Agent + Engine | 首次规划前 Agent 调用全局 `status` 和 `inspect`；VDOC 已存在时再用 `status VDOC` 读取其 revision 与缺口 |
-| 2. 建立待评审方案 | Agent + Engine | Agent 调用 `plan VDOC`；Engine 创建新 revision、八个默认文档目标、缺失模板、退出条件和待答问题 |
+| 2. 建立待评审方案 | Agent + Engine | Agent 根据当前 DUT 形成 `DesiredStateProposal/1` 并调用 `plan VDOC --desired-file ...`；Engine 创建数量可变的项目方案节点，同时登记八类文档交付物、缺失模板、退出条件和待答问题 |
 | 3. 确认输出目录 | Agent；有歧义时 Human | Agent 沿用已有验证文档目录或提议 `<verif-root>/docs/verification`；与只读输入重叠或有多个候选时由 Human 选择 |
 | 4. 读取输入与模板 | Agent | 只读分析 RTL、spec、已有验证文档、Knowledge Model 和本轮所需模板，不搜索或替换用户未指定的 DUT 输入 |
 | 5. 形成初始草案 | Agent | 先提出 scope 和 Feature/VF 分解，再补充策略、架构、reference model、coverage、assertion 和 testcase 候选内容 |
 | 6. 解决开放决策 | Human + Agent | Agent 只询问事实无法确定的问题；Human 作出工程选择；Agent 将答案及其影响目标写入新 revision |
-| 7. 审批 desired scope | Human | Human 对本轮目标和退出条件作出 `approve/reject/modify/clarify` 决定；Agent 不得代批 |
-| 8. 记录规划审批 | Agent + Engine | 收到 Human 明确决定后，Agent 调用 `review VDOC`；Engine 将 revision 更新为 [`ACTIVE`（可以开始工作）或 `REVISE`（需要修改计划）](glossary.md#workstream) |
+| 7. 逐节点审批实施方案 | Human | Human 在 Dashboard 新标签页中逐项检查由当前 DUT 分解出的 VDOC 方案节点；“待确认工程问题”“计划写入内容”“输入依据、范围和交付对象”分别作出批准、修改、澄清或拒绝决定；存在实际依赖时还需单独审批“依赖和影响” |
+| 8. 聚合规划审批 | Human + Engine | Engine 将每个区块评审绑定到当前节点方案摘要；所有必需节点的必审区块均通过后，VDOC 自动进入 [`ACTIVE`（可以开始工作）](glossary.md#workstream)，任一区块要求修改、澄清或拒绝则保持 `REVISE` |
 | 9. 完成文档初稿 | Agent | Agent 增量填写 Engine 已创建的缺失模板；已有文档和所有 RTL/spec 均不被覆盖 |
 | 10. 同步文档状态 | Agent + Engine | Agent 调用 `docs sync`；Engine 登记路径、文件指纹、文档内容版本，以及哪些目标依赖该文档 |
 | 11. 登记问题和决定 | Agent + Engine | 完整工程依据写入正文；Agent 用 `docs track` 登记人工决定、暂定方案、待确认假设和外部待答问题的状态 |
@@ -328,11 +355,11 @@ VDOC 的典型命令顺序如下。命令由 Agent 在当前会话执行；表�
 # Agent：调用 CLI 建立待评审方案
 # Engine：创建 VDOC revision、目标和待答问题
 verif-harness status
-verif-harness plan VDOC
+verif-harness plan VDOC --desired-file <dut-specific-vdoc-plan.json>
 
-# Human：在当前对话回答 questions_for_human，确认本轮目标范围
-# Agent：仅在收到明确决定后调用 CLI
-# Engine：保存规划评审
+# Human：优先在 Dashboard 的独立标签页逐节点、逐区块审批实施方案
+# 纯 CLI 工作流中，Agent 只有在 Human 明确逐项确认后才能批量登记同一结论
+# Engine：保存各节点区块评审并聚合 VDOC 计划状态
 verif-harness review VDOC --verdict approve --reviewer <human-name>
 
 # Agent：填写 Engine 创建的缺失模板；已有文档不会被覆盖
@@ -364,14 +391,14 @@ verif-harness freeze VDOC --reviewer <human-name> \
 
 这里存在两个不能合并的 Human gate：
 
-1. **规划审批**：`review VDOC` 只批准 desired scope、交付范围与退出条件，允许 Agent
-   按此开展文档工作；
+1. **规划审批**：Dashboard 对每个 DUT-specific VDOC 方案节点的区块独立审批；全部必审区块通过后才允许
+   Agent 按此开展文档工作。纯 CLI 的 `review VDOC` 是 Human 已逐项确认后的批量登记入口；
 2. **内容审批**：Human 逐份检查实际文档后，Agent 才能调用 `docs review`。文档存在、
    模板已复制或 Agent 自检通过都不是内容批准。
 
 即使由 Agent 在终端输入了 `review`、`docs review` 或 `freeze`，也必须先得到当前 Human 的
 明确同意。
-Agent 生成八份 Markdown 也不表示 VDOC 完成；只有对应 desired node 获得真实评审证据，
+Agent 生成八份 Markdown 也不表示 VDOC 完成；只有 DUT-specific 方案节点和对应正文获得真实评审证据，
 并满足本轮退出条件后，VDOC 才能进入 baseline。
 
 ### 步骤 2：确定其他 Workstream 本轮要达到的目标
@@ -418,7 +445,8 @@ verif-harness review VCHK
 - [`closure-evidence`](glossary.md#node-role)：证明这些能力在当前项目版本中实际运行并达到目标。
 
 这些内置节点是通用汇总，不足以单独说明一个真实项目做了哪些功能、场景、checker、覆盖项、
-testcase 和回归。Agent 必须在规划每个非 VDOC Workstream 时，根据已评审的 VDOC 与当前工程形成
+testcase 和回归。Agent 必须在规划每个 Workstream（包括 VDOC）时，根据当前 DUT、已评审文档与
+工程事实形成
 `DesiredStateProposal/1`，和 Human 确认后再交给 Planner：
 
 ```text
@@ -429,7 +457,7 @@ verif-harness plan VCOV --desired-file <reviewed-desired-state.json>
 ```
 
 模板和示例见 [`desired-state-proposal.schema.json`](../vplan/desired-state-proposal.schema.json) 与
-[`desired-state-proposal.example.json`](../vplan/desired-state-proposal.example.json)。一个项目节点必须让
+[`desired-state-proposal.example.json`](../vplan/desired-state-proposal.example.json)。一个工作节点必须让
 Human 看出六件事：要达到什么、具体做什么、怎样实现、交付什么、怎样量化进度、怎样检查质量。
 适合建节点的对象包括接口/环境组件、激励 feature/scenario、checking goal/checker、coverage goal、
 testcase mapping 和 regression profile。原始编译日志、仿真日志、波形、VDB/UCDB 与单笔 transaction
@@ -1143,14 +1171,29 @@ waive。单 Workstream baseline 和 final baseline 都保留旧版本，后续�
 
 Human 不需要等到某个 Workstream 满足全部[完成条件](glossary.md#gap-action)才参与。启动本机
 [Dashboard](glossary.md#dashboard) 后，可以随时查看七个 Workstream、每个目标节点、当前活动、
-证据历史、待处理问题、依赖和按节点数量计算的进度。界面中的进度只说明当前必需节点已有多少
+证据历史、待处理问题、依赖和按节点数量计算的进度。这里的节点数量只统计按当前 DUT 分解出的
+工作节点，不统计固定分类或文档交付目录；因此不同 DUT、接口数量、时钟域、功能、场景、checker、
+覆盖目标、testcase 和回归配置会得到不同节点数。界面中的进度只说明当前必需工作节点已有多少
 达到 `VALID/WAIVED`，不代表仿真覆盖率，也不代替工程判断。
 
 Dashboard 的主页面不要求使用者具有 ASIC 验证背景。它优先回答四个问题：当前在做
-什么、已经完成什么、还缺什么、谁需要处理。页面用“验证工作”、“工作项”、“支持材料”和
+什么、已经完成什么、还缺什么、谁需要处理。页面用“工作流”、“工作节点”、“支持材料”和
 “完成条件”描述项目状态。数据库状态码、内部编号、内容摘要、规则版本和工具字段只放在
 “查看内部信息”中，不应出现在主判断或操作按钮上。页面同时给出 VDOC、VENV 等简写的中文名称；
 简写用于准确定位，不是理解页面的前提。
+
+Dashboard 总览标题为“验证项目总览”，表示当前页面描述的是一个验证项目及其 DUT 验证对象，
+不是对项目管理过程本身做验证，也不是多项目管理页面。顶部“项目与验证对象”展示当前项目名、
+DUT top 与 top file、代码基线和 runtime；主总览的其余核心内容是工作流列表，以及每条工作流的
+阶段、工作节点进度、阻塞项和等待 Human 数量。从审计记录取得的 Human reviewer 和 Agent actor、
+固定的 verif-harness Engine 身份、完整项目根目录、只读 RTL 输入、规格/文档输入和验证输出目录
+只放在“项目详细信息、责任身份与路径”的折叠区域中。Engine 只负责校验、版本绑定和状态聚合，
+不代替 Human 审批；页面不建立额外人员档案，也不会猜测尚未登记的项目负责人。进入任一工作流后
+仍可展开同一上下文，避免 Human 在错误 DUT 或错误代码基线上评审。
+
+验证项目总览不提供无目标的“提交意见”。项目级通用意见无法可靠映射到当前数据模型，默认挂到
+第一条工作流会造成错误归属。Human 应进入对应工作流、工作节点或文档后提交意见；涉及 VDOC
+范围增减时使用“调整文档”，从而让每条输入都有明确的处理对象和审计记录。
 
 ```text
 # Human：在当前 Agent 对话中提出“打开 Dashboard”；通常不直接输入 shell 命令
@@ -1250,8 +1293,10 @@ verif-harness await-human VDOC \
 ```
 
 等待时 Activity 自动显示为 `WAITING_FOR_HUMAN`，Workstream 卡片明确显示“Agent 正在等待
-Human”。Human 在 Dashboard 的“评审/要求修改”中提交正式 Review 后，命令返回；`approve`
-使 Activity 恢复 `RUNNING` 并允许 Agent 继续，`modify/clarify/reject` 分别要求修改、说明或停止。
+Human”。VDOC 由 Human 在 Dashboard 的“审批/修改实施方案”中逐个打开 DUT-specific 方案节点的新标签页，
+分别审批各方案区块；所有必需节点通过后聚合为正式 Review。其他 Workstream 仍在独立方案页提交
+正式 Review。`approve` 使 Activity 恢复 `RUNNING` 并允许 Agent 继续，`modify/clarify/reject`
+分别要求修改、说明或停止。
 普通“提交意见”不会解除等待。60 秒内没有决定时命令返回 `TIMEOUT`，Agent 可以继续进行有界等待，
 不会丢失检查点。
 
@@ -1277,9 +1322,13 @@ Human 可以从界面选择 Workstream 或节点，提交评论、要求修改�
 这些输入进入[人工操作记录](glossary.md#dashboard)，立即出现在 Dashboard 和后续 Agent 会话中；
 它们不会绕过 `evidence` 直接修改节点状态。Human 也可在界面中提交 Workstream 评审、豁免；
 豁免必须再次确认并填写 reviewer 与 reason。所有写操作只允许从打开页面时取得的本机会话令牌
-提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。
+提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。各 Workstream 页面的
+“审批/修改实施方案”会打开独立审批页；页面明确标记审批对象为工作域实施方案。VDOC 再从该页
+逐个打开按当前 DUT 分解出的方案节点新标签页，不使用弹窗；待确认工程问题、计划写入内容、输入依据/范围/交付对象
+以及实际存在的依赖影响分别审批。批准只授权开始工作，不表示文档正文、实现、证据或节点完成状态
+已经通过验收。
 
-VDOC 文档节点还提供“查看并评审文档”。Dashboard 从已经登记的安全路径读取当前 UTF-8 Markdown
+VDOC 文档节点还提供“评审文档正文”。Dashboard 从已经登记的安全路径读取当前 UTF-8 Markdown
 正文，同时显示正文版本、内容变化、文档中的开放问题和工程决定。Human 阅读后可以选择认可当前
 正文、要求修改、要求说明或不同意，并填写评审说明。评审仍调用与 `docs review` 相同的底层接口，
 不会因为页面上存在文件就自动认可文档。`docs track` 登记且处于 `PENDING/ACTIVE` 的人工决定和
@@ -1289,11 +1338,13 @@ VDOC 文档节点还提供“查看并评审文档”。Dashboard 从已经登�
 因此，Human 可以把 Dashboard 作为 VDOC 的默认审阅界面，不需要直接输入 `docs review` 命令。
 Dashboard 用于阅读、提意见和登记结论；工程语义仍保存在 Markdown 正文中，正文修改由 Agent 根据 Human 意见完成后再次同步。
 
-不同工作域使用相同的页面结构，但节点内容必须不同：
+不同工作域可以共享页面骨架，但不能共享通用项目管理节点内容。节点必须绑定当前 DUT、规格、RTL
+接口和已评审验证点；Agent 无法从只读输入确定的信号、协议、时序、数值规则、场景或目标值必须
+保留为待 Human 确认，不能用“完成工作、收集材料”之类空泛文字代替。节点内容按验证类型区分：
 
-| 工作域 | 项目节点应当具体到 |
+| 工作流 | 工作节点应当具体到 |
 | --- | --- |
-| VDOC | 正式文档；节点内继续展示验证点、接口约定、策略、开放问题和关键决定 |
+| VDOC | `document-writing-plan` 表示归属于一份文档的 DUT 相关撰写方案；`document-deliverable` 表示该文档中的一个独立语义验收单元。一份文档对应多个交付节点；所有必需交付节点通过后该文档才通过。Agent 分析后提出的假设、风险和工程问题必须先由 Human 逐项处理 |
 | VENV | 一个接口、时钟复位域、环境组件、构建入口或观测路径 |
 | VSTIM | 一个激励功能或具体场景，以及生成、驱动、DUT 接收和重复运行情况 |
 | VCHK | 一个检查目标、结果检查模块、参考结果路径或断言组，以及实际启用情况 |
@@ -1314,7 +1365,7 @@ Dashboard 用于阅读、提意见和登记结论；工程语义仍保存在 Mar
 - 本次读取的证据、未满足的前置节点、开放问题；
 - 以往 Human 对该节点结论的评审记录。
 
-Human 可以点击“评审完成判断”，选择认可、要求修改、要求说明或拒绝。认可不会把 `UNKNOWN`
+Human 可以点击“确认节点完成判断”，选择认可、要求修改、要求说明或拒绝。认可不会把 `UNKNOWN`
 节点改成 `VALID`，也不会补造缺失证据；它只保存“Human 认为系统对现有材料的解释正确”。要求
 修改、要求说明或拒绝会把该节点置为 `REVIEW_REQUIRED`，并登记一个开放问题，Agent 后续从
 Dashboard、`inspect` 或 `closure` 看到它后继续处理。如果证据、前置节点、问题或状态已经变化，

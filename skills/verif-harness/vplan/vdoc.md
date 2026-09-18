@@ -17,11 +17,41 @@ document. Template paths are relative to the installed Skill root.
 | testcase_list.md | [template](../assets/vdoc/testcase_list.md) | VCASE/VREG |
 | code_coverage_waiver_manifest.md | [template](../assets/vdoc/code_coverage_waiver_manifest.md) | VCOV; only for an actual waiver candidate |
 
-The CLI's default VDOC desired nodes contain document contracts (filename,
-template, maintained_by). `plan.md` under `.verif-harness/workstreams/vdoc/`
-remains the planning projection; the eight deliverables are separate engineering
-documents. `plan VDOC` creates only missing templates and registers their paths
-and digests; it never overwrites an existing semantic document or approves content.
+The CLI's default VDOC rows contain document contracts (filename, template,
+maintained_by). They are eight internal document catalogs, not eight fixed
+implementation-plan nodes, and they do not determine the project node count.
+Before plan approval, the Agent must derive a `DesiredStateProposal/1` from the
+current DUT, specification, interfaces, features, scenarios, checkers, coverage,
+testcases, and unresolved engineering decisions. Those project nodes are the
+VDOC implementation plan, so their count varies with the verification object.
+`plan.md` under `.verif-harness/workstreams/vdoc/` remains the planning
+projection; the eight deliverables are separate engineering documents. `plan
+VDOC` creates only missing templates and registers their paths and digests; it
+never overwrites an existing semantic document or approves content.
+
+VDOC has exactly two public node types:
+
+- `document-writing-plan`: a DUT-specific document-writing plan. Every node has
+  an explicit `document_key` naming exactly one document. Its objective
+  and scope, planned content, Human engineering decisions,
+  input/scope/deliverable contract, and dependency impact are reviewable
+  sections inside the node, not additional node types;
+- `document-deliverable`: one independently reviewable semantic acceptance unit
+  inside exactly one Markdown document. Every node has an explicit
+  `document_key`; one document normally has multiple delivery nodes. It records
+  actual semantic content, document anchors/sources, acceptance criteria, Agent
+  analysis, and any items that still require Human confirmation.
+
+The fixed `document-catalog` rows are internal containers and dependency
+anchors, not a third public VDOC node type. A writing-plan node says what and how
+the Agent proposes to write. A delivery node says which already-written semantic
+content the Human is accepting. Never reuse one content template for both.
+
+Do not create VDOC nodes with `project-goal`, `capability`,
+`closure-evidence`, `document-goal`, `document-section`, or
+`engineering-decision` roles. Document content review bound to the delivery
+digest is VDOC's completion evidence; it is not a separate VDOC
+closure-evidence node.
 
 ## Dialogue and writing
 
@@ -61,21 +91,100 @@ and digests; it never overwrites an existing semantic document or approves conte
 
 ## Model links and review
 
-The Engine registers each default output, its digest and its corresponding VDOC
-desired node. After editing semantic content, run `docs sync [DOCUMENT]`; the
+The Engine registers each default output and its digest against an internal
+document catalog. Public writing-plan and delivery nodes both carry an explicit
+`document_key`. After editing semantic content, run `docs sync [DOCUMENT]`; the
 Engine increments the semantic revision when the digest changes and propagates
 invalidation through the registered relations.
 Custom `--desired` plans replace the default catalog: establish explicit mappings
 for their actual goals, rather than guessing which custom node a document satisfies.
 Cross-workstream consumers need explicit dependency edges as applicable.
 
-The initial file/draft remains UNKNOWN or REVIEW_REQUIRED. Human approval of the
-plan authorizes desired scope; it does not certify document content. Review the
-document's sources, resolved scope, remaining questions and cross-document IDs.
-Only after the user explicitly accepts that content may the Agent run `docs review
-DOCUMENT`. That command binds the review to the current digest/revision and records
-review evidence against the corresponding desired node. Do not use file existence
-or a bare template as passing evidence.
+The initial file/draft remains UNKNOWN or REVIEW_REQUIRED. In the Dashboard,
+each required DUT-specific VDOC plan node opens its review in a new tab. Human
+Decisions, planned ASIC-verification content, input/scope/deliverable, and any
+actual dependency/impact block are reviewed independently and bound to the
+current node-plan digest. All required sections of all required project nodes
+must be approved before the VDOC plan becomes ACTIVE. The eight document
+catalogs remain available for navigation, but are not plan or delivery nodes. A
+pure-CLI `review VDOC` is only a batch recording surface after the Human has
+explicitly reviewed those sections.
+Plan approval authorizes desired scope; it does not certify document content.
+Each delivery node is reviewed independently against the current document digest
+and semantic revision. Agent-analysis questions, assumptions, risks, and
+engineering decisions targeted at that delivery node must be resolved first.
+Only when every required delivery node of a document is approved does the Engine
+mark that document approved. Reviewing every required VDOC delivery node is
+therefore equivalent to reviewing all required document semantics. Do not use
+file existence or a bare template as passing evidence.
+
+## Human-Agent-Engine review loop and convergence
+
+VDOC review is an iterative, revision-bound loop rather than a one-time approval:
+
+1. The Agent analyses the current DUT, specifications, existing documents, and
+   unresolved feedback, then proposes or updates writing-plan nodes or document
+   delivery content.
+2. The Engine validates the proposal schema and document mapping, records the
+   workstream revision, node-definition digest, document semantic revision, and
+   document digest, and exposes the current review targets. This registration is
+   not an engineering approval.
+3. The Human independently reviews the required writing-plan sections or the
+   semantic content represented by each delivery node. The Human may approve,
+   request modification, request clarification, reject, or provisionally accept
+   a delivery node under the rules below.
+4. A modification, clarification, rejection, changed DUT/specification, changed
+   node definition, or changed document body returns the affected scope to the
+   Agent. The Agent re-analyses the feedback and submits a new proposal or
+   document revision; the Engine invalidates review conclusions that no longer
+   match the current digests.
+5. The Human reviews the new revision. Steps 3-5 repeat until the current
+   revision satisfies every convergence condition.
+
+The Agent does not iterate unconditionally after an approval, and the Dashboard
+does not run a background Agent. A new Agent iteration begins when Human feedback
+or an input/content change creates actionable work and the Agent reaches a
+checkpoint that reads it. The Engine is not a third engineering voter: it
+enforces structure, provenance, version binding, dependency rules, and the
+deterministic aggregation of recorded conclusions.
+
+VDOC is converged only when all of the following are true for the current
+revision:
+
+- every required `document-writing-plan` node has all required sections approved
+  by the Human;
+- every required `document-deliverable` node is approved against the current
+  node-definition digest and current document digest;
+- every required document's delivery-node set covers all semantic content that
+  must be accepted, and all those delivery nodes are approved;
+- no open Human confirmation, modification request, clarification request,
+  blocking finding, external open question, or unresolved engineering decision
+  affects the required VDOC nodes;
+- no required delivery node or document remains `PROVISIONAL`, stale, changed,
+  invalid, or awaiting re-review;
+- the Engine's current closure evaluation reports that the VDOC exit conditions
+  are satisfied. Human approval remains the source of engineering acceptance;
+  Engine closure only confirms that the recorded, current-version approvals are
+  complete and internally consistent.
+
+An approval bound to an older workstream revision, node-definition digest,
+document semantic revision, or document digest never contributes to current
+convergence. A later edit preserves the historical review record but reopens the
+affected current target.
+
+A Human may mark a delivery node `PROVISIONAL` only with a named owner and a
+concrete re-review trigger. This makes the document usable as a conditional
+prerequisite so downstream implementation may start, but it never counts as an
+approved delivery, document completion, Workstream closure, or freeze evidence.
+Downstream work must remain traceable to that provisional dependency and be
+revalidated if the provisional semantics change.
+
+When the Human wants to add, change, or remove VDOC scope, use the Dashboard's
+**调整文档** entry, then select the document, public node type, and add/modify/
+remove operation. The request must store its `document_key`; modify/remove also
+identify the existing node. The Agent then creates a new proposal revision and a
+node-level diff. Do not ask the Human to manipulate stored nodes directly;
+removal means absent/retired in the next revision, not deletion of history.
 
 Use `docs track` for the state index of Human Decision, Provisional, Assumption and
 External Open Question entries whose full engineering rationale remains in the

@@ -179,6 +179,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not reviewer or not notes:
                 raise HarnessError("Dashboard 文档评审必须填写 reviewer 和 notes")
             return store.review_document(str(body.get("document", "")), verdict, reviewer, notes)
+        if path == "/api/reviews/document-delivery":
+            verdict = str(body.get("verdict", ""))
+            if verdict not in {"approve", "provisional", "reject", "modify", "clarify"}:
+                raise HarnessError(
+                    "document delivery verdict 必须是 approve/provisional/reject/modify/clarify"
+                )
+            reviewer = str(body.get("reviewer", "")).strip()
+            notes = str(body.get("notes", "")).strip()
+            definition_digest = str(body.get("definition_digest", "")).strip()
+            document_digest = str(body.get("document_digest", "")).strip()
+            if not reviewer or not notes or not definition_digest or not document_digest:
+                raise HarnessError(
+                    "文档交付节点评审必须填写 reviewer、notes、definition_digest 和 document_digest"
+                )
+            return store.review_document_delivery(
+                str(body.get("node", "")), definition_digest, document_digest,
+                verdict, reviewer, notes,
+                str(body.get("provisional_owner", "")),
+                str(body.get("review_trigger", "")),
+            )
+        if path == "/api/reviews/node-plan-section":
+            verdict = str(body.get("verdict", ""))
+            if verdict not in {"approve", "reject", "modify", "clarify"}:
+                raise HarnessError("node plan section verdict 必须是 approve/reject/modify/clarify")
+            reviewer = str(body.get("reviewer", "")).strip()
+            reason = str(body.get("reason", "")).strip()
+            digest = str(body.get("definition_digest", "")).strip()
+            if not reviewer or not reason or not digest:
+                raise HarnessError("文档实施方案区块审批必须填写 reviewer、reason 和 definition_digest")
+            return store.review_node_plan_section(
+                str(body.get("node", "")), str(body.get("section", "")),
+                digest, verdict, reviewer, reason,
+            )
         if path == "/api/reviews/node-closure":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:
