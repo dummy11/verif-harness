@@ -91,6 +91,11 @@ Workstream. Project lifecycle is separate.
   assessment confirms the explanation only and never creates PASS evidence.
   Treat modify/clarify/reject as a reopened node and finding; never reuse an old
   assessment digest after facts change.
+  For VDOC, show each governed document as a parent node and its tracked Human
+  decisions/open questions inside that node. Count pending document items as
+  Human attention. Allow the Human to preview and review the registered current
+  document through the node, but keep Markdown as the semantic authority and do
+  not claim that a document node represents all engineering work inside it.
 - Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 

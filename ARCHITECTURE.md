@@ -85,6 +85,18 @@ evidence or changes validity. Modify, clarify, or reject moves the node to
 `REVIEW_REQUIRED` and opens a finding. A changed assessment invalidates stale
 review submissions.
 
+VDOC uses each governed Markdown document as a top-level Dashboard node. The
+document body remains the engineering-semantic authority; its tracked open
+questions and decisions are displayed as nested governance items rather than
+flattened into arbitrary SQLite prose fields. Pending `human-decision` and
+`external-open-question` items contribute to the Dashboard's Human-attention
+count. The loopback Dashboard may preview the registered UTF-8 Markdown body
+and submit a revision-bound document review through the existing store API.
+Pending Human decisions or external open questions prevent an APPROVE document
+review at both the Dashboard and store boundaries. This makes the document node
+the default Human review surface without moving engineering semantics out of
+the Markdown body.
+
 `await-human` is a bounded, revision-aware checkpoint over formal Workstream
 reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
 `RUNNING`, but comments cannot release it and it never injects arbitrary text

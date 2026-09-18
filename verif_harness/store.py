@@ -1817,11 +1817,21 @@ class ProjectStore:
         for criterion in data.get("acceptance_criteria", []):
             if criterion in contract_labels:
                 status = "SUPPORTED" if latest_pass and not latest_pass["blockers"] else "NOT_SUPPORTED"
+                basis = (
+                    f"证据 {latest_pass['id']}（{latest_pass['kind']}）已通过专用校验"
+                    if status == "SUPPORTED" else "当前没有通过专用校验且无 blocker 的证据"
+                )
             elif "prerequisite" in criterion:
                 status = "SUPPORTED" if not dependency_blockers else "NOT_SUPPORTED"
+                basis = (
+                    "所有已登记前置节点均已满足"
+                    if status == "SUPPORTED" else
+                    "尚未满足: " + ", ".join(item["title"] for item in dependency_blockers)
+                )
             else:
                 status = "HUMAN_REVIEW_REQUIRED"
-            acceptance_results.append({"criterion": criterion, "status": status})
+                basis = "该条件包含工程语义，当前固定规则不能代替人工判断"
+            acceptance_results.append({"criterion": criterion, "status": status, "basis": basis})
         observed_times = [row["updated_at"]]
         observed_times.extend(item["updated_at"] for item in dependencies)
         observed_times.extend(item["created_at"] for item in evidence)
@@ -1937,6 +1947,22 @@ class ProjectStore:
                 row["governance_items"] = items
         return rows
 
+    def document_content(self, selector: str) -> dict[str, Any]:
+        """Read one registered VDOC body for the loopback Dashboard review surface."""
+        document = self.documents(selector)[0]
+        path = self.root / document["path"]
+        if path.is_symlink():
+            raise HarnessError(f"拒绝通过符号链接读取语义文档: {document['path']}")
+        if not path.is_file():
+            raise HarnessError(f"语义文档不存在: {document['path']}")
+        if path.stat().st_size > 2 * 1024 * 1024:
+            raise HarnessError("Dashboard 只预览不超过 2 MiB 的语义文档")
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HarnessError("Dashboard 只预览 UTF-8 语义文档") from exc
+        return {"document": document, "content": content}
+
     def sync_documents(self, selectors: Iterable[str] = ()) -> dict[str, Any]:
         requested = list(selectors)
         rows = self.documents()
@@ -1995,6 +2021,17 @@ class ProjectStore:
         plan = self.workstream("VDOC")
         if plan["lifecycle"] not in {"ACTIVE", "SATISFIED", "PARTIALLY_STALE"}:
             raise HarnessError("必须先由 Human approve 当前 VDOC desired-state revision，再评审文档正文")
+        pending_items = [
+            item for item in document["governance_items"]
+            if item["kind"] in {"human-decision", "external-open-question"}
+            and item["status"] in {"PENDING", "ACTIVE"}
+        ]
+        if verdict == "approve" and pending_items:
+            item_ids = "、".join(item["id"] for item in pending_items)
+            raise HarnessError(
+                f"文档仍有待处理的问题或工程决定（{item_ids}）；"
+                "请先更新正文并将这些事项标记为已处理，再评为通过"
+            )
         normalized = verdict.upper()
         review_id = uuid.uuid4().hex
         status = Validity.VALID.value if verdict == "approve" else Validity.REVIEW_REQUIRED.value
@@ -3088,6 +3125,22 @@ class ProjectStore:
         activities = self.activities()
         human_actions = self.human_actions()
         documents = self.documents()
+        documents_by_desired = {
+            item["desired_id"]: item for item in documents if item.get("desired_id")
+        }
+        pending_document_items: list[dict[str, Any]] = []
+        for document in documents:
+            for item in document.get("governance_items", []):
+                if (
+                    item.get("kind") in {"human-decision", "external-open-question"}
+                    and item.get("status") in {"PENDING", "ACTIVE"}
+                ):
+                    pending_document_items.append({
+                        **item,
+                        "document_id": document["id"],
+                        "document_path": document["path"],
+                        "desired_id": document.get("desired_id"),
+                    })
         with self.read_connect() as connection:
             reviews = [dict(row) for row in connection.execute(
                 "SELECT * FROM reviews ORDER BY created_at DESC"
@@ -3127,6 +3180,10 @@ class ProjectStore:
             required_total = 0
             satisfied = 0
             desired_ids = {item["id"] for item in plan["desired_state"]}
+            workstream_closure = closure_by_workstream.get(plan["workstream"], {
+                "workstream": plan["workstream"], "ready": False,
+                "lifecycle": plan["lifecycle"], "actions": [],
+            })
             current_desired_ids.update(desired_ids)
             for desired in plan["desired_state"]:
                 node = nodes.get(desired["id"], {
@@ -3174,10 +3231,15 @@ class ProjectStore:
                     "activities": activities_by_node.get(desired["id"], []),
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
+                    "document": documents_by_desired.get(desired["id"]),
                     # This is the Engine's current, reproducible explanation for why the
                     # node is or is not closed.  It is deliberately separate from the raw
                     # status so a Human can review the reasoning rather than a badge.
                     "closure_assessment": self.node_closure_assessment(desired["id"]),
+                    "next_actions": [
+                        action for action in workstream_closure.get("actions", [])
+                        if action.get("target") == desired["id"]
+                    ],
                 })
             workstream_human_actions = [item for item in human_actions if (
                 item["target"] == plan["workstream"] or item["target"] in desired_ids
@@ -3201,7 +3263,28 @@ class ProjectStore:
                 for item in closure_by_workstream.get(plan["workstream"], {}).get("actions", [])
                 if item.get("executor") == "human"
             ]
-            workstream_waiting = [*closure_waiting, *explicit_waiting]
+            document_waiting = [
+                {
+                    "id": f"document-item:{item['document_id']}:{item['id']}",
+                    "source": "document-item",
+                    "target": item.get("desired_id") or item["document_id"],
+                    "target_type": "document-item",
+                    "action": (
+                        "需要作出工程决定" if item["kind"] == "human-decision"
+                        else "需要回答开放问题"
+                    ),
+                    "status": "OPEN",
+                    "reviewer": "待处理",
+                    "reason": f"{item['title']}（{item['document_path']}，编号 {item['id']}）",
+                    "created_at": item["created_at"],
+                    "document_id": item["document_id"],
+                    "document_path": item["document_path"],
+                    "item_id": item["id"],
+                }
+                for item in pending_document_items
+                if plan["workstream"] == "VDOC"
+            ]
+            workstream_waiting = [*closure_waiting, *document_waiting, *explicit_waiting]
             waiting_for_human.extend(workstream_waiting)
             workstream_views.append({
                 "workstream": plan["workstream"],
@@ -3218,10 +3301,7 @@ class ProjectStore:
                     "counts": counts,
                 },
                 "nodes": desired_nodes,
-                "closure": closure_by_workstream.get(plan["workstream"], {
-                    "workstream": plan["workstream"], "ready": False,
-                    "lifecycle": plan["lifecycle"], "actions": [],
-                }),
+                "closure": workstream_closure,
                 "activities": [item for item in activities if item["node_id"] in desired_ids],
                 "human_actions": workstream_human_actions,
                 # A closure review request is just as actionable as an explicit Human request.

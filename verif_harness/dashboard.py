@@ -94,6 +94,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
         elif parsed.path == "/api/snapshot":
             self._json(self.server.store.dashboard_snapshot())
+        elif parsed.path == "/api/document":
+            selector = urllib.parse.parse_qs(parsed.query).get("selector", [""])[0]
+            try:
+                self._json(self.server.store.document_content(selector))
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/events":
             self._events()
         elif parsed.path == "/healthz":

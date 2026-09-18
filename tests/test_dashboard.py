@@ -5,6 +5,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -52,16 +53,15 @@ class DashboardTest(unittest.TestCase):
     def test_html_is_local_layered_and_snapshot_is_detailed(self) -> None:
         with self.get("/") as response:
             html = response.read().decode("utf-8")
-        self.assertIn("Verification Dashboard", html)
+        self.assertIn("验证项目看板", html)
         self.assertIn("项目验证总览", html)
-        self.assertIn("等待 Human", html)
-        self.assertIn("Agent 正在等待 Human", html)
-        self.assertIn("工作目标", html)
-        self.assertIn("工作内容与实现方式", html)
-        self.assertIn("工作进度", html)
-        self.assertIn("工作质量", html)
-        self.assertIn("Closure 结论与依据", html)
-        self.assertIn("评审 Closure 结论", html)
+        self.assertIn("等待人工处理", html)
+        self.assertIn("工作节点", html)
+        self.assertIn("要达到什么", html)
+        self.assertIn("实际进度", html)
+        self.assertIn("完成条件与当前依据", html)
+        self.assertIn("评审完成判断", html)
+        self.assertIn("查看并评审文档", html)
         self.assertNotIn("__VERIF_DASHBOARD_TOKEN__", html)
         self.assertNotIn("https://", html)
         with self.get("/api/snapshot") as response:
@@ -71,6 +71,7 @@ class DashboardTest(unittest.TestCase):
         self.assertTrue(snapshot["workstreams"][0]["nodes"])
         self.assertIn("closure", snapshot["workstreams"][0])
         self.assertIn("closure_assessment", snapshot["workstreams"][0]["nodes"][0])
+        self.assertIn("next_actions", snapshot["workstreams"][0]["nodes"][0])
         self.assertEqual(snapshot["waiting_for_human"][0]["action"], "HUMAN_REVIEW")
         self.assertEqual(snapshot["waiting_for_human"][0]["source"], "closure")
         self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
@@ -102,6 +103,42 @@ class DashboardTest(unittest.TestCase):
                 "target": node_id, "action": "COMMENT", "reviewer": "alice", "reason": "note",
             })
         self.assertEqual(captured.exception.code, 403)
+
+    def test_vdoc_questions_are_waiting_and_document_can_be_reviewed_from_node(self) -> None:
+        plan = self.store.design_workstream("VDOC", None, [], [], [])
+        self.store.review_workstream("VDOC", "approve", "alice", "同意当前文档范围")
+        document = self.store.documents()[0]
+        self.store.track_document_item(
+            document["id"], "ACC-Q-01", "human-decision",
+            "选择结果对比容差", "PENDING", None, None, [], None,
+        )
+        snapshot = self.store.dashboard_snapshot()
+        waiting = [item for item in snapshot["waiting_for_human"] if item["source"] == "document-item"]
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting[0]["item_id"], "ACC-Q-01")
+        vdoc = next(item for item in snapshot["workstreams"] if item["workstream"] == "VDOC")
+        node = next(item for item in vdoc["nodes"] if item["id"] == document["desired_id"])
+        self.assertEqual(node["document"]["path"], document["path"])
+        self.assertTrue(node["next_actions"])
+
+        selector = urllib.parse.quote(document["id"], safe="")
+        with self.get(f"/api/document?selector={selector}") as response:
+            preview = json.loads(response.read())
+        self.assertEqual(preview["document"]["id"], document["id"])
+        self.assertIn("#", preview["content"])
+
+        reviewed = self.post("/api/reviews/document", {
+            "document": document["id"], "verdict": "modify", "reviewer": "alice",
+            "notes": "先回答 ACC-Q-01，再更新正文",
+        }, self.server.write_token)["result"]
+        self.assertEqual(reviewed["verdict"], "MODIFY")
+
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/reviews/document", {
+                "document": document["id"], "verdict": "approve", "reviewer": "alice",
+                "notes": "试图忽略待回答问题",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
 
     def test_human_can_review_current_node_closure_assessment(self) -> None:
         node = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]

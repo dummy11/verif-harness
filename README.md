@@ -60,6 +60,9 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
   [节点完成结论](skills/verif-harness/docs/glossary.md#node-closure-assessment)：Engine 列出使用的规则、
   证据、前置节点、开放问题和逐项检查结果；Human 可以认可、要求修改、要求说明或拒绝该结论，
   但评审不会凭空创建 PASS 证据。
+- VDOC 在 Dashboard 中以正式文档作为父节点，节点内展示正文版本、内容变化、开放问题、工程决定
+  和评审记录；Human 可直接预览当前 Markdown 正文并提交评审，无需直接输入评审命令。未处理的 `docs track` 问题会计入
+  “等待人工处理”，不会再只影响退出检查而在页面上显示为 0。
 
 ## 运行逻辑
 

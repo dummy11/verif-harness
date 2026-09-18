@@ -12,6 +12,10 @@ the Engine creates only missing templates in the project's verification output
 directory, then the Agent fills engineering semantics through Human dialogue.
 Existing documents are never overwritten. The CLI's desired-state/plan projections
 are not those deliverables; document governance state is rendered on demand from SQLite.
+Treat each governed document as a top-level delivery node. Its engineering topics,
+open questions, and decisions are nested review content, not proof that the whole
+subject is complete and not one node per paragraph. The document body remains the
+editable semantic authority.
 
 ```text
 $verif-harness plan VDOC|VENV|VSTIM|VCHK|VCOV|VCASE|VREG \

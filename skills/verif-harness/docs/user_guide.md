@@ -249,6 +249,11 @@ Workstream 维护。Engine 在独立验证文档目录中创建缺失模板，�
 `code_coverage_waiver_manifest.md` 仅出现具体豁免候选时按需建立，由 VCOV 维护，
 不是初始 VDOC 的必需产物。所有模板见[VDOC 产出与模板索引](../vplan/vdoc.md)。
 
+“一份文档一个节点”只适合作为 VDOC 的顶层目录，不表示一份文档就是一项不可再分的工程工作。
+Dashboard 的文档节点还会展示该文档的正文版本、内容是否变化、开放问题、工程决定和评审记录。
+工程语义继续写在 Markdown 正文中，不复制到 SQLite，也不会为每个标题或段落建立节点。只有需要
+Human 明确回答、决定或持续跟踪的事项才使用 `docs track`；这些事项未处理时会计入“等待人工处理”。
+
 `verification_workflow.md` 只借鉴既有项目中可复用的文档优先、Human review、决策分类、
 变更影响和交叉文档同步机制。v1 不生成或引用 Stage 0–5、Spec Kit `spec/plan/tasks`、
 Stage gate review packet 或后台 task runner；现在由 Workstream 目标、SQLite 状态、`check`、
@@ -310,8 +315,8 @@ Engine 在 Agent 调用 `docs sync` 后记录文件的新 SHA-256，把依赖旧
 | 10. 同步文档状态 | Agent + Engine | Agent 调用 `docs sync`；Engine 登记路径、文件指纹、文档内容版本，以及哪些目标依赖该文档 |
 | 11. 登记问题和决定 | Agent + Engine | 完整工程依据写入正文；Agent 用 `docs track` 登记人工决定、暂定方案、待确认假设和外部待答问题的状态 |
 | 12. 检查一致性 | Engine + Agent | Engine 通过 `check` 检查文件和已登记信息，并标记需要重新验证的结论；Agent 解释冲突、缺失链接和开放问题 |
-| 13. 评审文档内容 | Human + Agent | Agent 展示正文、来源、差异、`docs render` 状态和遗留问题；Human 判断内容能否作为当前验证基线 |
-| 14. 登记正文评审 | Agent + Engine | Human 明确接受后，Agent 调用 `docs review`；Engine 记录评审对应的文件 SHA-256 和版本，保存评审记录并更新目标状态 |
+| 13. 评审文档内容 | Human + Agent | 默认在 Dashboard 打开 VDOC 文档节点；页面展示当前正文、内容版本、待回答问题、工程决定和历史评审，Human 判断内容能否作为当前验证基线 |
+| 14. 登记正文评审 | Human + Engine | Human 在文档节点选择“认可当前正文 / 要求修改 / 要求说明 / 不同意”并填写理由；Engine 记录评审对应的文件 SHA-256 和版本。使用纯 CLI 时才由 Agent 调用 `docs review` 登记同一结果 |
 | 15. 列出未完成项 | Engine + Agent | Engine 通过 `closure` 列出当前还缺的最小动作；Agent 向 Human 解释，不静默执行写操作 |
 | 16. 冻结 VDOC | Human + Agent + Engine | Human 明确同意冻结；Agent 调用 `freeze VDOC`；Engine 检查文件指纹，并保存已评审正文和文件清单的快照 |
 | 17. 后续修订 | Agent + Engine + Human | Agent 修改受影响正文后调用 `docs sync`；Engine 把相关结论标为需要重新验证；Human 重新评审 |
@@ -1268,26 +1273,50 @@ Human 可以从界面选择 Workstream 或节点，提交评论、要求修改�
 豁免必须再次确认并填写 reviewer 与 reason。所有写操作只允许从打开页面时取得的本机会话令牌
 提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。
 
-#### Human 怎样评审节点的 Closure 结论
+VDOC 文档节点还提供“查看并评审文档”。Dashboard 从已经登记的安全路径读取当前 UTF-8 Markdown
+正文，同时显示正文版本、内容变化、文档中的开放问题和工程决定。Human 阅读后可以选择认可当前
+正文、要求修改、要求说明或不同意，并填写评审说明。评审仍调用与 `docs review` 相同的底层接口，
+不会因为页面上存在文件就自动认可文档。`docs track` 登记且处于 `PENDING/ACTIVE` 的人工决定和
+外部开放问题会出现在总览和 VDOC 的“等待人工处理”中；点击该事项会直接打开对应文档节点。
+只要这些问题或工程决定尚未处理，Dashboard 就不提供“认可当前正文”选项，底层接口也会拒绝绕过该检查。
 
-打开任一当前目标节点后，`Closure 结论与依据` 区域显示
+因此，Human 可以把 Dashboard 作为 VDOC 的默认审阅界面，不需要直接输入 `docs review` 命令。
+Dashboard 用于阅读、提意见和登记结论；工程语义仍保存在 Markdown 正文中，正文修改由 Agent 根据 Human 意见完成后再次同步。
+
+不同工作域使用相同的页面结构，但节点内容必须不同：
+
+| 工作域 | 项目节点应当具体到 |
+| --- | --- |
+| VDOC | 正式文档；节点内继续展示验证点、接口约定、策略、开放问题和关键决定 |
+| VENV | 一个接口、时钟复位域、环境组件、构建入口或观测路径 |
+| VSTIM | 一个激励功能或具体场景，以及生成、驱动、DUT 接收和重复运行情况 |
+| VCHK | 一个检查目标、结果检查模块、参考结果路径或断言组，以及实际启用情况 |
+| VCOV | 一个可判断是否完成的覆盖目标或覆盖范围，以及命中、排除和数据版本 |
+| VCASE | 一组功能与用例的对应关系，或一个具体测试用例及定向运行结果 |
+| VREG | 一份回归配置、一个回归批次或一组同类失败及其处理状态 |
+
+原始日志、波形、覆盖率数据库和单笔事务继续作为节点证据，不作为工作节点。
+
+#### Human 怎样评审节点的完成判断
+
+打开任一当前目标节点后，`完成条件与当前依据` 区域显示
 [节点完成结论](glossary.md#node-closure-assessment)，包括：
 
-- Engine 的当前结论及原因；
-- 结论绑定的 Workstream revision、规则版本和摘要；
+- 系统的当前判断及原因；
+- 结论绑定的工作域计划版本、规则版本和摘要；
 - 每条满足条件是已由结构化证据支持、尚未支持，还是必须由 Human 判断；
 - 本次读取的证据、未满足的前置节点、开放问题；
 - 以往 Human 对该节点结论的评审记录。
 
-Human 可以点击“评审 Closure 结论”，选择认可、要求修改、要求说明或拒绝。认可不会把 `UNKNOWN`
-节点改成 `VALID`，也不会补造缺失证据；它只保存“Human 认为 Engine 对现有材料的解释正确”。要求
+Human 可以点击“评审完成判断”，选择认可、要求修改、要求说明或拒绝。认可不会把 `UNKNOWN`
+节点改成 `VALID`，也不会补造缺失证据；它只保存“Human 认为系统对现有材料的解释正确”。要求
 修改、要求说明或拒绝会把该节点置为 `REVIEW_REQUIRED`，并登记一个开放问题，Agent 后续从
 Dashboard、`inspect` 或 `closure` 看到它后继续处理。如果证据、前置节点、问题或状态已经变化，
 Dashboard 会拒绝基于旧摘要提交的评审，Human 必须刷新并查看新的结论。
 
 这类节点评审随时可做，不要求 Agent 在每个节点停止。只有流程明确设置了
 [人工检查点](glossary.md#dashboard)时，Agent 才会显示 `WAITING_FOR_HUMAN` 并等待正式 Workstream
-Review；普通节点 Closure 评审用于实时监督和纠错。
+Review；普通节点完成判断评审用于实时监督和纠错。
 
 三种角色在实时查看中的边界：
 
