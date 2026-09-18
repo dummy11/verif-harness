@@ -6,9 +6,11 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass
 from enum import Enum
@@ -177,6 +179,110 @@ def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
         *((key, title, mode, "closure-evidence")
           for key, title, mode in template["closure_evidence"]),
     ]
+
+
+DESIRED_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+PROJECT_NODE_ROLES: dict[str, set[str]] = {
+    "VDOC": {"document-section", "engineering-decision"},
+    "VENV": {"environment-component", "interface", "clock-reset-domain", "observation-path"},
+    "VSTIM": {"stimulus-feature", "stimulus-scenario"},
+    "VCHK": {"checking-goal", "checker", "reference-path", "assertion-group"},
+    "VCOV": {"coverage-goal", "coverage-scope"},
+    "VCASE": {"case-mapping", "testcase"},
+    "VREG": {"regression-profile", "regression-run-set", "failure-group"},
+}
+WORKSTREAM_DEFINITION_CONTEXT: dict[str, dict[str, Any]] = {
+    "VDOC": {
+        "purpose": "让后续实现、证据和评审都能追溯到经过 Human 确认的工程语义。",
+        "scope": ["当前 verification 文档 revision", "文档内 required 范围、决定、风险和退出条件"],
+        "source_refs": ["bootstrap inventory", "Human decisions", "已声明的只读 RTL/spec 输入"],
+    },
+    "VENV": {
+        "purpose": "保证验证代码能够连接、启动和观察 DUT，为其他 Workstream 提供可信执行基础。",
+        "scope": ["所有 required DUT interface 与 clock/reset domain", "harness、agent、env、build、run 和 observation path"],
+        "source_refs": ["verification_plan.md", "tb_architecture.md", "feature_matrix.md"],
+    },
+    "VSTIM": {
+        "purpose": "保证 required feature/scenario 不只存在于计划中，而能被稳定生成并到达 DUT 接收边界。",
+        "scope": ["feature_matrix 中 required feature/scenario", "transaction、sequence、constraint、corner case 与重放配置"],
+        "source_refs": ["verification_plan.md", "feature_matrix.md", "testcase_list.md"],
+    },
+    "VCHK": {
+        "purpose": "保证 DUT 行为通过明确、实际启用且非空洞的 comparison、scoreboard、reference model 或 assertion 检查。",
+        "scope": ["required feature 的预期结果、顺序、时序、异常和容差", "checker/reference-model/assertion 的实现与运行路径"],
+        "source_refs": ["verification_plan.md", "reference_model_spec.md", "assertion_plan.md", "feature_matrix.md"],
+    },
+    "VCOV": {
+        "purpose": "把每个 required coverage goal 与采样实现、数据库结果、缺口处理和 Human waiver 建立可追溯关系。",
+        "scope": ["coverage_plan 中 required functional/code/assertion goal", "采样、收集、合并、hole analysis 和 exclusion/waiver"],
+        "source_refs": ["coverage_plan.md", "feature_matrix.md", "assertion_plan.md"],
+    },
+    "VCASE": {
+        "purpose": "保证 required feature/scenario 有可运行、可诊断且已注册的 testcase/virtual sequence 承载。",
+        "scope": ["feature-to-case mapping", "required testcase、virtual sequence、配置和 targeted run"],
+        "source_refs": ["testcase_list.md", "feature_matrix.md", "verification_plan.md"],
+    },
+    "VREG": {
+        "purpose": "保证回归执行可复现、失败可追踪，并且 Closure 使用的是当前 revision 的新鲜证据。",
+        "scope": ["required regression profile、seed、timeout、rerun 与 known-fail policy", "run manifest、失败聚类和证据刷新范围"],
+        "source_refs": ["verification_workflow.md", "verification_plan.md", "testcase_list.md"],
+    },
+}
+
+
+def desired_definition(
+    workstream: str, key: str, title: str, role: str,
+    contract: dict[str, Any], origin: str = "template",
+) -> dict[str, Any]:
+    """Build an explicit review candidate without inventing project-specific facts."""
+    context = WORKSTREAM_DEFINITION_CONTEXT[workstream]
+    requirements = contract.get("requirements", contract.get("required", []))
+    criteria = ["目标范围和来源引用已经过当前 Workstream revision 的 Human Review"]
+    for requirement in requirements:
+        label = requirement.get("label") if isinstance(requirement, dict) else str(requirement)
+        if label:
+            criteria.append(label)
+    criteria.append("所有显式 prerequisite 节点均为 VALID 或具有明确 Human waiver")
+    return {
+        "statement": f"{title}。该结论必须针对当前 revision 的 required 对象独立成立，不能仅以文件存在或工具退出码代替。",
+        "purpose": context["purpose"],
+        "scope": list(context["scope"]),
+        "acceptance_criteria": criteria,
+        "source_refs": list(context["source_refs"]),
+        "work_content": [
+            f"明确 `{key}` 对应的 required 项目对象和边界",
+            f"按 `{role}` 职责完成实现或工程内容",
+            "收集并校验本节点 evidence contract 要求的原始产物",
+        ],
+        "implementation_approach": [
+            "Agent 读取来源文档和当前 Verification Knowledge Model 后提出项目化内容",
+            "Human 评审范围、实现方法和接受条件",
+            "Agent/工程工具执行；Engine 只校验证据格式、来源和依赖",
+        ],
+        "deliverables": [
+            f"{title} 对应的可评审工程产物",
+            "满足 evidence contract 的结构化证据和原始产物引用",
+        ],
+        "progress_measures": [{
+            "id": "required-objects",
+            "label": "required 对象满足数量",
+            "unit": "count",
+            "target": "由已评审项目文档确定",
+            "source": "结构化 evidence validation facts",
+        }],
+        "quality_checks": [
+            "满足本节点全部 acceptance criteria",
+            "证据属于当前 revision，且没有未处理 blocker/finding",
+            "Human Review 未提出尚未解决的修改要求",
+        ],
+        "definition_origin": origin,
+        "definition_status": "REVIEW_CANDIDATE",
+        "role_description": (
+            "汇总能力节点；项目级对象应作为其子节点展开"
+            if role == "capability" else
+            "完成条件证据节点；原始日志、波形或数据库作为 evidence 挂载"
+        ),
+    }
 
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
@@ -622,6 +728,11 @@ CREATE TABLE IF NOT EXISTS human_actions (
   payload_json TEXT NOT NULL, resolved_by TEXT, resolution TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS node_closure_reviews (
+  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
+  revision INTEGER NOT NULL, assessment_digest TEXT NOT NULL, verdict TEXT NOT NULL,
+  reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
 """
 
 
@@ -958,10 +1069,135 @@ class ProjectStore:
         self.write_model_projection()
         return results
 
+    def _load_desired_state_proposal(
+        self, workstream: str, source: str | None,
+        template_keys: set[str],
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        if source is None:
+            return [], None
+        relative = self._project_or_declared_input_path(source)
+        path = resolved_path(self.root, relative)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise HarnessError(f"无法读取 desired-state proposal: {exc}") from exc
+        if not isinstance(payload, dict) or payload.get("schema") != "DesiredStateProposal/1":
+            raise HarnessError("desired-state proposal schema 必须是 DesiredStateProposal/1")
+        if str(payload.get("workstream", "")).upper() != workstream:
+            raise HarnessError(f"desired-state proposal workstream 必须是 {workstream}")
+        nodes = payload.get("nodes")
+        if not isinstance(nodes, list) or not nodes:
+            raise HarnessError("desired-state proposal nodes 必须是非空数组")
+        normalized: list[dict[str, Any]] = []
+        seen = set(template_keys)
+        proposal_keys: set[str] = set()
+        supported_claims = set(CLAIMS.get(workstream, {}).values())
+        if workstream == "VSTIM":
+            supported_claims.update({"reachability-evidence", "determinism-evidence"})
+        for index, item in enumerate(nodes):
+            prefix = f"nodes[{index}]"
+            if not isinstance(item, dict):
+                raise HarnessError(f"{prefix} 必须是 object")
+            key = str(item.get("key", "")).strip()
+            if not DESIRED_KEY.fullmatch(key):
+                raise HarnessError(f"{prefix}.key 只能使用小写字母、数字、点、下划线和连字符")
+            if key in seen:
+                raise HarnessError(f"desired-state key 重复: {key}")
+            seen.add(key); proposal_keys.add(key)
+            required_text = ("title", "statement", "purpose", "suggested_mode", "evidence_claim")
+            values = {field: str(item.get(field, "")).strip() for field in required_text}
+            missing = [field for field, value in values.items() if not value]
+            if missing:
+                raise HarnessError(f"{prefix} 缺少非空字段: {', '.join(missing)}")
+            role = str(item.get("role", "project-goal")).strip()
+            allowed_roles = {"project-goal", "closure-evidence", *PROJECT_NODE_ROLES[workstream]}
+            if role not in allowed_roles:
+                raise HarnessError(
+                    f"{prefix}.role 必须是 " + ", ".join(sorted(allowed_roles))
+                )
+            parent_key = str(item.get("parent_key", "")).strip()
+            if not parent_key:
+                raise HarnessError(f"{prefix}.parent_key 必须指向模板或 proposal 节点")
+            claim = values["evidence_claim"]
+            if workstream == "VDOC":
+                if claim != "document-review":
+                    raise HarnessError(f"{prefix}.evidence_claim 必须是 document-review")
+            elif claim not in supported_claims:
+                raise HarnessError(
+                    f"{prefix}.evidence_claim 不支持: {claim}；可选值: "
+                    + ", ".join(sorted(supported_claims))
+                )
+            lists: dict[str, list[str]] = {}
+            for field in (
+                "scope", "acceptance_criteria", "source_refs", "work_content",
+                "implementation_approach", "deliverables", "quality_checks",
+            ):
+                raw = item.get(field)
+                if not isinstance(raw, list) or not raw or not all(
+                    isinstance(value, str) and value.strip() for value in raw
+                ):
+                    raise HarnessError(f"{prefix}.{field} 必须是非空字符串数组")
+                lists[field] = [value.strip() for value in raw]
+            raw_measures = item.get("progress_measures")
+            if not isinstance(raw_measures, list) or not raw_measures:
+                raise HarnessError(f"{prefix}.progress_measures 必须是非空对象数组")
+            measures: list[dict[str, str]] = []
+            for measure_index, measure in enumerate(raw_measures):
+                if not isinstance(measure, dict):
+                    raise HarnessError(f"{prefix}.progress_measures[{measure_index}] 必须是 object")
+                fields = {
+                    field: str(measure.get(field, "")).strip()
+                    for field in ("id", "label", "unit", "target", "source")
+                }
+                missing_measure = [field for field, value in fields.items() if not value]
+                if missing_measure:
+                    raise HarnessError(
+                        f"{prefix}.progress_measures[{measure_index}] 缺少非空字段: "
+                        + ", ".join(missing_measure)
+                    )
+                measures.append(fields)
+            required = item.get("required", True)
+            if not isinstance(required, bool):
+                raise HarnessError(f"{prefix}.required 必须是 boolean")
+            normalized.append({
+                "key": key, "title": values["title"], "statement": values["statement"],
+                "purpose": values["purpose"], "scope": lists["scope"],
+                "acceptance_criteria": lists["acceptance_criteria"],
+                "source_refs": lists["source_refs"], "work_content": lists["work_content"],
+                "implementation_approach": lists["implementation_approach"],
+                "deliverables": lists["deliverables"], "progress_measures": measures,
+                "quality_checks": lists["quality_checks"],
+                "suggested_mode": values["suggested_mode"],
+                "evidence_claim": claim, "role": role, "parent_key": parent_key,
+                "required": required, "definition_origin": "project-proposal",
+                "definition_status": "REVIEW_CANDIDATE",
+                "role_description": (
+                    "项目级完成条件证据节点" if role == "closure-evidence"
+                    else f"项目级 {role} 节点"
+                ),
+            })
+        available = template_keys | proposal_keys
+        parents = {item["key"]: item["parent_key"] for item in normalized}
+        for item in normalized:
+            if item["parent_key"] not in available:
+                raise HarnessError(
+                    f"{item['key']} 的 parent_key 不存在: {item['parent_key']}"
+                )
+            if item["parent_key"] == item["key"]:
+                raise HarnessError(f"{item['key']} 不能把自己作为 parent")
+            visited = {item["key"]}
+            cursor = item["parent_key"]
+            while cursor in parents:
+                if cursor in visited:
+                    raise HarnessError(f"desired-state proposal 存在 parent 循环: {item['key']}")
+                visited.add(cursor)
+                cursor = parents[cursor]
+        return normalized, relative
+
     def design_workstream(
         self, workstream: str, objective: str | None, desired: list[str],
         exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
-        evidence_claims: list[str] | None = None,
+        evidence_claims: list[str] | None = None, desired_file: str | None = None,
     ) -> dict[str, Any]:
         self.require()
         name = self.normalize_workstream(workstream)
@@ -970,6 +1206,8 @@ class ProjectStore:
         template = WORKSTREAM_TEMPLATES[name]
         objective_value = objective.strip() if objective and objective.strip() else template["objective"]
         selected_claims = list(evidence_claims or [])
+        if desired and desired_file:
+            raise HarnessError("--desired 与 --desired-file 不能同时使用")
         if desired:
             if name == "VDOC":
                 if selected_claims and (
@@ -977,10 +1215,10 @@ class ProjectStore:
                     or set(selected_claims) != {"document-review"}
                 ):
                     raise HarnessError("自定义 VDOC 目标的 evidence claim 只能是 document-review")
-                desired_specs = [
-                    (f"custom-{index:03d}", title, "review", "capability", "document-review")
-                    for index, title in enumerate(desired, 1)
-                ]
+                desired_specs = [{
+                    "key": f"custom-{index:03d}", "title": title, "suggested_mode": "review",
+                    "role": "capability", "evidence_claim": "document-review", "required": True,
+                } for index, title in enumerate(desired, 1)]
             elif len(selected_claims) != len(desired):
                 raise HarnessError("每个自定义 --desired 必须按相同顺序提供一个 --evidence-claim")
             else:
@@ -993,12 +1231,20 @@ class ProjectStore:
                         f"{name} 不支持 evidence claim: {', '.join(unsupported)}；可选值: "
                         + ", ".join(sorted(supported_claims))
                     )
-                desired_specs = [
-                    (f"custom-{index:03d}", title, "evidence", "capability", claim)
-                    for index, (title, claim) in enumerate(zip(desired, selected_claims), 1)
-                ]
+                desired_specs = [{
+                    "key": f"custom-{index:03d}", "title": title, "suggested_mode": "evidence",
+                    "role": "capability", "evidence_claim": claim, "required": True,
+                } for index, (title, claim) in enumerate(zip(desired, selected_claims), 1)]
         else:
-            desired_specs = [(*item, item[0]) for item in template_nodes(template)]
+            desired_specs = [{
+                "key": key, "title": title, "suggested_mode": mode, "role": role,
+                "evidence_claim": key, "required": True,
+            } for key, title, mode, role in template_nodes(template)]
+        template_keys = {item["key"] for item in desired_specs}
+        proposal_nodes, proposal_source = self._load_desired_state_proposal(
+            name, desired_file, template_keys,
+        )
+        desired_specs.extend(proposal_nodes)
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -1026,13 +1272,23 @@ class ProjectStore:
             connection.execute("UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE workstream=? AND type='desired-state'",
                                (Validity.STALE.value, now(), name))
             desired_rows = []
-            for key, title, suggested_mode, role, evidence_claim in desired_specs:
+            key_to_id = {
+                item["key"]: f"workstream:{name}:r{revision}:desired:{item['key']}"
+                for item in desired_specs
+            }
+            for spec in desired_specs:
+                key, title = spec["key"], spec["title"]
+                suggested_mode, role = spec["suggested_mode"], spec["role"]
+                evidence_claim = spec["evidence_claim"]
                 node_id = f"workstream:{name}:r{revision}:desired:{key}"
                 row = {"id": node_id, "key": key, "title": title, "role": role,
-                       "required": True, "suggested_mode": suggested_mode,
-                       "evidence_claim": evidence_claim}
+                       "required": spec.get("required", True), "suggested_mode": suggested_mode,
+                       "evidence_claim": evidence_claim,
+                       "parent_key": spec.get("parent_key"),
+                       "parent_id": key_to_id.get(spec.get("parent_key"))}
                 if name == "VDOC" and not desired:
-                    row["document"] = vdoc_document_contract(key)
+                    if key in VDOC_DOCUMENTS:
+                        row["document"] = vdoc_document_contract(key)
                     row["evidence_contract"] = {
                         "version": "DocumentReviewPolicy/1", "claim": "document-review",
                         "required": ["current document SHA-256", "Human APPROVE review"],
@@ -1049,8 +1305,29 @@ class ProjectStore:
                             f"{name}/{evidence_claim} 缺少 evidence admission policy；不能创建无证据合同的目标"
                         )
                     row["evidence_contract"] = contract
+                if spec.get("statement"):
+                    row.update({
+                        field: spec[field] for field in (
+                            "statement", "purpose", "scope", "acceptance_criteria",
+                            "source_refs", "work_content", "implementation_approach",
+                            "deliverables", "progress_measures", "quality_checks",
+                            "definition_origin", "definition_status", "role_description",
+                        )
+                    })
+                else:
+                    row.update(desired_definition(
+                        name, key, title, role, row["evidence_contract"],
+                        "custom-title" if desired else "template",
+                    ))
                 desired_rows.append(row)
                 self.upsert_node(connection, node_id, "desired-state", title, Validity.UNKNOWN, name, row)
+            for row in desired_rows:
+                if row.get("parent_id"):
+                    connection.execute(
+                        "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                        (row["id"], row["parent_id"], "CHILD_OF", "planner-explicit", 1.0,
+                         json_text({"child_key": row["key"], "parent_key": row["parent_key"]}), now()),
+                    )
             connection.execute("""
                 INSERT INTO workstreams(name,lifecycle,revision,objective,desired_json,exit_json,decisions_json,context_json,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?)
@@ -1089,10 +1366,16 @@ class ProjectStore:
             }
         result["decision_log"] = decisions
         result["default_dependency_count"] = default_dependency_count
+        result["desired_state_proposal"] = proposal_source
+        result["project_goal_count"] = len(proposal_nodes)
         result["questions_for_human"] = [
-            f"请确认 `{key}`：{title}；证据合同 `{evidence_claim}` 是否适用"
-            for key, title, _mode, _role, evidence_claim in desired_specs
+            f"请确认 `{item['key']}`：{item['title']}；证据合同 `{item['evidence_claim']}` 是否适用"
+            for item in desired_specs
         ] if not decisions else []
+        if not desired and not proposal_nodes and name != "VDOC":
+            result["questions_for_human"].append(
+                f"{name} 当前只有汇总模板节点；请让 Agent 从已评审文档形成项目级 DesiredStateProposal/1 后重新 plan"
+            )
         result["auto_closure"] = self.evaluate_closure(name)
         return result
 
@@ -1317,6 +1600,298 @@ class ProjectStore:
                   "verdict": verdict.upper(), "lifecycle": lifecycle}
         result["auto_closure"] = self.evaluate_closure(plan["workstream"])
         return result
+
+    def await_human_review(
+        self, workstream: str, revision: int | None = None,
+        after_review_id: str | None = None, timeout: float = 60.0,
+        activity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Wait for one revision-bound formal Workstream review.
+
+        This is a bounded SQLite checkpoint, not a channel for injecting text into an
+        Agent session. The caller remains responsible for interpreting the returned
+        decision and for ending or continuing its Activity truthfully.
+        """
+        if timeout < 0:
+            raise HarnessError("await-human timeout 不能小于 0")
+        name = self.normalize_workstream(workstream)
+        plan = self.workstream(name)
+        selected_revision = plan["revision"] if revision is None else revision
+        if selected_revision != plan["revision"]:
+            raise HarnessError(
+                f"await-human revision {selected_revision} 不是 {name} 当前 revision {plan['revision']}；"
+                "旧 revision 的评审不能恢复当前工作"
+            )
+        closure = self.evaluate_closure(name, persist=False)
+        has_pending_checkpoint = any(
+            item.get("kind") == "HUMAN_REVIEW" and item.get("executor") == "human"
+            for item in closure["actions"]
+        )
+
+        cursor_rowid: int | None = None
+        if after_review_id:
+            with self.read_connect() as connection:
+                cursor = connection.execute(
+                    "SELECT rowid,workstream,revision,verdict FROM reviews WHERE id=?",
+                    (after_review_id,),
+                ).fetchone()
+            if cursor is None:
+                raise HarnessError(f"未知 review: {after_review_id}")
+            if cursor["workstream"] != name or int(cursor["revision"]) != selected_revision:
+                raise HarnessError("--after-review 必须属于同一 Workstream 和 revision")
+            if cursor["verdict"] not in {"APPROVE", "REJECT", "MODIFY", "CLARIFY"}:
+                raise HarnessError("--after-review 必须引用正式 Workstream Review")
+            cursor_rowid = int(cursor["rowid"])
+
+        activity: dict[str, Any] | None = None
+        if activity_id:
+            activity = self.activity(activity_id)
+            if activity["workstream"] != name:
+                raise HarnessError(f"Activity {activity_id} 不属于 {name}")
+            if activity["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                raise HarnessError("已结束的 Activity 不能进入人工检查点")
+            activity = self.update_activity(
+                activity_id, "WAITING_FOR_HUMAN",
+                f"等待 {name} revision {selected_revision} 的正式 Human Review",
+            )
+
+        def matching_review() -> dict[str, Any] | None:
+            filters = [
+                "workstream=?", "revision=?",
+                "verdict IN ('APPROVE','REJECT','MODIFY','CLARIFY')",
+            ]
+            values: list[Any] = [name, selected_revision]
+            order = "ASC" if cursor_rowid is not None else "DESC"
+            if cursor_rowid is not None:
+                filters.append("rowid>?")
+                values.append(cursor_rowid)
+            with self.read_connect() as connection:
+                row = connection.execute(
+                    "SELECT rowid,* FROM reviews WHERE " + " AND ".join(filters)
+                    + f" ORDER BY rowid {order} LIMIT 1",
+                    values,
+                ).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            result.pop("rowid", None)
+            return result
+
+        started = time.monotonic()
+        while True:
+            review = matching_review()
+            if review is not None:
+                verdict = review["verdict"]
+                if activity_id:
+                    activity = self.update_activity(
+                        activity_id, "RUNNING",
+                        f"已收到 {name} revision {selected_revision} Human Review: {verdict}",
+                    )
+                return {
+                    "schema": "HumanCheckpoint/1",
+                    "status": "DECIDED",
+                    "checkpoint": {
+                        "action": "HUMAN_REVIEW", "workstream": name,
+                        "revision": selected_revision,
+                    },
+                    "review": review,
+                    "resume": verdict == "APPROVE",
+                    "next": {
+                        "APPROVE": "continue",
+                        "MODIFY": "revise",
+                        "CLARIFY": "clarify",
+                        "REJECT": "stop",
+                    }[verdict],
+                    "activity": activity,
+                }
+            if not has_pending_checkpoint:
+                if activity_id:
+                    self.update_activity(
+                        activity_id, "RUNNING",
+                        f"{name} revision {selected_revision} 当前没有待处理 Human Review",
+                    )
+                raise HarnessError(
+                    f"{name} revision {selected_revision} 当前没有 HUMAN_REVIEW 检查点"
+                )
+            elapsed = time.monotonic() - started
+            if elapsed >= timeout:
+                return {
+                    "schema": "HumanCheckpoint/1",
+                    "status": "TIMEOUT",
+                    "checkpoint": {
+                        "action": "HUMAN_REVIEW", "workstream": name,
+                        "revision": selected_revision,
+                    },
+                    "review": None,
+                    "resume": False,
+                    "next": "wait",
+                    "retry_after_review": after_review_id,
+                    "activity": activity,
+                }
+            time.sleep(min(0.25, max(timeout - elapsed, 0.0)))
+
+    def node_closure_assessment(self, node_id: str) -> dict[str, Any]:
+        """Build a reproducible Human-reviewable explanation of one node conclusion."""
+        self.require()
+        with self.read_connect() as connection:
+            row = connection.execute(
+                "SELECT id,type,title,workstream,status,data_json,updated_at FROM nodes WHERE id=?",
+                (node_id,),
+            ).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 node: {node_id}")
+            if row["type"] != "desired-state" or not row["workstream"]:
+                raise HarnessError("Closure Assessment 只适用于 Workstream desired-state node")
+            data = json.loads(row["data_json"])
+            plan = connection.execute(
+                "SELECT revision,lifecycle,desired_json FROM workstreams WHERE name=?",
+                (row["workstream"],),
+            ).fetchone()
+            current_ids = {item["id"] for item in json.loads(plan["desired_json"])}
+            dependencies = [dict(item) for item in connection.execute(
+                """SELECT nodes.id,nodes.title,nodes.status,nodes.workstream,nodes.updated_at
+                   FROM edges JOIN nodes ON nodes.id=edges.target
+                   WHERE edges.source=? AND edges.relation='DEPENDS_ON' ORDER BY nodes.id""",
+                (node_id,),
+            )]
+            findings = [dict(item) for item in connection.execute(
+                "SELECT id,severity,status,details,created_at FROM findings WHERE subject=? ORDER BY created_at",
+                (node_id,),
+            )]
+            evidence_rows = [dict(item) for item in connection.execute(
+                """SELECT id,kind,source,digest,verdict,data_json,created_at
+                   FROM evidence WHERE subject=? ORDER BY created_at""", (node_id,),
+            )]
+            reviews = [dict(item) for item in connection.execute(
+                "SELECT * FROM node_closure_reviews WHERE node_id=? ORDER BY created_at", (node_id,),
+            )]
+        evidence: list[dict[str, Any]] = []
+        for item in evidence_rows:
+            payload = json.loads(item.pop("data_json"))
+            validation = payload.get("validation", {})
+            evidence.append({
+                **item,
+                "validation_status": validation.get("status"),
+                "blockers": validation.get("blockers", []),
+                "facts": validation.get("facts", {}),
+                "artifacts": payload.get("artifact_sources", []),
+            })
+        dependency_blockers = [
+            item for item in dependencies
+            if item["status"] not in {Validity.VALID.value, Validity.WAIVED.value}
+        ]
+        open_findings = [item for item in findings if item["status"] == "OPEN"]
+        missing_definition = [
+            field for field in (
+                "statement", "purpose", "scope", "acceptance_criteria", "source_refs",
+                "work_content", "implementation_approach", "deliverables",
+                "progress_measures", "quality_checks",
+            ) if not data.get(field)
+        ]
+        reasons: list[str] = []
+        if node_id not in current_ids:
+            conclusion = "STALE_REVISION"
+            reasons.append("节点不属于当前 Workstream revision")
+        elif dependency_blockers:
+            conclusion = "BLOCKED"
+            reasons.append("存在尚未满足的 prerequisite")
+        elif row["status"] not in {Validity.VALID.value, Validity.WAIVED.value}:
+            conclusion = "NOT_SATISFIED"
+            reasons.append(f"节点状态为 {row['status']}")
+        elif open_findings:
+            conclusion = "REVIEW_REQUIRED"
+            reasons.append("存在尚未处理的 Finding")
+        elif missing_definition:
+            conclusion = "REVIEW_REQUIRED"
+            reasons.append("节点定义字段不完整: " + ", ".join(missing_definition))
+        else:
+            conclusion = "CLOSED"
+            reasons.append("节点为 VALID/WAIVED、依赖满足、定义完整且无开放 Finding")
+
+        contract_labels = {
+            item.get("label") for item in data.get("evidence_contract", {}).get("requirements", [])
+            if isinstance(item, dict) and item.get("label")
+        }
+        latest_pass = next((item for item in reversed(evidence) if item["verdict"] == "PASS"), None)
+        acceptance_results = []
+        for criterion in data.get("acceptance_criteria", []):
+            if criterion in contract_labels:
+                status = "SUPPORTED" if latest_pass and not latest_pass["blockers"] else "NOT_SUPPORTED"
+            elif "prerequisite" in criterion:
+                status = "SUPPORTED" if not dependency_blockers else "NOT_SUPPORTED"
+            else:
+                status = "HUMAN_REVIEW_REQUIRED"
+            acceptance_results.append({"criterion": criterion, "status": status})
+        observed_times = [row["updated_at"]]
+        observed_times.extend(item["updated_at"] for item in dependencies)
+        observed_times.extend(item["created_at"] for item in evidence)
+        observed_times.extend(item["created_at"] for item in findings)
+        core = {
+            "schema": "NodeClosureAssessment/1",
+            "rule_version": "node-closure/1",
+            "node_id": node_id, "workstream": row["workstream"],
+            "revision": int(plan["revision"]), "current_revision": node_id in current_ids,
+            "node_status": row["status"], "conclusion": conclusion, "reasons": reasons,
+            "definition": {
+                key: data.get(key) for key in (
+                    "key", "title", "role", "parent_key", "statement", "purpose",
+                    "scope", "acceptance_criteria", "source_refs", "work_content",
+                    "implementation_approach", "deliverables", "progress_measures",
+                    "quality_checks", "evidence_contract",
+                )
+            },
+            "acceptance_results": acceptance_results,
+            "dependencies": dependencies, "dependency_blockers": dependency_blockers,
+            "evidence": evidence, "findings": findings, "open_findings": open_findings,
+            # This is the newest input observed by the assessment, not wall-clock
+            # render time.  Dashboard polling therefore has a stable snapshot until
+            # model facts actually change.
+            "evaluated_at": max(observed_times),
+        }
+        digest_payload = {key: value for key, value in core.items() if key != "evaluated_at"}
+        core["digest"] = hashlib.sha256(json_text(digest_payload).encode("utf-8")).hexdigest()
+        core["reviews"] = reviews
+        return core
+
+    def review_node_closure(
+        self, node_id: str, assessment_digest: str, verdict: str,
+        reviewer: str, reason: str,
+    ) -> dict[str, Any]:
+        selected = verdict.lower()
+        if selected not in {"approve", "reject", "modify", "clarify"}:
+            raise HarnessError("node closure verdict 必须是 approve/reject/modify/clarify")
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("node closure review 必须提供 reviewer 和 reason")
+        assessment = self.node_closure_assessment(node_id)
+        if assessment["digest"] != assessment_digest:
+            raise HarnessError("Closure Assessment 已变化；请刷新 Dashboard 后重新评审")
+        review_id = f"node-review:{uuid.uuid4().hex[:12]}"
+        timestamp = now()
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO node_closure_reviews VALUES(?,?,?,?,?,?,?,?,?)",
+                (review_id, node_id, assessment["workstream"], assessment["revision"],
+                 assessment_digest, selected.upper(), reviewer.strip(), reason.strip(), timestamp),
+            )
+            if selected != "approve":
+                connection.execute(
+                    "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                    (Validity.REVIEW_REQUIRED.value, timestamp, node_id),
+                )
+                connection.execute(
+                    "INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
+                    (f"finding:{uuid.uuid4().hex[:12]}", node_id, "HIGH", "OPEN", None,
+                     f"Human {selected.upper()} Closure Assessment: {reason.strip()}", timestamp),
+                )
+        self.write_model_projection()
+        self.write_workstream_projection(assessment["workstream"])
+        return {
+            "review_id": review_id, "node_id": node_id, "verdict": selected.upper(),
+            "reviewer": reviewer.strip(), "reason": reason.strip(),
+            "assessment_digest": assessment_digest,
+            "node_status": self.model(node_id)["nodes"][0]["status"],
+            "auto_closure": self.reconcile(),
+        }
 
     def documents(self, selector: str | None = None) -> list[dict[str, Any]]:
         self.require()
@@ -2565,6 +3140,11 @@ class ProjectStore:
                     required_total += 1
                     if status in {Validity.VALID.value, Validity.WAIVED.value}:
                         satisfied += 1
+                node_evidence = evidence_by_subject.get(desired["id"], [])
+                latest_validation = (
+                    node_evidence[-1].get("data", {}).get("validation", {})
+                    if node_evidence else {}
+                )
                 desired_nodes.append({
                     **node,
                     "key": desired.get("key"),
@@ -2573,11 +3153,31 @@ class ProjectStore:
                     "suggested_mode": desired.get("suggested_mode"),
                     "evidence_claim": desired.get("evidence_claim"),
                     "evidence_contract": desired.get("evidence_contract"),
-                    "evidence": evidence_by_subject.get(desired["id"], []),
+                    "parent_key": desired.get("parent_key"),
+                    "parent_id": desired.get("parent_id"),
+                    "statement": desired.get("statement"),
+                    "purpose": desired.get("purpose"),
+                    "scope": desired.get("scope", []),
+                    "acceptance_criteria": desired.get("acceptance_criteria", []),
+                    "source_refs": desired.get("source_refs", []),
+                    "work_content": desired.get("work_content", []),
+                    "implementation_approach": desired.get("implementation_approach", []),
+                    "deliverables": desired.get("deliverables", []),
+                    "progress_measures": desired.get("progress_measures", []),
+                    "progress_observation": latest_validation.get("facts", {}),
+                    "quality_checks": desired.get("quality_checks", []),
+                    "definition_origin": desired.get("definition_origin"),
+                    "definition_status": desired.get("definition_status"),
+                    "role_description": desired.get("role_description"),
+                    "evidence": node_evidence,
                     "findings": findings_by_subject.get(desired["id"], []),
                     "activities": activities_by_node.get(desired["id"], []),
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
+                    # This is the Engine's current, reproducible explanation for why the
+                    # node is or is not closed.  It is deliberately separate from the raw
+                    # status so a Human can review the reasoning rather than a badge.
+                    "closure_assessment": self.node_closure_assessment(desired["id"]),
                 })
             workstream_human_actions = [item for item in human_actions if (
                 item["target"] == plan["workstream"] or item["target"] in desired_ids
@@ -2712,16 +3312,53 @@ class ProjectStore:
         for item in plan["desired_state"]:
             contract = item.get("evidence_contract") or {}
             claim = contract.get("claim") or item.get("evidence_claim") or "未指定"
-            lines.append(
-                f"- [ ] `{item['key']}` ({item.get('role', 'capability')}) {item['title']} "
-                f"— evidence claim: `{claim}`"
+            lines.extend([
+                f"### `{item['key']}` · {item['title']}", "",
+                f"- 角色：`{item.get('role', 'capability')}`",
+                f"- 父节点：`{item.get('parent_key') or '无'}`",
+                f"- 必需：`{item.get('required', True)}`",
+                f"- 定义来源：`{item.get('definition_origin', 'unknown')}` / `{item.get('definition_status', 'unknown')}`",
+                f"- Evidence claim：`{claim}`", "",
+                f"**目标说明**：{item.get('statement') or '未登记'}", "",
+                f"**目的**：{item.get('purpose') or '未登记'}", "",
+                "**范围**", "",
+            ])
+            lines.extend(f"- {value}" for value in item.get("scope", []))
+            if not item.get("scope"): lines.append("- 未登记")
+            lines.extend(["", "**满足条件**", ""])
+            lines.extend(f"- [ ] {value}" for value in item.get("acceptance_criteria", []))
+            if not item.get("acceptance_criteria"): lines.append("- 未登记")
+            lines.extend(["", "**来源引用**", ""])
+            lines.extend(f"- `{value}`" for value in item.get("source_refs", []))
+            if not item.get("source_refs"): lines.append("- 未登记")
+            lines.extend(["", "**工作内容**", ""])
+            lines.extend(f"- {value}" for value in item.get("work_content", []))
+            if not item.get("work_content"): lines.append("- 未登记")
+            lines.extend(["", "**实现方式**", ""])
+            lines.extend(f"- {value}" for value in item.get("implementation_approach", []))
+            if not item.get("implementation_approach"): lines.append("- 未登记")
+            lines.extend(["", "**交付物**", ""])
+            lines.extend(f"- {value}" for value in item.get("deliverables", []))
+            if not item.get("deliverables"): lines.append("- 未登记")
+            lines.extend(["", "**进度指标**", ""])
+            lines.extend(
+                f"- `{value['id']}`：{value['label']}；目标 `{value['target']} {value['unit']}`；来源 `{value['source']}`"
+                for value in item.get("progress_measures", [])
             )
+            if not item.get("progress_measures"): lines.append("- 未登记")
+            lines.extend(["", "**质量检查**", ""])
+            lines.extend(f"- {value}" for value in item.get("quality_checks", []))
+            if not item.get("quality_checks"): lines.append("- 未登记")
+            lines.extend(["", "**证据合同**", ""])
             for evidence_requirement in contract.get("requirements", []):
                 alternatives = " 或 ".join(
                     f"`{choice['kind']}` / `{choice['analyzer']}`"
                     for choice in evidence_requirement.get("alternatives", [])
                 )
                 lines.append(f"  - {evidence_requirement['label']}：{alternatives}")
+            for required in contract.get("required", []):
+                lines.append(f"- {required}")
+            lines.append("")
         documents = [item for item in plan["desired_state"] if item.get("document")]
         if documents:
             lines.extend(["", "## Document Deliverables", "",

@@ -76,10 +76,21 @@ Workstream. Project lifecycle is separate.
   when progress changes or Human input is required, and close it with the real
   terminal result. Before starting, resuming, or completing an Activity, read
   open `human-action` records and apply relevant Human input. Dashboard writes
-  are persistent control-plane input, not a direct interrupt or chat-message
-  channel into a running Agent. Use
+  are persistent control-plane input, not arbitrary chat-message injection into
+  a running Agent. When Closure contains `HUMAN_REVIEW`, bind the current
+  Workstream revision and current Activity with `await-human`; retry bounded
+  TIMEOUT results while the Human is still expected to decide. Continue normal
+  work only for `APPROVE`; handle `MODIFY`, `CLARIFY`, and `REJECT` according to
+  the returned `next` action. A comment or Human action never satisfies this
+  checkpoint. Use
   `human-action` to preserve comments or requested changes. Dashboard state is
   an audited view of the same model; never manufacture progress or validity.
+  In each desired-state node, show the current `NodeClosureAssessment/1` before
+  describing the node as closed: current revision, rule, evidence, prerequisite
+  state, findings, criterion checks, reasons, and digest. Human approval of this
+  assessment confirms the explanation only and never creates PASS evidence.
+  Treat modify/clarify/reject as a reopened node and finding; never reuse an old
+  assessment digest after facts change.
 - Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 

@@ -173,6 +173,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not reviewer or not notes:
                 raise HarnessError("Dashboard 文档评审必须填写 reviewer 和 notes")
             return store.review_document(str(body.get("document", "")), verdict, reviewer, notes)
+        if path == "/api/reviews/node-closure":
+            verdict = str(body.get("verdict", ""))
+            if verdict not in {"approve", "reject", "modify", "clarify"}:
+                raise HarnessError("node closure verdict 必须是 approve/reject/modify/clarify")
+            reviewer = str(body.get("reviewer", "")).strip()
+            reason = str(body.get("reason", "")).strip()
+            digest = str(body.get("assessment_digest", "")).strip()
+            if not reviewer or not reason or not digest:
+                raise HarnessError("节点 Closure 评审必须填写 reviewer、reason 和 assessment_digest")
+            return store.review_node_closure(
+                str(body.get("node", "")), digest, verdict, reviewer, reason,
+            )
         if path == "/api/waive":
             reviewer = str(body.get("reviewer", "")).strip()
             reason = str(body.get("reason", "")).strip()

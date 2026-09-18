@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/verif-harness/desired-state-proposal.schema.json",
+  "title": "DesiredStateProposal/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "workstream", "nodes"],
+  "properties": {
+    "schema": {"const": "DesiredStateProposal/1"},
+    "workstream": {"enum": ["VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key", "title", "role", "parent_key", "statement", "purpose",
+          "scope", "acceptance_criteria", "source_refs", "work_content",
+          "implementation_approach", "deliverables", "progress_measures",
+          "quality_checks", "suggested_mode", "evidence_claim"
+        ],
+        "properties": {
+          "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+          "title": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "parent_key": {"type": "string", "minLength": 1},
+          "required": {"type": "boolean", "default": true},
+          "statement": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1},
+          "scope": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "acceptance_criteria": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "work_content": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "implementation_approach": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "deliverables": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "progress_measures": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "label", "unit", "target", "source"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "unit": {"type": "string", "minLength": 1},
+                "target": {"type": "string", "minLength": 1},
+                "source": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "quality_checks": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "suggested_mode": {"type": "string", "minLength": 1},
+          "evidence_claim": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

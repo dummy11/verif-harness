@@ -76,6 +76,20 @@ views, binds only to loopback, and routes reviews, waivers, and freezes through
 the existing store APIs. It is not another verification engine and does not infer
 progress from unregistered terminal processes.
 
+Every current desired-state node also exposes a deterministic
+`NodeClosureAssessment/1`. It binds the current Workstream revision, node status,
+definition, prerequisites, evidence, findings, per-criterion support, rule
+version, and a content digest. Dashboard node-closure reviews are bound to that
+digest. Approval records that the Human accepts the explanation; it never creates
+evidence or changes validity. Modify, clarify, or reject moves the node to
+`REVIEW_REQUIRED` and opens a finding. A changed assessment invalidates stale
+review submissions.
+
+`await-human` is a bounded, revision-aware checkpoint over formal Workstream
+reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
+`RUNNING`, but comments cannot release it and it never injects arbitrary text
+into an Agent session.
+
 Bootstrap also creates or refreshes only a marked verif-harness block in the
 project-root `AGENTS.md`. The block is a routing and authority projection, not a
 fact database: bootstrap writes DUT/read-only boundaries, and VDOC planning adds

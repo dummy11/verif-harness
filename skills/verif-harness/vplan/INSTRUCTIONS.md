@@ -15,7 +15,7 @@ are not those deliverables; document governance state is rendered on demand from
 
 ```text
 $verif-harness plan VDOC|VENV|VSTIM|VCHK|VCOV|VCASE|VREG \
-  [--objective "..."] [--desired "..."] [--exit "..."] [--decision "..."]
+  [--objective "..."] [--desired-file DesiredStateProposal.json]
 $verif-harness review [NAME] [--verdict approve|reject|modify|clarify] \
   [--reviewer NAME] [--reason "..."]
 ```
@@ -27,3 +27,23 @@ Agent to approve. Reject/modify/clarify always require a reason. Never approve
 on the user's behalf. Workstreams may be incomplete,
 simultaneous, reopened, and entered in any order. Do not create a frozen large
 task document; the Verification Closure Engine derives current actions from live facts.
+
+The built-in nodes are reusable summary/checkpoint nodes, not a sufficient
+project breakdown. For every non-VDOC Workstream, read the reviewed VDOC documents
+and current model, then prepare a `DesiredStateProposal/1` using
+`desired-state-proposal.schema.json` and `desired-state-proposal.example.json`.
+Discuss genuine engineering choices with the Human before passing the reviewed
+candidate through `--desired-file`. Create project nodes at the level a reviewer
+needs to understand goal, work content, implementation approach, deliverables,
+measured progress, and quality. Examples include one interface/environment
+component, stimulus feature/scenario, checking goal/checker, coverage goal,
+testcase mapping, or regression profile. Keep raw logs, wave databases, coverage
+databases, and individual transactions as evidence; do not turn every artifact
+into a planning node. Parent every project node under a template or project node
+and never create parent cycles.
+
+After evidence changes, use the Dashboard node view to inspect the current
+`NodeClosureAssessment/1`. Its conclusion must remain traceable to the current
+revision, prerequisites, evidence, findings, and criterion checks. A Human node
+review confirms or disputes that explanation only; it must never substitute for
+required evidence.

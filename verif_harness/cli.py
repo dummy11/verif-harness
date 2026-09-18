@@ -92,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness changed PATH
   verif-harness freeze VDOC|final
   verif-harness dashboard --open-browser
+  verif-harness await-human VDOC
 
 完整操作与参数见 skills/verif-harness/docs/user_guide.md。""",
     )
@@ -140,6 +141,10 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument("--exit", dest="exit_criteria", action="append", default=[])
     design.add_argument("--decision", action="append", default=[])
     design.add_argument("--document-root", help="VDOC 文档输出目录；由 Agent 在对话确认后传入")
+    design.add_argument(
+        "--desired-file",
+        help="Agent/Human 评审候选的 DesiredStateProposal/1 JSON；在模板汇总节点下追加项目级子节点",
+    )
     show = plan_commands.add_parser("show", help="显示当前 Workstream plan")
     project_argument(show); workstream_argument(show)
     review = plan_commands.add_parser("review", help="记录 Human 对当前 revision 的判定")
@@ -293,6 +298,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--status", choices=tuple(sorted(HUMAN_ACTION_STATUSES)), type=str.upper,
     )
 
+    await_human = commands.add_parser(
+        "await-human",
+        help="等待 Dashboard/CLI 提交的当前 Workstream revision 正式评审",
+    )
+    project_argument(await_human)
+    await_human.add_argument("workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
+    await_human.add_argument(
+        "--revision", type=int,
+        help="省略时在调用开始时绑定当前 revision；旧 revision 会被拒绝",
+    )
+    await_human.add_argument(
+        "--after-review",
+        help="同一 revision 再次等待时，忽略这个 review 及更早决定",
+    )
+    await_human.add_argument(
+        "--timeout", type=float, default=60.0,
+        help="本次最长等待秒数；超时返回 TIMEOUT，可安全重试（默认 60）",
+    )
+    await_human.add_argument(
+        "--activity",
+        help="可选 Activity ID；等待时置为 WAITING_FOR_HUMAN，收到决定后恢复 RUNNING",
+    )
+
     check = commands.add_parser("check", help="Verification Consistency Engine：自动执行，也可显式扫描确定性事实")
     check_commands = check.add_subparsers(dest="check_command", required=True)
     scan = check_commands.add_parser("scan"); project_argument(scan)
@@ -424,7 +452,8 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "plan":
             if args.plan_command == "design":
                 emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria,
-                                             args.decision, args.document_root, args.evidence_claim))
+                                             args.decision, args.document_root, args.evidence_claim,
+                                             args.desired_file))
             elif args.plan_command == "show": emit(store.workstream(args.workstream))
             elif args.plan_command == "review":
                 workstream = infer_workstream(store, args.workstream, "review")
@@ -508,6 +537,11 @@ def main(arguments: list[str] | None = None) -> int:
                 ))
             else:
                 emit({"human_actions": store.human_actions(args.status)})
+        elif args.command == "await-human":
+            emit(store.await_human_review(
+                args.workstream, args.revision, args.after_review,
+                args.timeout, args.activity,
+            ))
         elif args.command == "check": emit(store.scan())
         elif args.command == "closure":
             emit(store.evaluate_closure(args.workstream) if args.workstream else store.reconcile())

@@ -412,6 +412,24 @@ verif-harness review VCHK
 - [`capability`](glossary.md#node-role)：证明接口定义、实现或执行工具已经准备好；
 - [`closure-evidence`](glossary.md#node-role)：证明这些能力在当前项目版本中实际运行并达到目标。
 
+这些内置节点是通用汇总，不足以单独说明一个真实项目做了哪些功能、场景、checker、覆盖项、
+testcase 和回归。Agent 必须在规划每个非 VDOC Workstream 时，根据已评审的 VDOC 与当前工程形成
+`DesiredStateProposal/1`，和 Human 确认后再交给 Planner：
+
+```text
+# Human：在对话中确认项目级目标、范围、实现方式、量化指标和质量要求
+# Agent：基于 schema/example 起草 JSON；Human 不需要手写此命令
+verif-harness plan VCOV --desired-file <reviewed-desired-state.json>
+# Engine：校验格式、父子关系和证据类型，在通用汇总节点下创建项目级子节点
+```
+
+模板和示例见 [`desired-state-proposal.schema.json`](../vplan/desired-state-proposal.schema.json) 与
+[`desired-state-proposal.example.json`](../vplan/desired-state-proposal.example.json)。一个项目节点必须让
+Human 看出六件事：要达到什么、具体做什么、怎样实现、交付什么、怎样量化进度、怎样检查质量。
+适合建节点的对象包括接口/环境组件、激励 feature/scenario、checking goal/checker、coverage goal、
+testcase mapping 和 regression profile。原始编译日志、仿真日志、波形、VDB/UCDB 与单笔 transaction
+作为[证据](glossary.md#evidence)挂在节点下，不要把每个文件或 transaction 都变成计划节点。
+
 Planner 在每次 plan/replan 后，按 node key 将默认 `DEPENDS_ON` 关系重新绑定到各
 Workstream 当前 revision。前置 Workstream 尚未规划时，closure 返回
 `PLAN_PREREQUISITE`；前置 node 尚未满足时返回 `WAIT_FOR_DEPENDENCY`。用户不需要手工
@@ -1200,16 +1218,34 @@ Human 写操作入口，当前设计只允许 loopback。常见连接问题见
 主动登记但尚未处理的修改或澄清请求。因此 VDOC 处于 `REVIEW`/`REVISE` 时，即使尚未有人提交评论，
 这里也会显示 `HUMAN_REVIEW`，不会再错误显示为 0。
 
-Dashboard 的 Human 输入会立即保存并刷新页面，但不会作为聊天消息直接打断正在运行的 Codex/Kimi。
-Agent 必须在开始、恢复和结束 Activity 时读取尚未处理的输入：
+Dashboard 的 Human 输入会立即保存并刷新页面。普通评论不会作为聊天消息直接打断正在运行的
+Codex/Kimi；Agent 必须在开始、恢复和结束 Activity 时读取尚未处理的输入：
 
 ```text
 # Agent：在工作边界读取；Human 通常不直接输入此命令
 verif-harness human-action list --status OPEN
 ```
 
-如果 Agent 正阻塞在一个外部编译或仿真进程里，输入会安全地留在 SQLite，等 Agent 到达下一个检查点
-再处理。需要立即停止工具时，Human 仍应在 Agent 对话或终端中明确要求停止。
+如果 Closure 要求正式 Workstream Review，Agent 使用
+[Human checkpoint（人工检查点）](glossary.md#dashboard)等待 Dashboard 决定：
+
+```text
+# Agent：CURRENT_REVISION 来自刚刚展示给 Human 的当前 plan
+# ACTIVITY_ID 是这次工作已登记的 Activity
+verif-harness await-human VDOC \
+  --revision CURRENT_REVISION \
+  --activity ACTIVITY_ID \
+  --timeout 60
+```
+
+等待时 Activity 自动显示为 `WAITING_FOR_HUMAN`，Workstream 卡片明确显示“Agent 正在等待
+Human”。Human 在 Dashboard 的“评审/要求修改”中提交正式 Review 后，命令返回；`approve`
+使 Activity 恢复 `RUNNING` 并允许 Agent 继续，`modify/clarify/reject` 分别要求修改、说明或停止。
+普通“提交意见”不会解除等待。60 秒内没有决定时命令返回 `TIMEOUT`，Agent 可以继续进行有界等待，
+不会丢失检查点。
+
+如果 Agent 正阻塞在外部编译或仿真进程里，Review 不能强制中断该进程；输入会安全地留在 SQLite，
+等 Agent 到达检查点再处理。需要立即停止工具时，Human 仍应在 Agent 对话或终端中明确要求停止。
 
 ```text
 # Agent：开始一个有边界的实现、编译、仿真或分析动作时登记
@@ -1232,13 +1268,34 @@ Human 可以从界面选择 Workstream 或节点，提交评论、要求修改�
 豁免必须再次确认并填写 reviewer 与 reason。所有写操作只允许从打开页面时取得的本机会话令牌
 提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。
 
+#### Human 怎样评审节点的 Closure 结论
+
+打开任一当前目标节点后，`Closure 结论与依据` 区域显示
+[节点完成结论](glossary.md#node-closure-assessment)，包括：
+
+- Engine 的当前结论及原因；
+- 结论绑定的 Workstream revision、规则版本和摘要；
+- 每条满足条件是已由结构化证据支持、尚未支持，还是必须由 Human 判断；
+- 本次读取的证据、未满足的前置节点、开放问题；
+- 以往 Human 对该节点结论的评审记录。
+
+Human 可以点击“评审 Closure 结论”，选择认可、要求修改、要求说明或拒绝。认可不会把 `UNKNOWN`
+节点改成 `VALID`，也不会补造缺失证据；它只保存“Human 认为 Engine 对现有材料的解释正确”。要求
+修改、要求说明或拒绝会把该节点置为 `REVIEW_REQUIRED`，并登记一个开放问题，Agent 后续从
+Dashboard、`inspect` 或 `closure` 看到它后继续处理。如果证据、前置节点、问题或状态已经变化，
+Dashboard 会拒绝基于旧摘要提交的评审，Human 必须刷新并查看新的结论。
+
+这类节点评审随时可做，不要求 Agent 在每个节点停止。只有流程明确设置了
+[人工检查点](glossary.md#dashboard)时，Agent 才会显示 `WAITING_FOR_HUMAN` 并等待正式 Workstream
+Review；普通节点 Closure 评审用于实时监督和纠错。
+
 三种角色在实时查看中的边界：
 
 | 角色 | 实际工作 |
 | --- | --- |
 | **Human** | 随时查看状态、证据和当前活动；提出评论/修改/澄清/优先级；在看清影响后作出评审、豁免或冻结决定 |
-| **Agent** | 启动 Dashboard；在开始、等待和结束工程动作时更新 Activity；解释 Human 输入并执行后续工作；不得伪造进度 |
-| **Engine** | 从 SQLite 生成结构化快照；状态改变时刷新页面；校验并保存 Human 写入；不自行运行编译、仿真或作工程结论 |
+| **Agent** | 启动 Dashboard；在开始、等待和结束工程动作时更新 Activity；解释证据和 Human 输入并执行后续工作；通过节点展示结论，不得伪造进度 |
+| **Engine** | 从 SQLite 生成结构化快照和节点完成结论；列明规则、证据、依赖、问题和逐项核对结果；保存 Human Review；在人工检查点把匹配当前 revision 的决定返回给 Agent；不自行运行编译、仿真或选择工程语义 |
 
 Dashboard 停止或 Agent 断线不会丢失已经保存的节点、证据、Activity 和人工操作记录。新会话进入
 项目后可再次运行 `dashboard --open-browser`；未登记到 CLI 的终端输出或进程内部百分比无法恢复。
@@ -1360,6 +1417,26 @@ verif-harness dashboard --snapshot
 
 页面通过本机事件流接收状态更新，不轮询外部服务。关闭页面或停止 Dashboard 不会停止仿真，
 也不会清除 SQLite 状态。Dashboard 不是证据生产工具；它只展示或提交受控的 Human 输入。
+
+### `await-human WORKSTREAM`
+
+Agent 在 Closure 明确要求 `HUMAN_REVIEW` 时使用。Human 通常不直接调用。
+
+```text
+verif-harness await-human WORKSTREAM [--revision N] [--after-review REVIEW_ID] \
+  [--timeout SECONDS] [--activity ACTIVITY_ID]
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `WORKSTREAM` | 当前等待正式评审的 Workstream |
+| `--revision` | 绑定待评审版本；省略时在命令开始时锁定当前 revision；旧版本会被拒绝 |
+| `--after-review` | 同一 revision 需要再次评审时，忽略指定 Review 及更早决定 |
+| `--timeout` | 单次等待秒数，默认 60；超时返回结构化 `TIMEOUT`，可安全重试 |
+| `--activity` | 等待时把该 Activity 置为 `WAITING_FOR_HUMAN`；收到决定后恢复 `RUNNING` |
+
+返回 `HumanCheckpoint/1`。只有正式 Workstream Review 才会返回 `DECIDED`；普通评论、修改请求或
+旧 revision Review 均不能冒充批准。`resume` 仅在 verdict 为 `APPROVE` 时为 `true`。
 
 ### `plan WORKSTREAM`
 

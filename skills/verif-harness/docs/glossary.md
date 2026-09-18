@@ -48,6 +48,13 @@ Workstream、节点状态、完成条件、证据、问题、当前活动和人�
 Agent/Human 处理后写入 resolution。它不同于正式 `review`、`waiver` 和 `freeze`，不会自行批准
 计划、接受未满足目标或保存基线。
 
+**Human checkpoint（人工检查点）**是 Agent 明确停在某个 Workstream revision，等待正式 Review
+的安全边界。Agent 调用 `await-human` 后，关联 Activity 显示为 `WAITING_FOR_HUMAN`；Human 在
+Dashboard 选择批准、修改、继续澄清或拒绝后，等待命令返回结构化决定，同一 Agent 再按决定继续。
+它不是把任意网页文字注入模型上下文：普通评论不能解除等待，旧 revision 的 Review 也不能恢复
+当前工作。命令按固定时间返回 `TIMEOUT`，可重复等待；Agent 掉线时 Review 仍保存在 SQLite，
+新会话可以重新读取。
+
 **Progress（看板进度）**默认是“本轮 required 节点中，`VALID/WAIVED` 的数量 / required 总数”。
 它不是 functional coverage、code coverage、仿真完成百分比或工期预测。Activity 的
 `current/total` 也只表示该活动自己声明的有限步骤数。
@@ -133,6 +140,20 @@ Desired 描述结果，action 描述下一步做什么。一个 desired 可以�
 **Node role（节点用途）**说明标准目标节点要证明什么。**Capability node（能力节点）**
 证明接口规则、实现或运行工具已经准备好；**Closure-evidence node（运行证据节点）**证明该能力在
 当前 revision 的真实运行中达到了目标。只有实现文件或编译成功不能替代运行证据。
+
+内置模板节点是可复用的汇总节点，用来表达一个 Workstream 的共同检查点；它们不是项目的完整
+工作分解。**Project node（项目节点）**由 Agent 根据已经评审的 VDOC、当前工程结构和 Human 决定
+创建，例如某个接口组件、一个激励场景、一个 checker、一个覆盖率目标、一个 testcase 或一组回归。
+项目节点必须说明工作目标、工作内容、实现方式、交付物、进度指标和质量检查。编译日志、仿真日志、
+波形和覆盖率数据库属于 evidence，通常不单独建成项目节点。
+
+<a id="node-closure-assessment"></a>
+**Node Closure Assessment（节点完成结论）**是 Engine 针对一个当前目标节点生成的可复核说明。
+它不是只有 `CLOSED/NOT_SATISFIED` 的标签，而是同时列出：当前 Workstream revision、节点状态、
+使用的规则版本、前置节点、读取的证据、开放问题、每条满足条件能否由系统核对，以及下结论的原因。
+结论内容有摘要值；节点、证据、依赖或问题变化后，旧摘要不能再用于评审。Human 可在 Dashboard
+认可、要求修改、要求说明或拒绝这份结论。认可只表示“这份解释与当前材料一致”，不会生成 PASS；
+其他结论会把节点置为 `REVIEW_REQUIRED` 并登记一个待处理问题。
 
 **Relation/Edge（关系/边）**连接两个节点。**Dependency（依赖）**表达影响关系，
 例如 RTL 行为变化会使 checker 结论需要重新验证。实际传播沿已登记的出边进行。

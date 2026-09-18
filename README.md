@@ -54,7 +54,12 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
   [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
 - 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：按 Workstream 和节点查看
-  当前工作、完成条件、证据、问题与进度，并可随时提交评审意见；不必等到 closure 才参与。
+  当前工作、完成条件、证据、问题与进度，并可随时提交评审意见；Closure 需要正式评审时，
+  revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard 决定后继续。
+- 每个目标节点显示一份可复核的
+  [节点完成结论](skills/verif-harness/docs/glossary.md#node-closure-assessment)：Engine 列出使用的规则、
+  证据、前置节点、开放问题和逐项检查结果；Human 可以认可、要求修改、要求说明或拒绝该结论，
+  但评审不会凭空创建 PASS 证据。
 
 ## 运行逻辑
 

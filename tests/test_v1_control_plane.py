@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -360,10 +361,20 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertGreaterEqual(len(plan["desired_state"]), 4)
         self.assertGreater(plan["planning_context"]["model_summary"]["node_count"], 0)
         self.assertTrue(plan["planning_context"]["model_excerpt"]["nodes"])
-        self.assertEqual(len(plan["questions_for_human"]), len(plan["desired_state"]))
+        self.assertGreaterEqual(len(plan["questions_for_human"]), len(plan["desired_state"]))
         self.assertEqual(plan["auto_closure"]["actions"][0]["executor"], "human")
         self.assertTrue((self.root / ".verif-harness/workstreams/vchk/desired-state.json").is_file())
         self.assertTrue((self.root / ".verif-harness/workstreams/vchk/plan.md").is_file())
+        for desired in plan["desired_state"]:
+            self.assertTrue(desired["statement"])
+            self.assertTrue(desired["purpose"])
+            self.assertTrue(desired["scope"])
+            self.assertTrue(desired["acceptance_criteria"])
+            self.assertTrue(desired["source_refs"])
+            self.assertEqual(desired["definition_status"], "REVIEW_CANDIDATE")
+        projection = (self.root / ".verif-harness/workstreams/vchk/plan.md").read_text(encoding="utf-8")
+        self.assertIn("**目标说明**", projection)
+        self.assertIn("**满足条件**", projection)
         scoreboard = next(
             item for item in plan["desired_state"] if item["key"] == "scoreboard-evidence"
         )
@@ -382,6 +393,62 @@ class V1ControlPlaneTest(unittest.TestCase):
             {choice["kind"] for choice in item["alternatives"]} == {"analysis-report"}
             for item in requirements
         ))
+
+    def test_project_desired_state_proposal_adds_hierarchical_nodes(self) -> None:
+        self.bootstrap()
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VCOV",
+            "nodes": [{
+                "key": "feature.conv.fp16.value-coverage",
+                "title": "FP16 convolution value coverage",
+                "role": "coverage-goal", "parent_key": "coverage-model",
+                "required": True,
+                "statement": "Required FP16 value classes and crosses are covered.",
+                "purpose": "Expose feature-level coverage gaps.",
+                "scope": ["FP16 convolution value and mode crosses"],
+                "acceptance_criteria": ["Every required item is covered or Human-waived"],
+                "source_refs": ["coverage_plan.md#fp16"],
+                "work_content": ["Implement and map required coverage items"],
+                "implementation_approach": ["Compile the model and analyze exported coverage"],
+                "deliverables": ["Coverage model and item-level report"],
+                "progress_measures": [{
+                    "id": "required-items", "label": "Required items closed",
+                    "unit": "items", "target": "all", "source": "CoverageEvidence/1",
+                }],
+                "quality_checks": ["No required item remains uncovered"],
+                "suggested_mode": "evidence", "evidence_claim": "hole-analysis-evidence",
+            }],
+        }
+        path = self.root / "vcov-desired.json"
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        plan = self.run_cli("plan", "VCOV", "--desired-file", str(path))
+        self.assertEqual(plan["project_goal_count"], 1)
+        child = next(
+            item for item in plan["desired_state"]
+            if item["key"] == "feature.conv.fp16.value-coverage"
+        )
+        parent = next(item for item in plan["desired_state"] if item["key"] == "coverage-model")
+        self.assertEqual(child["parent_id"], parent["id"])
+        self.assertEqual(child["definition_origin"], "project-proposal")
+        self.assertEqual(child["role"], "coverage-goal")
+        trace = self.run_cli("trace", child["id"])
+        self.assertIn(
+            (child["id"], parent["id"], "CHILD_OF"),
+            {(edge["source"], edge["target"], edge["relation"]) for edge in trace["outgoing"]},
+        )
+        snapshot = self.run_cli("dashboard", "--snapshot")
+        view = next(item for item in snapshot["workstreams"] if item["workstream"] == "VCOV")
+        rendered = next(item for item in view["nodes"] if item["id"] == child["id"])
+        self.assertEqual(rendered["statement"], proposal["nodes"][0]["statement"])
+        self.assertEqual(rendered["parent_key"], "coverage-model")
+        self.assertEqual(rendered["work_content"], proposal["nodes"][0]["work_content"])
+        self.assertEqual(rendered["progress_measures"], proposal["nodes"][0]["progress_measures"])
+
+        del proposal["nodes"][0]["acceptance_criteria"]
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        rejected = self.invoke("plan", "VCOV", "--desired-file", str(path))
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("acceptance_criteria 必须是非空字符串数组", rejected.stderr)
 
     def test_every_standard_desired_node_has_a_stored_evidence_contract(self) -> None:
         self.bootstrap()
@@ -500,6 +567,77 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.run_cli("activity", "update", activity["id"], "--status", "COMPLETED")
         node = self.run_cli("inspect", node_id)["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
+
+    def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
+        self.bootstrap()
+        plan = self.design("VDOC")
+        revision = plan["revision"]
+        node_id = plan["desired_state"][0]["id"]
+        activity = self.run_cli(
+            "activity", "start", node_id, "--operation", "prepare-vdoc-review",
+        )
+        self.run_cli(
+            "human-action", "add", "VDOC", "--action", "REQUEST_CHANGE",
+            "--reason", "请补充 reset 说明", "--reviewer", "alice",
+        )
+        timed_out = self.run_cli(
+            "await-human", "VDOC", "--revision", str(revision),
+            "--activity", activity["id"], "--timeout", "0",
+        )
+        self.assertEqual(timed_out["status"], "TIMEOUT")
+        self.assertEqual(timed_out["activity"]["status"], "WAITING_FOR_HUMAN")
+
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+        waiter = subprocess.Popen(
+            [
+                sys.executable, str(CLI), "await-human", "VDOC",
+                "--revision", str(revision), "--activity", activity["id"],
+                "--timeout", "3", "--project-root", str(self.root),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+        )
+        time.sleep(0.3)
+        self.assertIsNone(waiter.poll(), "普通 Human action 不应解除正式评审等待")
+        approved = self.run_cli(
+            "review", "VDOC", "--verdict", "approve",
+            "--reviewer", "alice", "--reason", "当前 revision 可以继续",
+        )
+        stdout, stderr = waiter.communicate(timeout=5)
+        self.assertEqual(waiter.returncode, 0, stdout + stderr)
+        decided = json.loads(stdout)
+        self.assertEqual(decided["status"], "DECIDED")
+        self.assertEqual(decided["review"]["id"], approved["review_id"])
+        self.assertTrue(decided["resume"])
+        self.assertEqual(decided["next"], "continue")
+        self.assertEqual(decided["activity"]["status"], "RUNNING")
+
+        replay = self.invoke(
+            "await-human", "VDOC", "--revision", str(revision),
+            "--after-review", approved["review_id"], "--timeout", "0",
+        )
+        self.assertEqual(replay.returncode, 2)
+        self.assertIn("当前没有 HUMAN_REVIEW 检查点", replay.stderr)
+        modified = self.run_cli(
+            "review", "VDOC", "--verdict", "modify", "--reviewer", "alice",
+            "--reason", "仍需修改接口章节",
+        )
+        next_decision = self.run_cli(
+            "await-human", "VDOC", "--revision", str(revision),
+            "--after-review", approved["review_id"], "--timeout", "0",
+        )
+        self.assertEqual(next_decision["review"]["id"], modified["review_id"])
+        self.assertFalse(next_decision["resume"])
+        self.assertEqual(next_decision["next"], "revise")
+
+        replacement = self.design("VDOC")
+        self.assertGreater(replacement["revision"], revision)
+        stale = self.invoke(
+            "await-human", "VDOC", "--revision", str(revision), "--timeout", "0",
+        )
+        self.assertEqual(stale.returncode, 2)
+        self.assertIn("旧 revision 的评审不能恢复当前工作", stale.stderr)
 
     def test_vdoc_materializes_missing_semantic_documents_without_approving_them(self) -> None:
         self.bootstrap()

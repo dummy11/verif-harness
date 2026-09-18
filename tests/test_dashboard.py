@@ -55,6 +55,13 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Verification Dashboard", html)
         self.assertIn("项目验证总览", html)
         self.assertIn("等待 Human", html)
+        self.assertIn("Agent 正在等待 Human", html)
+        self.assertIn("工作目标", html)
+        self.assertIn("工作内容与实现方式", html)
+        self.assertIn("工作进度", html)
+        self.assertIn("工作质量", html)
+        self.assertIn("Closure 结论与依据", html)
+        self.assertIn("评审 Closure 结论", html)
         self.assertNotIn("__VERIF_DASHBOARD_TOKEN__", html)
         self.assertNotIn("https://", html)
         with self.get("/api/snapshot") as response:
@@ -63,9 +70,11 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(snapshot["workstreams"][0]["workstream"], "VCHK")
         self.assertTrue(snapshot["workstreams"][0]["nodes"])
         self.assertIn("closure", snapshot["workstreams"][0])
+        self.assertIn("closure_assessment", snapshot["workstreams"][0]["nodes"][0])
         self.assertEqual(snapshot["waiting_for_human"][0]["action"], "HUMAN_REVIEW")
         self.assertEqual(snapshot["waiting_for_human"][0]["source"], "closure")
         self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
+        self.assertEqual(snapshot["version"], self.store.dashboard_snapshot()["version"])
 
     def test_human_can_comment_and_review_without_waiting_for_closure(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]
@@ -93,6 +102,45 @@ class DashboardTest(unittest.TestCase):
                 "target": node_id, "action": "COMMENT", "reviewer": "alice", "reason": "note",
             })
         self.assertEqual(captured.exception.code, 403)
+
+    def test_human_can_review_current_node_closure_assessment(self) -> None:
+        node = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]
+        assessment = node["closure_assessment"]
+        reviewed = self.post("/api/reviews/node-closure", {
+            "node": node["id"], "assessment_digest": assessment["digest"],
+            "verdict": "approve", "reviewer": "alice",
+            "reason": "当前 NOT_SATISFIED 结论与缺失证据一致",
+        }, self.server.write_token)["result"]
+        self.assertEqual(reviewed["verdict"], "APPROVE")
+        refreshed = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]
+        self.assertEqual(refreshed["closure_assessment"]["reviews"][-1]["reviewer"], "alice")
+        # A Human review confirms the explanation; it must not fabricate evidence validity.
+        self.assertNotEqual(refreshed["status"], "VALID")
+
+    def test_disputed_node_closure_reopens_node_and_rejects_stale_assessment(self) -> None:
+        node = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]
+        assessment = node["closure_assessment"]
+        reviewed = self.post("/api/reviews/node-closure", {
+            "node": node["id"], "assessment_digest": assessment["digest"],
+            "verdict": "modify", "reviewer": "alice",
+            "reason": "满足条件没有逐项引用证据",
+        }, self.server.write_token)["result"]
+        self.assertEqual(reviewed["node_status"], "REVIEW_REQUIRED")
+        refreshed = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]
+        self.assertTrue(any(
+            item["status"] == "OPEN" and "Human MODIFY" in item["details"]
+            for item in refreshed["findings"]
+        ))
+        self.assertNotEqual(
+            assessment["digest"], refreshed["closure_assessment"]["digest"],
+        )
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/reviews/node-closure", {
+                "node": node["id"], "assessment_digest": assessment["digest"],
+                "verdict": "approve", "reviewer": "alice",
+                "reason": "attempt to reuse stale assessment",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
 
 
 if __name__ == "__main__":

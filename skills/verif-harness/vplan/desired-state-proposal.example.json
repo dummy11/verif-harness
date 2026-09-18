@@ -1,0 +1,56 @@
+{
+  "schema": "DesiredStateProposal/1",
+  "workstream": "VCOV",
+  "nodes": [
+    {
+      "key": "feature.conv.fp16.value-coverage",
+      "title": "FP16 convolution value classes and required crosses are covered",
+      "role": "coverage-goal",
+      "parent_key": "coverage-model",
+      "required": true,
+      "statement": "Every required FP16 convolution value class and mode cross identified by the reviewed coverage plan has a covered or Human-waived disposition for the current revision.",
+      "purpose": "Expose feature-level coverage gaps instead of treating one project-wide percentage as closure.",
+      "scope": [
+        "FP16 convolution input/output value classes",
+        "mode, saturation, rounding, and exception crosses marked required"
+      ],
+      "acceptance_criteria": [
+        "Each required item has non-zero hits or an approved item-specific waiver",
+        "Coverage database and analysis report identify the current design and test revision",
+        "No required item remains uncovered"
+      ],
+      "source_refs": [
+        "coverage_plan.md#fp16-convolution",
+        "feature_matrix.md#fp16-convolution"
+      ],
+      "work_content": [
+        "Implement value-class coverpoints and required crosses",
+        "Map every required coverage item to the feature matrix"
+      ],
+      "implementation_approach": [
+        "Use the reviewed coverage plan as the only source of required bins and crosses",
+        "Collect coverage in targeted and regression runs, then analyze the exported database"
+      ],
+      "deliverables": [
+        "Compiled coverage model",
+        "Coverage database and item-level hole analysis report"
+      ],
+      "progress_measures": [
+        {
+          "id": "required-items",
+          "label": "Required coverage items closed",
+          "unit": "items",
+          "target": "all required items",
+          "source": "CoverageEvidence/1 result.items"
+        }
+      ],
+      "quality_checks": [
+        "No covered item has zero hits",
+        "Every exclusion carries approved Human waiver metadata",
+        "Coverage artifacts match the current revision"
+      ],
+      "suggested_mode": "evidence",
+      "evidence_claim": "hole-analysis-evidence"
+    }
+  ]
+}
