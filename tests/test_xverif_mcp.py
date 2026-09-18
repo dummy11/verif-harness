@@ -65,7 +65,10 @@ class XverifMcpProfileTest(unittest.TestCase):
         self.assertTrue(os.access(project_launcher, os.X_OK))
         codex = (self.project / ".codex/config.toml").read_text(encoding="utf-8")
         self.assertIn("[mcp_servers.xverif]", codex)
-        self.assertIn('command = ".harness/mcp/xverif-mcp"', codex)
+        self.assertIn('command = "/bin/bash"', codex)
+        self.assertIn('args = [".harness/mcp/xverif-mcp"]', codex)
+        self.assertIn('cwd = "."', codex)
+        self.assertIn('"XVERIF_MCP_LOG_DIR"', codex)
 
     def test_configure_is_idempotent_and_can_switch_runtime(self) -> None:
         first = self.run_adapter("configure", "--runtime", "kimi")
@@ -163,6 +166,8 @@ class XverifMcpProfileTest(unittest.TestCase):
         spec.loader.exec_module(module)
         content = module.launcher_content("direct")
         self.assertIn('.deps/runtime/venv/bin/python', content)
+        self.assertIn('.deps/xverif-mcp-logs', content)
+        self.assertIn('XVERIF_MCP_LOG_DIR', content)
         self.assertIn('.agents/skills/verif-harness', content)
         self.assertNotIn(str(self.project), content)
 

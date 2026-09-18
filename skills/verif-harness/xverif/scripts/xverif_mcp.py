@@ -23,12 +23,13 @@ PROFILE_KEYS = {
 LEGACY_PROFILE_KEYS = PROFILE_KEYS - {"registration_path", "launcher"}
 PACKAGE_ROOT = Path(__file__).resolve().parents[4]
 LAUNCHER_RELATIVE = Path(".harness/mcp/xverif-mcp")
+MCP_LOG_DIR_RELATIVE = Path(".deps/xverif-mcp-logs")
 CODEX_CONFIG_RELATIVE = Path(".codex/config.toml")
 KIMI_CONFIG_RELATIVE = Path(".kimi-code/mcp.json")
 CODEX_BLOCK_BEGIN = "# BEGIN verif-harness managed xverif MCP"
 CODEX_BLOCK_END = "# END verif-harness managed xverif MCP"
 INHERITED_ENVIRONMENT_KEYS = [
-    "VERDI_HOME", "LD_LIBRARY_PATH", "PATH",
+    "VERDI_HOME", "LD_LIBRARY_PATH", "PATH", "XVERIF_MCP_LOG_DIR",
     "XVERIF_MCP_STARTUP_TIMEOUT_SEC", "XVERIF_MCP_REQUEST_TIMEOUT_SEC",
     "XDEBUG_SESSION_START_TIMEOUT_SEC", "XDEBUG_SESSION_IDLE_TIMEOUT_SEC",
 ]
@@ -125,6 +126,8 @@ def launcher_content(backend: str) -> str:
         'export XVERIF_HOME="$mcp_xverif_root"',
         'export PYTHON="$mcp_python"',
         'export PYTHONPATH="$mcp_xverif_root/xverif_mcp/src:$mcp_xverif_root"',
+        f'mcp_log_root="$mcp_workspace_root/{MCP_LOG_DIR_RELATIVE.as_posix()}"',
+        'export XVERIF_MCP_LOG_DIR="${XVERIF_MCP_LOG_DIR:-$mcp_log_root}"',
         f'export XVERIF_MCP_BACKEND="{backend}"',
         'exec "$mcp_upstream_launcher" "$@"',
         "",
@@ -152,8 +155,8 @@ def install_project_launcher(
 
 def expected_codex_server() -> dict[str, Any]:
     return {
-        "command": LAUNCHER_RELATIVE.as_posix(),
-        "args": [],
+        "command": "/bin/bash",
+        "args": [LAUNCHER_RELATIVE.as_posix()],
         "cwd": ".",
         "required": True,
         "startup_timeout_sec": 30,
@@ -164,12 +167,13 @@ def expected_codex_server() -> dict[str, Any]:
 
 def codex_block() -> str:
     server = expected_codex_server()
+    arguments = ", ".join(json.dumps(argument) for argument in server["args"])
     environment = ", ".join(json.dumps(key) for key in server["env_vars"])
     return "\n".join([
         CODEX_BLOCK_BEGIN,
         "[mcp_servers.xverif]",
         f"command = {json.dumps(server['command'])}",
-        "args = []",
+        f"args = [{arguments}]",
         f"cwd = {json.dumps(server['cwd'])}",
         "required = true",
         f"startup_timeout_sec = {server['startup_timeout_sec']}",

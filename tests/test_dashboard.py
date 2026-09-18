@@ -56,12 +56,14 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("验证项目看板", html)
         self.assertIn("项目验证总览", html)
         self.assertIn("等待人工处理", html)
-        self.assertIn("工作节点", html)
+        self.assertIn("工作项", html)
         self.assertIn("要达到什么", html)
         self.assertIn("实际进度", html)
         self.assertIn("完成条件与当前依据", html)
         self.assertIn("评审完成判断", html)
         self.assertIn("查看并评审文档", html)
+        self.assertIn("这类验证工作何时算完成", html)
+        self.assertNotIn("评审节点完成判断", html)
         self.assertNotIn("__VERIF_DASHBOARD_TOKEN__", html)
         self.assertNotIn("https://", html)
         with self.get("/api/snapshot") as response:
@@ -72,6 +74,11 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("closure", snapshot["workstreams"][0])
         self.assertIn("closure_assessment", snapshot["workstreams"][0]["nodes"][0])
         self.assertIn("next_actions", snapshot["workstreams"][0]["nodes"][0])
+        node = snapshot["workstreams"][0]["nodes"][0]
+        self.assertNotIn("current revision", node["statement"])
+        self.assertNotIn("required 对象", node["statement"])
+        self.assertIn("仅有文件", node["statement"])
+        self.assertEqual(node["progress_measures"][0]["unit"], "项")
         self.assertEqual(snapshot["waiting_for_human"][0]["action"], "HUMAN_REVIEW")
         self.assertEqual(snapshot["waiting_for_human"][0]["source"], "closure")
         self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
@@ -120,6 +127,7 @@ class DashboardTest(unittest.TestCase):
         node = next(item for item in vdoc["nodes"] if item["id"] == document["desired_id"])
         self.assertEqual(node["document"]["path"], document["path"])
         self.assertTrue(node["next_actions"])
+        self.assertIn("负责人已确认", node["acceptance_criteria"][0])
 
         selector = urllib.parse.quote(document["id"], safe="")
         with self.get(f"/api/document?selector={selector}") as response:

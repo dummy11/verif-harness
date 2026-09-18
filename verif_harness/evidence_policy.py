@@ -22,20 +22,20 @@ def requirement(label: str, *alternatives: tuple[str, str]) -> dict[str, Any]:
     }
 
 
-SOURCE = requirement("实现源码经过编译/静态检查", ("source", "xverif"))
-BUILD = requirement("编译或 elaboration 日志经过确定性检查", ("build-log", "xverif"))
-SIM = requirement("仿真日志经过确定性检查", ("simulation-log", "xverif"))
+SOURCE = requirement("实现代码已通过编译或静态检查", ("source", "xverif"))
+BUILD = requirement("编译和装载日志已通过检查", ("build-log", "xverif"))
+SIM = requirement("仿真日志已通过检查", ("simulation-log", "xverif"))
 TRACE = requirement(
-    "波形数据库或结构化事务轨迹经过分析",
+    "波形数据库或输入输出事务记录已完成分析",
     ("waveform", "wavepeek"),
     ("transaction-trace", "xverif"),
 )
-COVERAGE_DB = requirement("覆盖率数据库经过导出/一致性检查", ("coverage-database", "xverif"))
-MANIFEST = requirement("回归清单经过执行器检查", ("regression-manifest", "xverif"))
+COVERAGE_DB = requirement("覆盖率数据库已导出并通过一致性检查", ("coverage-database", "xverif"))
+MANIFEST = requirement("回归测试清单已通过执行器检查", ("regression-manifest", "xverif"))
 ANALYSIS = requirement("结构化分析结果已保存", ("analysis-report", "xverif"), ("analysis-report", "wavepeek"))
 XVERIF_ANALYSIS = requirement("结构化分析结果由 xverif 生成", ("analysis-report", "xverif"))
-DOCUMENT = requirement("工程语义文档已由 Human 评审", ("document", "human-review"))
-CONFIG = requirement("执行配置经过确定性检查", ("configuration", "xverif"))
+DOCUMENT = requirement("工程文档已经人工评审", ("document", "human-review"))
+CONFIG = requirement("运行配置已通过检查", ("configuration", "xverif"))
 
 
 EVIDENCE_POLICIES: dict[str, dict[str, dict[str, Any]]] = {

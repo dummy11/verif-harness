@@ -55,16 +55,28 @@ class Validity(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+VALIDITY_DESCRIPTIONS = {
+    Validity.VALID.value: "已有有效材料",
+    Validity.STALE.value: "内容变化后尚未重新检查",
+    Validity.INVALID.value: "当前检查未通过",
+    Validity.REVIEW_REQUIRED.value: "需要人工复核",
+    Validity.REVALIDATION_REQUIRED.value: "需要重新验证",
+    Validity.BLOCKED.value: "当前受阻",
+    Validity.WAIVED.value: "负责人已接受例外",
+    Validity.UNKNOWN.value: "尚未提供完成材料",
+}
+
+
 WORKSTREAM_STATES = {"REVIEW", "ACTIVE", "SATISFIED", "BASELINED", "PARTIALLY_STALE", "REVISE"}
 VDOC_DOCUMENTS = {
-    "verification-workflow": ("verification_workflow.md", "文档治理、评审、决策和变更失效机制已定义并评审", ["VDOC"]),
-    "verification-plan": ("verification_plan.md", "验证范围、策略、风险和验收条件已定义并评审", ["VDOC"]),
-    "feature-matrix": ("feature_matrix.md", "验证点、来源及检查/覆盖/用例映射可追溯", ["VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
-    "tb-architecture": ("tb_architecture.md", "验证组件职责、接口、数据流和构建边界已定义", ["VDOC", "VENV", "VSTIM", "VCHK", "VREG"]),
-    "reference-model": ("reference_model_spec.md", "参考模型适用性、接入与比较合同或替代检查策略已评审", ["VDOC", "VCHK"]),
-    "coverage-plan": ("coverage_plan.md", "覆盖目标、采样语义、映射和补洞规则已评审", ["VDOC", "VCOV"]),
-    "assertion-plan": ("assertion_plan.md", "断言性质、挂接和非空洞验证要求已评审", ["VDOC", "VCHK", "VCOV"]),
-    "testcase-list": ("testcase_list.md", "用例目标、场景、检查方法和执行映射已定义", ["VDOC", "VCASE", "VREG"]),
+    "verification-workflow": ("verification_workflow.md", "说明验证文档如何修改、评审和记录重要决定", ["VDOC"]),
+    "verification-plan": ("verification_plan.md", "写清要验证什么、怎样验证、主要风险和完成标准", ["VDOC"]),
+    "feature-matrix": ("feature_matrix.md", "列清每个验证点的来源、检查方法、覆盖目标和测试用例", ["VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"]),
+    "tb-architecture": ("tb_architecture.md", "说明验证环境各部分的职责、连接关系、数据流向和构建方式", ["VDOC", "VENV", "VSTIM", "VCHK", "VREG"]),
+    "reference-model": ("reference_model_spec.md", "说明参考模型用在哪里、如何接入、怎样比较结果", ["VDOC", "VCHK"]),
+    "coverage-plan": ("coverage_plan.md", "写清需要收集哪些覆盖率、何时采样以及如何处理未覆盖项", ["VDOC", "VCOV"]),
+    "assertion-plan": ("assertion_plan.md", "列清需要检查的协议和关键规则，并说明如何确认这些检查真正生效", ["VDOC", "VCHK", "VCOV"]),
+    "testcase-list": ("testcase_list.md", "列清每个测试用例要验证的内容、使用的场景、检查方法和运行方式", ["VDOC", "VCASE", "VREG"]),
 }
 
 
@@ -77,97 +89,97 @@ def vdoc_document_contract(key: str) -> dict[str, Any]:
 WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
     "VDOC": {
         "name": "Verification Documentation",
-        "objective": "形成并持续维护可评审的验证定义、架构、策略和退出标准",
+        "objective": "持续维护验证范围、环境结构、检查方法和完成标准，让相关人员可以直接评审",
         "capabilities": [(key, value[1], "plan") for key, value in VDOC_DOCUMENTS.items()],
         # VDOC 的 closure proof 是绑定到每份正文 revision 的 Human review，
         # 不是可由工具报告自动置为 PASS 的聚合 evidence node。
         "closure_evidence": [],
-        "exit": ["required 文档节点为 VALID 或 Human WAIVED", "无未处置 CRITICAL open decision"],
+        "exit": ["所有必需文档都已通过评审，或负责人已明确接受例外", "没有尚未处理的严重问题或工程决定"],
     },
     "VENV": {
         "name": "Verification Environment",
-        "objective": "建立可构建、可运行、可观察且不修改 DUT RTL 的验证环境基础",
+        "objective": "建立能够编译、运行并观察设计行为的验证环境，同时保持设计代码只读",
         "capabilities": [
-            ("interface-ready", "DUT interface 与 virtual interface 已正确连接", "add-interface"),
-            ("clock-reset-ready", "clock/reset 生成、连接和控制规则已实现", "add-harness-layer"),
-            ("topology-ready", "harness、agent、env、monitor 与配置传递关系已建立", "add-env-layer"),
-            ("build-ready", "基础验证环境可编译并完成 elaboration", "finalize-filelist-and-make"),
-            ("run-ready", "最小测试可启动、正常结束并把错误传给命令退出状态", "add-regression-runner"),
-            ("observation-ready", "DUT 输入、输出和关键状态有验证侧观测点", "add-harness-layer"),
+            ("interface-ready", "设计的输入输出接口已正确接入验证环境", "add-interface"),
+            ("clock-reset-ready", "时钟与复位能够正确启动和控制设计", "add-harness-layer"),
+            ("topology-ready", "验证环境各组件已连接，配置可以正确传递", "add-env-layer"),
+            ("build-ready", "基础验证环境可以完成编译和装载", "finalize-filelist-and-make"),
+            ("run-ready", "最小测试可以启动、正常结束，并正确报告错误", "add-regression-runner"),
+            ("observation-ready", "可以看到设计的输入、输出和关键状态", "add-harness-layer"),
         ],
         "closure_evidence": [
-            ("environment-smoke-evidence", "最小 smoke 证明 clock/reset、启动、结束和观测路径真实工作", "evidence"),
+            ("environment-smoke-evidence", "最小测试已实际运行，证明启动、复位、结束和观测链路可用", "evidence"),
         ],
-        "exit": ["required VENV 能力节点有效", "最小环境 smoke 无错误、超时且具有真实观测"],
+        "exit": ["验证环境的必需功能都已完成", "最小测试无错误、无超时，且能看到设计的实际运行情况"],
     },
     "VSTIM": {
         "name": "Stimulus",
-        "objective": "实现可复现、可组合并覆盖目标场景的激励能力",
+        "objective": "为必须验证的功能和场景提供稳定、可重复的输入",
         "capabilities": [
-            ("transaction-contract", "transaction、sequence 与 constraint 合同明确", "plan"),
-            ("stimulus-implementation", "required feature 有可复现 stimulus 实现", "add-uvc-skeleton"),
-            ("corner-scenarios", "边界、错误、并发与 backpressure 场景可生成", "add-testcase"),
+            ("transaction-contract", "写清输入数据的格式、生成顺序和限制条件", "plan"),
+            ("stimulus-implementation", "必需验证的功能都有可以重复运行的激励实现", "add-uvc-skeleton"),
+            ("corner-scenarios", "可以生成边界、错误、并发和流控场景", "add-testcase"),
         ],
         "closure_evidence": [
-            ("reachability-evidence", "VSTIM probe 证明 required scenario 已在 DUT 输入接受边界可达", "reachability"),
-            ("determinism-evidence", "相同 test、seed 与配置的复跑具有一致 stimulus digest", "reachability"),
+            ("reachability-evidence", "运行结果证明目标场景真正到达了设计的输入端", "reachability"),
+            ("determinism-evidence", "使用相同测试、随机种子和配置重新运行时，生成的输入一致", "reachability"),
         ],
-        "exit": ["required stimulus 节点有效", "目标场景有 VSTIM 自有且新鲜的可达性与确定性证据"],
+        "exit": ["所有必需激励都已实现", "已实际观察到目标场景进入设计，并且相同配置可以重复产生一致输入"],
     },
     "VCHK": {
         "name": "Checking",
-        "objective": "建立可信的 comparison、reference model、scoreboard 与 assertion",
+        "objective": "确认设计结果是否正确，并能在出错时指出具体差异",
         "capabilities": [
-            ("compare-policy", "数值、时序、顺序、异常与容差策略明确", "plan"),
-            ("reference-model", "reference-model adapter 与 DUT 边界可验证", "add-refmodel-bridge"),
-            ("scoreboard", "scoreboard/checker 对 required feature 生效", "complete-scoreboard"),
-            ("assertions", "协议与关键不变量有 assertion 和非空洞证据", "add-assertion-skeleton"),
+            ("compare-policy", "写清数值、时间、顺序、异常和误差容许范围", "plan"),
+            ("reference-model", "参考模型已接入，其输入输出边界可以检查", "add-refmodel-bridge"),
+            ("scoreboard", "结果检查程序已实际检查必需验证的功能", "complete-scoreboard"),
+            ("assertions", "协议和关键规则已建立自动检查，并证明这些检查在运行时真正触发", "add-assertion-skeleton"),
         ],
         "closure_evidence": [
-            ("reference-model-evidence", "reference model 已实际 engaged 且比较无 mismatch/residual", "evidence"),
-            ("scoreboard-evidence", "scoreboard 已执行非零比较且无 mismatch/residual", "evidence"),
-            ("assertion-evidence", "required assertion 已编译、挂接、激活且无 failure/vacuity", "evidence"),
+            ("reference-model-evidence", "参考模型已在仿真中实际使用，比较结果没有未解释的差异", "evidence"),
+            ("scoreboard-evidence", "结果检查程序已完成实际比较，没有未解释的差异", "evidence"),
+            ("assertion-evidence", "必需的自动规则检查已编译、接入并在运行时触发，没有失败或未触发问题", "evidence"),
         ],
-        "exit": ["required checking path 有确定性 evidence", "无未解释 checker mismatch"],
+        "exit": ["必需的结果检查都有实际运行记录", "没有尚未解释的结果差异"],
     },
     "VCOV": {
         "name": "Coverage",
-        "objective": "建立可追溯 coverage model 并持续分析、关闭 coverage hole",
+        "objective": "明确哪些功能和代码必须覆盖，并跟踪、处理尚未覆盖的部分",
         "capabilities": [
-            ("coverage-model", "functional/code/assertion coverage 目标可追溯", "add-coverage-skeleton"),
-            ("coverage-collection", "coverage 数据可重复收集并关联 revision", "xverif"),
+            ("coverage-model", "功能、代码和规则检查的覆盖率目标都能找到来源", "add-coverage-skeleton"),
+            ("coverage-collection", "覆盖率数据可以重复收集，并明确对应的代码版本", "xverif"),
         ],
         "closure_evidence": [
-            ("coverage-collection-evidence", "当前 revision 的 coverage 数据库完整且无 merge/stale shard 错误", "evidence"),
-            ("hole-analysis-evidence", "coverage hole 已补测、证明不可达或 Human waiver", "evidence"),
+            ("coverage-collection-evidence", "当前代码版本的覆盖率数据库完整，合并时没有遗漏或过期数据", "evidence"),
+            ("hole-analysis-evidence", "未覆盖项已通过增加测试、证明不可达或负责人接受例外得到处理", "evidence"),
         ],
-        "exit": ["required coverage goal 有新鲜证据", "所有 required hole 已处置"],
+        "exit": ["所有必需覆盖目标都有当前版本的数据", "所有必须处理的未覆盖项都已完成分析和处理"],
     },
     "VCASE": {
         "name": "Testcase",
-        "objective": "把 verification feature 组合成可重复执行、可诊断的 testcase",
+        "objective": "把验证目标组织成可重复运行、出错后便于定位的测试用例",
         "capabilities": [
-            ("case-matrix", "feature/scenario 到 testcase 的映射完整", "plan"),
-            ("case-implementation", "required testcase 与 virtual sequence 已实现", "add-testcase"),
+            ("case-matrix", "每个必需验证的功能和场景都有对应测试用例", "plan"),
+            ("case-implementation", "必需的测试用例和场景组合都已实现", "add-testcase"),
         ],
         "closure_evidence": [
-            ("targeted-evidence", "新增 testcase 通过 targeted run", "xverif"),
+            ("targeted-evidence", "新增测试用例已单独运行并通过", "xverif"),
         ],
-        "exit": ["required feature 无 testcase 缺口", "新增 case 有新鲜通过证据"],
+        "exit": ["每个必需验证的功能都有对应用例", "新增用例都有当前代码版本的通过记录"],
     },
     "VREG": {
         "name": "Regression",
-        "objective": "执行可复现 regression、聚类失败、调试并刷新验证证据",
+        "objective": "批量运行测试，汇总失败结果，记录问题处理进展，并确保结论来自当前代码版本",
         "capabilities": [
-            ("regression-policy", "smoke/nightly/full、seed、timeout、rerun 与 known-fail policy 明确", "add-regression-runner"),
-            ("executor-ready", "compile/run/collect 基础执行器已配置并通过自检", "add-regression-runner"),
+            ("regression-policy", "写清快速、每日和完整回归的用例范围、随机种子、超时、重跑和已知失败处理规则", "add-regression-runner"),
+            ("executor-ready", "编译、运行和收集结果的工具已配置并通过自检", "add-regression-runner"),
         ],
         "closure_evidence": [
-            ("execution-evidence", "required regression 可确定性执行并保留 revision 信息", "evidence"),
-            ("triage-evidence", "失败已聚类并具有 same-seed rerun 与 disposition", "evidence"),
-            ("fresh-evidence", "required verification node 关联当前 revision 的新鲜 evidence", "xverif"),
+            ("execution-evidence", "必需的回归测试可以重复执行，并保留对应的代码版本", "evidence"),
+            ("triage-evidence", "失败已分类，使用相同随机种子重跑，并记录处理结论", "evidence"),
+            ("fresh-evidence", "必需验证项都已关联到当前代码版本的最新结果", "xverif"),
         ],
-        "exit": ["无未处置 P0/P1 failure", "required evidence 与当前 revision 一致"],
+        "exit": ["没有尚未处理的最高或高优先级失败", "必需验证结果都对应当前代码版本"],
     },
 }
 
@@ -193,38 +205,38 @@ PROJECT_NODE_ROLES: dict[str, set[str]] = {
 }
 WORKSTREAM_DEFINITION_CONTEXT: dict[str, dict[str, Any]] = {
     "VDOC": {
-        "purpose": "让后续实现、证据和评审都能追溯到经过 Human 确认的工程语义。",
-        "scope": ["当前 verification 文档 revision", "文档内 required 范围、决定、风险和退出条件"],
-        "source_refs": ["bootstrap inventory", "Human decisions", "已声明的只读 RTL/spec 输入"],
+        "purpose": "让后续的实现、检查和评审都能找到已经由负责人确认的文档依据。",
+        "scope": ["当前版本的验证文档", "文档中的验证范围、重要决定、风险和完成标准"],
+        "source_refs": ["项目初始信息", "负责人作出的工程决定", "已指定的只读设计代码和规格文档"],
     },
     "VENV": {
-        "purpose": "保证验证代码能够连接、启动和观察 DUT，为其他 Workstream 提供可信执行基础。",
-        "scope": ["所有 required DUT interface 与 clock/reset domain", "harness、agent、env、build、run 和 observation path"],
+        "purpose": "保证验证代码能够连接、启动和观察被验证设计，为其他工作提供可信的运行基础。",
+        "scope": ["所有必需的设计接口、时钟和复位", "验证环境组件、构建、运行和观测链路"],
         "source_refs": ["verification_plan.md", "tb_architecture.md", "feature_matrix.md"],
     },
     "VSTIM": {
-        "purpose": "保证 required feature/scenario 不只存在于计划中，而能被稳定生成并到达 DUT 接收边界。",
-        "scope": ["feature_matrix 中 required feature/scenario", "transaction、sequence、constraint、corner case 与重放配置"],
+        "purpose": "保证必需验证的功能和场景不只写在计划里，而是能稳定生成并真正进入设计。",
+        "scope": ["验证点清单中必须验证的功能和场景", "输入数据、生成顺序、限制条件、边界场景和重放配置"],
         "source_refs": ["verification_plan.md", "feature_matrix.md", "testcase_list.md"],
     },
     "VCHK": {
-        "purpose": "保证 DUT 行为通过明确、实际启用且非空洞的 comparison、scoreboard、reference model 或 assertion 检查。",
-        "scope": ["required feature 的预期结果、顺序、时序、异常和容差", "checker/reference-model/assertion 的实现与运行路径"],
+        "purpose": "保证设计的行为会被明确且真正启用的结果比对、参考模型或规则检查发现问题。",
+        "scope": ["必需验证功能的预期结果、顺序、时间、异常和允许误差", "结果检查、参考模型和自动规则检查的实现与运行链路"],
         "source_refs": ["verification_plan.md", "reference_model_spec.md", "assertion_plan.md", "feature_matrix.md"],
     },
     "VCOV": {
-        "purpose": "把每个 required coverage goal 与采样实现、数据库结果、缺口处理和 Human waiver 建立可追溯关系。",
-        "scope": ["coverage_plan 中 required functional/code/assertion goal", "采样、收集、合并、hole analysis 和 exclusion/waiver"],
+        "purpose": "把每个必须完成的覆盖率目标与采样实现、数据库结果和未覆盖项的处理记录对应起来。",
+        "scope": ["覆盖率计划中必须完成的功能、代码和规则检查目标", "采样、收集、合并、未覆盖项分析和例外处理"],
         "source_refs": ["coverage_plan.md", "feature_matrix.md", "assertion_plan.md"],
     },
     "VCASE": {
-        "purpose": "保证 required feature/scenario 有可运行、可诊断且已注册的 testcase/virtual sequence 承载。",
-        "scope": ["feature-to-case mapping", "required testcase、virtual sequence、配置和 targeted run"],
+        "purpose": "保证必需验证的功能和场景都有可运行、便于定位问题的测试用例。",
+        "scope": ["功能和测试用例的对应关系", "必需的测试用例、场景组合、配置和单独运行结果"],
         "source_refs": ["testcase_list.md", "feature_matrix.md", "verification_plan.md"],
     },
     "VREG": {
-        "purpose": "保证回归执行可复现、失败可追踪，并且 Closure 使用的是当前 revision 的新鲜证据。",
-        "scope": ["required regression profile、seed、timeout、rerun 与 known-fail policy", "run manifest、失败聚类和证据刷新范围"],
+        "purpose": "保证批量测试可以重复运行、失败可以追踪，并且完成判断使用的是当前代码版本的最新结果。",
+        "scope": ["必需的回归配置、随机种子、超时、重跑和已知失败处理规则", "运行清单、失败分类和需要刷新的验证结果"],
         "source_refs": ["verification_workflow.md", "verification_plan.md", "testcase_list.md"],
     },
 }
@@ -237,50 +249,50 @@ def desired_definition(
     """Build an explicit review candidate without inventing project-specific facts."""
     context = WORKSTREAM_DEFINITION_CONTEXT[workstream]
     requirements = contract.get("requirements", contract.get("required", []))
-    criteria = ["目标范围和来源引用已经过当前 Workstream revision 的 Human Review"]
+    criteria = ["负责人已确认本轮工作的范围和依据"]
     for requirement in requirements:
         label = requirement.get("label") if isinstance(requirement, dict) else str(requirement)
         if label:
             criteria.append(label)
-    criteria.append("所有显式 prerequisite 节点均为 VALID 或具有明确 Human waiver")
+    criteria.append("所有前置工作都已完成，或负责人已明确接受例外")
     return {
-        "statement": f"{title}。该结论必须针对当前 revision 的 required 对象独立成立，不能仅以文件存在或工具退出码代替。",
+        "statement": f"{title}。需要检查实际内容和支持材料；仅有文件，或某个命令运行成功，都不能说明这项工作已经完成。",
         "purpose": context["purpose"],
         "scope": list(context["scope"]),
         "acceptance_criteria": criteria,
         "source_refs": list(context["source_refs"]),
         "work_content": [
-            f"明确 `{key}` 对应的 required 项目对象和边界",
-            f"按 `{role}` 职责完成实现或工程内容",
-            "收集并校验本节点 evidence contract 要求的原始产物",
+            "列出这项工作具体包含哪些对象，以及不包含哪些内容",
+            "完成本节点所描述的实际工作",
+            "收集能够证明工作结果的原始材料，并检查材料是否完整",
         ],
         "implementation_approach": [
-            "Agent 读取来源文档和当前 Verification Knowledge Model 后提出项目化内容",
-            "Human 评审范围、实现方法和接受条件",
-            "Agent/工程工具执行；Engine 只校验证据格式、来源和依赖",
+            "Agent 读取项目文档和已登记状态，起草适用于当前项目的内容",
+            "负责人确认工作范围、实现方法和完成标准",
+            "Agent 或工程工具执行工作；verif-harness 检查材料格式、来源和前置关系",
         ],
         "deliverables": [
-            f"{title} 对应的可评审工程产物",
-            "满足 evidence contract 的结构化证据和原始产物引用",
+            f"{title} 对应的可评审实际成果",
+            "完成判断所需的原始材料和分析结果",
         ],
         "progress_measures": [{
             "id": "required-objects",
-            "label": "required 对象满足数量",
-            "unit": "count",
-            "target": "由已评审项目文档确定",
-            "source": "结构化 evidence validation facts",
+            "label": "已完成的必需项数量",
+            "unit": "项",
+            "target": "以已经确认的项目文档为准",
+            "source": "已登记的检查结果",
         }],
         "quality_checks": [
-            "满足本节点全部 acceptance criteria",
-            "证据属于当前 revision，且没有未处理 blocker/finding",
-            "Human Review 未提出尚未解决的修改要求",
+            "所有完成条件都已满足",
+            "支持材料对应当前版本，且没有尚未处理的问题",
+            "人工评审没有留下尚未完成的修改要求",
         ],
         "definition_origin": origin,
         "definition_status": "REVIEW_CANDIDATE",
         "role_description": (
-            "汇总能力节点；项目级对象应作为其子节点展开"
+            "这是一类通用工作的汇总；还需要按本项目的具体功能或场景继续细分"
             if role == "capability" else
-            "完成条件证据节点；原始日志、波形或数据库作为 evidence 挂载"
+            "汇总完成这项工作所需的运行结果；原始日志、波形或数据库作为支持材料"
         ),
     }
 
@@ -1291,12 +1303,12 @@ class ProjectStore:
                         row["document"] = vdoc_document_contract(key)
                     row["evidence_contract"] = {
                         "version": "DocumentReviewPolicy/1", "claim": "document-review",
-                        "required": ["current document SHA-256", "Human APPROVE review"],
+                        "required": ["当前文档内容与本次评审一致", "负责人已明确认可当前正文"],
                     }
                 elif name == "VDOC":
                     row["evidence_contract"] = {
                         "version": "DocumentReviewPolicy/1", "claim": "document-review",
-                        "required": ["review artifact", "Human approval provenance"],
+                        "required": ["已保存当前文档的评审记录", "评审记录包含负责人和明确结论"],
                     }
                 else:
                     contract = policy_for(name, evidence_claim)
@@ -1791,22 +1803,22 @@ class ProjectStore:
         reasons: list[str] = []
         if node_id not in current_ids:
             conclusion = "STALE_REVISION"
-            reasons.append("节点不属于当前 Workstream revision")
+            reasons.append("该节点来自旧版本，不属于当前工作计划")
         elif dependency_blockers:
             conclusion = "BLOCKED"
-            reasons.append("存在尚未满足的 prerequisite")
+            reasons.append("有前置工作尚未完成")
         elif row["status"] not in {Validity.VALID.value, Validity.WAIVED.value}:
             conclusion = "NOT_SATISFIED"
-            reasons.append(f"节点状态为 {row['status']}")
+            reasons.append(VALIDITY_DESCRIPTIONS.get(row["status"], "这项工作尚未完成"))
         elif open_findings:
             conclusion = "REVIEW_REQUIRED"
-            reasons.append("存在尚未处理的 Finding")
+            reasons.append("还有尚未处理的问题")
         elif missing_definition:
             conclusion = "REVIEW_REQUIRED"
-            reasons.append("节点定义字段不完整: " + ", ".join(missing_definition))
+            reasons.append("缺少说明当前目标、工作范围或完成条件的必要信息")
         else:
             conclusion = "CLOSED"
-            reasons.append("节点为 VALID/WAIVED、依赖满足、定义完整且无开放 Finding")
+            reasons.append("完成材料有效，前置工作已完成，且没有待处理问题")
 
         contract_labels = {
             item.get("label") for item in data.get("evidence_contract", {}).get("requirements", [])
@@ -1818,19 +1830,19 @@ class ProjectStore:
             if criterion in contract_labels:
                 status = "SUPPORTED" if latest_pass and not latest_pass["blockers"] else "NOT_SUPPORTED"
                 basis = (
-                    f"证据 {latest_pass['id']}（{latest_pass['kind']}）已通过专用校验"
-                    if status == "SUPPORTED" else "当前没有通过专用校验且无 blocker 的证据"
+                    f"已有经过检查的支持材料：{latest_pass['source']}"
+                    if status == "SUPPORTED" else "还没有找到通过专用检查且没有问题的支持材料"
                 )
-            elif "prerequisite" in criterion:
+            elif "prerequisite" in criterion or "前置工作" in criterion:
                 status = "SUPPORTED" if not dependency_blockers else "NOT_SUPPORTED"
                 basis = (
-                    "所有已登记前置节点均已满足"
+                    "所有已登记的前置工作都已完成"
                     if status == "SUPPORTED" else
-                    "尚未满足: " + ", ".join(item["title"] for item in dependency_blockers)
+                    "还需要先完成：" + "、".join(item["title"] for item in dependency_blockers)
                 )
             else:
                 status = "HUMAN_REVIEW_REQUIRED"
-                basis = "该条件包含工程语义，当前固定规则不能代替人工判断"
+                basis = "这项内容需要负责人阅读实际文档或结果后确认"
             acceptance_results.append({"criterion": criterion, "status": status, "basis": basis})
         observed_times = [row["updated_at"]]
         observed_times.extend(item["updated_at"] for item in dependencies)
@@ -2977,14 +2989,14 @@ class ProjectStore:
                     actions.append({
                         "kind": "PLAN_PREREQUISITE", "target": desired["id"], "priority": 3,
                         "executor": "reasoning", "suggested_mode": "plan",
-                        "reason": "默认 prerequisite 尚未规划；先形成其当前 revision desired node",
+                        "reason": "这项工作依赖的前置目标还没有纳入当前计划",
                         "blocked_by": [f"workstream:{ws}:desired:{key}" for ws, key in missing_dependencies],
                     })
                 elif desired.get("required", True) and blockers:
                     actions.append({
                         "kind": "WAIT_FOR_DEPENDENCY", "target": desired["id"], "priority": 4,
                         "executor": "deterministic", "suggested_mode": "closure",
-                        "reason": "仅等待显式 prerequisite node，不等待其整个 Workstream",
+                        "reason": "请先完成下方列出的前置目标",
                         "blocked_by": [item["id"] for item in blockers],
                     })
                 elif desired.get("required", True) and status not in {Validity.VALID.value, Validity.WAIVED.value}:
@@ -2995,7 +3007,8 @@ class ProjectStore:
                     else:
                         kind, executor = "SATISFY_DESIRED_STATE", "reasoning"
                     actions.append({"kind": kind, "target": desired["id"], "priority": 10, "executor": executor,
-                                    "suggested_mode": desired.get("suggested_mode"), "reason": f"required desired-state 当前为 {status}"})
+                                    "suggested_mode": desired.get("suggested_mode"),
+                                    "reason": VALIDITY_DESCRIPTIONS.get(status, "这项工作尚未完成")})
             for index, blocker in enumerate(self._executable_exit_blockers(connection, name, current_nodes), 1):
                 actions.append({
                     "kind": "EXIT_CRITERION_BLOCKED",
@@ -3010,7 +3023,8 @@ class ProjectStore:
                                 "executor": "reasoning", "suggested_mode": "reason", "reason": row["details"]})
             if plan["lifecycle"] in {"REVIEW", "REVISE"}:
                 actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
-                                "executor": "human", "suggested_mode": "plan", "reason": f"lifecycle 为 {plan['lifecycle']}"})
+                                "executor": "human", "suggested_mode": "plan",
+                                "reason": "当前工作计划等待负责人评审"})
             actions.sort(key=lambda item: (item["priority"], item["target"], item["kind"]))
             unique_actions: list[dict[str, Any]] = []
             seen_action_ids: set[str] = set()
@@ -3184,6 +3198,10 @@ class ProjectStore:
                 "workstream": plan["workstream"], "ready": False,
                 "lifecycle": plan["lifecycle"], "actions": [],
             })
+            current_template_titles = {
+                key: title for key, title, _mode, _role
+                in template_nodes(WORKSTREAM_TEMPLATES[plan["workstream"]])
+            }
             current_desired_ids.update(desired_ids)
             for desired in plan["desired_state"]:
                 node = nodes.get(desired["id"], {
@@ -3202,8 +3220,24 @@ class ProjectStore:
                     node_evidence[-1].get("data", {}).get("validation", {})
                     if node_evidence else {}
                 )
+                display_definition = desired
+                if (
+                    desired.get("definition_origin") == "template"
+                    and desired.get("key") in current_template_titles
+                ):
+                    display_title = current_template_titles[desired["key"]]
+                    display_definition = {
+                        **desired,
+                        **desired_definition(
+                            plan["workstream"], desired["key"], display_title,
+                            desired.get("role", "capability"),
+                            desired.get("evidence_contract") or {}, "template",
+                        ),
+                        "title": display_title,
+                    }
                 desired_nodes.append({
                     **node,
+                    "title": display_definition.get("title", node["title"]),
                     "key": desired.get("key"),
                     "role": desired.get("role", "capability"),
                     "required": desired.get("required", True),
@@ -3212,17 +3246,17 @@ class ProjectStore:
                     "evidence_contract": desired.get("evidence_contract"),
                     "parent_key": desired.get("parent_key"),
                     "parent_id": desired.get("parent_id"),
-                    "statement": desired.get("statement"),
-                    "purpose": desired.get("purpose"),
-                    "scope": desired.get("scope", []),
-                    "acceptance_criteria": desired.get("acceptance_criteria", []),
-                    "source_refs": desired.get("source_refs", []),
-                    "work_content": desired.get("work_content", []),
-                    "implementation_approach": desired.get("implementation_approach", []),
-                    "deliverables": desired.get("deliverables", []),
-                    "progress_measures": desired.get("progress_measures", []),
+                    "statement": display_definition.get("statement"),
+                    "purpose": display_definition.get("purpose"),
+                    "scope": display_definition.get("scope", []),
+                    "acceptance_criteria": display_definition.get("acceptance_criteria", []),
+                    "source_refs": display_definition.get("source_refs", []),
+                    "work_content": display_definition.get("work_content", []),
+                    "implementation_approach": display_definition.get("implementation_approach", []),
+                    "deliverables": display_definition.get("deliverables", []),
+                    "progress_measures": display_definition.get("progress_measures", []),
                     "progress_observation": latest_validation.get("facts", {}),
-                    "quality_checks": desired.get("quality_checks", []),
+                    "quality_checks": display_definition.get("quality_checks", []),
                     "definition_origin": desired.get("definition_origin"),
                     "definition_status": desired.get("definition_status"),
                     "role_description": desired.get("role_description"),
