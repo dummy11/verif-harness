@@ -153,20 +153,25 @@ def install_project_launcher(
     return target
 
 
-def expected_codex_server() -> dict[str, Any]:
+def expected_codex_server(project_root: Path) -> dict[str, Any]:
+    package_checkout = project_root.resolve() == PACKAGE_ROOT.resolve()
     return {
         "command": "/bin/bash",
         "args": [LAUNCHER_RELATIVE.as_posix()],
-        "cwd": ".",
-        "required": True,
+        # Desktop resolves relative MCP paths against its host process cwd. A
+        # consuming project therefore needs an installed absolute cwd. The
+        # package checkout keeps its tracked config portable and the in-tree
+        # server optional so MCP development cannot prevent opening the repo.
+        "cwd": "." if package_checkout else str(project_root.resolve()),
+        "required": not package_checkout,
         "startup_timeout_sec": 30,
         "tool_timeout_sec": 300,
         "env_vars": INHERITED_ENVIRONMENT_KEYS,
     }
 
 
-def codex_block() -> str:
-    server = expected_codex_server()
+def codex_block(project_root: Path) -> str:
+    server = expected_codex_server(project_root)
     arguments = ", ".join(json.dumps(argument) for argument in server["args"])
     environment = ", ".join(json.dumps(key) for key in server["env_vars"])
     return "\n".join([
@@ -175,7 +180,7 @@ def codex_block() -> str:
         f"command = {json.dumps(server['command'])}",
         f"args = [{arguments}]",
         f"cwd = {json.dumps(server['cwd'])}",
-        "required = true",
+        f"required = {'true' if server['required'] else 'false'}",
         f"startup_timeout_sec = {server['startup_timeout_sec']}",
         f"tool_timeout_sec = {server['tool_timeout_sec']}",
         f"env_vars = [{environment}]",
@@ -188,7 +193,7 @@ def register_codex(project_root: Path) -> Path:
     if target.is_symlink():
         fail(f"refusing to follow Codex config symlink: {target}")
     existing = target.read_text(encoding="utf-8") if target.is_file() else ""
-    block = codex_block()
+    block = codex_block(project_root)
     has_begin = CODEX_BLOCK_BEGIN in existing
     has_end = CODEX_BLOCK_END in existing
     if has_begin != has_end:
@@ -252,7 +257,7 @@ def validate_runtime_registration(project_root: Path, profile: dict[str, Any]) -
             observed = registration.read_text(encoding="utf-8")
         except OSError:
             observed = ""
-        if codex_block() not in observed:
+        if codex_block(project_root) not in observed:
             blockers.append("Codex project xverif MCP registration is missing or has drifted")
     else:
         try:

@@ -67,8 +67,20 @@ class XverifMcpProfileTest(unittest.TestCase):
         self.assertIn("[mcp_servers.xverif]", codex)
         self.assertIn('command = "/bin/bash"', codex)
         self.assertIn('args = [".harness/mcp/xverif-mcp"]', codex)
-        self.assertIn('cwd = "."', codex)
+        self.assertIn(f'cwd = "{self.project.resolve()}"', codex)
+        self.assertIn("required = true", codex)
         self.assertIn('"XVERIF_MCP_LOG_DIR"', codex)
+
+    def test_package_checkout_keeps_in_tree_mcp_optional_and_portable(self) -> None:
+        spec = importlib.util.spec_from_file_location("xverif_mcp_package_test", ADAPTER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        server = module.expected_codex_server(ROOT)
+        self.assertEqual(server["cwd"], ".")
+        self.assertFalse(server["required"])
+        self.assertIn("required = false", module.codex_block(ROOT))
 
     def test_configure_is_idempotent_and_can_switch_runtime(self) -> None:
         first = self.run_adapter("configure", "--runtime", "kimi")
