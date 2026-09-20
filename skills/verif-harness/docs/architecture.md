@@ -39,7 +39,16 @@ structured `evidence`, `reachability`, document-governance, change, and advanced
 The local Dashboard is a presentation and Human-control surface over that same
 database, not another source of truth or a sixth engine. It exposes a versioned
 snapshot and server-sent updates for Workstreams, nodes, closure, evidence,
-activities, and Human actions. Writes use a per-process token, bind only to the
+activities, Agent questions, and Human actions. An Agent question is a durable,
+node- or Workstream-bound checkpoint with explicit options and an optional recommendation.
+The project overview keeps project/DUT metadata collapsed and exposes summary-only entries
+for Agent interaction, Human pending items, verification Workstreams, and verification
+risks/changes. Each entry opens a dedicated tab. The Agent interaction summary shows the
+Activity state; its dedicated page lets the Human answer without opening an interactive
+server shell. The Agent reads the
+stored answer and resumes its Activity. A question answer is engineering input only: it
+cannot approve a plan, validate a node, create evidence, waive a gap, or freeze a baseline.
+Writes use a per-process token, bind only to the
 loopback interface, and call the same ProjectStore review/waiver/freeze APIs.
 Activity records communicate current Agent/tool progress but never mutate node
 validity; evidence validators and explicit Human gates remain authoritative.

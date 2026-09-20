@@ -159,6 +159,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 str(body.get("id", "")), str(body.get("reviewer", "")),
                 str(body.get("resolution", "")), str(body.get("status", "RESOLVED")),
             )
+        if path == "/api/agent-questions/answer":
+            return store.answer_agent_question(
+                str(body.get("id", "")), str(body.get("option", "")),
+                str(body.get("reviewer", "")), str(body.get("answer_text", "")),
+            )
         if path == "/api/reviews/workstream":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:

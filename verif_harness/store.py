@@ -36,6 +36,7 @@ ACTIVITY_STATUSES = {
 }
 HUMAN_ACTIONS = {"COMMENT", "REQUEST_CHANGE", "CLARIFY", "PRIORITIZE", "ACKNOWLEDGE"}
 HUMAN_ACTION_STATUSES = {"OPEN", "RECORDED", "RESOLVED", "SUPERSEDED"}
+AGENT_QUESTION_STATUSES = {"OPEN", "ANSWERED", "CANCELLED", "SUPERSEDED"}
 AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
 AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
@@ -869,6 +870,15 @@ CREATE TABLE IF NOT EXISTS human_actions (
   action TEXT NOT NULL, status TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL,
   payload_json TEXT NOT NULL, resolved_by TEXT, resolution TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_questions (
+  id TEXT PRIMARY KEY, target TEXT NOT NULL, target_type TEXT NOT NULL,
+  workstream TEXT NOT NULL, node_id TEXT,
+  prompt TEXT NOT NULL, context TEXT NOT NULL, options_json TEXT NOT NULL,
+  recommended_option TEXT, status TEXT NOT NULL, blocking INTEGER NOT NULL,
+  asked_by TEXT NOT NULL, activity_id TEXT,
+  answer_option TEXT, answer_text TEXT, answered_by TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, answered_at TEXT
 );
 CREATE TABLE IF NOT EXISTS node_closure_reviews (
   id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
@@ -1779,6 +1789,226 @@ class ProjectStore:
                 (selected, reviewer.strip(), resolution.strip(), now(), action_id),
             )
         return self.human_action(action_id)
+
+    @staticmethod
+    def _question_options(
+        options: Iterable[dict[str, Any]], recommended_option: str | None = None,
+    ) -> tuple[list[dict[str, str]], str | None]:
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for raw in options:
+            if not isinstance(raw, dict):
+                raise HarnessError("agent question option 必须是 object")
+            option_id = str(raw.get("id", "")).strip()
+            label = str(raw.get("label", "")).strip()
+            description = str(raw.get("description", "")).strip()
+            if not option_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", option_id):
+                raise HarnessError("agent question option id 只能包含字母、数字、点、下划线和连字符")
+            if option_id.lower() == "other":
+                raise HarnessError("agent question option id 不能使用保留值 other")
+            if option_id in seen:
+                raise HarnessError(f"agent question option id 重复: {option_id}")
+            if not label:
+                raise HarnessError("agent question option label 不能为空")
+            seen.add(option_id)
+            normalized.append({"id": option_id, "label": label, "description": description})
+        if not 2 <= len(normalized) <= 8:
+            raise HarnessError("agent question 必须提供 2 到 8 个选项")
+        recommended = recommended_option.strip() if recommended_option else None
+        if recommended and recommended not in seen:
+            raise HarnessError("recommended option 必须引用已登记的 option id")
+        return normalized, recommended
+
+    @staticmethod
+    def _agent_question_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        result = dict(row)
+        result["options"] = json.loads(result.pop("options_json"))
+        result["blocking"] = bool(result["blocking"])
+        return result
+
+    def ask_agent_question(
+        self, target: str, prompt: str, options: Iterable[dict[str, Any]],
+        recommended_option: str | None = None, context: str = "",
+        asked_by: str = "Agent", blocking: bool = True,
+        activity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Persist one Agent question so Dashboard Human input survives session boundaries."""
+        self.require()
+        if not prompt.strip() or not asked_by.strip():
+            raise HarnessError("agent question prompt 和 asked_by 不能为空")
+        normalized_options, recommended = self._question_options(options, recommended_option)
+        raw_target = target.strip()
+        question_id = f"question:{uuid.uuid4().hex[:12]}"
+        timestamp = now()
+        with self.connect() as connection:
+            node = connection.execute(
+                "SELECT id,workstream FROM nodes WHERE id=?", (raw_target,),
+            ).fetchone()
+            workstream_name = (
+                raw_target.split(":", 1)[1].upper()
+                if raw_target.lower().startswith("workstream:")
+                and raw_target.count(":") == 1 else raw_target.upper()
+            )
+            workstream = connection.execute(
+                "SELECT name FROM workstreams WHERE name=?", (workstream_name,),
+            ).fetchone()
+            if node is not None:
+                normalized_target = node["id"]
+                target_type = "node"
+                node_id = node["id"]
+                question_workstream = node["workstream"]
+            elif workstream is not None:
+                normalized_target = workstream["name"]
+                target_type = "workstream"
+                node_id = None
+                question_workstream = workstream["name"]
+            else:
+                raise HarnessError(f"agent question target 不是已知 node 或 Workstream: {target}")
+
+            if activity_id:
+                activity = connection.execute(
+                    "SELECT * FROM activities WHERE id=?", (activity_id,),
+                ).fetchone()
+                if activity is None:
+                    raise HarnessError(f"未知 activity: {activity_id}")
+                if activity["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
+                    raise HarnessError("已结束的 Activity 不能提出等待回答的问题")
+                if activity["workstream"] != question_workstream:
+                    raise HarnessError("agent question 与 Activity 必须属于同一 Workstream")
+                if node_id and activity["node_id"] != node_id:
+                    raise HarnessError("节点级 agent question 必须绑定同一节点的 Activity")
+
+            connection.execute(
+                """INSERT INTO agent_questions
+                   (id,target,target_type,workstream,node_id,prompt,context,options_json,
+                    recommended_option,status,blocking,asked_by,activity_id,
+                    answer_option,answer_text,answered_by,created_at,updated_at,answered_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (question_id, normalized_target, target_type, question_workstream, node_id,
+                 prompt.strip(), context.strip(), json_text(normalized_options), recommended,
+                 "OPEN", int(blocking), asked_by.strip(), activity_id,
+                 None, None, None, timestamp, timestamp, None),
+            )
+            if activity_id and blocking:
+                connection.execute(
+                    """UPDATE activities SET status='WAITING_FOR_HUMAN',message=?,updated_at=?
+                       WHERE id=?""",
+                    (f"等待 Human 回答：{prompt.strip()}", timestamp, activity_id),
+                )
+        return self.agent_question(question_id)
+
+    def agent_question(self, question_id: str) -> dict[str, Any]:
+        self.require()
+        self.ensure_dashboard_schema()
+        with self.read_connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_questions WHERE id=?", (question_id,),
+            ).fetchone()
+        if row is None:
+            raise HarnessError(f"未知 agent question: {question_id}")
+        return self._agent_question_row(row)
+
+    def agent_questions(
+        self, status: str | None = None, target: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.require()
+        self.ensure_dashboard_schema()
+        filters: list[str] = []
+        values: list[Any] = []
+        if status:
+            selected = status.upper()
+            if selected not in AGENT_QUESTION_STATUSES:
+                raise HarnessError(
+                    "agent question status 必须是 " + ", ".join(sorted(AGENT_QUESTION_STATUSES))
+                )
+            filters.append("status=?")
+            values.append(selected)
+        if target:
+            normalized = (
+                target.split(":", 1)[1]
+                if target.lower().startswith("workstream:") and target.count(":") == 1
+                else target
+            )
+            filters.append("target=?")
+            values.append(normalized.upper() if normalized.upper() in WORKSTREAM_TEMPLATES else normalized)
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        with self.read_connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM agent_questions" + where + " ORDER BY created_at DESC", values,
+            ).fetchall()
+        return [self._agent_question_row(row) for row in rows]
+
+    def answer_agent_question(
+        self, question_id: str, option_id: str, answered_by: str,
+        answer_text: str = "",
+    ) -> dict[str, Any]:
+        self.require()
+        selected = option_id.strip()
+        if not selected or not answered_by.strip():
+            raise HarnessError("回答 agent question 必须提供 option 和 reviewer")
+        timestamp = now()
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM agent_questions WHERE id=?", (question_id,),
+            ).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 agent question: {question_id}")
+            if row["status"] != "OPEN":
+                raise HarnessError("agent question 已经关闭")
+            option_ids = {item["id"] for item in json.loads(row["options_json"])}
+            if selected != "other" and selected not in option_ids:
+                raise HarnessError("answer option 必须引用问题中的选项或 other")
+            if selected == "other" and not answer_text.strip():
+                raise HarnessError("选择 other 时必须填写 answer text")
+            connection.execute(
+                """UPDATE agent_questions SET status='ANSWERED',answer_option=?,answer_text=?,
+                   answered_by=?,updated_at=?,answered_at=? WHERE id=?""",
+                (selected, answer_text.strip(), answered_by.strip(), timestamp, timestamp, question_id),
+            )
+            activity_id = row["activity_id"]
+            if activity_id and bool(row["blocking"]):
+                remaining = connection.execute(
+                    """SELECT COUNT(*) AS count FROM agent_questions
+                       WHERE activity_id=? AND status='OPEN' AND blocking=1""",
+                    (activity_id,),
+                ).fetchone()["count"]
+                activity = connection.execute(
+                    "SELECT status,message FROM activities WHERE id=?", (activity_id,),
+                ).fetchone()
+                if (
+                    activity is not None
+                    and activity["status"] == "WAITING_FOR_HUMAN"
+                    and activity["message"].startswith("等待 Human 回答：")
+                    and remaining == 0
+                ):
+                    connection.execute(
+                        """UPDATE activities SET status='RUNNING',message=?,updated_at=?
+                           WHERE id=?""",
+                        (f"Human 已回答问题 {question_id}: {selected}", timestamp, activity_id),
+                    )
+        return self.agent_question(question_id)
+
+    def await_agent_question(self, question_id: str, timeout: float = 60.0) -> dict[str, Any]:
+        if timeout < 0:
+            raise HarnessError("agent-question await timeout 不能小于 0")
+        started = time.monotonic()
+        while True:
+            question = self.agent_question(question_id)
+            if question["status"] != "OPEN":
+                return {
+                    "schema": "AgentQuestionCheckpoint/1",
+                    "status": question["status"],
+                    "question": question,
+                    "resume": question["status"] == "ANSWERED",
+                    "next": "continue" if question["status"] == "ANSWERED" else "stop",
+                }
+            elapsed = time.monotonic() - started
+            if elapsed >= timeout:
+                return {
+                    "schema": "AgentQuestionCheckpoint/1", "status": "TIMEOUT",
+                    "question": question, "resume": False, "next": "wait",
+                }
+            time.sleep(min(0.25, max(timeout - elapsed, 0.0)))
 
     def review_workstream(self, workstream: str, verdict: str, reviewer: str, reason: str) -> dict[str, Any]:
         if verdict not in {"approve", "reject", "modify", "clarify"}:
@@ -3846,6 +4076,7 @@ class ProjectStore:
         model = self.model()
         activities = self.activities()
         human_actions = self.human_actions()
+        agent_questions = self.agent_questions()
         documents = self.documents()
         documents_by_desired = {
             item["desired_id"]: item for item in documents if item.get("desired_id")
@@ -4017,6 +4248,9 @@ class ProjectStore:
                     "human_actions": [
                         item for item in human_actions if item["target"] == desired["id"]
                     ],
+                    "agent_questions": [
+                        item for item in agent_questions if item["target"] == desired["id"]
+                    ],
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
                     "document": mapped_document,
@@ -4040,6 +4274,31 @@ class ProjectStore:
             explicit_waiting = [
                 {**item, "source": "human-action"}
                 for item in workstream_human_actions if item["status"] == "OPEN"
+            ]
+            workstream_agent_questions = [
+                item for item in agent_questions
+                if item["target"] == plan["workstream"] or item["target"] in desired_ids
+            ]
+            question_waiting = [
+                {
+                    "id": item["id"],
+                    "source": "agent-question",
+                    "target": item["target"],
+                    "target_type": item["target_type"],
+                    "action": "AGENT_QUESTION",
+                    "status": item["status"],
+                    "reviewer": "待回答",
+                    "reason": item["prompt"],
+                    "created_at": item["created_at"],
+                    "question_id": item["id"],
+                    "options": item["options"],
+                    "recommended_option": item["recommended_option"],
+                    "context": item["context"],
+                    "asked_by": item["asked_by"],
+                    "blocking": item["blocking"],
+                }
+                for item in workstream_agent_questions
+                if item["status"] == "OPEN" and item["blocking"]
             ]
             closure_waiting = [
                 {
@@ -4077,7 +4336,9 @@ class ProjectStore:
                 for item in pending_document_items
                 if plan["workstream"] == "VDOC"
             ]
-            workstream_waiting = [*closure_waiting, *document_waiting, *explicit_waiting]
+            workstream_waiting = [
+                *question_waiting, *closure_waiting, *document_waiting, *explicit_waiting,
+            ]
             waiting_for_human.extend(workstream_waiting)
             workstream_views.append({
                 "workstream": plan["workstream"],
@@ -4101,6 +4362,7 @@ class ProjectStore:
                 "closure": workstream_closure,
                 "activities": [item for item in activities if item["node_id"] in desired_ids],
                 "human_actions": workstream_human_actions,
+                "agent_questions": workstream_agent_questions,
                 # A closure review request is just as actionable as an explicit Human request.
                 # Keep both in one derived list so the dashboard cannot report zero while a
                 # Workstream is in REVIEW/REVISE and waiting for a Human decision.
@@ -4122,6 +4384,10 @@ class ProjectStore:
         ]
         current_activities = [item for item in activities if item["node_id"] in current_desired_ids]
         current_human_actions = [item for item in human_actions if (
+            item["target"] in current_desired_ids
+            or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
+        )]
+        current_agent_questions = [item for item in agent_questions if (
             item["target"] in current_desired_ids
             or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
         )]
@@ -4152,6 +4418,8 @@ class ProjectStore:
             "activity_history": activities,
             "human_actions": current_human_actions,
             "human_action_history": human_actions,
+            "agent_questions": current_agent_questions,
+            "agent_question_history": agent_questions,
             "waiting_for_human": waiting_for_human,
             "reviews": reviews,
             "baselines": baselines,

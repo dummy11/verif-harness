@@ -568,6 +568,53 @@ class V1ControlPlaneTest(unittest.TestCase):
         node = self.run_cli("inspect", node_id)["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
 
+    def test_agent_question_is_dashboard_visible_and_answer_resumes_activity(self) -> None:
+        self.bootstrap()
+        plan = self.design("VCHK")
+        node_id = plan["desired_state"][0]["id"]
+        activity = self.run_cli(
+            "activity", "start", node_id, "--operation", "reference-model-selection",
+        )
+        question = self.run_cli(
+            "agent-question", "ask", node_id,
+            "--prompt", "参考模型策略选哪个？",
+            "--context", "规格明确该场景必须以 acc_cmodel.c 为准",
+            "--option", "dpi", "DPI 直连 cmodel", "scoreboard 通过 DPI 逐事务调用",
+            "--option", "sv", "按规格重写", "不依赖 cmodel 源文件",
+            "--recommended", "dpi", "--activity", activity["id"],
+        )
+        self.assertEqual(question["status"], "OPEN")
+        self.assertEqual(question["recommended_option"], "dpi")
+        self.assertEqual(len(question["options"]), 2)
+        snapshot = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(snapshot["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        waiting = next(
+            item for item in snapshot["waiting_for_human"]
+            if item["source"] == "agent-question"
+        )
+        self.assertEqual(waiting["question_id"], question["id"])
+        self.assertEqual(waiting["recommended_option"], "dpi")
+
+        answered = self.run_cli(
+            "agent-question", "answer", question["id"],
+            "--option", "dpi", "--reviewer", "alice",
+            "--text", "以现有 cmodel 为只读参考模型",
+        )
+        self.assertEqual(answered["status"], "ANSWERED")
+        checkpoint = self.run_cli(
+            "agent-question", "await", question["id"], "--timeout", "0",
+        )
+        self.assertTrue(checkpoint["resume"])
+        self.assertEqual(checkpoint["question"]["answer_option"], "dpi")
+        refreshed = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(refreshed["activities"][0]["status"], "RUNNING")
+        self.assertFalse(any(
+            item["source"] == "agent-question" for item in refreshed["waiting_for_human"]
+        ))
+        # A choice unblocks Agent reasoning but never proves the verification node.
+        node = self.run_cli("inspect", node_id)["nodes"][0]
+        self.assertEqual(node["status"], "UNKNOWN")
+
     def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
         self.bootstrap()
         proposal = {

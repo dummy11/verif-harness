@@ -53,16 +53,17 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - 可编辑验证文档与 SQLite 状态分离；`docs sync` 用 SHA-256 判断文档是否修改，并按需生成
   [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
-- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：按 Workstream 和节点查看
-  当前工作、完成条件、证据、问题与进度，并可随时提交评审意见；Closure 需要正式评审时，
-  revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard 决定后继续。
+- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：总览以默认折叠的项目/DUT、
+  Agent 交互、待处理事项、验证工作流和验证风险与变更作为入口；状态摘要点击后在新标签页查看或
+  处理。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard
+  决定后继续。
 - 每个目标节点显示一份可复核的
   [节点完成结论](skills/verif-harness/docs/glossary.md#node-closure-assessment)：Engine 列出使用的规则、
   证据、前置节点、开放问题和逐项检查结果；Human 可以认可、要求修改、要求说明或拒绝该结论，
   但评审不会凭空创建 PASS 证据。
 - VDOC 在 Dashboard 中以正式文档作为父节点，节点内展示正文版本、内容变化、开放问题、工程决定
   和评审记录；Human 可直接预览当前 Markdown 正文并提交评审，无需直接输入评审命令。未处理的 `docs track` 问题会计入
-  “等待人工处理”，不会再只影响退出检查而在页面上显示为 0。
+  “待处理事项”，不会再只影响退出检查而在页面上显示为 0。
 
 ## 运行逻辑
 

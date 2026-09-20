@@ -55,11 +55,26 @@ class DashboardTest(unittest.TestCase):
             html = response.read().decode("utf-8")
         self.assertIn("验证项目看板", html)
         self.assertIn("验证项目总览", html)
-        self.assertIn("当前验证项目、DUT 验证对象", html)
+        self.assertIn("快速查看 Agent 状态", html)
         self.assertNotIn('id="global-action"', html)
-        self.assertIn("等待人工处理", html)
-        self.assertIn("['工作流', s.workstreams.length", html)
-        self.assertIn("['工作节点', s.current_node_count", html)
+        self.assertIn("Agent 交互", html)
+        self.assertIn("在这里直接回答 Agent", html)
+        self.assertIn("无需 SSH 到服务器", html)
+        self.assertIn("/api/agent-questions/answer", html)
+        self.assertNotIn("function overviewMetrics", html)
+        self.assertNotIn('<h2>当前工作</h2><span class="count">实时记录', html)
+        self.assertNotIn('<h2>等待人工处理</h2><span class="count">${openHuman.length}', html)
+        self.assertIn("overviewEntry('Agent 交互'", html)
+        self.assertIn("overviewEntry('待处理事项'", html)
+        self.assertIn("<h2>验证工作流</h2>", html)
+        self.assertIn("overviewEntry('验证风险与变更'", html)
+        self.assertIn("function renderAgentInteractionPage()", html)
+        self.assertIn("function renderPendingItemsPage()", html)
+        self.assertIn("function renderRiskChangesPage()", html)
+        self.assertIn("function openWorkstreamTab(name)", html)
+        self.assertIn("function openAgentInteractionTab(questionId=null)", html)
+        self.assertIn("@keyframes waiting-breathe", html)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
         self.assertIn("个工作节点 · 点击名称查看详情", html)
         self.assertIn("要达到什么", html)
@@ -92,6 +107,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("function vdocConvergenceHtml(w, openHuman)", html)
         self.assertIn("项目与验证对象", html)
         self.assertIn("function projectContextHtml(compact=false)", html)
+        self.assertNotIn('<details class="detail-group" open><summary>项目与验证对象', html)
         self.assertIn("仅显示评审和意见记录中的身份", html)
         self.assertIn("只校验与聚合，不代替 Human 审批", html)
         self.assertIn("<th>节点名称</th><th>节点类型</th><th>状态 / 进度</th>", html)
@@ -161,6 +177,46 @@ class DashboardTest(unittest.TestCase):
                 "target": node_id, "action": "COMMENT", "reviewer": "alice", "reason": "note",
             })
         self.assertEqual(captured.exception.code, 403)
+
+    def test_agent_question_can_be_answered_in_dashboard_and_resumes_agent(self) -> None:
+        node_id = self.plan["desired_state"][0]["id"]
+        activity = self.store.create_activity(
+            node_id, "select-reference-model", "Agent", "正在分析候选方案",
+        )
+        question = self.store.ask_agent_question(
+            node_id, "参考模型策略选哪个？", [
+                {"id": "dpi", "label": "DPI 直连 cmodel", "description": "逐事务调用现有模型"},
+                {"id": "sv", "label": "按规格重写", "description": "在验证环境中自行实现"},
+            ], "dpi", "规格要求该场景以 acc_cmodel.c 为准", "Agent", True, activity["id"],
+        )
+        waiting = self.store.dashboard_snapshot()
+        self.assertEqual(waiting["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(waiting["agent_questions"][0]["id"], question["id"])
+        self.assertTrue(any(
+            item["source"] == "agent-question" and item["question_id"] == question["id"]
+            for item in waiting["waiting_for_human"]
+        ))
+
+        response = self.post("/api/agent-questions/answer", {
+            "id": question["id"], "option": "dpi", "reviewer": "alice",
+            "answer_text": "使用只读 cmodel，并记录版本",
+        }, self.server.write_token)
+        answered = response["result"]
+        self.assertEqual(answered["status"], "ANSWERED")
+        self.assertEqual(answered["answer_option"], "dpi")
+        self.assertEqual(response["snapshot"]["activities"][0]["status"], "RUNNING")
+        self.assertFalse(any(
+            item["source"] == "agent-question"
+            for item in response["snapshot"]["waiting_for_human"]
+        ))
+        node = response["snapshot"]["workstreams"][0]["nodes"][0]
+        self.assertEqual(node["status"], "UNKNOWN")
+
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/agent-questions/answer", {
+                "id": question["id"], "option": "sv", "reviewer": "bob",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
 
     def test_vdoc_questions_are_waiting_and_document_can_be_reviewed_from_node(self) -> None:
         plan = self.store.design_workstream("VDOC", None, [], [], [])

@@ -10,8 +10,9 @@ import sys
 from pathlib import Path
 
 from .store import (
-    ACTIVITY_STATUSES, DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES, HUMAN_ACTIONS,
-    HUMAN_ACTION_STATUSES, HarnessError, ProjectStore, Validity, WORKSTREAM_TEMPLATES,
+    ACTIVITY_STATUSES, AGENT_QUESTION_STATUSES, DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES,
+    HUMAN_ACTIONS, HUMAN_ACTION_STATUSES, HarnessError, ProjectStore, Validity,
+    WORKSTREAM_TEMPLATES,
     capabilities,
 )
 
@@ -92,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness changed PATH
   verif-harness freeze VDOC|final
   verif-harness dashboard --open-browser
+  verif-harness agent-question ask NODE --prompt TEXT --option ID LABEL DESCRIPTION
   verif-harness await-human VDOC
 
 完整操作与参数见 skills/verif-harness/docs/user_guide.md。""",
@@ -297,6 +299,44 @@ def build_parser() -> argparse.ArgumentParser:
     human_list.add_argument(
         "--status", choices=tuple(sorted(HUMAN_ACTION_STATUSES)), type=str.upper,
     )
+
+    agent_question = commands.add_parser(
+        "agent-question",
+        help="把 Agent 需要 Human 回答的工程问题登记到 Dashboard",
+    )
+    question_commands = agent_question.add_subparsers(dest="question_command", required=True)
+    question_ask = question_commands.add_parser("ask", help="登记问题和候选项；可绑定 Activity")
+    project_argument(question_ask)
+    question_ask.add_argument("target", help="当前 Workstream 或具体工作节点")
+    question_ask.add_argument("--prompt", required=True)
+    question_ask.add_argument("--context", default="")
+    question_ask.add_argument("--actor", default="Agent")
+    question_ask.add_argument("--activity")
+    question_ask.add_argument("--recommended")
+    question_ask.add_argument("--non-blocking", action="store_true")
+    question_ask.add_argument(
+        "--option", action="append", nargs=3, required=True,
+        metavar=("ID", "LABEL", "DESCRIPTION"),
+        help="可重复 2 到 8 次；DESCRIPTION 不需要时传空字符串",
+    )
+    question_answer = question_commands.add_parser("answer", help="回答 Dashboard 问题")
+    project_argument(question_answer)
+    question_answer.add_argument("question_id")
+    question_answer.add_argument("--option", required=True)
+    question_answer.add_argument("--reviewer")
+    question_answer.add_argument("--text", default="")
+    question_list = question_commands.add_parser("list", help="列出 Agent questions")
+    project_argument(question_list)
+    question_list.add_argument(
+        "--status", choices=tuple(sorted(AGENT_QUESTION_STATUSES)), type=str.upper,
+    )
+    question_list.add_argument("--target")
+    question_await = question_commands.add_parser(
+        "await", help="等待 Dashboard 回答；超时可安全重试",
+    )
+    project_argument(question_await)
+    question_await.add_argument("question_id")
+    question_await.add_argument("--timeout", type=float, default=60.0)
 
     await_human = commands.add_parser(
         "await-human",
@@ -537,6 +577,25 @@ def main(arguments: list[str] | None = None) -> int:
                 ))
             else:
                 emit({"human_actions": store.human_actions(args.status)})
+        elif args.command == "agent-question":
+            if args.question_command == "ask":
+                options = [
+                    {"id": item[0], "label": item[1], "description": item[2]}
+                    for item in args.option
+                ]
+                emit(store.ask_agent_question(
+                    args.target, args.prompt, options, args.recommended,
+                    args.context, args.actor, not args.non_blocking, args.activity,
+                ))
+            elif args.question_command == "answer":
+                emit(store.answer_agent_question(
+                    args.question_id, args.option,
+                    reviewer_identity(store.root, args.reviewer), args.text,
+                ))
+            elif args.question_command == "await":
+                emit(store.await_agent_question(args.question_id, args.timeout))
+            else:
+                emit({"agent_questions": store.agent_questions(args.status, args.target)})
         elif args.command == "await-human":
             emit(store.await_human_review(
                 args.workstream, args.revision, args.after_review,
