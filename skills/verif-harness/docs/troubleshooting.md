@@ -9,7 +9,8 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 
 按以下顺序检查：
 
-1. 在远端服务器确认 `verif-harness dashboard` 仍在运行，并记下打印的端口。
+1. 如果 Dashboard 由 bootstrap 自动启动，先检查 `.verif-harness/dashboard-runtime.json` 和
+   `.verif-harness/dashboard.log`；手动启动时确认 `verif-harness dashboard` 仍在运行，并记下端口。
 2. 在本地电脑保持 `ssh -N ...` 隧道进程运行；该命令没有 shell 提示符是正常现象。
 3. 本地执行 `curl http://127.0.0.1:<local-port>/healthz`。返回 `status: ok` 才说明隧道完整。
 4. 浏览器打开同一个本地端口，而不是远端私网 IP。
@@ -25,6 +26,9 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 - `bind ... Address already in use`：本地端口被占用。把本地端口改成其他值，例如
   `LocalForward 18765 127.0.0.1:8765`，浏览器相应访问 `127.0.0.1:18765`。
 - `/healthz` 连接失败：Dashboard 已停止、隧道未运行，或转发右侧端口与远端 Dashboard 不一致。
+- bootstrap 返回 `PORT_CONFLICT`：固定端口已属于另一项目或其他服务。停止冲突服务，或重新运行
+  bootstrap 并显式指定 `--dashboard-port PORT`；系统不会静默切换到另一个端口。
+- bootstrap 返回 `SKIPPED`：当前是 CI 或普通非交互调用；需要启动时显式使用 `--dashboard`。
 
 完整的单跳和双跳配置见[从本地浏览器访问远端 Dashboard](user_guide.md#从本地浏览器访问远端-dashboard)。
 

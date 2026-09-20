@@ -188,6 +188,8 @@ class V1ControlPlaneTest(unittest.TestCase):
         payload = self.bootstrap()
         state = self.root / ".verif-harness"
         self.assertEqual(payload["rtl_roots"], ["rtl"])
+        self.assertEqual(payload["dashboard"]["schema"], "DashboardLaunch/1")
+        self.assertEqual(payload["dashboard"]["status"], "SKIPPED")
         self.assertTrue((state / "model.sqlite3").is_file())
         self.assertTrue((state / "model.md").is_file())
         instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
@@ -200,6 +202,26 @@ class V1ControlPlaneTest(unittest.TestCase):
             workstreams = connection.execute("SELECT COUNT(*) FROM workstreams").fetchone()[0]
         self.assertEqual(version, "2")
         self.assertEqual(workstreams, 0)
+
+    def test_bootstrap_can_explicitly_disable_dashboard(self) -> None:
+        payload = self.run_cli(
+            "bootstrap", "--runtime", "codex", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut",
+            "--dut-top-file", "rtl/dut.sv", "--no-dashboard",
+        )
+        self.assertEqual(payload["dashboard"]["schema"], "DashboardLaunch/1")
+        self.assertEqual(payload["dashboard"]["status"], "DISABLED")
+        self.assertFalse((self.root / ".verif-harness/dashboard-runtime.json").exists())
+
+    def test_bootstrap_rejects_invalid_dashboard_port_before_writing_state(self) -> None:
+        result = self.invoke(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut",
+            "--dut-top-file", "rtl/dut.sv", "--dashboard-port", "0",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("bootstrap dashboard port 必须在 1..65535", result.stderr)
+        self.assertFalse((self.root / ".verif-harness/project.json").exists())
 
     def test_bootstrap_requires_explicit_dut_identity(self) -> None:
         result = self.invoke("bootstrap", "--runtime", "none", "--rtl-root", "rtl")

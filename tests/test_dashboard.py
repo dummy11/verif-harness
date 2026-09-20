@@ -8,8 +8,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
-from verif_harness.dashboard import create_dashboard_server, dashboard_url
+from verif_harness.dashboard import create_dashboard_server, dashboard_url, ensure_dashboard_running
 from verif_harness.store import ProjectStore
 
 
@@ -49,6 +50,52 @@ class DashboardTest(unittest.TestCase):
         )
         with urllib.request.urlopen(request, timeout=3) as response:
             return json.loads(response.read())
+
+    def test_background_launcher_reuses_same_project_dashboard(self) -> None:
+        port = self.server.server_address[1]
+        result = ensure_dashboard_running(self.store, "127.0.0.1", port)
+        self.assertEqual(result["schema"], "DashboardLaunch/1")
+        self.assertEqual(result["status"], "REUSED")
+        self.assertEqual(result["project"], str(self.store.root))
+        self.assertEqual(result["url"], self.url)
+        self.assertFalse(result["browser_opened"])
+
+    def test_background_launcher_reports_other_project_port_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            other_root = Path(directory)
+            (other_root / "rtl").mkdir()
+            (other_root / "rtl/dut.sv").write_text("module dut; endmodule\n", encoding="utf-8")
+            other = ProjectStore(other_root)
+            other.bootstrap(
+                runtime="none", rtl_roots=["rtl"], verif_root="verification",
+                dut_top="dut", dut_top_file="rtl/dut.sv",
+            )
+            result = ensure_dashboard_running(other, "127.0.0.1", self.server.server_address[1])
+        self.assertEqual(result["status"], "PORT_CONFLICT")
+        self.assertEqual(result["observed_project"], str(self.store.root))
+
+    def test_background_launcher_starts_detached_process_and_records_runtime(self) -> None:
+        process = mock.Mock(pid=31415)
+        process.poll.return_value = None
+        healthy = {"status": "ok", "project": str(self.store.root)}
+        with (
+            mock.patch("verif_harness.dashboard._dashboard_health", side_effect=[None, healthy]),
+            mock.patch("verif_harness.dashboard._port_accepts_connections", return_value=False),
+            mock.patch("verif_harness.dashboard.subprocess.Popen", return_value=process) as popen,
+        ):
+            result = ensure_dashboard_running(self.store, "127.0.0.1", 18765)
+        self.assertEqual(result["status"], "STARTED")
+        self.assertEqual(result["pid"], 31415)
+        self.assertFalse(result["browser_opened"])
+        invocation = popen.call_args.args[0]
+        self.assertIn("dashboard", invocation)
+        self.assertIn("--project-root", invocation)
+        runtime = json.loads(
+            (self.root / ".verif-harness/dashboard-runtime.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(runtime["schema"], "DashboardRuntime/1")
+        self.assertEqual(runtime["port"], 18765)
+        self.assertEqual(runtime["pid"], 31415)
 
     def test_html_is_local_layered_and_snapshot_is_detailed(self) -> None:
         with self.get("/") as response:

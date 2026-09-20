@@ -5,21 +5,28 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .store import HarnessError, ProjectStore
+from .store import HarnessError, ProjectStore, atomic_json, now
 
 
 MAX_REQUEST_BYTES = 1_048_576
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
+DASHBOARD_RUNTIME_FILE = "dashboard-runtime.json"
+DASHBOARD_LOG_FILE = "dashboard.log"
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
@@ -251,6 +258,130 @@ def dashboard_url(server: DashboardHTTPServer) -> str:
     host, port = server.server_address[:2]
     display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
     return f"http://{display_host}:{port}/"
+
+
+def _dashboard_health(host: str, port: int) -> dict[str, Any] | None:
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/healthz", timeout=0.35) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _port_accepts_connections(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_dashboard_running(
+    store: ProjectStore, host: str = "127.0.0.1", port: int = 8765,
+    open_browser: bool = False,
+) -> dict[str, Any]:
+    """Start or reuse a detached Dashboard without making bootstrap block."""
+    if host not in LOOPBACK_HOSTS:
+        raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
+    if port <= 0 or port > 65535:
+        raise HarnessError("后台 Dashboard port 必须在 1..65535")
+    store.require()
+    url = f"http://{host}:{port}/"
+    expected_project = str(store.root)
+    health = _dashboard_health(host, port)
+    if health is not None:
+        observed_project = str(health.get("project", ""))
+        if observed_project != expected_project:
+            return {
+                "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
+                "project": expected_project, "observed_project": observed_project or None,
+                "message": "端口已经由另一个 Dashboard 使用；未静默切换端口",
+            }
+        result: dict[str, Any] = {
+            "schema": "DashboardLaunch/1", "status": "REUSED", "url": url,
+            "project": expected_project, "message": "已复用当前项目的 Dashboard",
+        }
+    elif _port_accepts_connections(host, port):
+        return {
+            "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
+            "project": expected_project, "observed_project": None,
+            "message": "端口已被其他服务使用；未静默切换端口",
+        }
+    else:
+        log_path = store.state / DASHBOARD_LOG_FILE
+        runtime_path = store.state / DASHBOARD_RUNTIME_FILE
+        module_root = str(Path(__file__).resolve().parents[1])
+        environment = os.environ.copy()
+        existing_pythonpath = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = (
+            module_root if not existing_pythonpath
+            else os.pathsep.join((module_root, existing_pythonpath))
+        )
+        command = [
+            sys.executable, "-c",
+            "import sys; from verif_harness.cli import main; raise SystemExit(main(sys.argv[1:]))",
+            "dashboard", "--project-root", str(store.root),
+            "--host", host, "--port", str(port),
+        ]
+        popen_options: dict[str, Any] = {
+            "cwd": str(store.root), "env": environment,
+            "stdin": subprocess.DEVNULL, "stderr": subprocess.STDOUT,
+            "close_fds": True,
+        }
+        if os.name == "nt":  # pragma: no cover - Windows runtime boundary
+            popen_options["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            )
+        else:
+            popen_options["start_new_session"] = True
+        try:
+            with log_path.open("ab") as log:
+                process = subprocess.Popen(command, stdout=log, **popen_options)
+        except OSError as exc:
+            return {
+                "schema": "DashboardLaunch/1", "status": "FAILED", "url": url,
+                "project": expected_project, "log": str(log_path),
+                "message": f"Dashboard 后台进程启动失败: {exc}",
+            }
+        runtime_warning = None
+        try:
+            atomic_json(runtime_path, {
+                "schema": "DashboardRuntime/1", "pid": process.pid, "host": host, "port": port,
+                "url": url, "project": expected_project, "log": str(log_path), "started_at": now(),
+            })
+        except OSError as exc:
+            runtime_warning = f"无法写入运行元数据: {exc}"
+        deadline = time.monotonic() + 4.0
+        health = None
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                break
+            health = _dashboard_health(host, port)
+            if health is not None:
+                break
+            time.sleep(0.1)
+        if health is None or str(health.get("project", "")) != expected_project:
+            return {
+                "schema": "DashboardLaunch/1", "status": "FAILED", "url": url,
+                "project": expected_project, "pid": process.pid, "log": str(log_path),
+                "message": "Dashboard 未能在限定时间内启动；请查看日志",
+            }
+        result = {
+            "schema": "DashboardLaunch/1", "status": "STARTED", "url": url,
+            "project": expected_project, "pid": process.pid, "log": str(log_path),
+            "message": "Dashboard 已在后台启动",
+        }
+        if runtime_warning:
+            result["warning"] = runtime_warning
+    if open_browser:
+        try:
+            result["browser_opened"] = bool(webbrowser.open(url))
+        except webbrowser.Error:
+            result["browser_opened"] = False
+    else:
+        result["browser_opened"] = False
+    return result
 
 
 def create_dashboard_server(store: ProjectStore, host: str, port: int) -> DashboardHTTPServer:

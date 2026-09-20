@@ -40,6 +40,16 @@ def workstream_argument(parser: argparse.ArgumentParser, required: bool = True) 
     parser.add_argument("--workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper, required=required)
 
 
+def bootstrap_dashboard_port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("dashboard port 必须是整数") from exc
+    if port < 1 or port > 65535:
+        raise argparse.ArgumentTypeError("bootstrap dashboard port 必须在 1..65535")
+    return port
+
+
 def reviewer_identity(root: Path, explicit: str | None) -> str:
     if explicit and explicit.strip():
         return explicit.strip()
@@ -117,6 +127,19 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument(
         "--refresh", action="store_true",
         help="重新配置；未提供其他参数时只返回待 Human 确认的问题，不写入配置",
+    )
+    bootstrap_dashboard = bootstrap.add_mutually_exclusive_group()
+    bootstrap_dashboard.add_argument(
+        "--dashboard", dest="force_dashboard", action="store_true",
+        help="即使当前不是交互终端，也在 bootstrap 完成后启动或复用后台 Dashboard",
+    )
+    bootstrap_dashboard.add_argument(
+        "--no-dashboard", action="store_true",
+        help="bootstrap 完成后不启动 Dashboard",
+    )
+    bootstrap.add_argument(
+        "--dashboard-port", type=bootstrap_dashboard_port, default=8765,
+        help="bootstrap 自动启动 Dashboard 使用的固定端口（默认 8765）",
     )
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")
@@ -439,6 +462,52 @@ def run_adapter(name: str, arguments: list[str], parser: argparse.ArgumentParser
     return subprocess.run([sys.executable, str(root / relative), *forwarded], check=False).returncode
 
 
+def _truthy_environment(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def bootstrap_dashboard(
+    store: ProjectStore, runtime: str, force: bool, disabled: bool, port: int,
+) -> dict[str, object]:
+    """Apply bootstrap's interactive/CI policy and return a structured launch result."""
+    if disabled:
+        return {
+            "schema": "DashboardLaunch/1", "status": "DISABLED",
+            "message": "已通过 --no-dashboard 关闭自动启动",
+        }
+    in_ci = any(_truthy_environment(name) for name in (
+        "CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "BUILDKITE",
+    ))
+    agent_runtime = runtime in {"codex", "kimi", "claude"}
+    terminal_interactive = sys.stdin.isatty() or sys.stdout.isatty()
+    if not force and (in_ci or not (agent_runtime or terminal_interactive)):
+        reason = "CI 环境不自动启动 Dashboard" if in_ci else "非交互环境不自动启动；需要时使用 --dashboard"
+        return {"schema": "DashboardLaunch/1", "status": "SKIPPED", "message": reason}
+
+    remote = any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    desktop = sys.platform == "darwin" or os.name == "nt" or bool(
+        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+    )
+    from .dashboard import ensure_dashboard_running
+    result = ensure_dashboard_running(
+        store, "127.0.0.1", port,
+        open_browser=bool(not remote and desktop and (agent_runtime or terminal_interactive)),
+    )
+    if remote:
+        result["access"] = {
+            "mode": "ssh-tunnel",
+            "command": f"ssh -L {port}:127.0.0.1:{port} <server>",
+            "url": f"http://127.0.0.1:{port}/",
+            "message": "远端不会尝试打开浏览器；请在本地建立 SSH 转发",
+        }
+    else:
+        result["access"] = {
+            "mode": "local-browser" if result.get("browser_opened") else "local-url",
+            "url": f"http://127.0.0.1:{port}/",
+        }
+    return result
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(normalize(list(sys.argv[1:] if arguments is None else arguments)))
@@ -469,9 +538,16 @@ def main(arguments: list[str] | None = None) -> int:
             if args.refresh and store.initialized and not supplied_reconfiguration:
                 emit(store.bootstrap_refresh_prompt())
             else:
-                emit(store.bootstrap(args.project_name, args.runtime, args.rtl_root, args.docs_root,
-                                     args.verif_root, args.dut_top, args.dut_top_file, args.refresh,
-                                     args.clear_docs_root))
+                result = store.bootstrap(
+                    args.project_name, args.runtime, args.rtl_root, args.docs_root,
+                    args.verif_root, args.dut_top, args.dut_top_file, args.refresh,
+                    args.clear_docs_root,
+                )
+                result["dashboard"] = bootstrap_dashboard(
+                    store, str(result.get("runtime", "")), args.force_dashboard,
+                    args.no_dashboard, args.dashboard_port,
+                )
+                emit(result)
         elif args.command == "status":
             emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
         elif args.command == "dashboard":

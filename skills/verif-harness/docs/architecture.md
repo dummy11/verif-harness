@@ -52,6 +52,11 @@ Writes use a per-process token, bind only to the
 loopback interface, and call the same ProjectStore review/waiver/freeze APIs.
 Activity records communicate current Agent/tool progress but never mutate node
 validity; evidence validators and explicit Human gates remain authoritative.
+After a successful bootstrap, an interactive Agent/TTY may start or reuse the
+loopback Dashboard as a detached process. CI and non-interactive invocations skip
+that convenience unless explicitly forced. This launch policy changes no model
+semantics: the Dashboard remains a presentation/control process, not an engine,
+and bootstrap returns without waiting for the server lifetime.
 
 Each planned desired node stores its evidence claim and admission policy. The
 policy separates compile-time capability proof from runtime closure proof and

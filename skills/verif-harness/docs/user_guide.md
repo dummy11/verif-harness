@@ -176,6 +176,12 @@ VDOC”的规则。已有项目说明保留在 verif-harness 标记之外，不�
 验证设计写在 Markdown，文件版本、评审和证据状态保存在 SQLite。初始化后可用 `status`
 和 `doctor` 检查项目状态。
 
+bootstrap 成功后，交互式 Codex/Kimi/Claude 或终端会默认在 `127.0.0.1:8765` 启动（或复用）
+后台 Dashboard，bootstrap 自身随即返回，不会被 Web 服务阻塞。本机桌面环境会尝试打开浏览器；
+SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转发提示。CI 和普通非交互脚本默认跳过；
+需要强制启动时使用 `--dashboard`，明确不需要时使用 `--no-dashboard`。自动启动使用固定端口，
+端口被其他项目或服务占用时会报告冲突，不会静默换端口。
+
 路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
 静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec
 和 verification 输出目录。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
@@ -1198,6 +1204,7 @@ DUT top 与 top file、代码基线和 runtime；主总览的其余核心内容�
 范围增减时使用“调整文档”，从而让每条输入都有明确的处理对象和审计记录。
 
 ```text
+# bootstrap 通常已经在交互环境中启动或复用了 Dashboard；以下命令用于手动启动或恢复
 # Human：在当前 Agent 对话中提出“打开 Dashboard”；通常不直接输入 shell 命令
 # Agent：确认项目已 bootstrap 后启动本机服务并把地址展示给 Human
 # Engine：从同一个 model.sqlite3 读取状态，状态变化时通过浏览器连接推送新快照
@@ -1508,14 +1515,20 @@ verif-harness bootstrap [OPTIONS]
 | `--dut-top MODULE` | 明确 DUT top；不会自动猜测 |
 | `--dut-top-file PATH` | 明确 DUT top 文件；必须属于某个 `--rtl-root`，允许位于项目外 |
 | `--refresh` | 重新配置并读取文件/工具清单；同步 `.harness-config.json` 管理字段，保留已有目标、证据和评审状态 |
+| `--dashboard` | 即使在 CI/非交互调用中，也在 bootstrap 成功后启动或复用后台 Dashboard |
+| `--no-dashboard` | 本次 bootstrap 不自动启动 Dashboard |
+| `--dashboard-port PORT` | 自动启动使用的固定 loopback 端口，默认 `8765`；只接受 `1..65535` |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。对话中只需提出
 `bootstrap --refresh`；Agent 必须重新确认参数，再展开成底层完整命令。
 如果底层 CLI 在没有其他参数的情况下收到裸 `bootstrap --refresh`，它只返回
 `BootstrapReconfiguration/1` 的当前值与待确认问题，不修改任何文件；这是防止 Agent 跳过对话的
-保护措施。
+保护措施，也不会启动 Dashboard。
 上述参数属于底层自动化接口；Skill 首次初始化必须先在对话中收齐三个必填 DUT 字段。
 用户提供的可选 spec 路径映射到 `--docs-root`，未提供时不推导或补填。
+
+后台启动元数据写入 `.verif-harness/dashboard-runtime.json`，输出日志写入
+`.verif-harness/dashboard.log`。二者用于运行诊断，不是验证证据或项目语义事实源。
 
 ### `status [WORKSTREAM]`
 
