@@ -144,6 +144,12 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('~/.kimi-code/config.toml', source)
         self.assertIn('.agents/skills', source)
         self.assertIn('.kimi-code/skills', source)
+        self.assertIn('install_agent_profiles', source)
+        self.assertIn('candidate="$target.new"', source)
+        self.assertIn("review and merge the managed update", source)
+        self.assertIn("no managed $runtime_label agent profiles found", source)
+        self.assertIn('"$package_root/.codex/agents"', source)
+        self.assertIn('"$package_root/.kimi-code/agents"', source)
         self.assertIn('cd "$workspace_root"', source)
         self.assertIn('Starting $runtime CLI here: $(pwd)', source)
         self.assertIn("codex_startup_inventory_prompt=", source)
@@ -155,6 +161,26 @@ class SetupScriptTest(unittest.TestCase):
         self.assertNotIn('"$agent_cli" --prompt', source)
         self.assertIn('exec "$agent_cli" "${agent_args[@]}"', source)
         self.assertIn('workspace disappeared before Agent launch', source)
+
+    def test_runtime_subagent_profiles_keep_human_interaction_on_main_agent(self) -> None:
+        codex_profiles = sorted((ROOT / ".codex/agents").glob("verification-*.toml"))
+        kimi_profiles = sorted((ROOT / ".kimi-code/agents").glob("verification-*.md"))
+        self.assertEqual(len(codex_profiles), 3)
+        self.assertEqual(len(kimi_profiles), 3)
+        for path in [*codex_profiles, *kimi_profiles]:
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("Managed by verif-harness", content)
+            self.assertIn("Main Agent", content)
+            self.assertIn("Human", content)
+            self.assertTrue("NEEDS_HUMAN" in content or "Never approve a gate" in content)
+        self.assertIn(
+            'sandbox_mode = "read-only"',
+            (ROOT / ".codex/agents/verification-explorer.toml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "subagents: []",
+            (ROOT / ".kimi-code/agents/verification-worker.md").read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

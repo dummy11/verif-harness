@@ -32,13 +32,28 @@ DOCUMENT_ITEM_KINDS = {
 }
 DOCUMENT_ITEM_STATUSES = {"PENDING", "ACTIVE", "RESOLVED", "SUPERSEDED"}
 ACTIVITY_STATUSES = {
-    "PENDING", "RUNNING", "WAITING_FOR_HUMAN", "COMPLETED", "FAILED", "CANCELLED",
+    "PENDING", "RUNNING", "WAITING_FOR_HUMAN", "WAITING_FOR_PARENT",
+    "COMPLETED", "FAILED", "CANCELLED",
 }
+AGENT_ASSIGNMENT_STATUSES = {
+    "ACTIVE", "COMPLETED", "FAILED", "CANCELLED", "EXPIRED", "SUPERSEDED",
+}
+AGENT_ASSIGNMENT_PHASES = {"RUNNING", "WAITING_FOR_PARENT"}
+VERIFICATION_AGENT_ROLES = (
+    "VerificationArchitect", "EnvironmentEngineer", "TestEngineer",
+    "AssertionEngineer", "CoverageEngineer", "DebugEngineer", "Reviewer",
+)
 HUMAN_ACTIONS = {"COMMENT", "REQUEST_CHANGE", "CLARIFY", "PRIORITIZE", "ACKNOWLEDGE"}
 HUMAN_ACTION_STATUSES = {"OPEN", "RECORDED", "RESOLVED", "SUPERSEDED"}
 AGENT_QUESTION_STATUSES = {"OPEN", "ANSWERED", "CANCELLED", "SUPERSEDED"}
 PROJECT_TARGET = "project"
 PROJECT_WORKSTREAM = "PROJECT"
+PROJECT_AGENT_ID = "project-agent"
+PROJECT_AGENT_ACTOR = "Project Main Agent"
+SUBAGENT_PROTECTED_WRITE_PATHS = (
+    ".git", ".deps", STATE_DIR, ".codex", ".kimi-code", ".agents",
+    ".harness-config.json", "AGENTS.md",
+)
 AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
 AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
@@ -708,6 +723,25 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- Agent 开始非简单分析或后台子任务前必须登记 Activity。计划建立前使用",
         "  `activity start project`，使 Human 不依赖 SSH 或终端也能看到真实运行状态。",
         "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
+        "- 多 Agent 协作只使用本项目已经选择的单一 runtime（Codex 或 Kimi）的原生",
+        "  subagent 能力；verif-harness 不启动另一种 runtime，也不自建隐藏 worker。",
+        "- 当前项目的 Main Agent 是唯一 Human 交互入口和控制面写者。subagent 只执行",
+        "  Main Agent 给出的有边界任务并返回结构化结果，不得直接调用 agent-question、",
+        "  review、waive、freeze、record 或 evidence，也不得直接向 Human 提问或审批 gate。",
+        "- Main Agent 分派前先用 `agent-work candidates` 读取可并行动作，再为每个 child",
+        "  执行 `agent-work claim`。只并行彼此独立的节点；写任务必须声明互不重叠的",
+        "  `--write-scope`。runtime 负责线程和上下文，SQLite claim 只负责项目级防重、",
+        "  revision 绑定、heartbeat 和 Dashboard 可观测性。",
+        "- write scope 不能覆盖 `.verif-harness`、`.harness-config.json`、`.git`、`.deps`、",
+        "  runtime 配置、`AGENTS.md` 或只读 RTL/spec（保留路径按大小写不敏感匹配）。",
+        "  scope 是协作合同而不是 OS 级沙箱；Main Agent 必须检查实际 diff。",
+        "  不受信任的 child 必须使用隔离 worktree 或更严格的 runtime sandbox。",
+        "- subagent 缺少输入时向 Main Agent 返回 NEEDS_HUMAN 结构；Main Agent 先协调，",
+        "  并用 `agent-work heartbeat --phase WAITING_FOR_PARENT` 记录。确需工程判断时，",
+        "  只有 Main Agent 才登记 agent-question。Human 回答后由 Main Agent决定续派。",
+        "- Main Agent 必须等待所分派的结果、复核实际文件和检查输出，再用",
+        "  `agent-work finish` 关闭 assignment 并重新计算 closure。assignment/subagent 完成、多数",
+        "  Agent 同意或 Activity COMPLETED 都不是 evidence，也不会把节点改成 VALID。",
         "- 生成文件只是 review candidate。文件存在、模板已复制或 Agent 自检通过，",
         "  都不等于语义已批准或 evidence 已通过。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
@@ -925,6 +959,22 @@ CREATE TABLE IF NOT EXISTS activities (
   progress_current INTEGER, progress_total INTEGER, log_path TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, ended_at TEXT
 );
+CREATE TABLE IF NOT EXISTS agent_assignments (
+  id TEXT PRIMARY KEY, action_id TEXT NOT NULL, node_id TEXT NOT NULL,
+  workstream TEXT NOT NULL, workstream_revision INTEGER NOT NULL,
+  definition_digest TEXT NOT NULL, runtime TEXT NOT NULL,
+  agent_id TEXT NOT NULL, parent_agent_id TEXT NOT NULL, role TEXT NOT NULL,
+  runtime_ref TEXT, status TEXT NOT NULL, activity_id TEXT NOT NULL,
+  lease_seconds INTEGER NOT NULL, lease_expires_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL, write_scope_json TEXT NOT NULL,
+  summary TEXT NOT NULL, result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  ended_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS agent_assignments_active_node
+  ON agent_assignments(node_id) WHERE status='ACTIVE';
+CREATE UNIQUE INDEX IF NOT EXISTS agent_assignments_active_agent
+  ON agent_assignments(agent_id) WHERE status='ACTIVE';
 CREATE TABLE IF NOT EXISTS human_actions (
   id TEXT PRIMARY KEY, target TEXT NOT NULL, target_type TEXT NOT NULL,
   action TEXT NOT NULL, status TEXT NOT NULL, reviewer TEXT NOT NULL, reason TEXT NOT NULL,
@@ -1044,9 +1094,10 @@ class ProjectStore:
 
     def connect(self) -> sqlite3.Connection:
         self.state.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database)
+        connection = sqlite3.connect(self.database, timeout=30)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 30000")
         connection.executescript(SCHEMA)
         observed = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         if observed is not None and int(observed["value"]) != SCHEMA_VERSION:
@@ -1065,8 +1116,11 @@ class ProjectStore:
 
     def read_connect(self) -> sqlite3.Connection:
         self.require()
-        connection = sqlite3.connect(f"{self.database.as_uri()}?mode=ro", uri=True)
+        connection = sqlite3.connect(
+            f"{self.database.as_uri()}?mode=ro", uri=True, timeout=30,
+        )
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 30000")
         return connection
 
     def bootstrap(
@@ -1806,7 +1860,9 @@ class ProjectStore:
             filters.append("node_id=?")
             values.append(node_id)
         if active_only:
-            filters.append("status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN')")
+            filters.append(
+                "status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT')"
+            )
         where = " WHERE " + " AND ".join(filters) if filters else ""
         with self.read_connect() as connection:
             return [dict(row) for row in connection.execute(
@@ -1826,6 +1882,14 @@ class ProjectStore:
             row = connection.execute("SELECT * FROM activities WHERE id=?", (activity_id,)).fetchone()
             if row is None:
                 raise HarnessError(f"未知 activity: {activity_id}")
+            assignment = connection.execute(
+                "SELECT id FROM agent_assignments WHERE activity_id=? LIMIT 1",
+                (activity_id,),
+            ).fetchone()
+            if assignment is not None:
+                raise HarnessError(
+                    "subagent assignment 的 Activity 只能通过 agent-work heartbeat/finish 更新"
+                )
             if row["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
                 raise HarnessError("已结束的 activity 不能再次更新")
             new_current = current if current is not None else row["progress_current"]
@@ -1841,6 +1905,455 @@ class ProjectStore:
                  new_current, new_total, normalized_log, timestamp, ended_at, activity_id),
             )
         return self.activity(activity_id)
+
+    @staticmethod
+    def _agent_assignment_row(row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["write_scope"] = json.loads(item.pop("write_scope_json"))
+        item["result"] = json.loads(item.pop("result_json"))
+        return item
+
+    @staticmethod
+    def _agent_identity(value: str, field: str) -> str:
+        selected = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}", selected):
+            raise HarnessError(
+                f"{field} 必须以字母或数字开头，且只能包含字母、数字、._:/-"
+            )
+        return selected
+
+    def _current_assignment_definition(
+        self, connection: sqlite3.Connection, node_id: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        node = connection.execute(
+            "SELECT workstream FROM nodes WHERE id=?", (node_id,),
+        ).fetchone()
+        if node is None:
+            raise HarnessError(f"未知 agent assignment node: {node_id}")
+        plan_row = connection.execute(
+            "SELECT * FROM workstreams WHERE name=?", (node["workstream"],),
+        ).fetchone()
+        if plan_row is None:
+            raise HarnessError(f"node 没有当前 Workstream: {node_id}")
+        desired_state = json.loads(plan_row["desired_json"])
+        desired = next((item for item in desired_state if item["id"] == node_id), None)
+        if desired is None:
+            raise HarnessError(f"node 不属于当前 Workstream revision: {node_id}")
+        plan = {
+            "workstream": plan_row["name"],
+            "lifecycle": plan_row["lifecycle"],
+            "revision": plan_row["revision"],
+            "desired_state": desired_state,
+        }
+        return plan, desired
+
+    def _refresh_agent_assignments(self, connection: sqlite3.Connection) -> None:
+        """Expire lost leases and supersede claims bound to an old plan revision."""
+        timestamp = now()
+        observed_at = dt.datetime.fromisoformat(timestamp)
+        rows = connection.execute(
+            "SELECT * FROM agent_assignments WHERE status='ACTIVE' ORDER BY created_at"
+        ).fetchall()
+        for row in rows:
+            terminal: str | None = None
+            message = ""
+            try:
+                plan, desired = self._current_assignment_definition(connection, row["node_id"])
+                digest = self._node_plan_digest(plan, desired)
+                if (
+                    plan["revision"] != row["workstream_revision"]
+                    or digest != row["definition_digest"]
+                ):
+                    terminal = "SUPERSEDED"
+                    message = "工作节点定义或 Workstream revision 已变化；旧 subagent assignment 已停止"
+                elif connection.execute(
+                    """SELECT id FROM actions
+                       WHERE id=? AND status='OPEN' AND workstream=? AND target=?""",
+                    (row["action_id"], row["workstream"], row["node_id"]),
+                ).fetchone() is None:
+                    terminal = "SUPERSEDED"
+                    message = "节点当前 Closure action 已变化；旧 subagent assignment 已停止"
+            except HarnessError:
+                terminal = "SUPERSEDED"
+                message = "工作节点已不属于当前计划；旧 subagent assignment 已停止"
+            if terminal is None:
+                try:
+                    lease_expires_at = dt.datetime.fromisoformat(row["lease_expires_at"])
+                except ValueError:
+                    lease_expires_at = observed_at
+                if lease_expires_at <= observed_at:
+                    terminal = "EXPIRED"
+                    message = "subagent heartbeat 已超出租约；仅停止本次协作记录，不代表验证失败"
+            if terminal is None:
+                continue
+            connection.execute(
+                """UPDATE agent_assignments
+                   SET status=?,summary=?,updated_at=?,ended_at=? WHERE id=?""",
+                (terminal, message, timestamp, timestamp, row["id"]),
+            )
+            activity = connection.execute(
+                "SELECT status FROM activities WHERE id=?", (row["activity_id"],),
+            ).fetchone()
+            if activity is not None and activity["status"] not in {
+                "COMPLETED", "FAILED", "CANCELLED",
+            }:
+                connection.execute(
+                    """UPDATE activities SET status='CANCELLED',message=?,updated_at=?,ended_at=?
+                       WHERE id=?""",
+                    (message, timestamp, timestamp, row["activity_id"]),
+                )
+
+    def _normalized_write_scopes(self, values: Iterable[str]) -> list[str]:
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        scopes = sorted({relative_path(self.root, value) for value in values if value.strip()})
+        if "." in scopes:
+            raise HarnessError("subagent write scope 不能是整个项目；请指定 verification 输出内的具体路径")
+        output_root = resolved_path(self.root, manifest.get("verif_root") or ".")
+        protected = [
+            resolved_path(self.root, value)
+            for value in [
+                *manifest.get("rtl_roots", []),
+                *manifest.get("docs_roots", []),
+                *SUBAGENT_PROTECTED_WRITE_PATHS,
+            ]
+        ]
+        for scope in scopes:
+            resolved = resolved_path(self.root, scope)
+            if not self._path_is_within_casefold(resolved, output_root):
+                raise HarnessError(
+                    f"subagent write scope 必须位于 verification 输出根目录内: {scope}"
+                )
+            if any(
+                self._paths_overlap_casefold(resolved, item)
+                for item in protected
+            ):
+                raise HarnessError(
+                    "subagent write scope 不能覆盖只读 RTL/spec、控制状态、"
+                    f"runtime 配置或仓库元数据: {scope}"
+                )
+        return scopes
+
+    @staticmethod
+    def _path_is_within_casefold(candidate: Path, root: Path) -> bool:
+        candidate_parts = tuple(part.casefold() for part in candidate.parts)
+        root_parts = tuple(part.casefold() for part in root.parts)
+        return candidate_parts[:len(root_parts)] == root_parts
+
+    @classmethod
+    def _paths_overlap_casefold(cls, left: Path, right: Path) -> bool:
+        return (
+            cls._path_is_within_casefold(left, right)
+            or cls._path_is_within_casefold(right, left)
+        )
+
+    @staticmethod
+    def _scopes_overlap(left: str, right: str) -> bool:
+        left_parts = tuple(part.casefold() for part in Path(left).parts)
+        right_parts = tuple(part.casefold() for part in Path(right).parts)
+        return (
+            left_parts[:len(right_parts)] == right_parts
+            or right_parts[:len(left_parts)] == left_parts
+        )
+
+    def agent_work_candidates(self, limit: int = 20) -> dict[str, Any]:
+        """Return current closure actions that a runtime-native subagent may execute."""
+        self.require()
+        if limit < 1 or limit > 100:
+            raise HarnessError("agent-work candidates limit 必须在 1..100")
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        runtime = str(manifest.get("runtime") or "unselected")
+        if runtime not in {"codex", "kimi"}:
+            raise HarnessError("multi-agent 需要项目 runtime 明确选择 codex 或 kimi")
+        closure = self.reconcile()
+        active_nodes = {
+            item["node_id"] for item in self.agent_assignments(active_only=True)
+        }
+        actions: list[dict[str, Any]] = []
+        with self.read_connect() as connection:
+            for action in closure["ranked_actions"]:
+                if len(actions) >= limit:
+                    break
+                if (
+                    action["executor"] == "human"
+                    or action["kind"] == "WAIT_FOR_DEPENDENCY"
+                    or action["target"] in active_nodes
+                ):
+                    continue
+                try:
+                    plan, desired = self._current_assignment_definition(
+                        connection, action["target"],
+                    )
+                except HarnessError:
+                    continue
+                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"}:
+                    continue
+                blocking_question = connection.execute(
+                    """SELECT id FROM agent_questions
+                       WHERE status='OPEN' AND blocking=1
+                         AND target IN (?, ?, 'project') LIMIT 1""",
+                    (action["target"], action["workstream"]),
+                ).fetchone()
+                if blocking_question is not None:
+                    continue
+                actions.append({
+                    **action,
+                    "workstream_revision": plan["revision"],
+                    "definition_digest": self._node_plan_digest(plan, desired),
+                })
+        return {
+            "schema": "AgentWorkCandidates/1",
+            "runtime": runtime,
+            "actions": actions,
+        }
+
+    def claim_agent_work(
+        self, action_id: str, agent_id: str, role: str, operation: str,
+        parent_agent_id: str = "project-agent", runtime_ref: str | None = None,
+        lease_seconds: int = 300, write_scope: Iterable[str] = (),
+        message: str = "", total: int | None = None,
+    ) -> dict[str, Any]:
+        """Atomically bind one current closure action to one native subagent."""
+        self.require()
+        selected_agent = self._agent_identity(agent_id, "agent_id")
+        selected_parent = self._agent_identity(parent_agent_id, "parent_agent_id")
+        if role not in VERIFICATION_AGENT_ROLES:
+            raise HarnessError("agent role 必须是 " + ", ".join(VERIFICATION_AGENT_ROLES))
+        if not operation.strip():
+            raise HarnessError("agent-work operation 不能为空")
+        if lease_seconds < 30 or lease_seconds > 86400:
+            raise HarnessError("agent-work lease seconds 必须在 30..86400")
+        self._validate_progress(0 if total is not None else None, total)
+        scopes = self._normalized_write_scopes(write_scope)
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        runtime = str(manifest.get("runtime") or "unselected")
+        if runtime not in {"codex", "kimi"}:
+            raise HarnessError("multi-agent 需要项目 runtime 明确选择 codex 或 kimi")
+        # Reconciliation owns the stable action set; assignments never mutate actions.status.
+        self.reconcile()
+        assignment_id = f"assignment:{uuid.uuid4().hex[:12]}"
+        activity_id = f"activity:{uuid.uuid4().hex[:12]}"
+        timestamp_value = dt.datetime.now(dt.timezone.utc)
+        timestamp = timestamp_value.isoformat()
+        lease_expires_at = (timestamp_value + dt.timedelta(seconds=lease_seconds)).isoformat()
+        try:
+            with self.connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                self._refresh_agent_assignments(connection)
+                action = connection.execute(
+                    "SELECT * FROM actions WHERE id=? AND status='OPEN'", (action_id,),
+                ).fetchone()
+                if action is None:
+                    raise HarnessError(f"action 已不是当前可领取动作: {action_id}")
+                if action["executor"] == "human" or action["kind"] == "WAIT_FOR_DEPENDENCY":
+                    raise HarnessError("该 closure action 不能分派给 subagent")
+                plan, desired = self._current_assignment_definition(
+                    connection, action["target"],
+                )
+                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"}:
+                    raise HarnessError("Workstream 尚未获准执行，不能分派 subagent")
+                blocking_question = connection.execute(
+                    """SELECT id FROM agent_questions
+                       WHERE status='OPEN' AND blocking=1
+                         AND target IN (?, ?, 'project') LIMIT 1""",
+                    (action["target"], action["workstream"]),
+                ).fetchone()
+                if blocking_question is not None:
+                    raise HarnessError("当前存在未回答的 Main Agent 问题，不能分派 subagent")
+                for existing in connection.execute(
+                    "SELECT id,write_scope_json FROM agent_assignments WHERE status='ACTIVE'"
+                ):
+                    existing_scopes = json.loads(existing["write_scope_json"])
+                    conflict = next((
+                        (left, right) for left in scopes for right in existing_scopes
+                        if self._scopes_overlap(left, right)
+                    ), None)
+                    if conflict is not None:
+                        raise HarnessError(
+                            f"write scope 与 active assignment {existing['id']} 冲突: "
+                            f"{conflict[0]} / {conflict[1]}"
+                        )
+                digest = self._node_plan_digest(plan, desired)
+                connection.execute(
+                    """INSERT INTO activities
+                       (id,node_id,workstream,operation,status,actor,message,
+                        progress_current,progress_total,log_path,created_at,updated_at,ended_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (activity_id, action["target"], action["workstream"], operation.strip(),
+                     "RUNNING", selected_agent, message.strip(),
+                     0 if total is not None else None, total, None,
+                     timestamp, timestamp, None),
+                )
+                connection.execute(
+                    """INSERT INTO agent_assignments
+                       (id,action_id,node_id,workstream,workstream_revision,
+                        definition_digest,runtime,agent_id,parent_agent_id,role,runtime_ref,
+                        status,activity_id,lease_seconds,lease_expires_at,heartbeat_at,
+                        write_scope_json,summary,result_json,created_at,updated_at,ended_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (assignment_id, action["id"], action["target"], action["workstream"],
+                     plan["revision"], digest, runtime, selected_agent, selected_parent, role,
+                     runtime_ref.strip() if runtime_ref else None, "ACTIVE", activity_id,
+                     lease_seconds, lease_expires_at, timestamp, json_text(scopes), "", "{}",
+                     timestamp, timestamp, None),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise HarnessError(
+                "node 或 agent 已被另一个 active subagent assignment 领取"
+            ) from exc
+        return self.agent_assignment(assignment_id)
+
+    def agent_assignment(self, assignment_id: str) -> dict[str, Any]:
+        self.require()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._refresh_agent_assignments(connection)
+            row = connection.execute(
+                "SELECT * FROM agent_assignments WHERE id=?", (assignment_id,),
+            ).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 agent assignment: {assignment_id}")
+            activity = connection.execute(
+                "SELECT * FROM activities WHERE id=?", (row["activity_id"],),
+            ).fetchone()
+        result = self._agent_assignment_row(row)
+        result["activity"] = dict(activity) if activity is not None else None
+        return result
+
+    def agent_assignments(
+        self, workstream: str | None = None, node_id: str | None = None,
+        active_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        self.require()
+        filters: list[str] = []
+        values: list[Any] = []
+        if workstream:
+            filters.append("workstream=?")
+            values.append(self.normalize_workstream(workstream))
+        if node_id:
+            filters.append("node_id=?")
+            values.append(node_id)
+        if active_only:
+            filters.append("status='ACTIVE'")
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._refresh_agent_assignments(connection)
+            rows = connection.execute(
+                "SELECT * FROM agent_assignments" + where + " ORDER BY created_at DESC",
+                values,
+            ).fetchall()
+            activity_by_id = {
+                row["id"]: dict(row) for row in connection.execute("SELECT * FROM activities")
+            }
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            item = self._agent_assignment_row(row)
+            item["activity"] = activity_by_id.get(item["activity_id"])
+            results.append(item)
+        return results
+
+    def heartbeat_agent_work(
+        self, assignment_id: str, agent_id: str, phase: str = "RUNNING",
+        message: str | None = None, current: int | None = None,
+        total: int | None = None,
+    ) -> dict[str, Any]:
+        """Refresh an active lease using progress reported to Main Agent by the child."""
+        selected_agent = self._agent_identity(agent_id, "agent_id")
+        selected_phase = phase.upper()
+        if selected_phase not in AGENT_ASSIGNMENT_PHASES:
+            raise HarnessError(
+                "agent-work phase 必须是 " + ", ".join(sorted(AGENT_ASSIGNMENT_PHASES))
+            )
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._refresh_agent_assignments(connection)
+            row = connection.execute(
+                "SELECT * FROM agent_assignments WHERE id=?", (assignment_id,),
+            ).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 agent assignment: {assignment_id}")
+            if row["agent_id"] != selected_agent:
+                raise HarnessError("agent_id 与 assignment owner 不一致")
+            if row["status"] != "ACTIVE":
+                raise HarnessError(f"agent assignment 已结束: {row['status']}")
+            activity = connection.execute(
+                "SELECT * FROM activities WHERE id=?", (row["activity_id"],),
+            ).fetchone()
+            if activity is None:
+                raise HarnessError("agent assignment 缺少关联 Activity")
+            new_current = current if current is not None else activity["progress_current"]
+            new_total = total if total is not None else activity["progress_total"]
+            self._validate_progress(new_current, new_total)
+            timestamp_value = dt.datetime.now(dt.timezone.utc)
+            timestamp = timestamp_value.isoformat()
+            lease_expires_at = (
+                timestamp_value + dt.timedelta(seconds=row["lease_seconds"])
+            ).isoformat()
+            connection.execute(
+                """UPDATE agent_assignments
+                   SET heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=?""",
+                (timestamp, lease_expires_at, timestamp, assignment_id),
+            )
+            connection.execute(
+                """UPDATE activities SET status=?,message=?,progress_current=?,progress_total=?,
+                   updated_at=? WHERE id=?""",
+                (selected_phase,
+                 activity["message"] if message is None else message.strip(),
+                 new_current, new_total, timestamp, row["activity_id"]),
+            )
+        return self.agent_assignment(assignment_id)
+
+    def finish_agent_work(
+        self, assignment_id: str, agent_id: str, outcome: str, summary: str,
+        result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """End collaboration bookkeeping without changing node validity or evidence."""
+        selected_agent = self._agent_identity(agent_id, "agent_id")
+        selected_outcome = outcome.upper()
+        if selected_outcome not in {"COMPLETED", "FAILED", "CANCELLED"}:
+            raise HarnessError("agent-work outcome 必须是 COMPLETED, FAILED 或 CANCELLED")
+        if not summary.strip():
+            raise HarnessError("agent-work finish summary 不能为空")
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._refresh_agent_assignments(connection)
+            row = connection.execute(
+                "SELECT * FROM agent_assignments WHERE id=?", (assignment_id,),
+            ).fetchone()
+            if row is None:
+                raise HarnessError(f"未知 agent assignment: {assignment_id}")
+            if row["agent_id"] != selected_agent:
+                raise HarnessError("agent_id 与 assignment owner 不一致")
+            if row["status"] != "ACTIVE":
+                if row["status"] in {selected_outcome, "SUPERSEDED"}:
+                    pass
+                else:
+                    raise HarnessError(f"agent assignment 已结束: {row['status']}")
+            else:
+                timestamp = now()
+                connection.execute(
+                    """UPDATE agent_assignments SET status=?,summary=?,result_json=?,
+                       updated_at=?,ended_at=? WHERE id=?""",
+                    (selected_outcome, summary.strip(), json_text(result or {}),
+                     timestamp, timestamp, assignment_id),
+                )
+                activity = connection.execute(
+                    "SELECT progress_current,progress_total FROM activities WHERE id=?",
+                    (row["activity_id"],),
+                ).fetchone()
+                progress_current = (
+                    activity["progress_total"]
+                    if selected_outcome == "COMPLETED" and activity is not None
+                    and activity["progress_total"] is not None
+                    else activity["progress_current"] if activity is not None else None
+                )
+                connection.execute(
+                    """UPDATE activities SET status=?,message=?,progress_current=?,
+                       updated_at=?,ended_at=? WHERE id=?""",
+                    (selected_outcome, summary.strip(), progress_current,
+                     timestamp, timestamp, row["activity_id"]),
+                )
+        return self.agent_assignment(assignment_id)
 
     def add_human_action(
         self, target: str, action: str, reviewer: str, reason: str,
@@ -1966,13 +2479,18 @@ class ProjectStore:
     def ask_agent_question(
         self, target: str, prompt: str, options: Iterable[dict[str, Any]],
         recommended_option: str | None = None, context: str = "",
-        asked_by: str = "Agent", blocking: bool = True,
+        asked_by: str = PROJECT_AGENT_ACTOR, blocking: bool = True,
         activity_id: str | None = None,
     ) -> dict[str, Any]:
-        """Persist one Agent question so Dashboard Human input survives session boundaries."""
+        """Persist a Main-Agent question so Dashboard Human input survives sessions."""
         self.require()
         if not prompt.strip() or not asked_by.strip():
             raise HarnessError("agent question prompt 和 asked_by 不能为空")
+        if asked_by.strip() != PROJECT_AGENT_ACTOR:
+            raise HarnessError(
+                f"只有 {PROJECT_AGENT_ACTOR} 可以登记 Human 问题；"
+                "subagent 必须先向 Main Agent 回报"
+            )
         normalized_options, recommended = self._question_options(options, recommended_option)
         raw_target = target.strip()
         question_id = f"question:{uuid.uuid4().hex[:12]}"
@@ -2013,6 +2531,15 @@ class ProjectStore:
                 ).fetchone()
                 if activity is None:
                     raise HarnessError(f"未知 activity: {activity_id}")
+                subagent_assignment = connection.execute(
+                    "SELECT id FROM agent_assignments WHERE activity_id=? LIMIT 1",
+                    (activity_id,),
+                ).fetchone()
+                if subagent_assignment is not None:
+                    raise HarnessError(
+                        "subagent Activity 不能直接绑定 Human 问题；"
+                        "请先向 Main Agent 回报，再由 Main Agent 统一提问"
+                    )
                 if activity["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
                     raise HarnessError("已结束的 Activity 不能提出等待回答的问题")
                 if activity["workstream"] != question_workstream:
@@ -2030,7 +2557,7 @@ class ProjectStore:
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (question_id, normalized_target, target_type, question_workstream, node_id,
                  prompt.strip(), context.strip(), json_text(normalized_options), recommended,
-                 "OPEN", int(blocking), asked_by.strip(), activity_id,
+                 "OPEN", int(blocking), PROJECT_AGENT_ACTOR, activity_id,
                  None, None, None, timestamp, timestamp, None),
             )
             if activity_id and blocking:
@@ -4224,6 +4751,7 @@ class ProjectStore:
         self.ensure_dashboard_schema()
         summary = self.status()
         model = self.model()
+        agent_assignment_history = self.agent_assignments()
         activities = self.activities()
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
@@ -4420,6 +4948,10 @@ class ProjectStore:
                     "agent_questions": [
                         item for item in agent_questions if item["target"] == desired["id"]
                     ],
+                    "agent_assignments": [
+                        item for item in agent_assignment_history
+                        if item["node_id"] == desired["id"]
+                    ],
                     "incoming": incoming.get(desired["id"], []),
                     "outgoing": outgoing.get(desired["id"], []),
                     "document": mapped_document,
@@ -4555,13 +5087,19 @@ class ProjectStore:
             or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
             or item["target_type"] == "project"
         )]
+        current_agent_assignments = [
+            item for item in agent_assignment_history
+            if item["node_id"] in current_desired_ids
+        ]
 
         # The project Agent is a persistent control-plane actor, not an Activity row.
         # Activities describe bounded work and may legitimately be empty while the
         # Agent is ready for its next instruction.
         active_agent_activities = [
             item for item in current_activities
-            if item["status"] in {"PENDING", "RUNNING", "WAITING_FOR_HUMAN"}
+            if item["status"] in {
+                "PENDING", "RUNNING", "WAITING_FOR_HUMAN", "WAITING_FOR_PARENT",
+            }
         ]
         open_agent_questions = [
             item for item in current_agent_questions if item["status"] == "OPEN"
@@ -4578,41 +5116,123 @@ class ProjectStore:
         pending_activity_count = sum(
             item["status"] == "PENDING" for item in active_agent_activities
         )
-        latest_activity = current_activities[0] if current_activities else (
-            activities[0] if activities else None
+        waiting_for_parent_count = sum(
+            item["status"] == "WAITING_FOR_PARENT" for item in active_agent_activities
+        )
+        assignment_activity_ids = {
+            item["activity_id"] for item in agent_assignment_history
+        }
+        current_main_activities = [
+            item for item in current_activities
+            if item["id"] not in assignment_activity_ids
+        ]
+        main_activity_history = [
+            item for item in activities
+            if item["id"] not in assignment_activity_ids
+        ]
+        latest_activity = (
+            current_main_activities[0] if current_main_activities
+            else main_activity_history[0] if main_activity_history else None
         )
         if blocking_question_count or waiting_activity_count:
             project_agent_status = "WAITING_FOR_HUMAN"
             project_agent_message = (
-                f"等待 Human 回答 {blocking_question_count or waiting_activity_count} 个问题"
+                f"需要你回答 {blocking_question_count or waiting_activity_count} 个问题；回答后 Agent 才会继续相关工作"
             )
         elif running_activity_count:
             project_agent_status = "RUNNING"
-            project_agent_message = f"{running_activity_count} 项 Agent 工作正在执行"
+            project_agent_message = (
+                f"Agent 正在处理 {running_activity_count} 项验证工作，当前无需你操作"
+            )
+        elif waiting_for_parent_count:
+            project_agent_status = "RUNNING"
+            project_agent_message = (
+                f"有 {waiting_for_parent_count} 个 subagent 等待 Main Agent 协调；"
+                "当前尚未要求 Human 处理"
+            )
         elif pending_activity_count:
             project_agent_status = "PENDING"
-            project_agent_message = f"{pending_activity_count} 项 Agent 工作等待执行"
+            project_agent_message = (
+                f"有 {pending_activity_count} 项验证工作等待 Agent 开始处理，当前无需你操作"
+            )
         elif latest_activity and latest_activity["status"] == "FAILED":
             project_agent_status = "FAILED"
             project_agent_message = (
-                f"最近一项 Agent 工作执行失败：{latest_activity['operation']}"
+                f"Agent 最近一项工作失败：{latest_activity['operation']}；请查看失败原因"
             )
         else:
             project_agent_status = "IDLE"
-            project_agent_message = "项目级 Agent 当前空闲，没有已登记活动"
+            project_agent_message = (
+                "现在没有需要你回答的问题；Dashboard 也没有收到 Agent 正在处理验证工作的记录"
+            )
             if latest_activity and latest_activity["status"] == "COMPLETED":
-                project_agent_message += f"；最近完成：{latest_activity['operation']}"
+                project_agent_message = (
+                    "现在没有需要你回答的问题；"
+                    f"Agent 最近完成：{latest_activity['operation']}"
+                )
 
         project_agent = {
-            "id": "project-agent",
+            "id": PROJECT_AGENT_ID,
             "scope": "project",
-            "label": "项目级 Agent",
+            "label": "当前项目的 Agent",
             "runtime": summary["runtime"],
             "status": project_agent_status,
             "message": project_agent_message,
             "active_activity_count": len(active_agent_activities),
             "open_question_count": len(open_agent_questions),
             "latest_activity": latest_activity,
+        }
+
+        def subagent_view(item: dict[str, Any]) -> dict[str, Any]:
+            activity = item.get("activity") or {}
+            display_status = (
+                activity.get("status", "RUNNING")
+                if item["status"] == "ACTIVE" else item["status"]
+            )
+            return {
+                "id": item["agent_id"],
+                "assignment_id": item["id"],
+                "parent_agent_id": item["parent_agent_id"],
+                "runtime": item["runtime"],
+                "runtime_ref": item["runtime_ref"],
+                "role": item["role"],
+                "status": display_status,
+                "assignment_status": item["status"],
+                "workstream": item["workstream"],
+                "node_id": item["node_id"],
+                "operation": activity.get("operation", ""),
+                "message": activity.get("message") or item.get("summary", ""),
+                "progress_current": activity.get("progress_current"),
+                "progress_total": activity.get("progress_total"),
+                "activity_id": item["activity_id"],
+                "heartbeat_at": item["heartbeat_at"],
+                "lease_expires_at": item["lease_expires_at"],
+                "write_scope": item["write_scope"],
+                "summary": item["summary"],
+                "created_at": item["created_at"],
+                "updated_at": item["updated_at"],
+                "ended_at": item["ended_at"],
+            }
+
+        active_subagents = [
+            subagent_view(item) for item in current_agent_assignments
+            if item["status"] == "ACTIVE"
+        ]
+        recent_subagents = [
+            subagent_view(item) for item in agent_assignment_history
+            if item["status"] != "ACTIVE"
+        ][:12]
+        project_agent["active_subagent_count"] = len(active_subagents)
+        project_agent["waiting_subagent_count"] = sum(
+            item["status"] == "WAITING_FOR_PARENT" for item in active_subagents
+        )
+        agent_collaboration = {
+            "schema": "AgentCollaboration/1",
+            "interaction_owner": PROJECT_AGENT_ID,
+            "coordinator": project_agent,
+            "active_subagents": active_subagents,
+            "recent_subagents": recent_subagents,
+            "assignment_activity_ids": sorted(assignment_activity_ids),
         }
 
         payload: dict[str, Any] = {
@@ -4630,6 +5250,7 @@ class ProjectStore:
                 "verification_inputs": summary["verification_inputs"],
             },
             "project_agent": project_agent,
+            "agent_collaboration": agent_collaboration,
             # Dashboard totals describe the active desired-state revisions. The full model and
             # audit histories remain available below, but stale revisions must not look active.
             "node_status": current_node_status,
@@ -4641,6 +5262,8 @@ class ProjectStore:
             "documents": documents,
             "activities": current_activities,
             "activity_history": activities,
+            "agent_assignments": current_agent_assignments,
+            "agent_assignment_history": agent_assignment_history,
             "human_actions": current_human_actions,
             "human_action_history": human_actions,
             "agent_questions": current_agent_questions,

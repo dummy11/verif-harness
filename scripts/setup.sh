@@ -163,6 +163,52 @@ if [[ "$launch_agent" == true ]]; then
     exit 2
   fi
 fi
+
+install_agent_profiles() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local runtime_label="$3"
+  if [[ ! -d "$source_dir" ]]; then
+    echo "ERROR: managed $runtime_label agent profile source is missing: $source_dir" >&2
+    exit 2
+  fi
+  if [[ -L "$target_dir" ]]; then
+    echo "ERROR: refusing to follow a symlink at $target_dir" >&2
+    exit 2
+  fi
+  mkdir -p "$target_dir"
+  local source target candidate
+  local found_profile=false
+  for source in "$source_dir"/*; do
+    [[ -f "$source" ]] || continue
+    found_profile=true
+    target="$target_dir/$(basename "$source")"
+    [[ "$source" == "$target" ]] && continue
+    if [[ -L "$target" ]]; then
+      echo "ERROR: refusing to follow a symlink at $target" >&2
+      exit 2
+    elif [[ -e "$target" ]]; then
+      if ! cmp -s "$source" "$target"; then
+        candidate="$target.new"
+        if [[ -L "$candidate" ]]; then
+          echo "ERROR: refusing to follow a symlink at $candidate" >&2
+          exit 2
+        fi
+        cp "$source" "$candidate"
+        echo "NOTICE: preserved existing $runtime_label agent profile: $target" >&2
+        echo "        review and merge the managed update from: $candidate" >&2
+      fi
+    else
+      cp "$source" "$target"
+      echo "Installed $runtime_label agent profile: $target"
+    fi
+  done
+  if [[ "$found_profile" != true ]]; then
+    echo "ERROR: no managed $runtime_label agent profiles found in: $source_dir" >&2
+    exit 2
+  fi
+}
+
 if [[ "$runtime" == "codex" ]]; then
   agent_cli="$codex_cli"
   if [[ "$workspace_root" == "$package_root" ]]; then
@@ -186,6 +232,8 @@ if [[ "$runtime" == "codex" ]]; then
       echo "Created workspace Codex rules: $workspace_root/.codex/rules/default.rules"
     fi
   fi
+  install_agent_profiles \
+    "$package_root/.codex/agents" "$workspace_root/.codex/agents" "Codex"
 else
   agent_cli="$kimi_cli"
   # Kimi Code's project-local file currently supports workspace settings only;
@@ -206,6 +254,8 @@ else
       'additional_dir = []' > "$workspace_root/.kimi-code/local.toml"
     echo "Created workspace Kimi config: $workspace_root/.kimi-code/local.toml"
   fi
+  install_agent_profiles \
+    "$package_root/.kimi-code/agents" "$workspace_root/.kimi-code/agents" "Kimi"
   agent_args+=(--yolo)
 fi
 

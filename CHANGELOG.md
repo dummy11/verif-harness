@@ -5,6 +5,16 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added single-runtime Codex/Kimi subagent collaboration with revision-bound
+  atomic claims, heartbeat leases, registered non-overlapping verification write scopes,
+  Main-Agent-only Human interaction, and per-subagent Dashboard visibility.
+- Added project-scoped explorer, worker, and reviewer profiles for Codex and Kimi.
+- Protected control-plane/runtime metadata from declared subagent write scopes,
+  superseded assignments when their Closure action changes, and preserved local
+  runtime profiles by emitting managed updates as `.new` files.
+
 ### Changed
 
 - Rebuilt the control plane around VPlan, VModel, VCheck, VClosure, and VReason.

@@ -789,6 +789,11 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(idle_snapshot["project_agent"]["id"], "project-agent")
         self.assertEqual(idle_snapshot["project_agent"]["scope"], "project")
         self.assertEqual(idle_snapshot["project_agent"]["status"], "IDLE")
+        self.assertEqual(idle_snapshot["project_agent"]["label"], "当前项目的 Agent")
+        self.assertEqual(
+            idle_snapshot["project_agent"]["message"],
+            "现在没有需要你回答的问题；Dashboard 也没有收到 Agent 正在处理验证工作的记录",
+        )
         self.assertEqual(idle_snapshot["project_agent"]["active_activity_count"], 0)
         activity = self.run_cli(
             "activity", "start", "project", "--operation", "analyze-dut-for-vdoc",

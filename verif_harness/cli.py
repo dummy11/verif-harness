@@ -11,9 +11,10 @@ import urllib.parse
 from pathlib import Path
 
 from .store import (
-    ACTIVITY_STATUSES, AGENT_QUESTION_STATUSES, DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES,
+    ACTIVITY_STATUSES, AGENT_ASSIGNMENT_PHASES, AGENT_QUESTION_STATUSES,
+    DOCUMENT_ITEM_KINDS, DOCUMENT_ITEM_STATUSES,
     HUMAN_ACTIONS, HUMAN_ACTION_STATUSES, HarnessError, ProjectStore, Validity,
-    WORKSTREAM_TEMPLATES,
+    PROJECT_AGENT_ACTOR, VERIFICATION_AGENT_ROLES, WORKSTREAM_TEMPLATES,
     capabilities,
 )
 
@@ -21,12 +22,9 @@ from .store import (
 ALIASES = {
     "vplan": "plan", "vmodel": "model", "vcheck": "check",
     "vclosure": "closure", "vreason": "reason",
-    "waveform": "wavepeek",
+    "waveform": "wavepeek", "subagent": "agent-work",
 }
-ROLES = (
-    "VerificationArchitect", "EnvironmentEngineer", "TestEngineer",
-    "AssertionEngineer", "CoverageEngineer", "DebugEngineer", "Reviewer",
-)
+ROLES = VERIFICATION_AGENT_ROLES
 
 
 def emit(value: object) -> None:
@@ -104,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness changed PATH
   verif-harness freeze VDOC|final
   verif-harness dashboard --open-browser
+  verif-harness agent-work candidates
   verif-harness agent-question ask NODE --prompt TEXT --option ID LABEL DESCRIPTION
   verif-harness await-human VDOC
 
@@ -174,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_argument(status)
     status.add_argument("workstream", nargs="?", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
 
-    dashboard = commands.add_parser("dashboard", help="后台启动、检查或停止 Human Dashboard")
+    dashboard = commands.add_parser("dashboard", help="在固定端口注册、检查或注销项目 Dashboard")
     project_argument(dashboard)
     dashboard.add_argument("--host", help="仅允许 loopback host；默认读取运行记录或使用 127.0.0.1")
     dashboard.add_argument("--port", type=int, help="默认读取运行记录或使用 8765")
@@ -184,7 +183,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--status", action="store_true", help="检查后台 Dashboard 状态后退出",
     )
     dashboard_mode.add_argument(
-        "--stop", action="store_true", help="停止当前项目记录的后台 Dashboard",
+        "--stop", action="store_true",
+        help="从共享 Dashboard 注销当前项目；最后一个项目注销后停止服务",
     )
     dashboard_mode.add_argument(
         "--snapshot", action="store_true", help="输出 Dashboard JSON 后退出，不启动服务",
@@ -339,6 +339,64 @@ def build_parser() -> argparse.ArgumentParser:
     activity_list.add_argument("--node")
     activity_list.add_argument("--active", action="store_true")
 
+    agent_work = commands.add_parser(
+        "agent-work",
+        help="由 Main Agent 登记 runtime-native subagent 的 claim、heartbeat 和结果",
+    )
+    agent_work_commands = agent_work.add_subparsers(dest="agent_work_command", required=True)
+    agent_candidates = agent_work_commands.add_parser(
+        "candidates", help="列出当前可独立分派的 closure actions",
+    )
+    project_argument(agent_candidates)
+    agent_candidates.add_argument("--limit", type=int, default=20)
+    agent_claim = agent_work_commands.add_parser(
+        "claim", help="原子领取一个当前 closure action，并自动建立 Activity",
+    )
+    project_argument(agent_claim)
+    agent_claim.add_argument("action_id")
+    agent_claim.add_argument("--agent", required=True)
+    agent_claim.add_argument("--parent", default="project-agent")
+    agent_claim.add_argument("--role", choices=ROLES, required=True)
+    agent_claim.add_argument("--operation", required=True)
+    agent_claim.add_argument("--runtime-ref")
+    agent_claim.add_argument("--lease-seconds", type=int, default=300)
+    agent_claim.add_argument("--write-scope", action="append", default=[])
+    agent_claim.add_argument("--message", default="")
+    agent_claim.add_argument("--total", type=int)
+    agent_heartbeat = agent_work_commands.add_parser(
+        "heartbeat", help="由 Main Agent 同步 subagent 进度或等待协调状态",
+    )
+    project_argument(agent_heartbeat)
+    agent_heartbeat.add_argument("assignment_id")
+    agent_heartbeat.add_argument("--agent", required=True)
+    agent_heartbeat.add_argument(
+        "--phase", choices=tuple(sorted(AGENT_ASSIGNMENT_PHASES)),
+        type=str.upper, default="RUNNING",
+    )
+    agent_heartbeat.add_argument("--message")
+    agent_heartbeat.add_argument("--current", type=int)
+    agent_heartbeat.add_argument("--total", type=int)
+    agent_finish = agent_work_commands.add_parser(
+        "finish", help="结束 subagent assignment；不会改变 node validity 或 evidence",
+    )
+    project_argument(agent_finish)
+    agent_finish.add_argument("assignment_id")
+    agent_finish.add_argument("--agent", required=True)
+    agent_finish.add_argument(
+        "--outcome", choices=("COMPLETED", "FAILED", "CANCELLED"),
+        type=str.upper, required=True,
+    )
+    agent_finish.add_argument("--summary", required=True)
+    agent_work_list = agent_work_commands.add_parser(
+        "list", help="查看 active 或历史 subagent assignments",
+    )
+    project_argument(agent_work_list)
+    agent_work_list.add_argument(
+        "--workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper,
+    )
+    agent_work_list.add_argument("--node")
+    agent_work_list.add_argument("--active", action="store_true")
+
     human_action = commands.add_parser("human-action", help="登记 Dashboard/对话中的 Human 意见或调整请求")
     human_commands = human_action.add_subparsers(dest="human_command", required=True)
     human_add = human_commands.add_parser("add", help="添加节点或 Workstream 级 Human action")
@@ -373,7 +431,10 @@ def build_parser() -> argparse.ArgumentParser:
     question_ask.add_argument("target", help="project、当前 Workstream 或具体工作节点")
     question_ask.add_argument("--prompt", required=True)
     question_ask.add_argument("--context", default="")
-    question_ask.add_argument("--actor", default="Agent")
+    question_ask.add_argument(
+        "--actor", choices=(PROJECT_AGENT_ACTOR,), default=PROJECT_AGENT_ACTOR,
+        help="Human 问题只能由 Project Main Agent 登记",
+    )
     question_ask.add_argument("--activity")
     question_ask.add_argument("--recommended")
     question_ask.add_argument("--non-blocking", action="store_true")
@@ -534,12 +595,17 @@ def bootstrap_dashboard(
         open_browser=bool(not remote and desktop and (agent_runtime or terminal_interactive)),
     )
     dashboard_url = str(result.get("url") or "http://127.0.0.1:8765/")
-    dashboard_port = urllib.parse.urlsplit(dashboard_url).port or 8765
+    dashboard_parts = urllib.parse.urlsplit(dashboard_url)
+    dashboard_port = dashboard_parts.port or 8765
+    selected_project_url = urllib.parse.urlunsplit((
+        "http", f"127.0.0.1:{dashboard_port}", dashboard_parts.path or "/",
+        dashboard_parts.query, "",
+    ))
     if remote:
         result["access"] = {
             "mode": "ssh-tunnel",
             "command": f"ssh -L {dashboard_port}:127.0.0.1:{dashboard_port} <server>",
-            "url": f"http://127.0.0.1:{dashboard_port}/",
+            "url": selected_project_url,
             "message": "远端不会尝试打开浏览器；请在本地建立 SSH 转发",
         }
     else:
@@ -709,6 +775,30 @@ def main(arguments: list[str] | None = None) -> int:
                 ))
             else:
                 emit({"activities": store.activities(args.workstream, args.node, args.active)})
+        elif args.command == "agent-work":
+            if args.agent_work_command == "candidates":
+                emit(store.agent_work_candidates(args.limit))
+            elif args.agent_work_command == "claim":
+                emit(store.claim_agent_work(
+                    args.action_id, args.agent, args.role, args.operation,
+                    args.parent, args.runtime_ref, args.lease_seconds,
+                    args.write_scope, args.message, args.total,
+                ))
+            elif args.agent_work_command == "heartbeat":
+                emit(store.heartbeat_agent_work(
+                    args.assignment_id, args.agent, args.phase,
+                    args.message, args.current, args.total,
+                ))
+            elif args.agent_work_command == "finish":
+                emit(store.finish_agent_work(
+                    args.assignment_id, args.agent, args.outcome, args.summary,
+                ))
+            else:
+                emit({
+                    "agent_assignments": store.agent_assignments(
+                        args.workstream, args.node, args.active,
+                    )
+                })
         elif args.command == "human-action":
             if args.human_command == "add":
                 emit(store.add_human_action(

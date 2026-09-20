@@ -64,9 +64,15 @@ and questions, and does not write project state.
    server, or from a non-interactive Agent is not a reason to disable it. On SSH, do
    not try to open a remote browser; return the `access.command` and `access.url`
    from the CLI result. CI may omit both flags and use the CLI's automatic skip.
-   Check the returned `dashboard.status`: only `STARTED` and `REUSED` mean the
-   Dashboard is available. Report `SKIPPED`, `DISABLED`, `FAILED`, or
-   `PORT_CONFLICT` truthfully and do not claim that the Dashboard is running.
+   The fixed port hosts one shared Dashboard service. Each bootstrap registers
+   only the current project as an independent route; later projects reuse the
+   same service and must never share SQLite state, progress, questions, reviews,
+   evidence, or writes. Check the returned `dashboard.status`: only `STARTED`
+   and `REUSED` mean the Dashboard is available. Report `SKIPPED`, `DISABLED`,
+   `FAILED`, or `PORT_CONFLICT` truthfully and do not claim that the Dashboard
+   is running. `PORT_CONFLICT` now means a non-Dashboard service or an old
+   single-project Dashboard is occupying the fixed port, not that another
+   current project is registered.
    If it must be started or recovered later, use plain `verif-harness dashboard`;
    this invokes the same detached start-or-reuse action as bootstrap. Verify with
    `verif-harness dashboard --status`. Do not run a foreground Dashboard through

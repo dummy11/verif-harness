@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import tempfile
 import threading
@@ -13,8 +14,9 @@ from unittest import mock
 
 from verif_harness.cli import bootstrap_dashboard, main
 from verif_harness.dashboard import (
-    create_dashboard_server, dashboard_status, dashboard_url, ensure_dashboard_running,
-    stop_dashboard,
+    DASHBOARD_HUB_SCHEMA, DASHBOARD_REGISTRY_ENV, create_dashboard_server,
+    dashboard_project_id, dashboard_status, dashboard_url, ensure_dashboard_running,
+    register_dashboard_project, stop_dashboard,
 )
 from verif_harness.store import HarnessError, ProjectStore
 
@@ -23,11 +25,16 @@ class DashboardTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        self.registry = self.root / "dashboard-registry"
+        self.environment = mock.patch.dict(os.environ, {
+            DASHBOARD_REGISTRY_ENV: str(self.registry),
+        })
+        self.environment.start()
         (self.root / "rtl").mkdir()
         (self.root / "rtl/dut.sv").write_text("module dut; endmodule\n", encoding="utf-8")
         self.store = ProjectStore(self.root)
         self.store.bootstrap(
-            runtime="none", rtl_roots=["rtl"], verif_root="verification",
+            project_name="alpha", runtime="none", rtl_roots=["rtl"], verif_root="verification",
             dut_top="dut", dut_top_file="rtl/dut.sv",
         )
         self.plan = self.store.design_workstream("VCHK", None, [], [], [])
@@ -40,6 +47,7 @@ class DashboardTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
+        self.environment.stop()
         self.temporary.cleanup()
 
     def get(self, path: str) -> urllib.request.addinfourl:
@@ -62,10 +70,11 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(result["schema"], "DashboardLaunch/1")
         self.assertEqual(result["status"], "REUSED")
         self.assertEqual(result["project"], str(self.store.root))
-        self.assertEqual(result["url"], self.url)
+        self.assertTrue(result["url"].startswith(self.url + "?project="))
+        self.assertTrue(result["shared_service"])
         self.assertFalse(result["browser_opened"])
 
-    def test_background_launcher_reports_other_project_port_conflict(self) -> None:
+    def test_background_launcher_registers_other_project_on_same_fixed_port(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             other_root = Path(directory)
             (other_root / "rtl").mkdir()
@@ -76,13 +85,20 @@ class DashboardTest(unittest.TestCase):
                 dut_top="dut", dut_top_file="rtl/dut.sv",
             )
             result = ensure_dashboard_running(other, "127.0.0.1", self.server.server_address[1])
-        self.assertEqual(result["status"], "PORT_CONFLICT")
-        self.assertEqual(result["observed_project"], str(self.store.root))
+            with self.get("/api/projects") as response:
+                projects = json.loads(response.read())["projects"]
+        self.assertEqual(result["status"], "REUSED")
+        self.assertEqual({item["id"] for item in projects}, {
+            dashboard_project_id(self.store.root), dashboard_project_id(other.root),
+        })
 
     def test_background_launcher_starts_detached_process_and_records_runtime(self) -> None:
         process = mock.Mock(pid=31415)
         process.poll.return_value = None
-        healthy = {"status": "ok", "project": str(self.store.root)}
+        healthy = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "projects": [dashboard_project_id(self.store.root)],
+        }
         with (
             mock.patch("verif_harness.dashboard._dashboard_health", side_effect=[None, healthy]),
             mock.patch("verif_harness.dashboard._port_accepts_connections", return_value=False),
@@ -99,9 +115,17 @@ class DashboardTest(unittest.TestCase):
         runtime = json.loads(
             (self.root / ".verif-harness/dashboard-runtime.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(runtime["schema"], "DashboardRuntime/1")
+        self.assertEqual(runtime["schema"], "DashboardRuntime/2")
         self.assertEqual(runtime["port"], 18765)
         self.assertEqual(runtime["pid"], 31415)
+
+    def test_background_launcher_rejects_old_single_project_dashboard(self) -> None:
+        legacy = {"status": "ok", "project": "/tmp/legacy-project"}
+        with mock.patch("verif_harness.dashboard._dashboard_health", return_value=legacy):
+            result = ensure_dashboard_running(self.store, "127.0.0.1", 18765)
+        self.assertEqual(result["status"], "PORT_CONFLICT")
+        self.assertEqual(result["observed_project"], "/tmp/legacy-project")
+        self.assertIn("旧版单项目 Dashboard", result["message"])
 
     def test_direct_dashboard_and_bootstrap_use_the_same_background_launcher(self) -> None:
         launched = {
@@ -124,6 +148,25 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(bootstrap_result, launched)
         self.assertEqual(direct_call.args[1:], bootstrap_call.args[1:])
 
+    def test_remote_bootstrap_access_url_preserves_selected_project(self) -> None:
+        project_id = dashboard_project_id(self.store.root)
+        launched = {
+            "schema": "DashboardLaunch/1", "status": "REUSED",
+            "project": str(self.root),
+            "url": f"http://127.0.0.1:8765/?project={project_id}",
+        }
+        with (
+            mock.patch("verif_harness.dashboard.ensure_dashboard_running", return_value=launched),
+            mock.patch.dict(os.environ, {"SSH_CONNECTION": "client server"}),
+        ):
+            result = bootstrap_dashboard(self.store, "codex", True, False, None)
+        self.assertEqual(
+            result["access"]["url"], f"http://127.0.0.1:8765/?project={project_id}",
+        )
+        self.assertEqual(
+            result["access"]["command"], "ssh -L 8765:127.0.0.1:8765 <server>",
+        )
+
     def test_dashboard_status_and_stop_use_managed_runtime(self) -> None:
         runtime_path = self.root / ".verif-harness/dashboard-runtime.json"
         runtime_path.write_text(json.dumps({
@@ -133,21 +176,96 @@ class DashboardTest(unittest.TestCase):
             "log": str(self.root / ".verif-harness/dashboard.log"),
             "started_at": "2026-09-20T00:00:00+00:00",
         }) + "\n", encoding="utf-8")
-        healthy = {"status": "ok", "project": str(self.store.root)}
+        healthy = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "projects": [dashboard_project_id(self.store.root)],
+        }
         with mock.patch("verif_harness.dashboard._dashboard_health", return_value=healthy):
             observed = dashboard_status(self.store)
         self.assertEqual(observed["status"], "RUNNING")
         self.assertEqual(observed["pid"], 31415)
 
         with (
-            mock.patch("verif_harness.dashboard.dashboard_status", return_value=observed),
-            mock.patch("verif_harness.dashboard._dashboard_health", return_value=None),
+            mock.patch("verif_harness.dashboard._dashboard_health", side_effect=[healthy, healthy, None]),
             mock.patch("verif_harness.dashboard.os.kill") as kill,
         ):
             stopped = stop_dashboard(self.store)
         kill.assert_called_once_with(31415, signal.SIGTERM)
         self.assertEqual(stopped["status"], "STOPPED")
         self.assertFalse(runtime_path.exists())
+
+    def test_project_switching_routes_reads_and_writes_to_separate_stores(self) -> None:
+        other_root = self.root / "beta"
+        (other_root / "rtl").mkdir(parents=True)
+        (other_root / "rtl/dut_b.sv").write_text("module dut_b; endmodule\n", encoding="utf-8")
+        other = ProjectStore(other_root)
+        other.bootstrap(
+            project_name="beta", runtime="none", rtl_roots=["rtl"],
+            verif_root="verification", dut_top="dut_b", dut_top_file="rtl/dut_b.sv",
+        )
+        other.design_workstream("VCHK", None, [], [], [])
+        other_registration = register_dashboard_project(other)
+        current_id = dashboard_project_id(self.store.root)
+
+        with self.get("/api/projects") as response:
+            listed = json.loads(response.read())
+        self.assertEqual({item["id"] for item in listed["projects"]}, {
+            current_id, other_registration["id"],
+        })
+
+        with self.get(f"/api/snapshot?project={current_id}") as response:
+            current_snapshot = json.loads(response.read())
+        with self.get(f"/api/snapshot?project={other_registration['id']}") as response:
+            other_snapshot = json.loads(response.read())
+        self.assertEqual(current_snapshot["project"]["name"], "alpha")
+        self.assertEqual(other_snapshot["project"]["name"], "beta")
+        self.assertEqual(other_snapshot["project"]["dut"]["top_module"], "dut_b")
+
+        changed = self.post("/api/human-actions", {
+            "dashboard_project": current_id,
+            "target": "VCHK", "action": "COMMENT", "reviewer": "alice",
+            "reason": "只记录在 alpha 项目",
+        }, self.server.write_token)
+        self.assertEqual(changed["snapshot"]["dashboard_project_id"], current_id)
+        self.assertEqual(len(self.store.human_actions()), 1)
+        self.assertEqual(other.human_actions(), [])
+
+        removed = self.post("/api/registrations/remove", {
+            "dashboard_project": current_id,
+        }, self.server.write_token)
+        self.assertEqual(removed["result"]["status"], "UNREGISTERED")
+        self.assertEqual(
+            [item["id"] for item in removed["projects"]], [other_registration["id"]],
+        )
+        self.assertEqual(len(self.store.human_actions()), 1)
+        self.assertEqual(other.human_actions(), [])
+
+    def test_stopping_one_registered_project_keeps_shared_service_running(self) -> None:
+        other_root = self.root / "remaining"
+        (other_root / "rtl").mkdir(parents=True)
+        (other_root / "rtl/dut.sv").write_text("module dut; endmodule\n", encoding="utf-8")
+        other = ProjectStore(other_root)
+        other.bootstrap(
+            project_name="remaining", runtime="none", rtl_roots=["rtl"],
+            verif_root="verification", dut_top="dut", dut_top_file="rtl/dut.sv",
+        )
+        other_registration = register_dashboard_project(other)
+        current_id = dashboard_project_id(self.store.root)
+        healthy = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "projects": [current_id, other_registration["id"]],
+        }
+        with (
+            mock.patch("verif_harness.dashboard._dashboard_health", return_value=healthy),
+            mock.patch("verif_harness.dashboard.os.kill") as kill,
+        ):
+            stopped = stop_dashboard(self.store, "127.0.0.1", 18765)
+        self.assertEqual(stopped["status"], "UNREGISTERED")
+        self.assertEqual(stopped["remaining_projects"], 1)
+        kill.assert_not_called()
+        with self.get(f"/api/snapshot?project={other_registration['id']}") as response:
+            remaining_snapshot = json.loads(response.read())
+        self.assertEqual(remaining_snapshot["project"]["name"], "remaining")
 
     def test_dashboard_stop_rejects_runtime_from_another_project(self) -> None:
         runtime_path = self.root / ".verif-harness/dashboard-runtime.json"
@@ -171,6 +289,11 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("验证项目总览", html)
         self.assertIn('id="home"', html)
         self.assertIn('aria-label="返回项目总览"', html)
+        self.assertIn('id="project-switcher"', html)
+        self.assertIn('id="project-unregister"', html)
+        self.assertIn("fetch('/api/projects')", html)
+        self.assertIn("data.dashboard_project = state.project", html)
+        self.assertIn("/api/registrations/remove", html)
         self.assertNotIn('data-nav="overview"', html)
         self.assertIn("classList.toggle('agent-focus', state.agentInteraction)", html)
         self.assertIn("classList.toggle('overview-focus', overview)", html)
@@ -180,21 +303,27 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('id="global-action"', html)
         self.assertNotIn("项目状态和评审记录保存在本地数据库中", html)
         self.assertIn("Agent 交互", html)
-        self.assertIn("项目级 Agent", html)
-        self.assertIn("项目级", html)
-        self.assertIn("Dashboard 和 Agent CLI 都可以回答", html)
+        self.assertIn("当前项目的 Agent", html)
+        self.assertIn("整个验证项目", html)
+        self.assertIn("无需你处理", html)
+        self.assertIn("Dashboard 也没有收到 Agent 正在处理验证工作的记录", html)
+        self.assertNotIn("项目级 Agent 当前空闲，没有已登记活动", html)
+        self.assertIn("Dashboard 和 Main Agent CLI 都可以回答", html)
         self.assertIn("两个入口读写同一份问题与答案", html)
         self.assertIn("s.project_agent", html)
+        self.assertIn("s.agent_collaboration", html)
         self.assertIn("/api/agent-questions/answer", html)
-        self.assertIn("跟随 Agent 当前工作、查看关键过程", html)
+        self.assertIn("通过 Main Agent 统一交互", html)
+        self.assertIn("<h2>协同执行</h2>", html)
+        self.assertIn("Human 始终通过 Main Agent 交互", html)
         self.assertIn("<h2>交互历史</h2>", html)
         self.assertIn("<h2>当前需要处理</h2>", html)
         self.assertIn("Agent 工作状态", html)
         self.assertIn("查看验证对象与范围", html)
         self.assertNotIn("上下文", html)
         self.assertLess(html.index("<h2>当前需要处理</h2>"), html.index("<h2>交互历史</h2>"))
-        self.assertIn("提交并让 Agent 继续", html)
-        self.assertIn("按时间查看 Agent 进展、提问和你的回应", html)
+        self.assertIn("提交并让 Main Agent 继续", html)
+        self.assertIn("按时间查看 Main Agent、subagent 的进展", html)
         self.assertNotIn("<h2>最近 Agent 状态</h2>", html)
         self.assertNotIn("agent_question_history || s.agent_questions || [])}${projectContextHtml(true)", html)
         self.assertNotIn("function overviewMetrics", html)
@@ -334,7 +463,7 @@ class DashboardTest(unittest.TestCase):
             node_id, "参考模型策略选哪个？", [
                 {"id": "dpi", "label": "DPI 直连 cmodel", "description": "逐事务调用现有模型"},
                 {"id": "sv", "label": "按规格重写", "description": "在验证环境中自行实现"},
-            ], "dpi", "规格要求该场景以 acc_cmodel.c 为准", "Agent", True, activity["id"],
+            ], "dpi", "规格要求该场景以 acc_cmodel.c 为准", "Project Main Agent", True, activity["id"],
         )
         waiting = self.store.dashboard_snapshot()
         self.assertEqual(waiting["activities"][0]["status"], "WAITING_FOR_HUMAN")

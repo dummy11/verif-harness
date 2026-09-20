@@ -28,17 +28,134 @@ MAX_REQUEST_BYTES = 1_048_576
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 DASHBOARD_RUNTIME_FILE = "dashboard-runtime.json"
 DASHBOARD_LOG_FILE = "dashboard.log"
+DASHBOARD_HUB_SCHEMA = "DashboardHubHealth/1"
+DASHBOARD_RUNTIME_SCHEMA = "DashboardRuntime/2"
+DASHBOARD_PROJECT_SCHEMA = "DashboardProjectRegistration/1"
+DASHBOARD_REGISTRY_ENV = "VERIF_HARNESS_DASHBOARD_REGISTRY_DIR"
+
+
+def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
+    """Return the machine-local routing registry used by the shared Dashboard."""
+    if registry_dir is not None:
+        return registry_dir.resolve()
+    configured = os.environ.get(DASHBOARD_REGISTRY_ENV, "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".verif-harness" / "dashboard").resolve()
+
+
+def dashboard_project_id(root: Path) -> str:
+    """Stable opaque routing id; it does not create a relationship between projects."""
+    return hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:24]
+
+
+def _project_registration_path(project_id: str, registry_dir: Path | None = None) -> Path:
+    if not project_id or any(character not in "0123456789abcdef" for character in project_id):
+        raise HarnessError("Dashboard project id 格式无效")
+    return dashboard_registry_dir(registry_dir) / "projects" / f"{project_id}.json"
+
+
+def register_dashboard_project(
+    store: ProjectStore, registry_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Publish only routing/display metadata; project facts remain in its own store."""
+    store.require()
+    manifest = json.loads((store.state / "project.json").read_text(encoding="utf-8"))
+    project_id = dashboard_project_id(store.root)
+    registration = {
+        "schema": DASHBOARD_PROJECT_SCHEMA,
+        "id": project_id,
+        "root": str(store.root),
+        "name": str(manifest.get("project_name") or store.root.name),
+        "dut_top": str((manifest.get("dut") or {}).get("top_module") or "未登记 DUT"),
+        "updated_at": now(),
+    }
+    atomic_json(_project_registration_path(project_id, registry_dir), registration)
+    return registration
+
+
+def unregister_dashboard_project(
+    store: ProjectStore, registry_dir: Path | None = None,
+) -> None:
+    _project_registration_path(dashboard_project_id(store.root), registry_dir).unlink(missing_ok=True)
+
+
+def registered_dashboard_projects(registry_dir: Path | None = None) -> list[dict[str, Any]]:
+    """List valid independent projects; stale/tampered registrations are ignored."""
+    projects_dir = dashboard_registry_dir(registry_dir) / "projects"
+    if not projects_dir.is_dir():
+        return []
+    registrations: list[dict[str, Any]] = []
+    for path in sorted(projects_dir.glob("*.json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            root = Path(str(value.get("root", ""))).resolve()
+            project_id = str(value.get("id", ""))
+            store = ProjectStore(root)
+            if (
+                value.get("schema") != DASHBOARD_PROJECT_SCHEMA
+                or path.stem != project_id
+                or dashboard_project_id(root) != project_id
+                or not store.initialized
+            ):
+                continue
+            registrations.append({
+                "id": project_id,
+                "name": str(value.get("name") or root.name),
+                "dut_top": str(value.get("dut_top") or "未登记 DUT"),
+                "root": str(root),
+                "updated_at": value.get("updated_at"),
+            })
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+    return sorted(registrations, key=lambda item: (item["name"].lower(), item["root"]))
+
+
+def dashboard_project_store(
+    project_id: str, registry_dir: Path | None = None,
+) -> ProjectStore:
+    path = _project_registration_path(project_id, registry_dir)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HarnessError("所选项目未注册到当前 Dashboard") from exc
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HarnessError(f"无法读取 Dashboard 项目注册信息: {exc}") from exc
+    root = Path(str(value.get("root", ""))).resolve()
+    if (
+        value.get("schema") != DASHBOARD_PROJECT_SCHEMA
+        or value.get("id") != project_id
+        or dashboard_project_id(root) != project_id
+    ):
+        raise HarnessError("Dashboard 项目注册信息无效")
+    store = ProjectStore(root)
+    store.require()
+    store.ensure_dashboard_schema()
+    return store
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
-    """Threaded local server whose writes still go through ProjectStore."""
+    """One local UI/router; every project keeps a completely separate ProjectStore."""
 
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], store: ProjectStore):
+    def __init__(
+        self, address: tuple[str, int], store: ProjectStore,
+        registry_dir: Path | None = None,
+    ):
         super().__init__(address, DashboardHandler)
+        self.registry_dir = dashboard_registry_dir(registry_dir)
+        registration = register_dashboard_project(store, self.registry_dir)
+        self.default_project_id = registration["id"]
+        # Retained for small third-party integrations; request handling never routes through it.
         self.store = store
         self.write_token = secrets.token_urlsafe(32)
+
+    def projects(self) -> list[dict[str, Any]]:
+        return registered_dashboard_projects(self.registry_dir)
+
+    def project_store(self, project_id: str) -> ProjectStore:
+        return dashboard_project_store(project_id, self.registry_dir)
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -80,6 +197,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         provided = self.headers.get("X-Verif-Token", "")
         return hmac.compare_digest(provided, self.server.write_token)
 
+    def _selected_project_id(self, supplied: str = "") -> str:
+        project_id = supplied.strip()
+        if project_id:
+            return project_id
+        projects = self.server.projects()
+        if len(projects) == 1:
+            return str(projects[0]["id"])
+        if not projects:
+            raise HarnessError("当前 Dashboard 没有已注册项目")
+        raise HarnessError("请先选择一个项目")
+
+    def _snapshot(self, store: ProjectStore, project_id: str) -> dict[str, Any]:
+        return {**store.dashboard_snapshot(), "dashboard_project_id": project_id}
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/":
@@ -100,22 +231,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             self.end_headers()
             self.wfile.write(payload)
+        elif parsed.path == "/api/projects":
+            projects = self.server.projects()
+            self._json({
+                "schema": "DashboardProjectList/1",
+                "projects": projects,
+                "default_project": (
+                    self.server.default_project_id
+                    if any(item["id"] == self.server.default_project_id for item in projects)
+                    else (projects[0]["id"] if projects else None)
+                ),
+            })
         elif parsed.path == "/api/snapshot":
-            self._json(self.server.store.dashboard_snapshot())
-        elif parsed.path == "/api/document":
-            selector = urllib.parse.parse_qs(parsed.query).get("selector", [""])[0]
             try:
-                self._json(self.server.store.document_content(selector))
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                self._json(self._snapshot(self.server.project_store(project_id), project_id))
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/document":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                selector = query.get("selector", [""])[0]
+                self._json(self.server.project_store(project_id).document_content(selector))
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/events":
-            self._events()
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                self._events(self.server.project_store(project_id), project_id)
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/healthz":
-            self._json({"status": "ok", "project": str(self.server.store.root)})
+            projects = self.server.projects()
+            self._json({
+                "schema": DASHBOARD_HUB_SCHEMA,
+                "status": "ok",
+                "pid": os.getpid(),
+                "project_count": len(projects),
+                "projects": [item["id"] for item in projects],
+            })
         else:
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
-    def _events(self) -> None:
+    def _events(self, store: ProjectStore, project_id: str) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -126,7 +287,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         last_ping = 0.0
         try:
             while True:
-                snapshot = self.server.store.dashboard_snapshot()
+                if not _project_registration_path(project_id, self.server.registry_dir).is_file():
+                    return
+                snapshot = self._snapshot(store, project_id)
                 if snapshot["version"] != previous:
                     data = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
                     self.wfile.write(f"event: snapshot\ndata: {data}\n\n".encode("utf-8"))
@@ -147,15 +310,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             body = self._body()
-            result = self._mutate(urllib.parse.urlparse(self.path).path, body)
-            self._json({"result": result, "snapshot": self.server.store.dashboard_snapshot()})
+            project_id = self._selected_project_id(str(body.pop("dashboard_project", "")))
+            store = self.server.project_store(project_id)
+            path = urllib.parse.urlparse(self.path).path
+            if path == "/api/registrations/remove":
+                unregister_dashboard_project(store, self.server.registry_dir)
+                (store.state / DASHBOARD_RUNTIME_FILE).unlink(missing_ok=True)
+                remaining = self.server.projects()
+                self._json({
+                    "result": {
+                        "status": "UNREGISTERED", "project_id": project_id,
+                        "remaining_projects": len(remaining),
+                    },
+                    "projects": remaining,
+                })
+                if not remaining:
+                    threading.Timer(0.2, self.server.shutdown).start()
+                return
+            result = self._mutate(path, body, store)
+            self._json({"result": result, "snapshot": self._snapshot(store, project_id)})
         except HarnessError as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:  # pragma: no cover - safety boundary for the local HTTP surface
             self._json({"error": f"dashboard request failed: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def _mutate(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        store = self.server.store
+    def _mutate(
+        self, path: str, body: dict[str, Any], store: ProjectStore,
+    ) -> dict[str, Any]:
         if path == "/api/human-actions":
             return store.add_human_action(
                 str(body.get("target", "")), str(body.get("action", "")),
@@ -286,7 +467,9 @@ def _dashboard_runtime(store: ProjectStore) -> dict[str, Any] | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HarnessError(f"无法读取 Dashboard 运行记录: {exc}") from exc
-    if not isinstance(value, dict) or value.get("schema") != "DashboardRuntime/1":
+    if not isinstance(value, dict) or value.get("schema") not in {
+        "DashboardRuntime/1", DASHBOARD_RUNTIME_SCHEMA,
+    }:
         raise HarnessError("Dashboard 运行记录格式无效")
     if str(value.get("project", "")) != str(store.root):
         raise HarnessError("Dashboard 运行记录不属于当前项目")
@@ -296,6 +479,39 @@ def _dashboard_runtime(store: ProjectStore) -> dict[str, Any] | None:
         raise HarnessError("Dashboard 运行记录包含无效监听地址")
     if not isinstance(runtime_port, int) or runtime_port <= 0 or runtime_port > 65535:
         raise HarnessError("Dashboard 运行记录包含无效端口")
+    if (
+        value.get("schema") == DASHBOARD_RUNTIME_SCHEMA
+        and value.get("project_id") != dashboard_project_id(store.root)
+    ):
+        raise HarnessError("Dashboard 运行记录的项目标识无效")
+    return value
+
+
+def _is_dashboard_hub(health: dict[str, Any] | None) -> bool:
+    return bool(health and health.get("schema") == DASHBOARD_HUB_SCHEMA)
+
+
+def _project_dashboard_url(host: str, port: int, project_id: str) -> str:
+    return f"http://{host}:{port}/?project={urllib.parse.quote(project_id)}"
+
+
+def _write_dashboard_runtime(
+    store: ProjectStore, host: str, port: int, pid: int | None, log_path: Path,
+) -> dict[str, Any]:
+    project_id = dashboard_project_id(store.root)
+    value = {
+        "schema": DASHBOARD_RUNTIME_SCHEMA,
+        "pid": pid,
+        "host": host,
+        "port": port,
+        "url": _project_dashboard_url(host, port, project_id),
+        "project": str(store.root),
+        "project_id": project_id,
+        "shared_service": True,
+        "log": str(log_path),
+        "started_at": now(),
+    }
+    atomic_json(store.state / DASHBOARD_RUNTIME_FILE, value)
     return value
 
 
@@ -311,16 +527,34 @@ def dashboard_status(
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
     if selected_port <= 0 or selected_port > 65535:
         raise HarnessError("Dashboard port 必须在 1..65535")
-    url = f"http://{selected_host}:{selected_port}/"
+    project_id = dashboard_project_id(store.root)
+    url = _project_dashboard_url(selected_host, selected_port, project_id)
     expected_project = str(store.root)
     health = _dashboard_health(selected_host, selected_port)
     if health is not None:
+        if _is_dashboard_hub(health):
+            registered = project_id in health.get("projects", [])
+            if not registered:
+                return {
+                    "schema": "DashboardStatus/1", "status": "NOT_REGISTERED", "url": url,
+                    "project": expected_project, "project_id": project_id,
+                    "hub_running": True, "pid": health.get("pid"),
+                    "message": "共享 Dashboard 正在运行，但当前项目尚未注册",
+                }
+            return {
+                "schema": "DashboardStatus/1", "status": "RUNNING", "url": url,
+                "project": expected_project, "project_id": project_id,
+                "managed": bool(runtime), "shared_service": True,
+                "pid": health.get("pid") or (runtime or {}).get("pid"),
+                "log": (runtime or {}).get("log"),
+                "message": "当前项目已注册到共享 Dashboard",
+            }
         observed_project = str(health.get("project", ""))
         if observed_project != expected_project:
             return {
                 "schema": "DashboardStatus/1", "status": "PORT_CONFLICT", "url": url,
                 "project": expected_project, "observed_project": observed_project or None,
-                "message": "该端口由另一个 Dashboard 使用",
+                "message": "该端口运行的是旧版单项目 Dashboard；请先停止旧服务再升级为共享 Dashboard",
             }
         return {
             "schema": "DashboardStatus/1", "status": "RUNNING", "url": url,
@@ -350,7 +584,7 @@ def dashboard_status(
 def stop_dashboard(
     store: ProjectStore, host: str | None = None, port: int | None = None,
 ) -> dict[str, Any]:
-    """Stop only the detached Dashboard recorded for this project."""
+    """Unregister one project; stop the shared service only after the last unregister."""
     runtime = _dashboard_runtime(store)
     if runtime is not None:
         runtime_host = str(runtime["host"])
@@ -363,8 +597,62 @@ def stop_dashboard(
     else:
         observed = dashboard_status(store, host, port)
     runtime_path = store.state / DASHBOARD_RUNTIME_FILE
-    if observed["status"] == "STOPPED":
-        return {**observed, "schema": "DashboardStop/1"}
+    project_id = dashboard_project_id(store.root)
+    selected_host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
+    selected_port = port if port is not None else int((runtime or {}).get("port") or 8765)
+    health = _dashboard_health(selected_host, selected_port)
+    if _is_dashboard_hub(health):
+        unregister_dashboard_project(store)
+        runtime_path.unlink(missing_ok=True)
+        remaining = registered_dashboard_projects()
+        if remaining:
+            return {
+                "schema": "DashboardStop/1", "status": "UNREGISTERED",
+                "project": str(store.root), "project_id": project_id,
+                "url": _project_dashboard_url(selected_host, selected_port, project_id),
+                "shared_service": True, "remaining_projects": len(remaining),
+                "message": "当前项目已从 Dashboard 注销；其他项目和共享服务不受影响",
+            }
+        pid = health.get("pid") or (runtime or {}).get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return {
+                "schema": "DashboardStop/1", "status": "UNMANAGED",
+                "project": str(store.root), "project_id": project_id,
+                "shared_service": True,
+                "message": "最后一个项目已注销，但无法确认共享 Dashboard 进程；未发送停止信号",
+            }
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return {
+                "schema": "DashboardStop/1", "status": "STOPPED",
+                "project": str(store.root), "project_id": project_id,
+                "pid": pid, "message": "最后一个项目已注销；共享 Dashboard 已经退出",
+            }
+        except OSError as exc:
+            return {
+                "schema": "DashboardStop/1", "status": "FAILED",
+                "project": str(store.root), "project_id": project_id,
+                "pid": pid, "message": f"项目已注销，但无法停止共享 Dashboard: {exc}",
+            }
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
+            if _dashboard_health(selected_host, selected_port) is None:
+                return {
+                    "schema": "DashboardStop/1", "status": "STOPPED",
+                    "project": str(store.root), "project_id": project_id,
+                    "pid": pid, "message": "最后一个项目已注销；共享 Dashboard 已停止",
+                }
+            time.sleep(0.1)
+        return {
+            "schema": "DashboardStop/1", "status": "FAILED",
+            "project": str(store.root), "project_id": project_id,
+            "pid": pid, "message": "项目已注销，但共享 Dashboard 未在限定时间内停止",
+        }
+    if observed["status"] in {"STOPPED", "NOT_REGISTERED"}:
+        unregister_dashboard_project(store)
+        runtime_path.unlink(missing_ok=True)
+        return {**observed, "schema": "DashboardStop/1", "status": "STOPPED"}
     if observed["status"] == "STALE":
         runtime_path.unlink(missing_ok=True)
         return {
@@ -396,8 +684,6 @@ def stop_dashboard(
             "message": f"无法停止 Dashboard 后台进程: {exc}",
         }
     deadline = time.monotonic() + 4.0
-    selected_host = host if host is not None else str(runtime.get("host") or "127.0.0.1")
-    selected_port = port if port is not None else int(runtime.get("port") or 8765)
     while time.monotonic() < deadline:
         if _dashboard_health(selected_host, selected_port) is None:
             runtime_path.unlink(missing_ok=True)
@@ -426,20 +712,41 @@ def ensure_dashboard_running(
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
     if port <= 0 or port > 65535:
         raise HarnessError("后台 Dashboard port 必须在 1..65535")
-    url = f"http://{host}:{port}/"
+    project_id = dashboard_project_id(store.root)
+    url = _project_dashboard_url(host, port, project_id)
     expected_project = str(store.root)
     health = _dashboard_health(host, port)
     if health is not None:
-        observed_project = str(health.get("project", ""))
-        if observed_project != expected_project:
-            return {
-                "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
-                "project": expected_project, "observed_project": observed_project or None,
-                "message": "端口已经由另一个 Dashboard 使用；未静默切换端口",
+        if _is_dashboard_hub(health):
+            register_dashboard_project(store)
+            log_path = dashboard_registry_dir() / DASHBOARD_LOG_FILE
+            runtime_warning = None
+            try:
+                _write_dashboard_runtime(store, host, port, health.get("pid"), log_path)
+            except OSError as exc:
+                runtime_warning = f"无法写入当前项目的 Dashboard 运行元数据: {exc}"
+            result = {
+                "schema": "DashboardLaunch/1", "status": "REUSED", "url": url,
+                "project": expected_project, "project_id": project_id,
+                "shared_service": True, "pid": health.get("pid"),
+                "message": "当前项目已注册并复用共享 Dashboard",
             }
-        result: dict[str, Any] = {
-            "schema": "DashboardLaunch/1", "status": "REUSED", "url": url,
-            "project": expected_project, "message": "已复用当前项目的 Dashboard",
+            if runtime_warning:
+                result["warning"] = runtime_warning
+            if open_browser:
+                try:
+                    result["browser_opened"] = bool(webbrowser.open(url))
+                except webbrowser.Error:
+                    result["browser_opened"] = False
+            else:
+                result["browser_opened"] = False
+            return result
+        observed_project = str(health.get("project", ""))
+        return {
+            "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
+            "project": expected_project, "project_id": project_id,
+            "observed_project": observed_project or None,
+            "message": "端口运行的是旧版单项目 Dashboard；请先停止旧服务，再启动共享 Dashboard",
         }
     elif _port_accepts_connections(host, port):
         return {
@@ -448,8 +755,9 @@ def ensure_dashboard_running(
             "message": "端口已被其他服务使用；未静默切换端口",
         }
     else:
-        log_path = store.state / DASHBOARD_LOG_FILE
-        runtime_path = store.state / DASHBOARD_RUNTIME_FILE
+        registration = register_dashboard_project(store)
+        registry_dir = dashboard_registry_dir()
+        log_path = registry_dir / DASHBOARD_LOG_FILE
         module_root = str(Path(__file__).resolve().parents[1])
         environment = os.environ.copy()
         existing_pythonpath = environment.get("PYTHONPATH", "")
@@ -478,38 +786,51 @@ def ensure_dashboard_running(
             with log_path.open("ab") as log:
                 process = subprocess.Popen(command, stdout=log, **popen_options)
         except OSError as exc:
+            unregister_dashboard_project(store)
             return {
                 "schema": "DashboardLaunch/1", "status": "FAILED", "url": url,
                 "project": expected_project, "log": str(log_path),
                 "message": f"Dashboard 后台进程启动失败: {exc}",
             }
-        runtime_warning = None
-        try:
-            atomic_json(runtime_path, {
-                "schema": "DashboardRuntime/1", "pid": process.pid, "host": host, "port": port,
-                "url": url, "project": expected_project, "log": str(log_path), "started_at": now(),
-            })
-        except OSError as exc:
-            runtime_warning = f"无法写入运行元数据: {exc}"
         deadline = time.monotonic() + 4.0
         health = None
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                break
             health = _dashboard_health(host, port)
-            if health is not None:
+            if (
+                health is not None
+                and (
+                    not _is_dashboard_hub(health)
+                    or registration["id"] in health.get("projects", [])
+                )
+            ):
                 break
             time.sleep(0.1)
-        if health is None or str(health.get("project", "")) != expected_project:
+        if (
+            not _is_dashboard_hub(health)
+            or registration["id"] not in health.get("projects", [])
+        ):
+            unregister_dashboard_project(store)
             return {
                 "schema": "DashboardLaunch/1", "status": "FAILED", "url": url,
                 "project": expected_project, "pid": process.pid, "log": str(log_path),
                 "message": "Dashboard 未能在限定时间内启动；请查看日志",
             }
-        result = {
-            "schema": "DashboardLaunch/1", "status": "STARTED", "url": url,
-            "project": expected_project, "pid": process.pid, "log": str(log_path),
-            "message": "Dashboard 已在后台启动",
+        runtime_warning = None
+        try:
+            _write_dashboard_runtime(store, host, port, health.get("pid") or process.pid, log_path)
+        except OSError as exc:
+            runtime_warning = f"无法写入当前项目的 Dashboard 运行元数据: {exc}"
+        reused_concurrent_service = health.get("pid") not in {None, process.pid}
+        result: dict[str, Any] = {
+            "schema": "DashboardLaunch/1",
+            "status": "REUSED" if reused_concurrent_service else "STARTED", "url": url,
+            "project": expected_project, "project_id": project_id,
+            "shared_service": True, "pid": health.get("pid") or process.pid,
+            "log": str(log_path),
+            "message": (
+                "当前项目已注册并复用并发启动的共享 Dashboard"
+                if reused_concurrent_service else "共享 Dashboard 已启动，当前项目已注册"
+            ),
         }
         if runtime_warning:
             result["warning"] = runtime_warning
@@ -523,14 +844,16 @@ def ensure_dashboard_running(
     return result
 
 
-def create_dashboard_server(store: ProjectStore, host: str, port: int) -> DashboardHTTPServer:
+def create_dashboard_server(
+    store: ProjectStore, host: str, port: int, registry_dir: Path | None = None,
+) -> DashboardHTTPServer:
     if host not in LOOPBACK_HOSTS:
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
     if port < 0 or port > 65535:
         raise HarnessError("Dashboard port 必须在 0..65535")
     store.require()
     store.ensure_dashboard_schema()
-    return DashboardHTTPServer((host, port), store)
+    return DashboardHTTPServer((host, port), store, registry_dir)
 
 
 def serve_dashboard(
@@ -538,7 +861,8 @@ def serve_dashboard(
     open_browser: bool = False,
 ) -> int:
     server = create_dashboard_server(store, host, port)
-    url = dashboard_url(server)
+    base_url = dashboard_url(server)
+    url = f"{base_url}?project={dashboard_project_id(store.root)}"
     print(f"verif-harness dashboard: {url}", flush=True)
     print("只监听本机；按 Ctrl-C 停止。Human 写操作会记录 reviewer 和 reason。", flush=True)
     if open_browser:

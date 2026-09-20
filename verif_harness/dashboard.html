@@ -26,6 +26,7 @@
       --gray: #b4c0d0; --gray-bg: #2a3545; --shadow: 0 12px 34px rgba(0, 0, 0, .28);
     }
     * { box-sizing: border-box; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
@@ -37,6 +38,9 @@
     .logo:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 3px; }
     .brand strong { display: block; font-size: 15px; }
     .brand small { color: var(--muted); }
+    .project-controls { display: flex; align-items: center; gap: 7px; }
+    .project-switcher { min-width: 210px; max-width: 320px; padding: 9px 34px 9px 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--panel-2); }
+    .project-unregister { white-space: nowrap; }
     .search { flex: 1; max-width: 620px; position: relative; }
     .search input { width: 100%; padding: 10px 14px 10px 38px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel-2); outline: none; }
     .search span { position: absolute; left: 13px; top: 9px; color: var(--muted); }
@@ -110,6 +114,7 @@
     .tile-visual { min-height: 42px; margin-top: 14px; display: flex; align-items: center; gap: 10px; }
     .state-dot { width: 13px; height: 13px; border: 3px solid var(--panel); border-radius: 50%; background: var(--gray); box-shadow: 0 0 0 2px var(--gray-bg); }
     .state-dot.RUNNING { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
+    .state-dot.WAITING_FOR_PARENT { background: var(--purple); box-shadow: 0 0 0 2px var(--purple-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.WAITING_FOR_HUMAN { background: var(--yellow); box-shadow: 0 0 0 2px var(--yellow-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.FAILED { background: var(--red); box-shadow: 0 0 0 2px var(--red-bg); }
     .state-dot.COMPLETED { background: var(--green); box-shadow: 0 0 0 2px var(--green-bg); }
@@ -140,8 +145,9 @@
     .badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 8px; font-size: 11px; font-weight: 750; white-space: nowrap; }
     .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED, .CLOSED, .SUPPORTED, .APPROVED { color: var(--green); background: var(--green-bg); }
     .RUNNING { color: var(--blue); background: var(--blue-bg); }
+    .WAITING_FOR_PARENT { color: var(--purple); background: var(--purple-bg); }
     .INVALID, .FAILED, .NOT_SUPPORTED { color: var(--red); background: var(--red-bg); }
-    .STALE, .REVALIDATION_REQUIRED, .PARTIALLY_STALE { color: var(--orange); background: var(--orange-bg); }
+    .STALE, .REVALIDATION_REQUIRED, .PARTIALLY_STALE, .EXPIRED, .SUPERSEDED { color: var(--orange); background: var(--orange-bg); }
     .REVIEW_REQUIRED, .PROVISIONAL, .REVIEW, .REVISE, .WAITING_FOR_HUMAN, .OPEN, .BLOCKED, .HUMAN_REVIEW_REQUIRED, .NOT_SATISFIED, .CHANGES_REQUESTED { color: var(--yellow); background: var(--yellow-bg); }
     .WAIVED { color: var(--purple); background: var(--purple-bg); }
     .UNKNOWN, .PENDING, .RECORDED, .CANCELLED, .IDLE { color: var(--gray); background: var(--gray-bg); }
@@ -230,6 +236,17 @@
     .agent-context-list { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px 11px; margin: 0; }
     .agent-context-list dt { color: var(--muted); }
     .agent-context-list dd { margin: 0; overflow-wrap: anywhere; }
+    .agent-collaboration { border-left: 4px solid var(--purple); box-shadow: var(--shadow); }
+    .agent-collaboration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 13px; }
+    .subagent-card { min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .subagent-head { display: flex; align-items: flex-start; gap: 8px; }
+    .subagent-head strong { overflow-wrap: anywhere; }
+    .subagent-head .badge { margin-left: auto; }
+    .subagent-operation { margin-top: 10px; font-weight: 720; line-height: 1.4; }
+    .subagent-message { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .subagent-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 9px; color: var(--muted); font-size: 11px; }
+    .subagent-history { margin: 0 13px 13px; }
+    .subagent-history .agent-collaboration-grid { padding: 0; }
     .agent-history { border-left: 4px solid color-mix(in srgb, var(--muted) 58%, var(--line)); box-shadow: var(--shadow); }
     .agent-history .agent-panel-head { padding-block: 17px; }
     .list-card { overflow: hidden; }
@@ -308,15 +325,16 @@
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 80; max-width: 420px; padding: 12px 15px; border-radius: 10px; color: white; background: #173252; box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s; }
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
-    @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col, .agent-workspace, .agent-work-status-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
     @media (max-width: 980px) { .overview-action-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; } .brand { min-width: 0; } .brand small { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><button class="logo" id="home" type="button" title="返回项目总览" aria-label="返回项目总览">VH</button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
+    <div class="project-controls"><label class="sr-only" for="project-switcher">切换项目</label><select id="project-switcher" class="project-switcher" aria-label="切换项目"><option>正在读取项目…</option></select><button id="project-unregister" class="icon-btn project-unregister" type="button" title="仅从 Dashboard 注销当前项目">注销项目</button></div>
     <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件"></div>
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
     <button id="theme" class="icon-btn" title="切换明暗主题">◐</button>
@@ -334,6 +352,9 @@
     const initialParams = new URLSearchParams(window.location.search);
     const state = {
       snapshot: null,
+      projects: [],
+      project: initialParams.get('project'),
+      stream: null,
       workstream: initialParams.get('workstream'),
       agentInteraction: initialParams.has('agent-interaction'),
       pendingItems: initialParams.has('pending-items'),
@@ -354,10 +375,14 @@
       VALID:'已通过检查', UNKNOWN:'尚无完成材料', INVALID:'检查未通过', STALE:'内容变化后尚未重新检查',
       REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'需要人工复核', PROVISIONAL:'暂定接受', BLOCKED:'当前受阻', WAIVED:'已接受例外',
       REVIEW:'等待计划评审', REVISE:'需要修改计划', ACTIVE:'正在推进', SATISFIED:'已满足', BASELINED:'已建立基线',
-      RUNNING:'正在执行', PENDING:'等待执行', WAITING_FOR_HUMAN:'等待人工决定', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', IDLE:'空闲',
+      RUNNING:'正在执行', PENDING:'等待执行', WAITING_FOR_HUMAN:'等待人工决定', WAITING_FOR_PARENT:'等待 Main Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
       OPEN:'待回答', ANSWERED:'已回答', RESOLVED:'已处理', CLOSED:'已满足', NOT_SATISFIED:'尚未满足', STALE_REVISION:'不是当前版本',
       SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查',
       APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改'
+    };
+    const AGENT_STATUS_LABELS = {
+      IDLE:'无需你处理', WAITING_FOR_HUMAN:'需要你回答', RUNNING:'Agent 正在处理',
+      WAITING_FOR_PARENT:'等待 Main Agent 协调', PENDING:'等待 Agent 处理', FAILED:'Agent 工作失败', COMPLETED:'最近已完成', CANCELLED:'已取消'
     };
     const ROLE_LABELS = {
       capability:'通用工作汇总', 'closure-evidence':'需要核对的运行结果', 'project-goal':'项目目标',
@@ -466,6 +491,7 @@
       VREG:'后续需要按批量测试配置、一次具体运行或同类失败继续细分，并展示用例、随机种子、结果和处理进展。'
     };
     const statusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="系统值：${escapeHtml(value)}">${escapeHtml(STATUS_LABELS[value] || value)}</span>`;
+    const agentStatusBadge = (value) => { const label = AGENT_STATUS_LABELS[value] || STATUS_LABELS[value] || value; return `<span class="badge ${escapeHtml(value)}" title="当前状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`; };
     const roleLabel = value => ROLE_LABELS[value] || value || '未说明';
     const actionLabel = value => ACTION_LABELS[value] || value || '暂无后续工作';
     const workstreamLabel = value => WORKSTREAM_LABELS[value] || value || '未分类';
@@ -499,7 +525,7 @@
     const artifactLabel = value => ARTIFACT_LABELS[value] || CLAIM_LABELS[value] || humanText(value) || '未说明';
     const shortTime = (value) => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
     const percent = (progress) => progress.required ? Math.round(progress.satisfied * 100 / progress.required) : 0;
-    const activeActivity = (items) => (items || []).find(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+    const activeActivity = (items) => (items || []).find(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
     const pendingHuman = (items) => (items || []).filter(a => a.status === 'OPEN');
     const allNodes = () => state.snapshot?.model?.nodes || [];
     const workstream = (name) => state.snapshot?.workstreams?.find(w => w.workstream === name);
@@ -514,6 +540,7 @@
       $('#connection-text').textContent = connected ? '实时连接正常' : '连接中断 · 显示最后状态';
     }
     function setSnapshot(snapshot) {
+      if (snapshot.dashboard_project_id && snapshot.dashboard_project_id !== state.project) return;
       state.snapshot = snapshot;
       $('#project-name').textContent = snapshot.project.name;
       const revision = snapshot.project.baseline_revision ? `代码版本 ${snapshot.project.baseline_revision.slice(0, 9)}` : '未记录代码版本';
@@ -524,12 +551,61 @@
       if (state.reviewDeliveryNode && !findNode(state.reviewDeliveryNode)) state.reviewDeliveryNode = null;
       render();
     }
+    function renderProjectSwitcher() {
+      const switcher = $('#project-switcher');
+      switcher.innerHTML = state.projects.map(project => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)} · ${escapeHtml(project.dut_top)}</option>`).join('');
+      switcher.value = state.project || '';
+      switcher.disabled = state.projects.length < 2;
+      $('#project-unregister').disabled = !state.project;
+    }
+    function resetProjectView() {
+      state.workstream = null; state.agentInteraction = false; state.pendingItems = false;
+      state.riskChanges = false; state.focusAgentQuestion = null; state.reviewWorkstream = null;
+      state.reviewPlanNode = null; state.reviewDeliveryNode = null; state.reviseVdocPlan = false;
+      state.node = null; state.query = ''; $('#search').value = '';
+      $('#drawer-backdrop').classList.remove('open'); $('#modal-backdrop').classList.remove('open');
+    }
+    function connectProjectStream(projectId) {
+      if (state.stream) state.stream.close();
+      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}`);
+      state.stream = stream;
+      stream.addEventListener('snapshot', event => {
+        const snapshot = JSON.parse(event.data);
+        if (state.project === projectId) { setConnection(true); setSnapshot(snapshot); }
+      });
+      stream.onerror = () => { if (state.project === projectId) setConnection(false); };
+    }
+    async function selectProject(projectId, resetView=true) {
+      if (!state.projects.some(project => project.id === projectId)) throw new Error('所选项目未注册');
+      if (state.stream) { state.stream.close(); state.stream = null; }
+      state.project = projectId;
+      state.snapshot = null;
+      if (resetView) resetProjectView();
+      renderProjectSwitcher();
+      const url = resetView ? new URL(window.location.origin + window.location.pathname) : new URL(window.location.href);
+      url.searchParams.set('project', projectId);
+      window.history.replaceState({}, '', url);
+      $('#main').innerHTML = '<div class="empty">正在加载所选项目…</div>';
+      const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || response.statusText);
+      setSnapshot(body);
+      connectProjectStream(projectId);
+    }
     async function initialLoad() {
-      try { const response = await fetch('/api/snapshot'); if (!response.ok) throw new Error(response.statusText); setSnapshot(await response.json()); }
-      catch (error) { toast(`读取状态失败：${error}`, true); }
-      const stream = new EventSource('/api/events');
-      stream.addEventListener('snapshot', event => { setConnection(true); setSnapshot(JSON.parse(event.data)); });
-      stream.onerror = () => setConnection(false);
+      try {
+        const response = await fetch('/api/projects');
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || response.statusText);
+        state.projects = body.projects || [];
+        const selected = state.projects.some(project => project.id === state.project)
+          ? state.project : body.default_project;
+        if (!selected) throw new Error('当前 Dashboard 没有已注册项目');
+        await selectProject(selected, false);
+      } catch (error) {
+        $('#main').innerHTML = '<div class="empty">当前没有可打开的验证项目</div>';
+        toast(`读取状态失败：${error}`, true);
+      }
     }
     function renderSidebar() {
       const items = state.snapshot?.workstreams || [];
@@ -596,15 +672,15 @@
     }
     function agentSummary(snapshot=state.snapshot) {
       if (snapshot.project_agent) return {status:snapshot.project_agent.status, text:snapshot.project_agent.message};
-      const active = (snapshot.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+      const active = (snapshot.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
       const open = (snapshot.agent_questions || []).filter(q => q.status === 'OPEN');
       const latest = (snapshot.activity_history || [])[0];
-      if (open.length || active.some(a => a.status === 'WAITING_FOR_HUMAN')) return {status:'WAITING_FOR_HUMAN', text:`等待 Human 回答 ${open.length || active.filter(a => a.status === 'WAITING_FOR_HUMAN').length} 个问题`};
-      if (active.some(a => a.status === 'RUNNING')) return {status:'RUNNING', text:`${active.filter(a => a.status === 'RUNNING').length} 项 Agent 工作正在执行`};
-      if (active.length) return {status:'PENDING', text:`${active.length} 项 Agent 工作等待执行`};
-      if (latest?.status === 'FAILED') return {status:'FAILED', text:`最近一项 Agent 工作执行失败 · ${latest.operation}`};
-      if (latest?.status === 'COMPLETED') return {status:'COMPLETED', text:`最近一项 Agent 工作已完成 · ${latest.operation}`};
-      return {status:'IDLE', text:'项目级 Agent 当前空闲，没有已登记活动'};
+      if (open.length || active.some(a => a.status === 'WAITING_FOR_HUMAN')) return {status:'WAITING_FOR_HUMAN', text:`需要你回答 ${open.length || active.filter(a => a.status === 'WAITING_FOR_HUMAN').length} 个问题；回答后 Agent 才会继续相关工作`};
+      if (active.some(a => a.status === 'RUNNING')) return {status:'RUNNING', text:`Agent 正在处理 ${active.filter(a => a.status === 'RUNNING').length} 项验证工作，当前无需你操作`};
+      if (active.length) return {status:'PENDING', text:`有 ${active.length} 项验证工作等待 Agent 开始处理，当前无需你操作`};
+      if (latest?.status === 'FAILED') return {status:'FAILED', text:`Agent 最近一项工作失败：${latest.operation}；请查看失败原因`};
+      if (latest?.status === 'COMPLETED') return {status:'COMPLETED', text:`现在没有需要你回答的问题；Agent 最近完成：${latest.operation}`};
+      return {status:'IDLE', text:'现在没有需要你回答的问题；Dashboard 也没有收到 Agent 正在处理验证工作的记录'};
     }
     function riskItems(snapshot=state.snapshot) {
       const risks = [], riskStatuses = new Set(['INVALID','BLOCKED','STALE','REVALIDATION_REQUIRED','PROVISIONAL']);
@@ -616,7 +692,7 @@
       return [...new Map(risks.map(item => [item.id, item])).values()];
     }
     function overviewEntry(title, status, summary, attribute) {
-      return `<button class="overview-entry" ${attribute}><div class="entry-head"><strong>${escapeHtml(title)}</strong>${statusBadge(status)}<span aria-hidden="true">↗</span></div><div class="entry-summary">${escapeHtml(summary)}</div></button>`;
+      return `<button class="overview-entry" ${attribute}><div class="entry-head"><strong>${escapeHtml(title)}</strong>${agentStatusBadge(status)}<span aria-hidden="true">↗</span></div><div class="entry-summary">${escapeHtml(summary)}</div></button>`;
     }
     function progressRing(value, label, small=false) {
       const normalized = Math.max(0, Math.min(100, Number(value) || 0));
@@ -624,7 +700,7 @@
     }
     function overviewTile(kind, title, status, summary, attribute, count=null) {
       const visual = kind === 'agent'
-        ? `<div class="tile-visual"><span class="state-dot ${escapeHtml(status)}" aria-hidden="true"></span>${statusBadge(status)}</div>`
+        ? `<div class="tile-visual"><span class="state-dot ${escapeHtml(status)}" aria-hidden="true"></span>${agentStatusBadge(status)}</div>`
         : `<div class="tile-visual"><span class="tile-number">${Number(count || 0)}</span><span class="tile-unit">${kind === 'pending' ? '项待处理' : '项风险或变化'}</span>${statusBadge(status)}</div>`;
       return `<button class="overview-tile ${escapeHtml(kind)}" ${attribute}><div class="tile-head"><strong>${escapeHtml(title)}</strong><span class="tile-arrow" aria-hidden="true">↗</span></div>${visual}<div class="tile-summary">${escapeHtml(summary)}</div></button>`;
     }
@@ -658,7 +734,11 @@
       document.querySelectorAll('[data-open-risk-changes]').forEach(button => button.onclick = () => openRiskChangesTab());
     }
     function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => card.onclick = () => openWorkstreamTab(card.dataset.workstream)); }
-    function standaloneUrl() { return new URL(window.location.origin + window.location.pathname); }
+    function standaloneUrl() {
+      const url = new URL(window.location.origin + window.location.pathname);
+      if (state.project) url.searchParams.set('project', state.project);
+      return url;
+    }
     function openAgentInteractionTab(questionId=null) {
       const url = standaloneUrl();
       url.searchParams.set('agent-interaction', '1');
@@ -698,16 +778,16 @@
         const option = (question?.options || []).find(item => item.id === answered[2]);
         return question ? `你已回答：${question.prompt} · ${option?.label || answered[2]}` : '你已回答，Agent 已继续执行';
       }
-      return text.replace(/^等待 Human 回答：/, '等待你的回答：');
+      return text.replace(/^等待 Human 回答：?/, '需要你回答：');
     }
     function activityRows(items) {
-      if (!items.length) return '<div class="empty">当前没有登记为正在进行的工作</div>';
-      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = a.node_id === 'project' ? '项目级' : a.node_id; return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta mono">${escapeHtml(target)} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true)}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
+      if (!items.length) return '<div class="empty">当前没有正在进行的 Agent 工作</div>';
+      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = a.node_id === 'project' ? '整个验证项目' : a.node_id; return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta mono">${escapeHtml(target)} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true)}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
     }
     function agentTarget(item) {
       const raw = item?.node_id || item?.target || 'project';
       const type = item?.target_type || (raw === 'project' ? 'project' : 'node');
-      if (type === 'project' || raw === 'project') return {label:'项目级', html:'项目级'};
+      if (type === 'project' || raw === 'project') return {label:'整个验证项目', html:'整个验证项目'};
       const node = type === 'node' ? findNode(raw) : null;
       if (node) return {
         label: humanText(node.title),
@@ -718,11 +798,12 @@
         label: `${workstreamName} · ${workstreamLabel(workstreamName)}`,
         html: `${escapeHtml(workstreamName)} · ${escapeHtml(workstreamLabel(workstreamName))}`,
       };
-      return {label:'项目级', html:'项目级'};
+      return {label:'整个验证项目', html:'整个验证项目'};
     }
     function agentActivityEvent(a) {
       const labels = {
         PENDING:'Agent 准备执行', RUNNING:'Agent 正在执行', WAITING_FOR_HUMAN:'Agent 暂停等待你的回应',
+        WAITING_FOR_PARENT:'subagent 正在等待 Main Agent 协调',
         COMPLETED:'Agent 完成了一项工作', FAILED:'Agent 执行失败', CANCELLED:'Agent 工作已取消',
       };
       const target = agentTarget(a);
@@ -736,8 +817,8 @@
       const selected = (q.options || []).find(option => option.id === q.answer_option);
       const answer = q.status === 'ANSWERED'
         ? `${escapeHtml(q.answered_by || 'Human')} 已回答：${escapeHtml(selected?.label || (q.answer_option === 'other' ? '其他处理方式' : q.answer_option || '未记录'))}${q.answer_text ? ` · ${escapeHtml(q.answer_text)}` : ''}`
-        : '等待你的回答；回答后 Agent 才会继续相关工作';
-      return `<article class="agent-event question"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${q.status === 'ANSWERED' ? '你已回应 Agent' : 'Agent 需要你的决定'}</strong>${statusBadge(q.status)}<time>${shortTime(q.answered_at || q.created_at)}</time></div><div class="agent-event-message">${escapeHtml(q.prompt)}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(answer)}</div>${q.context ? `<details><summary>查看提问背景</summary><div class="detail-group-body">${escapeHtml(q.context)}</div></details>` : ''}</div></article>`;
+        : '等待你的回答；回答后 Main Agent 才会继续协调相关工作';
+      return `<article class="agent-event question"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${q.status === 'ANSWERED' ? '你已回应 Main Agent' : 'Main Agent 需要你的决定'}</strong>${statusBadge(q.status)}<time>${shortTime(q.answered_at || q.created_at)}</time></div><div class="agent-event-message">${escapeHtml(q.prompt)}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(answer)}</div>${q.context ? `<details><summary>查看提问背景</summary><div class="detail-group-body">${escapeHtml(q.context)}</div></details>` : ''}</div></article>`;
     }
     function agentTimelineHtml(activities, questions) {
       const events = [
@@ -754,8 +835,27 @@
         const reviewerId = `agent-reviewer-${q.id}`;
         const answerId = `agent-answer-${q.id}`;
         const options = (q.options || []).map(option => `<label class="agent-option"><input type="radio" name="option" value="${escapeHtml(option.id)}" required><span class="agent-option-copy"><span class="agent-option-title">${escapeHtml(option.label)}${option.id === q.recommended_option ? ' <span class="badge PROVISIONAL">Agent 推荐</span>' : ''}</span><span class="agent-option-description">${escapeHtml(option.description || '无补充说明')}</span></span></label>`).join('');
-        return `<article class="agent-question-card"><div class="agent-question-head"><span class="agent-question-kicker">AGENT 需要你的决定</span>${statusBadge(q.status)}</div><h3>${escapeHtml(q.prompt)}</h3><div class="agent-event-meta">影响范围：${target.html} · ${escapeHtml(q.asked_by)} · ${shortTime(q.created_at)}${recommended ? ` · 推荐 ${escapeHtml(recommended.label)}` : ''}</div>${q.context ? `<div class="agent-question-context"><strong>为什么现在需要你：</strong>${escapeHtml(q.context)}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><fieldset class="agent-options"><legend>选择处理方式</legend>${options}<label class="agent-option"><input type="radio" name="option" value="other" required><span class="agent-option-copy"><span class="agent-option-title">其他</span><span class="agent-option-description">提供不同的约束、方案或处理边界</span></span></label></fieldset><div class="agent-response-row"><div class="field"><label for="${escapeHtml(reviewerId)}">回答人</label><input id="${escapeHtml(reviewerId)}" name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label for="${escapeHtml(answerId)}">补充说明</label><textarea id="${escapeHtml(answerId)}" name="answer_text" placeholder="可选；选择“其他”时必填"></textarea></div></div><button class="btn primary agent-submit" type="submit">提交并让 Agent 继续</button></form></article>`;
+        return `<article class="agent-question-card"><div class="agent-question-head"><span class="agent-question-kicker">MAIN AGENT 需要你的决定</span>${statusBadge(q.status)}</div><h3>${escapeHtml(q.prompt)}</h3><div class="agent-event-meta">影响范围：${target.html} · ${escapeHtml(q.asked_by)} · ${shortTime(q.created_at)}${recommended ? ` · 推荐 ${escapeHtml(recommended.label)}` : ''}</div>${q.context ? `<div class="agent-question-context"><strong>为什么现在需要你：</strong>${escapeHtml(q.context)}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><fieldset class="agent-options"><legend>选择处理方式</legend>${options}<label class="agent-option"><input type="radio" name="option" value="other" required><span class="agent-option-copy"><span class="agent-option-title">其他</span><span class="agent-option-description">提供不同的约束、方案或处理边界</span></span></label></fieldset><div class="agent-response-row"><div class="field"><label for="${escapeHtml(reviewerId)}">回答人</label><input id="${escapeHtml(reviewerId)}" name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label for="${escapeHtml(answerId)}">补充说明</label><textarea id="${escapeHtml(answerId)}" name="answer_text" placeholder="可选；选择“其他”时必填"></textarea></div></div><button class="btn primary agent-submit" type="submit">提交并让 Main Agent 继续</button></form></article>`;
       }).join('');
+    }
+    function subagentCardHtml(agent) {
+      const target = agentTarget(agent);
+      const progress = agent.progress_total ? Math.round((agent.progress_current || 0) * 100 / agent.progress_total) : null;
+      const scope = (agent.write_scope || []).length
+        ? `写入范围：${agent.write_scope.map(item => escapeHtml(item)).join('、')}`
+        : '只读执行';
+      return `<article class="subagent-card"><div class="subagent-head"><div><strong>${escapeHtml(agent.id)}</strong><div class="row-meta">${escapeHtml(agent.role)} · ${escapeHtml(runtimeLabel(agent.runtime))}</div></div>${statusBadge(agent.status)}</div><div class="subagent-operation">${escapeHtml(agent.operation || '未登记当前操作')}</div>${agent.message ? `<div class="subagent-message">${escapeHtml(agentMessageText(agent.message))}</div>` : ''}<div class="subagent-meta"><span>${target.html}</span><span>${escapeHtml(scope)}</span><span>heartbeat ${shortTime(agent.heartbeat_at)}</span>${progress === null ? '' : `<span>${agent.progress_current || 0}/${agent.progress_total} · ${progress}%</span>`}</div></article>`;
+    }
+    function agentCollaborationHtml(collaboration) {
+      const active = collaboration?.active_subagents || [];
+      const recent = collaboration?.recent_subagents || [];
+      const activeBody = active.length
+        ? `<div class="agent-collaboration-grid">${active.map(subagentCardHtml).join('')}</div>`
+        : '<div class="empty">当前没有已登记的 subagent。Main Agent 分派后，这里会显示每个执行单元的节点、状态和 heartbeat。</div>';
+      const recentBody = recent.length
+        ? `<details class="subagent-history"><summary>最近结束的 subagent（${recent.length}）</summary><div class="agent-collaboration-grid">${recent.map(subagentCardHtml).join('')}</div></details>`
+        : '';
+      return `<article class="card agent-panel agent-collaboration"><div class="agent-panel-head"><div><h2>协同执行</h2><p>subagent 只执行 Main Agent 分派的有界工作；Human 始终通过 Main Agent 交互。</p></div><span class="count">${active.length} 个 active</span></div>${activeBody}${recentBody}<div class="agent-side-note"><strong>协作状态不是验证结论。</strong> subagent 完成、多个 Agent 意见一致或 heartbeat 正常，都不会自动产生 evidence、PASS 或节点批准。</div></article>`;
     }
     function agentWorkStatusHtml(current, summary, openQuestions) {
       const project = state.snapshot?.project || {}, dut = project.dut || {};
@@ -768,29 +868,50 @@
         ? `等待你完成上方 ${openQuestions.length} 项回应，然后继续当前工作。`
         : status === 'RUNNING'
           ? 'Agent 正在继续执行，当前无需你操作。'
+          : status === 'WAITING_FOR_PARENT'
+            ? 'subagent 正在等待 Main Agent 协调；当前尚未要求 Human 处理。'
           : status === 'PENDING'
             ? '工作已进入队列，等待 Agent 开始执行。'
             : status === 'FAILED'
               ? '执行遇到问题，请在协作记录中查看失败原因。'
               : status === 'COMPLETED'
                 ? '当前工作已完成，等待下一项工作。'
-                : '当前没有正在执行的工作。';
+                : '当前无需你操作。Agent 开始新的验证工作后，这里会显示进展。';
       const progressHtml = progress === null ? '' : `<div class="agent-work-progress"><div class="agent-work-progress-head"><span>当前进度</span><span>${current.progress_current || 0}/${current.progress_total} · ${progress}%</span></div><div class="agent-work-progress-bar" title="${progress}%"><span style="width:${progress}%"></span></div></div>`;
-      return `<article class="card agent-work-status"><div class="agent-work-status-head"><h2>Agent 工作状态</h2>${statusBadge(status)}</div><div class="agent-work-status-grid"><div><div class="agent-work-focus"><span class="agent-question-kicker">当前正在处理</span><strong>${escapeHtml(current?.operation || '等待下一项工作')}</strong><p>${escapeHtml(agentMessageText(current?.message || summary?.message || '已就绪'))}</p></div>${progressHtml}</div><div><div class="agent-work-next"><strong>接下来：</strong>${escapeHtml(next)}</div><details class="agent-context-details"><summary>查看验证对象与范围</summary><div class="detail-group-body"><dl class="agent-context-list"><dt>验证对象</dt><dd>${escapeHtml(dut.top_module || '未登记 DUT')}</dd><dt>作用范围</dt><dd>${target.html}</dd><dt>工作流</dt><dd>${workstreamName ? `${escapeHtml(workstreamName)} · ${escapeHtml(workstreamLabel(workstreamName))}` : '项目级'}</dd><dt>代码基线</dt><dd class="mono">${escapeHtml(revision)}</dd><dt>最近更新</dt><dd>${shortTime(current?.updated_at || current?.created_at)}</dd></dl></div></details></div></div></article>`;
+      const visibilityNote = current ? '' : '<p class="row-meta">这里只显示 Agent 已同步到 Dashboard 的工作；终端中尚未同步的操作不会自动出现在这里。</p>';
+      return `<article class="card agent-work-status"><div class="agent-work-status-head"><h2>Main Agent 工作状态</h2>${agentStatusBadge(status)}</div><div class="agent-work-status-grid"><div><div class="agent-work-focus"><span class="agent-question-kicker">当前正在处理</span><strong>${escapeHtml(current?.operation || '目前没有正在处理的验证工作')}</strong><p>${escapeHtml(agentMessageText(current?.message || summary?.message || '当前无需你操作'))}</p>${visibilityNote}</div>${progressHtml}</div><div><div class="agent-work-next"><strong>接下来：</strong>${escapeHtml(next)}</div><details class="agent-context-details"><summary>查看验证对象与范围</summary><div class="detail-group-body"><dl class="agent-context-list"><dt>验证对象</dt><dd>${escapeHtml(dut.top_module || '未登记 DUT')}</dd><dt>作用范围</dt><dd>${target.html}</dd><dt>工作流</dt><dd>${workstreamName ? `${escapeHtml(workstreamName)} · ${escapeHtml(workstreamLabel(workstreamName))}` : '整个验证项目'}</dd><dt>代码基线</dt><dd class="mono">${escapeHtml(revision)}</dd><dt>最近更新</dt><dd>${shortTime(current?.updated_at || current?.created_at)}</dd></dl></div></details></div></div></article>`;
     }
-    function agentInteractionHtml(projectAgent, questions, activeActivities, activityHistory, questionHistory) {
-      const active = (activeActivities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+    function agentInteractionHtml(projectAgent, collaboration, questions, activeActivities, activityHistory, questionHistory) {
+      const active = (activeActivities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
       const open = (questions || []).filter(q => q.status === 'OPEN');
-      const summary = projectAgent || {label:'项目级 Agent', runtime:'unselected', ...agentSummary({activities:activeActivities || [], agent_questions:questions || [], activity_history:activityHistory || []})};
-      const current = active[0] || summary.latest_activity || (activityHistory || [])[0] || null;
+      const summary = projectAgent || {label:'当前项目的 Agent', runtime:'unselected', ...agentSummary({activities:activeActivities || [], agent_questions:questions || [], activity_history:activityHistory || []})};
+      const subagentActivityIds = new Set(
+        collaboration?.assignment_activity_ids || [
+          ...(collaboration?.active_subagents || []),
+          ...(collaboration?.recent_subagents || []),
+        ].map(item => item.activity_id)
+      );
+      const mainActive = active.filter(item => !subagentActivityIds.has(item.id));
+      const latestMainHistory = (activityHistory || []).find(
+        item => !subagentActivityIds.has(item.id)
+      );
+      const current = mainActive[0] || ((collaboration?.active_subagents || []).length ? {
+        status: summary.status,
+        operation: `协调 ${collaboration.active_subagents.length} 个 subagent`,
+        message: summary.message,
+        node_id: 'project',
+        workstream: 'PROJECT',
+        updated_at: (collaboration.active_subagents || [])[0]?.updated_at,
+      } : summary.latest_activity || latestMainHistory || null);
       const target = agentTarget(current);
       const responseBadge = open.length
         ? '<span class="badge WAITING_FOR_HUMAN">等待回应</span>'
         : '<span class="badge RECORDED">无需回应</span>';
       const priority = open.length
-        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>当前需要处理</h2><p>Agent 正在等待你的工程判断；完成回应后才会继续相关工作。</p></div>${responseBadge}</div><div class="agent-question-list">${agentQuestionCardsHtml(open)}</div><div class="agent-side-note"><strong>Dashboard 和 Agent CLI 都可以回答。</strong> 两个入口读写同一份问题与答案。这里提交只会解除等待并让 Agent 继续，不会批准工作流、节点或验证证据。需要主动补充任务或纠偏时，请在当前 Agent CLI 对话中输入。</div></article></section>`
-        : `<section class="section agent-section"><div class="card agent-priority-clear" id="agent-questions"><span class="state-dot RUNNING" aria-hidden="true"></span><div class="agent-priority-clear-copy"><strong>当前无需你处理</strong><span>Agent 没有等待回答的问题，可以继续关注它的工作状态。</span></div>${responseBadge}</div></section>`;
-      return `<article class="card agent-session"><div class="agent-session-head"><div class="agent-session-state"><span class="state-dot ${escapeHtml(summary.status || 'IDLE')}" aria-hidden="true"></span><div><h2 class="agent-session-title">${escapeHtml(summary.label || '项目级 Agent')}</h2><div class="agent-session-summary">${escapeHtml(agentMessageText(current?.message || summary.message || '已就绪'))}</div></div></div><div class="agent-session-badge">${statusBadge(summary.status || 'IDLE')}</div></div><div class="agent-session-meta"><span>运行环境：${escapeHtml(runtimeLabel(summary.runtime))}</span><span>当前范围：${escapeHtml(target.label)}</span><span>${open.length} 项等待你回应</span></div></article>${priority}<section class="section agent-section">${agentWorkStatusHtml(current, summary, open)}</section><section class="section agent-section"><article class="card agent-panel agent-history"><div class="agent-panel-head"><div><h2>交互历史</h2><p>按时间查看 Agent 进展、提问和你的回应；运行细节按需展开。</p></div><span class="count">最近 20 条</span></div><div class="agent-timeline">${agentTimelineHtml(activityHistory || [], questionHistory || [])}</div></article></section>`;
+        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>当前需要处理</h2><p>Main Agent 正在等待你的工程判断；完成回应后才会继续协调相关工作。</p></div>${responseBadge}</div><div class="agent-question-list">${agentQuestionCardsHtml(open)}</div><div class="agent-side-note"><strong>Dashboard 和 Main Agent CLI 都可以回答。</strong> 两个入口读写同一份问题与答案。subagent 不直接向 Human 提问；这里提交只会解除 Main Agent 的等待，不会批准工作流、节点或验证证据。需要主动补充任务或纠偏时，请在当前 Main Agent 对话中输入。</div></article></section>`
+        : `<section class="section agent-section"><div class="card agent-priority-clear" id="agent-questions"><span class="state-dot IDLE" aria-hidden="true"></span><div class="agent-priority-clear-copy"><strong>当前无需你处理</strong><span>现在没有需要你回答的问题。</span></div>${responseBadge}</div></section>`;
+      const subagentCount = (collaboration?.active_subagents || []).length;
+      return `<article class="card agent-session"><div class="agent-session-head"><div class="agent-session-state"><span class="state-dot ${escapeHtml(summary.status || 'IDLE')}" aria-hidden="true"></span><div><h2 class="agent-session-title">${escapeHtml(summary.label || '当前项目的 Agent')}</h2><div class="agent-session-summary">${escapeHtml(agentMessageText(current?.message || summary.message || '当前无需你操作'))}</div></div></div><div class="agent-session-badge">${agentStatusBadge(summary.status || 'IDLE')}</div></div><div class="agent-session-meta"><span>运行环境：${escapeHtml(runtimeLabel(summary.runtime))}</span><span>Human 交互入口：Main Agent</span><span>${subagentCount} 个 active subagent</span><span>${open.length ? `${open.length} 项等待你回应` : '当前无需回应'}</span></div></article>${priority}<section class="section agent-section">${agentCollaborationHtml(collaboration)}</section><section class="section agent-section">${agentWorkStatusHtml(current, summary, open)}</section><section class="section agent-section"><article class="card agent-panel agent-history"><div class="agent-panel-head"><div><h2>交互历史</h2><p>按时间查看 Main Agent、subagent 的进展以及你的回应；运行细节按需展开。</p></div><span class="count">最近 20 条</span></div><div class="agent-timeline">${agentTimelineHtml(activityHistory || [], questionHistory || [])}</div></article></section>`;
     }
     function agentInteractionSummaryHtml(questions, activities) {
       const summary = agentSummary({activities:activities || [], agent_questions:questions || [], activity_history:activities || []});
@@ -798,7 +919,7 @@
     }
     function renderAgentInteractionPage() {
       const s = state.snapshot;
-      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>跟随 Agent 当前工作、查看关键过程，并在它需要工程判断时直接回应。</p></div></div>${agentInteractionHtml(s.project_agent, s.agent_questions || [], s.activities || [], s.activity_history || [], s.agent_question_history || s.agent_questions || [])}`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>通过 Main Agent 统一交互，并查看各 subagent 的协同执行状态。</p></div></div>${agentInteractionHtml(s.project_agent, s.agent_collaboration, s.agent_questions || [], s.activities || [], s.activity_history || [], s.agent_question_history || s.agent_questions || [])}`;
       bindNodeLinks();
       if (state.focusAgentQuestion) {
         const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === state.focusAgentQuestion);
@@ -1052,7 +1173,7 @@
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
       const p = percent(w.progress), openHuman = w.waiting_for_human || pendingHuman(w.human_actions), actions = w.closure.actions || [];
-      const active = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
+      const active = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
       const agentWaiting = active.filter(a => a.status === 'WAITING_FOR_HUMAN').length;
       const planNodes = w.workstream === 'VDOC'
         ? w.nodes.filter(n => ['document-writing-plan','document-deliverable'].includes(n.role))
@@ -1076,7 +1197,7 @@
         ${vdocConvergenceHtml(w, openHuman)}
         ${agentInteractionSummaryHtml(w.agent_questions || [], w.activities || [])}
         ${granularityNotice}<div class="grid two-col"><section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section><aside><div class="section-head"><h2>这条工作流何时算完成</h2></div><div class="card metric"><ul class="exit-list">${w.exit_criteria.map(x => `<li>${escapeHtml(humanText(x))}</li>`).join('')}</ul></div><div class="section"><div class="section-head"><h2>等待负责人处理</h2></div><div class="card list-card attention">${humanRows(openHuman)}</div></div></aside></div>
-        <section class="section"><div class="section-head"><h2>当前工作</h2></div><div class="card list-card">${activityRows(w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></section>
+        <section class="section"><div class="section-head"><h2>当前工作</h2></div><div class="card list-card">${activityRows(w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status)))}</div></section>
         <section class="section"><div class="section-head"><h2>当前缺口与建议事项</h2><span class="count">系统只提出建议，不会代替人工决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
       if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
       if ($('#revise-vdoc-plan')) $('#revise-vdoc-plan').onclick = openVdocRevisionRequestTab;
@@ -1408,7 +1529,7 @@
       $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档交付节点</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div><div class="card empty">正在读取所属文档正文…</div>`;
       $('[data-return-vdoc]').onclick = () => leaveDocumentDeliveryReview('VDOC');
       try {
-        const response = await fetch(`/api/document?selector=${encodeURIComponent(n.delivery_review.document_id)}`);
+        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(n.delivery_review.document_id)}`);
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         const current = body.document;
@@ -1527,7 +1648,7 @@
         <details class="detail-group"><summary>${n.role === 'document-writing-plan' ? '文档撰写方案内容' : n.role === 'document-deliverable' ? '文档语义交付内容' : '具体工作、实现方式和交付物'}</summary><div class="detail-group-body">${roleSpecificContent}</div></details>
         <details class="detail-group" open><summary>完成这项工作需要什么材料</summary><div class="detail-group-body">${evidenceContractHtml(n.evidence_contract, n.evidence || [])}</div></details>
         <details class="detail-group"><summary>完成判断的详细依据</summary><div class="detail-group-body">${closureAssessmentHtml(n.closure_assessment)}</div></details>
-        <details class="detail-group"><summary>需要先完成的工作、会受影响的工作和当前进展</summary><div class="detail-group-body"><div class="detail-card"><strong>这项工作开始前需要完成</strong><ul>${(n.outgoing || []).map(e => `<li>${escapeHtml(e.relation)} → <span class="mono">${escapeHtml(e.target)}</span></li>`).join('') || '<li>无</li>'}</ul><strong>这项工作变化后需要重新检查</strong><ul>${(n.incoming || []).map(e => `<li><span class="mono">${escapeHtml(e.source)}</span> → ${escapeHtml(e.relation)}</li>`).join('') || '<li>无</li>'}</ul></div><div class="card list-card" style="margin-top:10px">${activityRows((n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status)))}</div></div></details>
+        <details class="detail-group"><summary>需要先完成的工作、会受影响的工作和当前进展</summary><div class="detail-group-body"><div class="detail-card"><strong>这项工作开始前需要完成</strong><ul>${(n.outgoing || []).map(e => `<li>${escapeHtml(e.relation)} → <span class="mono">${escapeHtml(e.target)}</span></li>`).join('') || '<li>无</li>'}</ul><strong>这项工作变化后需要重新检查</strong><ul>${(n.incoming || []).map(e => `<li><span class="mono">${escapeHtml(e.source)}</span> → ${escapeHtml(e.relation)}</li>`).join('') || '<li>无</li>'}</ul></div><div class="card list-card" style="margin-top:10px">${activityRows((n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status)))}</div></div></details>
         <details class="detail-group"><summary>待处理问题和支持材料原始记录</summary><div class="detail-group-body"><div class="card list-card">${(n.findings || []).map(f => `<div class="list-row"><div><div class="row-title">${escapeHtml(f.severity)} · ${escapeHtml(humanText(f.details))}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(f.id)}</pre></details></div>${statusBadge(f.status)}</div>`).join('') || '<div class="empty">没有待处理问题</div>'}</div>${(n.evidence || []).slice().reverse().map(e => `<details><summary>${escapeHtml(artifactLabel(e.kind))} · ${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')} · ${shortTime(e.created_at)}</summary><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre></details>`).join('') || '<div class="detail-card empty">尚无支持材料</div>'}</div></details>`;
       $('#close-drawer').onclick = closeDrawer;
       $('#node-comment').onclick = () => openHumanModal(n.id);
@@ -1542,6 +1663,36 @@
     function closeDrawer() { state.node = null; $('#drawer-backdrop').classList.remove('open'); }
     function openModal(html) { $('#modal').innerHTML = html; $('#modal-backdrop').classList.add('open'); document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = closeModal); }
     function closeModal() { $('#modal-backdrop').classList.remove('open'); }
+    function openProjectUnregisterModal() {
+      const project = state.projects.find(item => item.id === state.project);
+      if (!project) { toast('当前项目未注册', true); return; }
+      openModal(`<h2>从 Dashboard 注销项目</h2><p><strong>${escapeHtml(project.name)} · ${escapeHtml(project.dut_top)}</strong></p><p>只会移除 Dashboard 中的项目入口，不会删除该项目的数据库、工作节点、审批记录、验证证据或文件。之后再次 bootstrap 或启动 Dashboard 即可重新注册。</p><form id="project-unregister-form"><div class="field"><label><input name="confirm" type="checkbox" style="width:auto" required> 我确认只注销当前项目，不影响其他项目</label></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn danger">确认注销</button></div></form>`);
+      $('#project-unregister-form').onsubmit = async event => {
+        event.preventDefault();
+        try {
+          const response = await fetch('/api/registrations/remove', {
+            method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token},
+            body:JSON.stringify({dashboard_project:state.project}),
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || response.statusText);
+          state.projects = body.projects || [];
+          closeModal();
+          if (state.projects.length) {
+            await selectProject(state.projects[0].id, true);
+            toast('当前项目已注销；已切换到另一个独立项目');
+          } else {
+            if (state.stream) state.stream.close();
+            state.stream = null; state.project = null; state.snapshot = null;
+            renderProjectSwitcher(); setConnection(false);
+            window.history.replaceState({}, '', window.location.pathname);
+            $('#project-name').textContent = 'verif-harness';
+            $('#project-meta').textContent = '没有已注册项目';
+            $('#main').innerHTML = '<div class="empty">最后一个项目已注销，共享 Dashboard 正在退出。项目数据没有被删除。</div>';
+          }
+        } catch (error) { toast(`注销失败：${error}`, true); }
+      };
+    }
     function reviewerValue() { return localStorage.getItem('verif-reviewer') || ''; }
     function rememberReviewer(value) { if (value) localStorage.setItem('verif-reviewer', value); }
     function openHumanModal(target) {
@@ -1556,7 +1707,7 @@
     async function openDocumentReviewModal(document) {
       openModal('<h2>读取文档正文</h2><div class="empty">正在加载…</div>');
       try {
-        const response = await fetch(`/api/document?selector=${encodeURIComponent(document.id)}`);
+        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(document.id)}`);
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         const current = body.document;
@@ -1572,12 +1723,14 @@
       $('#waive-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.node = n.id; data.confirm = true; rememberReviewer(data.reviewer); await post('/api/waive', data, '例外决定已记录'); };
     }
     async function post(path, data, success, afterSuccess=null) {
-      try { const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)}); const body = await response.json(); if (!response.ok) throw new Error(body.error || response.statusText); if (afterSuccess) afterSuccess(body); setSnapshot(body.snapshot); closeModal(); toast(success); }
+      try { data.dashboard_project = state.project; const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)}); const body = await response.json(); if (!response.ok) throw new Error(body.error || response.statusText); if (afterSuccess) afterSuccess(body); setSnapshot(body.snapshot); closeModal(); toast(success); }
       catch (error) { toast(String(error), true); }
     }
     $('#drawer-backdrop').onclick = event => { if (event.target === $('#drawer-backdrop')) closeDrawer(); };
     $('#modal-backdrop').onclick = event => { if (event.target === $('#modal-backdrop')) closeModal(); };
     $('#search').oninput = event => { state.query = event.target.value.trim(); if (state.workstream) renderWorkstream(workstream(state.workstream)); else if (state.query) { const match = allNodes().find(n => `${n.id} ${n.title}`.toLowerCase().includes(state.query.toLowerCase())); if (match) { state.node = match.id; renderDrawer(match.id); } } };
+    $('#project-switcher').onchange = async event => { try { await selectProject(event.target.value, true); } catch (error) { renderProjectSwitcher(); toast(`切换项目失败：${error}`, true); } };
+    $('#project-unregister').onclick = openProjectUnregisterModal;
     $('#home').onclick = openOverview;
     $('#theme').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? '' : 'dark'; localStorage.setItem('verif-theme', dark ? 'light' : 'dark'); };
     if (localStorage.getItem('verif-sidebar') === 'collapsed') $('#layout').classList.add('sidebar-collapsed');

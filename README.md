@@ -54,12 +54,17 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - Agent 用 `changed PATH` 登记 RTL/spec/验证文件已修改后，自动找出需要重新验证的下游目标；
 - 根据当前[未完成项](skills/verif-harness/docs/glossary.md#gap-action)，重新列出并按规则排序下一步建议；
 - xverif、WavePeek、回归及代码生成能力的受控接入；
+- 单一 Codex 或 Kimi runtime 内的原生多 Agent 协作：Project Main Agent 是唯一 Human 交互入口，
+  通过绑定当前节点 revision 的 assignment 将独立工作分派给只读 explorer、限定 write scope 的
+  worker 和只读 reviewer；claim、heartbeat 与结果显示在 Dashboard，但完成不等于 evidence/PASS；
 - [Human review 和 waiver](skills/verif-harness/docs/glossary.md#human-gate)、
   [Workstream baseline 和 final freeze](skills/verif-harness/docs/glossary.md#baseline) 审计链；
 - 可编辑验证文档与 SQLite 状态分离；`docs sync` 用 SHA-256 判断文档是否修改，并按需生成
   [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
-- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：总览以默认折叠的项目/DUT、
+- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：固定端口可注册多个彼此独立的
+  验证项目并在顶部切换；它们只共享 Dashboard 服务，不共享 SQLite、工作流、节点、审批、问题或证据。
+  当前项目总览以默认折叠的项目/DUT、
   Agent 交互、待处理事项、验证工作流和验证风险与变更作为入口；状态摘要点击后在新标签页查看或
   处理。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard
   决定后继续。

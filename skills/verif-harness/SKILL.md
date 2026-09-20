@@ -87,9 +87,13 @@ Workstream. Project lifecycle is separate.
   closure. The plain `dashboard` command and bootstrap both use the same detached
   start-or-reuse action; never keep it alive with a foreground shell, pipe it to
   `head`, or assume that a printed URL proves the service is still running. Use
-  `dashboard --status` to verify it and `dashboard --stop` to stop the managed
-  service. Register every non-trivial bounded Agent/tool operation with `activity
-  start` before doing the work, update it when progress changes or Human input is
+  `dashboard --status` to verify it. `dashboard --stop` unregisters only the
+  current project; the shared service stops only after the last registered
+  project is removed. Projects share the loopback UI process and nothing else:
+  route every read, event stream, and write to the explicitly selected project's
+  own SQLite store. Register every non-trivial bounded Agent/tool operation with `activity
+  start` before doing the work; for a native subagent use `agent-work claim`, which
+  creates the Activity atomically. Update it when progress changes or Human input is
   required, and close it with the real terminal result. Before a desired-state
   node exists, use `activity start project`; afterwards bind the Activity to the
   most specific current node. Before starting, resuming, or completing an Activity, read
@@ -100,7 +104,7 @@ Workstream. Project lifecycle is separate.
   either entry must be visible from the other. The Agent may mirror the registered
   question in its current CLI conversation; if the Human answers there, persist
   that answer immediately with `agent-question answer` using the same question ID.
-  If an Agent must stop for Human
+  If the Main Agent must stop for Human
   input, it must register the
   question with `agent-question ask` before waiting. Use target `project` before
   a Workstream or node exists; otherwise use the most specific current Workstream
@@ -125,6 +129,31 @@ Workstream. Project lifecycle is separate.
   Human attention. Allow the Human to preview and review the registered current
   document through the node, but keep Markdown as the semantic authority and do
   not claim that a document node represents all engineering work inside it.
+- Multi-agent execution (`agent-work`): use only the native subagent capability of
+  the single runtime selected for the project, Codex or Kimi. Do not launch the
+  other runtime and do not build a hidden process scheduler. The Project Main
+  Agent is the sole Human-facing coordinator and the sole writer of verif-harness
+  control state. Subagents only execute bounded work and return results to Main;
+  they must not call `agent-question`, `review`, `waive`, `freeze`, `record`, or
+  `evidence`, and must not contact the Human or delegate recursively.
+  Before dispatch, Main must read `agent-work candidates`, atomically claim the
+  selected current action, and include the returned assignment ID, node revision,
+  definition digest, and allowed write scope in the child task. Parallelize only
+  independent nodes. Multiple read-only explorers/reviewers may run concurrently;
+  write scopes must be explicit and non-overlapping, and may not include DUT/spec,
+  `.verif-harness`, `.harness-config.json`, `.deps`, VCS metadata, runtime
+  configuration, or `AGENTS.md`. Reserved names are matched case-insensitively.
+  A declared scope is a cooperative scheduling contract, not an OS-level sandbox. Main must
+  inspect the actual diff; put untrusted children in an isolated worktree or a
+  stricter runtime sandbox. Keep the fan-out small and justified by independent
+  work rather than using subagents for simple tasks.
+  Main owns heartbeats. When a child reports missing engineering input, record
+  `WAITING_FOR_PARENT`; Main first attempts internal coordination. Only Main may
+  convert a structured `NEEDS_HUMAN` report into an `agent-question`. After the
+  Human answer, Main decides whether to resume or replace the child.
+  Wait for all requested child results, inspect the actual files and check output,
+  then call `agent-work finish` and recompute closure. A completed assignment,
+  Agent consensus, or successful child command is never evidence or `VALID`.
 - Verification Reasoning Engine (`reason`): prepare backend-neutral reasoning requests only when deterministic
   rules cannot decide. Read `vreason/INSTRUCTIONS.md`.
 

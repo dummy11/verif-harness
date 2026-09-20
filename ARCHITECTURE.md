@@ -53,6 +53,9 @@ state. In addition to the core model, it stores:
 - change events, causal findings, validity, and closure actions.
 - bounded Agent/tool Activity records and Human comments or requested changes
   used by the local real-time Dashboard; these records do not establish node validity.
+- revision-bound native-subagent assignments with an exclusive node claim,
+  optional non-overlapping verification write scope, heartbeat lease, parent Agent,
+  runtime identity, and linked Activity. Assignment state does not establish validity.
 
 `plan VDOC` creates missing Markdown templates but never overwrites existing
 semantic documents. `docs sync` detects content changes by digest; `docs status`
@@ -101,6 +104,26 @@ the Markdown body.
 reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
 `RUNNING`, but comments cannot release it and it never injects arbitrary text
 into an Agent session.
+
+Multi-agent execution remains a single-runtime, parent-owned control loop.
+Codex or Kimi owns native child contexts and scheduling; verif-harness does not
+launch or inspect runtime threads. The Project Main Agent is the only Human-facing
+actor and the only writer of governance state. Before native dispatch it atomically
+claims one current Closure action, which creates a linked Activity and binds the
+child to the current Workstream revision and node-definition digest. Subagents
+return results to Main. `WAITING_FOR_PARENT` is internal coordination and never
+enters the Human queue. Only Main may register an `agent-question`, apply a result,
+record evidence, or request a gate. Lease expiry or assignment completion does not
+mark a node failed or valid; revision drift supersedes the assignment.
+
+The question API accepts only the `Project Main Agent` actor and rejects any
+Activity owned by a subagent assignment. Declared write scopes also reject DUT/spec,
+`.verif-harness`, `.harness-config.json`, `.deps`, VCS metadata, runtime
+configuration, and `AGENTS.md` (using conservative case-insensitive matching).
+These are workflow guards for cooperating runtime agents, not a hostile-process security
+boundary: agents sharing one OS identity can still address the same files. Main
+must inspect the actual diff before accepting a result; untrusted execution needs
+an isolated worktree or a stricter runtime sandbox.
 
 Bootstrap also creates or refreshes only a marked verif-harness block in the
 project-root `AGENTS.md`. The block is a routing and authority projection, not a

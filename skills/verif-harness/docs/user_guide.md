@@ -124,6 +124,32 @@ verif-harness xverif mcp status --project-root .
 verif-harness doctor
 ```
 
+### 2.1 一个 runtime 下的多 Agent 协作
+
+setup 会为选定 runtime 安装三种项目级执行角色：只读探索、限定范围实现和独立只读复核。
+Codex 从 `.codex/agents/` 发现角色，Kimi 从 `.kimi-code/agents/` 发现角色。项目始终只选择
+一个 runtime；不会由 Codex 再启动 Kimi，或反向启动。
+
+```text
+Human
+  ↕
+Project Main Agent（唯一交互入口和控制面写者）
+  ├─ verification-explorer（只读）
+  ├─ verification-worker（限定 write scope）
+  └─ verification-reviewer（只读）
+          ↓
+      结果返回 Main Agent，由 Main 复核并登记
+```
+
+Main Agent 先从当前 Closure Engine 结果中读取可分派动作，再建立绑定当前节点定义和计划版本的
+assignment。领取操作会原子创建 Activity，因此不需要为同一 child 再执行一次 `activity start`。
+租约用于发现丢失的同步和阻止重复领取；runtime 自己仍负责 subagent 的线程、上下文与结果返回。
+
+subagent 不直接向 Human 提问，也不执行 review、waiver、freeze 或 evidence 登记。缺少工程输入时，
+它只向 Main Agent 返回 `NEEDS_HUMAN`；Main 先尝试内部协调，确实需要 Human 时再统一登记
+`agent-question`。Dashboard 会显示每个 subagent 的节点、角色、状态和 heartbeat，但没有直接回复
+subagent 的入口。assignment 完成、多个 Agent 达成一致或命令成功都不等于 evidence/PASS。
+
 ## 3. 从空项目到保存最终基线（final freeze）
 
 下面是第一次使用时最容易理解的顺序，不是强制流水线。任何 Workstream 都可以并行、
@@ -194,9 +220,13 @@ bootstrap 成功后，交互式 Codex/Kimi/Claude 或终端会默认在 `127.0.0
 时必须显式使用 `--dashboard`，避免运行入口差异使 Dashboard 被跳过。只有 Human 在当前对话中明确
 要求关闭时，Agent 才能使用 `--no-dashboard`；SSH、无图形界面或非交互执行都不是关闭理由。
 本机桌面环境会尝试打开浏览器；SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转发提示。
-CI 可以省略两个选项并使用默认跳过策略。自动启动使用固定端口，端口被其他项目或服务占用时会
-报告冲突，不会静默换端口。Agent 必须检查返回的 `dashboard.status`；只有 `STARTED` 和 `REUSED`
-表示 Dashboard 可用，不能把 `SKIPPED`、`DISABLED`、`FAILED` 或 `PORT_CONFLICT` 说成已经启动。
+CI 可以省略两个选项并使用默认跳过策略。自动启动使用固定端口。第一个项目启动共享 Dashboard，
+后续项目只注册自己的项目入口并复用同一服务，因此多个项目 bootstrap 不会争抢 `8765`。
+项目选择器只是请求路由：每个项目仍只读写自己项目目录内的 SQLite、文档、节点、问题、审批和证据，
+不存在跨项目汇总、依赖或状态传播。只有非 verif-harness 服务或升级前的旧版单项目 Dashboard 占用
+端口时才报告 `PORT_CONFLICT`，系统不会静默换端口。Agent 必须检查返回的 `dashboard.status`；
+只有 `STARTED` 和 `REUSED` 表示 Dashboard 可用，不能把 `SKIPPED`、`DISABLED`、`FAILED` 或
+`PORT_CONFLICT` 说成已经启动。
 
 路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
 静默沿用旧路径：Agent 按首次 bootstrap 的相同顺序逐题显示当前值，每次只让 Human 对当前字段
@@ -1208,8 +1238,10 @@ Dashboard 的主页面不要求使用者具有 ASIC 验证背景。它优先回�
 “查看内部信息”中，不应出现在主判断或操作按钮上。页面同时给出 VDOC、VENV 等简写的中文名称；
 简写用于准确定位，不是理解页面的前提。
 
-Dashboard 总览标题为“验证项目总览”，表示当前页面描述的是一个验证项目及其 DUT 验证对象，
-不是对项目管理过程本身做验证，也不是多项目管理页面。顶部“项目与验证对象”展示当前项目名、
+Dashboard 总览标题为“验证项目总览”，表示当前页面始终只描述项目选择器中当前选中的一个验证项目
+及其 DUT 验证对象，不是对项目管理过程本身做验证，也不提供跨项目汇总或项目间关系。顶部项目选择器
+只负责在独立项目之间切换；切换后所有读取、事件流和 Human 写操作都重新绑定到所选项目自己的
+`.verif-harness/model.sqlite3`。顶部“项目与验证对象”展示当前项目名、
 DUT top 与 top file、代码基线和 runtime；主总览的其余核心内容是工作流列表，以及每条工作流的
 阶段、工作节点进度、阻塞项和等待 Human 数量。从审计记录取得的 Human reviewer 和 Agent actor、
 固定的 verif-harness Engine 身份、完整项目根目录、只读 RTL 输入、规格/文档输入和验证输出目录
@@ -1228,13 +1260,17 @@ DUT top 与 top file、代码基线和 runtime；主总览的其余核心内容�
 # Engine：从同一个 model.sqlite3 读取状态，状态变化时通过浏览器连接推送新快照
 verif-harness dashboard --open-browser
 verif-harness dashboard --status
+# 仅注销当前项目；还有其他项目时共享服务继续运行
+verif-harness dashboard --stop
 ```
 
 #### 从本地浏览器访问远端 Dashboard
 
 Dashboard 始终只监听它所在服务器的 `127.0.0.1`。不指定 `--port` 时，远端监听端口固定为
-`8765`；启动日志打印的 URL 是最终依据。如果浏览器和 Dashboard 在同一台机器，直接打开该
-URL。通过 SSH 使用远端服务器时，不要依赖 `--open-browser`：远端服务器、跳板机和本地电脑的
+`8765`。同一账号下的多个验证项目注册到这个服务，浏览器在顶部切换项目；项目之间除共享这个
+HTTP 服务和只含项目名称、DUT、根目录的本机路由注册外没有关系。启动日志打印的带 `project`
+参数 URL 是当前项目入口。如果浏览器和 Dashboard 在同一台机器，直接打开该 URL。通过 SSH 使用
+远端服务器时，不要依赖 `--open-browser`：远端服务器、跳板机和本地电脑的
 `127.0.0.1` 分别代表三台不同机器，必须先建立 SSH 本地端口转发。
 
 单跳 SSH，即本地电脑可以直接登录远端服务器：
@@ -1281,7 +1317,7 @@ ssh -N verification-server
 curl http://127.0.0.1:8765/healthz
 ```
 
-健康检查应返回 `status: ok` 和远端项目路径。随后在本地浏览器打开
+健康检查应返回 `schema: DashboardHubHealth/1`、`status: ok` 和已注册项目数量。随后在本地浏览器打开
 `http://127.0.0.1:8765/`。如果本地 `8765` 已占用，可以只改变本地一侧，例如
 `LocalForward 18765 127.0.0.1:8765`，此时浏览器访问 `http://127.0.0.1:18765/`；远端
 Dashboard 端口仍是 `8765`。如果远端启动时使用 `--port 9000`，转发右侧也必须改成
@@ -1312,7 +1348,9 @@ Dashboard 无法从另一个终端的普通进程或对话文字中猜出它正�
 修改请求不重复算作 Human 待办。风险页只收集 `INVALID`、`BLOCKED`、`STALE`、
 `REVALIDATION_REQUIRED`、`PROVISIONAL`、正文变化及开放 finding，不把普通进度冒充风险。
 
-Agent 交互详情页始终显示项目级 Agent；没有当前 Activity 时显示“空闲”，不会误报为没有 Agent。页面
+Agent 交互详情页始终显示“当前项目的 Agent”。没有需要 Human 回答的问题、也没有 Agent 已同步的
+进行中工作时，页面显示“无需你处理”，并明确说明 Dashboard 尚未收到正在处理验证工作的记录；这不表示
+Agent 进程已经退出，也不能证明终端里没有尚未同步的操作。页面
 同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答问题所属的
 Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Agent CLI 对话回答；
 Agent 收到 CLI 回答后必须立即用 `verif-harness agent-question answer` 写回同一个 SQLite 问题记录。
@@ -1580,8 +1618,9 @@ bootstrap 成功并启动 Dashboard 后，后续会阻塞 Agent 的问题（例�
 项目级 Activity 和项目级 Agent question，不能只留在原生终端选择器。Human 随后既可在 Dashboard 回答，
 也可通过 `agent-question answer` 在 Agent CLI 回答；若初始请求已经明确授权下一步，则不重复询问。
 
-后台启动元数据写入 `.verif-harness/dashboard-runtime.json`，输出日志写入
-`.verif-harness/dashboard.log`。二者用于运行诊断，不是验证证据或项目语义事实源。
+每个项目的后台注册指针写入自己的 `.verif-harness/dashboard-runtime.json`；共享服务输出日志默认写入
+`~/.verif-harness/dashboard/dashboard.log`。机器级注册目录只保存项目入口所需的路由/显示信息，
+不保存验证结论。以上内容用于运行诊断，不是验证证据或项目语义事实源。
 
 ### `status [WORKSTREAM]`
 
@@ -1591,8 +1630,9 @@ bootstrap 成功并启动 Dashboard 后，后续会阻塞 Agent 的问题（例�
 
 ### `dashboard`
 
-后台启动或复用供 Human 实时查看和参与的本机 Web 界面；页面状态来自同一份 SQLite 模型。
-这一默认动作与 bootstrap 自动打开 Dashboard 完全相同，命令返回不会停止服务。
+在固定端口注册当前项目，并启动或复用供 Human 实时查看和参与的本机 Web 界面。多个项目共享服务，
+但每次请求只访问明确选中的项目 SQLite；页面不建立项目间关系。这一默认动作与 bootstrap 自动打开
+Dashboard 完全相同，命令返回不会停止服务。顶部可切换项目，也可经二次确认注销当前项目。
 
 ```text
 verif-harness dashboard [--host 127.0.0.1|localhost] [--port PORT] [--open-browser]
@@ -1607,13 +1647,13 @@ verif-harness dashboard --foreground
 | `--host` | 监听地址；只接受 `127.0.0.1` 或 `localhost`，默认 `127.0.0.1` |
 | `--port` | Dashboard 所在机器的固定监听端口，默认 `8765`；后台模式不接受 `0` |
 | `--open-browser` | 仅当浏览器与 Dashboard 位于同一台机器时使用；SSH 场景应建立端口转发 |
-| `--status` | 检查当前项目记录的后台服务及健康状态，不启动服务 |
-| `--stop` | 只停止当前项目运行记录对应的后台服务；不会结束不属于本项目的端口进程 |
+| `--status` | 检查共享服务是否运行，以及当前项目是否已经注册；不启动服务 |
+| `--stop` | 注销当前项目且不影响其他项目；仅当它是最后一个注册项目时停止共享服务 |
 | `--snapshot` | 只输出一次完整 JSON 快照后退出，适合 CI 或自定义前端 |
 | `--foreground` | 前台运行服务，仅用于调试和后台启动器内部；正常使用不要搭配管道或 `head` |
 
-页面通过本机事件流接收状态更新，不轮询外部服务。关闭页面或停止 Dashboard 不会停止仿真，
-也不会清除 SQLite 状态。Dashboard 不是证据生产工具；它只展示或提交受控的 Human 输入。
+页面通过按项目隔离的本机事件流接收状态更新，不轮询外部服务。切换或注销项目不会停止仿真，
+也不会清除任何项目的 SQLite 状态。Dashboard 不是证据生产工具；它只展示或提交受控的 Human 输入。
 
 ### `await-human WORKSTREAM`
 
@@ -1821,7 +1861,7 @@ Agent 用它登记当前正在执行什么，让 Human 不必等到任务结束�
 verif-harness activity start NODE --operation TEXT --actor NAME \
   [--message TEXT] [--total N] [--log-path PATH]
 verif-harness activity update ACTIVITY_ID \
-  --status PENDING|RUNNING|WAITING_FOR_HUMAN|COMPLETED|FAILED|CANCELLED \
+  --status PENDING|RUNNING|WAITING_FOR_HUMAN|WAITING_FOR_PARENT|COMPLETED|FAILED|CANCELLED \
   [--message TEXT] [--current N] [--total N] [--log-path PATH]
 verif-harness activity list [--workstream WORKSTREAM] [--node NODE] [--active]
 ```
@@ -1829,16 +1869,45 @@ verif-harness activity list [--workstream WORKSTREAM] [--node NODE] [--active]
 `--current/--total` 只表示该 Activity 自己公开的步骤数；不得拿主观百分比冒充覆盖率或完成条件。
 `--log-path` 必须位于项目内。结束状态不能再次改写，需要继续工作时创建新的 Activity。
 
+### `agent-work`（别名 `subagent`）
+
+这是 Main Agent 用来把 Codex/Kimi 原生 subagent 映射到当前验证节点的控制面接口；它不启动
+进程，也不允许 child 自己修改治理状态。
+
+```text
+verif-harness agent-work candidates [--limit N]
+verif-harness agent-work claim ACTION_ID --agent ID --role ROLE --operation TEXT \
+  [--parent project-agent] [--runtime-ref ID] [--lease-seconds N] \
+  [--write-scope PATH] [--message TEXT] [--total N]
+verif-harness agent-work heartbeat ASSIGNMENT_ID --agent ID \
+  [--phase RUNNING|WAITING_FOR_PARENT] [--message TEXT] [--current N] [--total N]
+verif-harness agent-work finish ASSIGNMENT_ID --agent ID \
+  --outcome COMPLETED|FAILED|CANCELLED --summary TEXT
+verif-harness agent-work list [--workstream WORKSTREAM] [--node NODE] [--active]
+```
+
+`claim` 只接受当前、已批准 Workstream 中可执行的 closure action；同一当前节点和同一 agent
+最多各有一个 active assignment。`--write-scope` 必须位于 verification 输出根目录，不能覆盖
+只读 RTL/spec、`.verif-harness`、`.harness-config.json`、`.git`、`.deps`、`.codex`、
+`.kimi-code`、`.agents` 或 `AGENTS.md`（保留路径按大小写不敏感匹配），
+并且不能与其他 active assignment 的范围重叠；未提供表示只读执行。这个范围是 Main 与
+subagent 的协作合同，不是 OS 级文件隔离。Main 在接收结果时仍须检查实际 diff；不受信任的
+child 应在隔离 worktree 或更严格的 runtime sandbox 中执行。
+`WAITING_FOR_PARENT` 表示 child 等待 Main Agent 协调，不进入 Human 待处理列表。租约过期只把
+协作记录标成 `EXPIRED`，计划 revision 变化则标成 `SUPERSEDED`；两者都不会把验证节点标成失败。
+Main Agent 收到真实结果后调用 `finish`，随后复核文件、运行结果并重新计算 closure。只有符合对应
+evidence contract 的材料才能通过 `evidence` 改变节点 validity。
+
 ### `agent-question`
 
-Agent 用它把工程选择题持久化到项目控制状态。Human 可以在独立的“Agent 交互”板块回答，也可以调用
+Main Agent 用它把工程选择题持久化到项目控制状态。Human 可以在独立的“Agent 交互”板块回答，也可以调用
 下面的 `answer` CLI；两者是同一问题的两个交互入口。计划尚未建立时使用项目级目标 `project`；已有计划后应绑定最具体的当前
 Workstream 或节点。阻塞问题可以再绑定同一范围的 Activity。
 
 ```text
 verif-harness agent-question ask TARGET --prompt TEXT \
   --option ID LABEL DESCRIPTION --option ID LABEL DESCRIPTION \
-  [--context TEXT] [--recommended ID] [--actor NAME] [--activity ACTIVITY_ID] \
+  [--context TEXT] [--recommended ID] [--actor "Project Main Agent"] [--activity ACTIVITY_ID] \
   [--non-blocking]
 verif-harness agent-question await QUESTION_ID [--timeout SECONDS]
 verif-harness agent-question list [--status open|answered|cancelled|superseded] [--target TARGET]
@@ -1848,8 +1917,11 @@ verif-harness agent-question answer QUESTION_ID --option ID --reviewer NAME [--t
 每个问题必须有 2 到 8 个唯一选项；Dashboard 还提供“其他”，选择它时必须填写说明。默认问题会
 进入等待人工列表；`--non-blocking` 只记录问题，不暂停 Activity。Human 的回答会持久化并解除最后一个
 关联阻塞问题的 Activity 等待，但不会改变节点有效性或代替 `review`、`evidence`、`waive`、`freeze`。
+`ask` 只接受固定的 `Project Main Agent` actor，并拒绝绑定任何 subagent assignment 的 Activity；
+subagent 必须返回 `NEEDS_HUMAN` 给 Main，由 Main 判断是否真的需要提问。
 原生 Agent 终端中的临时选择器不会自动同步。凡是会让 Agent 停下等待 Human 的问题，都必须先用
-`ask` 登记；终端选择器不得作为唯一入口。
+`ask` 登记；终端选择器不得作为唯一入口。subagent Activity 不能直接绑定问题，必须先向 Main Agent
+回报，再由 Main Agent 统一判断和登记。
 
 ### `human-action`
 

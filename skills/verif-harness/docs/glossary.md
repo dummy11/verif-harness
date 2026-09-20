@@ -9,6 +9,9 @@
 然后列出当前还缺什么。实际编译、仿真和波形处理由工程工具执行。
 
 **Agent** 是当前 Codex/Kimi 会话中的执行者：理解用户目标、调用工具、读取结果、提问。
+**Project Main Agent** 是当前项目唯一直接与 Human 交互、写入控制状态并汇总结果的 Agent。
+**subagent** 是 Main Agent 通过同一个 Codex/Kimi runtime 临时分派的执行单元；它只接收有边界
+任务并把结果返回 Main，不直接向 Human 提问，也不批准计划、证据、豁免或冻结。
 **Skill** 是 Agent 遵守的工作指令，包括输入收集和权限边界；不是常驻服务。
 **CLI（命令行工具）**按固定的命令和参数执行操作，一次调用完成一项操作并返回结果。
 **Human（用户）**是当前项目的工程师或负责人。只有 Human 能决定规格含义、验证范围、是否
@@ -33,15 +36,24 @@
 <a id="dashboard"></a>
 ## Dashboard、Activity、人工操作记录
 
-**Dashboard（实时项目看板）**是只在本机打开的 Web 页面。它把 SQLite 中已经登记的
-Workstream、节点状态、完成条件、证据、问题、当前活动和人工操作记录分层展示。状态保存后，
+**Dashboard（实时项目看板）**是只在本机打开的 Web 页面。固定端口上的一个服务可以注册多个
+验证项目，顶部选择器只决定当前请求访问哪个项目；项目之间不共享 SQLite、Workstream、节点、
+问题、审批、证据或完成状态。当前页面把所选项目 SQLite 中已经登记的 Workstream、节点状态、
+完成条件、证据、问题、当前活动和人工操作记录分层展示。状态保存后，
 页面通过浏览器事件连接刷新；“实时”不表示 verif-harness 会偷看任意终端、进程、文件或波形。
 
 **Activity（当前活动）**是 Agent 或工具主动登记的一段在做工作，例如“编译 VENV”或
 “运行 testcase seed 17”。它包含关联节点、执行者、状态、可选步骤数和日志路径。
 `RUNNING` 表示工作仍在执行，`WAITING_FOR_HUMAN` 表示问题已经交给 Human、这段工作先不继续，
+`WAITING_FOR_PARENT` 表示 subagent 正在等待 Main Agent 内部协调、尚未要求 Human 处理，
 `COMPLETED/FAILED/CANCELLED` 表示这段活动结束。Activity 是进度说明，不是 evidence，不能把
 目标直接变成 `VALID`。
+
+**Agent assignment（subagent 工作领取）**把一个当前 closure action 原子绑定到一个 subagent、
+当前 Workstream revision、节点定义摘要和可选 write scope。heartbeat/lease 只用于防止重复领取
+和发现同步中断；`EXPIRED` 不是验证失败，`SUPERSEDED` 表示计划变化后旧工作不能直接用于当前节点。
+write scope 不允许覆盖控制状态、runtime 配置、仓库元数据或只读 RTL/spec，但它是协作合同，
+不是 OS 级安全沙箱；Main 仍须检查真实 diff。assignment 完成不会改变 validity，也不是 evidence。
 
 **Human action（人工操作记录）**保存 Human 随时提出的评论、修改要求、澄清问题、优先级调整或
 确认已知信息。它可以针对整个 Workstream，也可以针对单个节点。需要后续处理的记录保持 `OPEN`；
@@ -429,7 +441,8 @@ VCASE 要求每个当前已实现 case 都有绑定 test、seed 和 log digest �
 <a id="runtime"></a>
 ## Runtime、Backend、MCP、Reference model
 
-**Agent runtime** 是交互宿主 Codex/Kimi；**managed runtime** 是受管 Python/依赖环境。
+**Agent runtime** 是交互宿主 Codex/Kimi；一个项目选择其中一个，Main Agent 和 subagent 使用同一
+runtime 的原生协作能力。**managed runtime** 是受管 Python/依赖环境。
 **Backend（执行后端）**是承担执行或推理的具体方式，如 direct、本地/集群调度器或
 Codex/Kimi。它与启动 Agent 的 runtime 不是同一个设置。
 **MCP server** 向 Agent 暴露工具；configured 表示配置存在，connected 表示已连接，
