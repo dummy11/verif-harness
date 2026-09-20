@@ -9,8 +9,11 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 
 按以下顺序检查：
 
-1. 如果 Dashboard 由 bootstrap 自动启动，先检查 `.verif-harness/dashboard-runtime.json` 和
-   `.verif-harness/dashboard.log`；手动启动时确认 `verif-harness dashboard` 仍在运行，并记下端口。
+1. 运行 `verif-harness dashboard --status`。bootstrap 和直接运行 `verif-harness dashboard`
+   都使用同一个后台启动/复用动作；`RUNNING` 才表示服务正在监听。需要恢复时再次运行
+   `verif-harness dashboard`，并检查 `.verif-harness/dashboard-runtime.json` 和
+   `.verif-harness/dashboard.log`。不要使用 `verif-harness dashboard --foreground | head`，管道关闭会使
+   前台调试服务退出。
 2. 在本地电脑保持 `ssh -N ...` 隧道进程运行；该命令没有 shell 提示符是正常现象。
 3. 本地执行 `curl http://127.0.0.1:<local-port>/healthz`。返回 `status: ok` 才说明隧道完整。
 4. 浏览器打开同一个本地端口，而不是远端私网 IP。
@@ -26,6 +29,9 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 - `bind ... Address already in use`：本地端口被占用。把本地端口改成其他值，例如
   `LocalForward 18765 127.0.0.1:8765`，浏览器相应访问 `127.0.0.1:18765`。
 - `/healthz` 连接失败：Dashboard 已停止、隧道未运行，或转发右侧端口与远端 Dashboard 不一致。
+- `channel ... open failed: connect failed: Connection refused`：SSH 隧道仍在，但远端转发目标没有
+  服务监听。先在远端运行 `verif-harness dashboard --status`，若不是 `RUNNING`，再运行
+  `verif-harness dashboard` 恢复后台服务；不必重建项目状态。
 - bootstrap 返回 `PORT_CONFLICT`：固定端口已属于另一项目或其他服务。停止冲突服务，或重新运行
   bootstrap 并显式指定 `--dashboard-port PORT`；系统不会静默切换到另一个端口。
 - bootstrap 返回 `SKIPPED`：当前是 CI 或普通非交互调用；需要启动时显式使用 `--dashboard`。

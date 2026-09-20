@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import signal
 import tempfile
 import threading
 import unittest
@@ -10,8 +11,12 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-from verif_harness.dashboard import create_dashboard_server, dashboard_url, ensure_dashboard_running
-from verif_harness.store import ProjectStore
+from verif_harness.cli import bootstrap_dashboard, main
+from verif_harness.dashboard import (
+    create_dashboard_server, dashboard_status, dashboard_url, ensure_dashboard_running,
+    stop_dashboard,
+)
+from verif_harness.store import HarnessError, ProjectStore
 
 
 class DashboardTest(unittest.TestCase):
@@ -90,12 +95,73 @@ class DashboardTest(unittest.TestCase):
         invocation = popen.call_args.args[0]
         self.assertIn("dashboard", invocation)
         self.assertIn("--project-root", invocation)
+        self.assertIn("--foreground", invocation)
         runtime = json.loads(
             (self.root / ".verif-harness/dashboard-runtime.json").read_text(encoding="utf-8")
         )
         self.assertEqual(runtime["schema"], "DashboardRuntime/1")
         self.assertEqual(runtime["port"], 18765)
         self.assertEqual(runtime["pid"], 31415)
+
+    def test_direct_dashboard_and_bootstrap_use_the_same_background_launcher(self) -> None:
+        launched = {
+            "schema": "DashboardLaunch/1", "status": "REUSED",
+            "project": str(self.root), "url": "http://127.0.0.1:8765/",
+        }
+        with mock.patch(
+            "verif_harness.dashboard.ensure_dashboard_running", return_value=launched,
+        ) as ensure:
+            with mock.patch("builtins.print"):
+                self.assertEqual(main([
+                    "dashboard", "--project-root", str(self.root),
+                ]), 0)
+            direct_call = ensure.call_args
+            ensure.reset_mock()
+            bootstrap_result = bootstrap_dashboard(
+                self.store, "codex", True, False, None,
+            )
+            bootstrap_call = ensure.call_args
+        self.assertEqual(bootstrap_result, launched)
+        self.assertEqual(direct_call.args[1:], bootstrap_call.args[1:])
+
+    def test_dashboard_status_and_stop_use_managed_runtime(self) -> None:
+        runtime_path = self.root / ".verif-harness/dashboard-runtime.json"
+        runtime_path.write_text(json.dumps({
+            "schema": "DashboardRuntime/1", "pid": 31415,
+            "host": "127.0.0.1", "port": 18765,
+            "url": "http://127.0.0.1:18765/", "project": str(self.store.root),
+            "log": str(self.root / ".verif-harness/dashboard.log"),
+            "started_at": "2026-09-20T00:00:00+00:00",
+        }) + "\n", encoding="utf-8")
+        healthy = {"status": "ok", "project": str(self.store.root)}
+        with mock.patch("verif_harness.dashboard._dashboard_health", return_value=healthy):
+            observed = dashboard_status(self.store)
+        self.assertEqual(observed["status"], "RUNNING")
+        self.assertEqual(observed["pid"], 31415)
+
+        with (
+            mock.patch("verif_harness.dashboard.dashboard_status", return_value=observed),
+            mock.patch("verif_harness.dashboard._dashboard_health", return_value=None),
+            mock.patch("verif_harness.dashboard.os.kill") as kill,
+        ):
+            stopped = stop_dashboard(self.store)
+        kill.assert_called_once_with(31415, signal.SIGTERM)
+        self.assertEqual(stopped["status"], "STOPPED")
+        self.assertFalse(runtime_path.exists())
+
+    def test_dashboard_stop_rejects_runtime_from_another_project(self) -> None:
+        runtime_path = self.root / ".verif-harness/dashboard-runtime.json"
+        runtime_path.write_text(json.dumps({
+            "schema": "DashboardRuntime/1", "pid": 31415,
+            "host": "127.0.0.1", "port": 18765,
+            "url": "http://127.0.0.1:18765/", "project": "/tmp/other-project",
+            "log": str(self.root / ".verif-harness/dashboard.log"),
+            "started_at": "2026-09-20T00:00:00+00:00",
+        }) + "\n", encoding="utf-8")
+        with mock.patch("verif_harness.dashboard.os.kill") as kill:
+            with self.assertRaisesRegex(HarnessError, "不属于当前项目"):
+                stop_dashboard(self.store)
+        kill.assert_not_called()
 
     def test_html_is_local_layered_and_snapshot_is_detailed(self) -> None:
         with self.get("/") as response:
@@ -104,17 +170,24 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("验证项目总览", html)
         self.assertIn("快速查看 Agent 状态", html)
         self.assertNotIn('id="global-action"', html)
+        self.assertNotIn("项目状态和评审记录保存在本地数据库中", html)
         self.assertIn("Agent 交互", html)
+        self.assertIn("项目级", html)
         self.assertIn("在这里直接回答 Agent", html)
         self.assertIn("无需 SSH 到服务器", html)
         self.assertIn("/api/agent-questions/answer", html)
         self.assertNotIn("function overviewMetrics", html)
         self.assertNotIn('<h2>当前工作</h2><span class="count">实时记录', html)
         self.assertNotIn('<h2>等待人工处理</h2><span class="count">${openHuman.length}', html)
-        self.assertIn("overviewEntry('Agent 交互'", html)
-        self.assertIn("overviewEntry('待处理事项'", html)
+        self.assertIn("overviewTile('agent', 'Agent 交互'", html)
+        self.assertIn("overviewTile('pending', '待处理事项'", html)
         self.assertIn("<h2>验证工作流</h2>", html)
-        self.assertIn("overviewEntry('验证风险与变更'", html)
+        self.assertIn("overviewTile('risk', '验证风险与变更'", html)
+        self.assertIn("function progressRing(value, label, small=false)", html)
+        self.assertIn("@keyframes progress-breathe", html)
+        self.assertIn('class="node-progress-bar"', html)
+        self.assertNotIn('class="progress"', html)
+        self.assertNotIn('class="status-strip', html)
         self.assertIn("function renderAgentInteractionPage()", html)
         self.assertIn("function renderPendingItemsPage()", html)
         self.assertIn("function renderRiskChangesPage()", html)

@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -277,16 +278,154 @@ def _port_accepts_connections(host: str, port: int) -> bool:
         return False
 
 
+def _dashboard_runtime(store: ProjectStore) -> dict[str, Any] | None:
+    path = store.state / DASHBOARD_RUNTIME_FILE
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HarnessError(f"无法读取 Dashboard 运行记录: {exc}") from exc
+    if not isinstance(value, dict) or value.get("schema") != "DashboardRuntime/1":
+        raise HarnessError("Dashboard 运行记录格式无效")
+    if str(value.get("project", "")) != str(store.root):
+        raise HarnessError("Dashboard 运行记录不属于当前项目")
+    runtime_host = value.get("host")
+    runtime_port = value.get("port")
+    if runtime_host not in LOOPBACK_HOSTS:
+        raise HarnessError("Dashboard 运行记录包含无效监听地址")
+    if not isinstance(runtime_port, int) or runtime_port <= 0 or runtime_port > 65535:
+        raise HarnessError("Dashboard 运行记录包含无效端口")
+    return value
+
+
+def dashboard_status(
+    store: ProjectStore, host: str | None = None, port: int | None = None,
+) -> dict[str, Any]:
+    """Report the managed background Dashboard without starting a service."""
+    store.require()
+    runtime = _dashboard_runtime(store)
+    selected_host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
+    selected_port = port if port is not None else int((runtime or {}).get("port") or 8765)
+    if selected_host not in LOOPBACK_HOSTS:
+        raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
+    if selected_port <= 0 or selected_port > 65535:
+        raise HarnessError("Dashboard port 必须在 1..65535")
+    url = f"http://{selected_host}:{selected_port}/"
+    expected_project = str(store.root)
+    health = _dashboard_health(selected_host, selected_port)
+    if health is not None:
+        observed_project = str(health.get("project", ""))
+        if observed_project != expected_project:
+            return {
+                "schema": "DashboardStatus/1", "status": "PORT_CONFLICT", "url": url,
+                "project": expected_project, "observed_project": observed_project or None,
+                "message": "该端口由另一个 Dashboard 使用",
+            }
+        return {
+            "schema": "DashboardStatus/1", "status": "RUNNING", "url": url,
+            "project": expected_project, "managed": bool(runtime),
+            "pid": (runtime or {}).get("pid"), "log": (runtime or {}).get("log"),
+            "message": "Dashboard 正在运行",
+        }
+    if _port_accepts_connections(selected_host, selected_port):
+        return {
+            "schema": "DashboardStatus/1", "status": "PORT_CONFLICT", "url": url,
+            "project": expected_project, "observed_project": None,
+            "message": "该端口由非 Dashboard 服务使用",
+        }
+    if runtime is not None:
+        return {
+            "schema": "DashboardStatus/1", "status": "STALE", "url": url,
+            "project": expected_project, "pid": runtime.get("pid"),
+            "log": runtime.get("log"),
+            "message": "Dashboard 已停止，但仍有旧运行记录",
+        }
+    return {
+        "schema": "DashboardStatus/1", "status": "STOPPED", "url": url,
+        "project": expected_project, "message": "Dashboard 当前未运行",
+    }
+
+
+def stop_dashboard(
+    store: ProjectStore, host: str | None = None, port: int | None = None,
+) -> dict[str, Any]:
+    """Stop only the detached Dashboard recorded for this project."""
+    runtime = _dashboard_runtime(store)
+    if runtime is not None:
+        runtime_host = str(runtime["host"])
+        runtime_port = int(runtime["port"])
+        if host is not None and host != runtime_host:
+            raise HarnessError("--host 与当前项目的 Dashboard 运行记录不一致")
+        if port is not None and port != runtime_port:
+            raise HarnessError("--port 与当前项目的 Dashboard 运行记录不一致")
+        observed = dashboard_status(store, runtime_host, runtime_port)
+    else:
+        observed = dashboard_status(store, host, port)
+    runtime_path = store.state / DASHBOARD_RUNTIME_FILE
+    if observed["status"] == "STOPPED":
+        return {**observed, "schema": "DashboardStop/1"}
+    if observed["status"] == "STALE":
+        runtime_path.unlink(missing_ok=True)
+        return {
+            **observed, "schema": "DashboardStop/1", "status": "STOPPED",
+            "message": "已清理停止服务留下的旧运行记录",
+        }
+    if observed["status"] == "PORT_CONFLICT":
+        return {
+            **observed, "schema": "DashboardStop/1",
+            "message": "拒绝停止不属于当前项目的端口服务",
+        }
+    pid = (runtime or {}).get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return {
+            **observed, "schema": "DashboardStop/1", "status": "UNMANAGED",
+            "message": "Dashboard 正在运行，但没有可验证的后台进程记录；未发送停止信号",
+        }
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        runtime_path.unlink(missing_ok=True)
+        return {
+            **observed, "schema": "DashboardStop/1", "status": "STOPPED",
+            "message": "后台进程已经退出，已清理运行记录",
+        }
+    except OSError as exc:
+        return {
+            **observed, "schema": "DashboardStop/1", "status": "FAILED",
+            "message": f"无法停止 Dashboard 后台进程: {exc}",
+        }
+    deadline = time.monotonic() + 4.0
+    selected_host = host if host is not None else str(runtime.get("host") or "127.0.0.1")
+    selected_port = port if port is not None else int(runtime.get("port") or 8765)
+    while time.monotonic() < deadline:
+        if _dashboard_health(selected_host, selected_port) is None:
+            runtime_path.unlink(missing_ok=True)
+            return {
+                "schema": "DashboardStop/1", "status": "STOPPED",
+                "project": str(store.root), "url": f"http://{selected_host}:{selected_port}/",
+                "pid": pid, "message": "Dashboard 后台服务已停止",
+            }
+        time.sleep(0.1)
+    return {
+        **observed, "schema": "DashboardStop/1", "status": "FAILED",
+        "message": "Dashboard 在限定时间内没有停止；未强制终止",
+    }
+
+
 def ensure_dashboard_running(
-    store: ProjectStore, host: str = "127.0.0.1", port: int = 8765,
+    store: ProjectStore, host: str | None = None, port: int | None = None,
     open_browser: bool = False,
 ) -> dict[str, Any]:
     """Start or reuse a detached Dashboard without making bootstrap block."""
+    store.require()
+    runtime = _dashboard_runtime(store) if host is None or port is None else None
+    host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
+    port = port if port is not None else int((runtime or {}).get("port") or 8765)
     if host not in LOOPBACK_HOSTS:
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
     if port <= 0 or port > 65535:
         raise HarnessError("后台 Dashboard port 必须在 1..65535")
-    store.require()
     url = f"http://{host}:{port}/"
     expected_project = str(store.root)
     health = _dashboard_health(host, port)
@@ -322,7 +461,7 @@ def ensure_dashboard_running(
             sys.executable, "-c",
             "import sys; from verif_harness.cli import main; raise SystemExit(main(sys.argv[1:]))",
             "dashboard", "--project-root", str(store.root),
-            "--host", host, "--port", str(port),
+            "--host", host, "--port", str(port), "--foreground",
         ]
         popen_options: dict[str, Any] = {
             "cwd": str(store.root), "env": environment,

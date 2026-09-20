@@ -47,7 +47,21 @@ and questions, and does not write project state.
    contracts are pending. Engineering semantics remain in project VDOC Markdown.
 5. Review `.verif-harness/project.json`, `inventory.json`, and the generated
    `AGENTS.md` block.
-6. Continue with `plan WORKSTREAM`; recording an existing reference-model path does
+6. For a live Human/Agent bootstrap, invoke the low-level CLI with `--dashboard`.
+   This guarantees that the project Dashboard is started or reused in the background
+   after bootstrap. Never add `--no-dashboard` unless the Human explicitly asked to
+   disable the Dashboard in the current conversation. Running over SSH, on a headless
+   server, or from a non-interactive Agent is not a reason to disable it. On SSH, do
+   not try to open a remote browser; return the `access.command` and `access.url`
+   from the CLI result. CI may omit both flags and use the CLI's automatic skip.
+   Check the returned `dashboard.status`: only `STARTED` and `REUSED` mean the
+   Dashboard is available. Report `SKIPPED`, `DISABLED`, `FAILED`, or
+   `PORT_CONFLICT` truthfully and do not claim that the Dashboard is running.
+   If it must be started or recovered later, use plain `verif-harness dashboard`;
+   this invokes the same detached start-or-reuse action as bootstrap. Verify with
+   `verif-harness dashboard --status`. Do not run a foreground Dashboard through
+   a pipe such as `| head`, because closing the pipe stops the service.
+7. Continue with `plan WORKSTREAM`; recording an existing reference-model path does
    not decide that the project will use it. Bootstrap must not decide coverage,
    tests, interfaces, checking strategy, acceptance criteria, or Human Decisions.
 

@@ -186,10 +186,13 @@ VDOC”的规则。已有项目说明保留在 verif-harness 标记之外，不�
 和 `doctor` 检查项目状态。
 
 bootstrap 成功后，交互式 Codex/Kimi/Claude 或终端会默认在 `127.0.0.1:8765` 启动（或复用）
-后台 Dashboard，bootstrap 自身随即返回，不会被 Web 服务阻塞。本机桌面环境会尝试打开浏览器；
-SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转发提示。CI 和普通非交互脚本默认跳过；
-需要强制启动时使用 `--dashboard`，明确不需要时使用 `--no-dashboard`。自动启动使用固定端口，
-端口被其他项目或服务占用时会报告冲突，不会静默换端口。
+后台 Dashboard，bootstrap 自身随即返回，不会被 Web 服务阻塞。Agent 为 Human 执行实时 bootstrap
+时必须显式使用 `--dashboard`，避免运行入口差异使 Dashboard 被跳过。只有 Human 在当前对话中明确
+要求关闭时，Agent 才能使用 `--no-dashboard`；SSH、无图形界面或非交互执行都不是关闭理由。
+本机桌面环境会尝试打开浏览器；SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转发提示。
+CI 可以省略两个选项并使用默认跳过策略。自动启动使用固定端口，端口被其他项目或服务占用时会
+报告冲突，不会静默换端口。Agent 必须检查返回的 `dashboard.status`；只有 `STARTED` 和 `REUSED`
+表示 Dashboard 可用，不能把 `SKIPPED`、`DISABLED`、`FAILED` 或 `PORT_CONFLICT` 说成已经启动。
 
 路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
 静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec、
@@ -543,7 +546,7 @@ VENV 已证明的最小运行能力，因此不会形成相互等待。完整节
 | --- | --- | --- |
 | 1. 读取当前状态 | Agent + Engine | Agent 调用 `status`、`inspect` 和 `closure`；Engine 返回当前 revision、未完成目标、前置依赖和开放问题 |
 | 2. 选择一个可执行动作 | Agent + Engine | Engine 返回目标、原因和建议执行者；Agent 一次只选择一个边界清楚、前置条件已满足的动作，不启动覆盖六个工作域的大型 task |
-| 3. 处理工程问题 | Human + Agent | 出现接口语义、容差、范围或风险取舍时，Agent 在当前对话说明影响并等待 Human 回答；不受该问题影响的其他工作可以继续 |
+| 3. 处理工程问题 | Human + Agent | 出现接口语义、容差、范围或风险取舍时，Agent 说明影响，并把问题、选项和推荐项登记到 Dashboard 的“Agent 交互”后等待 Human 回答；不受该问题影响的其他工作可以继续 |
 | 4. 完成实现或工具运行 | Agent | Agent 编写或修改验证环境、激励、检查器、覆盖率、用例或回归工具，运行编译、自检、仿真、回归或覆盖率工具，产生 log、manifest、VDB/UCDB、波形等原始文件 |
 | 5. 检查原始结果 | Agent | Agent 检查命令退出状态、错误和输出完整性；工具退出码本身不改变节点状态，也不能替代步骤 4 的证据登记 |
 | 6. 转入证据步骤 | Agent + Engine | 有可用工程结果时进入步骤 4；步骤 4 登记后由 Engine 更新节点状态，Agent 再回到本步骤调用 `closure` 选择下一项动作 |
@@ -581,14 +584,14 @@ VENV smoke 和 VSTIM reachability。
 当 `closure` 返回 `executor=human` 时：
 
 1. Engine 只报告目标、缺失信息和受影响节点，不自行选择答案；
-2. Agent 在当前对话解释，或把问题、选项、推荐项和工程影响登记到 Dashboard 的“Agent 交互”；
-3. Human 在当前对话或 Dashboard 作出决定，或要求保留为开放问题；
+2. Agent 解释问题，并把问题、选项、推荐项和工程影响登记到 Dashboard 的“Agent 交互”；
+3. Human 在 Dashboard 作出决定，或要求保留为开放问题；
 4. Agent 将决定写入相应文档/plan，并调用结构化命令登记；
 5. Engine 重新计算依赖和未完成项；
 6. 当前没有依赖该决定的其他工作可以继续，不需要暂停六个 Workstream。
 
-不存在后台 worker 在终端中显示问题并等待 stdin 的机制。需要 Human 的动作回到当前 Agent 会话，
-或进入持久化的 Dashboard Agent question。Dashboard 回答后，后台 Agent 从 SQLite 检查点读取答案；
+不存在后台 worker 在终端中显示问题并等待 stdin 的机制。需要 Human 的动作必须进入持久化的
+Dashboard Agent question；当前对话可以补充解释，但不能替代登记。Dashboard 回答后，后台 Agent 从 SQLite 检查点读取答案；
 Human 不需要 SSH 到服务器终端，也不需要在 Agent CLI 中选择。如果 Agent 会话中断，重新启动后可从
 `status`、`inspect`、`closure` 和 `agent-question list` 恢复磁盘状态。
 
@@ -604,7 +607,7 @@ verif-harness closure
 verif-harness status VENV
 verif-harness status VSTIM
 
-# Human：仅在动作涉及工程判断时，在当前对话给出决定
+# Human：仅在动作涉及工程判断时，在 Dashboard 的 Agent 交互中给出决定
 # Agent：执行一个边界清楚的实现、编译、仿真、回归或覆盖率动作
 # 产生原始结果后进入步骤 4，不在步骤 3 直接宣告 PASS 或冻结
 ```
@@ -632,11 +635,12 @@ Verification Closure Engine 为每个 gap 返回：
 
 例如 `target=VCHK:scoreboard-evidence`、`executor=deterministic` 表示当前缺的是 scoreboard
 真实运行后的比较结果，应由仿真和结果收集工具产生，而不是等 Human 决定。如果
-`executor=human`，Agent 必须在当前对话展示问题，或登记 Agent question 后在 Dashboard 等待回答。
+`executor=human`，Agent 必须登记 Agent question，并在 Dashboard 等待回答；当前对话可展示相同说明，
+但不能成为唯一入口。
 
 按 action 调用[代码生成工具或激励生成组件](glossary.md#dv-terms)、xverif、WavePeek、仿真，
 或者与 Human 讨论。CLI 不启动隐藏 [worker（任务进程）](glossary.md#gap-action)，
-也不会把一个大型 task 放进后台等待 stdin。需要人工输入时，问题在当前 Agent 会话或 Dashboard
+也不会把一个大型 task 放进后台等待 stdin。需要人工输入时，问题统一在 Dashboard 的
 “Agent 交互”板块完成；回答后记录决策或重新 plan。
 
 这里四个容易混淆的词有明确边界：
@@ -960,8 +964,8 @@ final freeze 只保存当前已审核状态，不表示工具替项目负责人�
   下一项工作；不理解规格含义，不代替 Human 作决定。
 
 除图中特别标明的 Human 对话外，所有 `verif-harness ...` 命令都由 Agent 调用。这里的循环不会
-启动隐藏的 [worker（任务进程）](glossary.md#gap-action)等待 stdin；需要人工回答时，Agent
-在当前对话中提问，或登记结构化 Agent question 让 Human 在 Dashboard 回答。
+启动隐藏的 [worker（任务进程）](glossary.md#gap-action)等待 stdin；需要人工回答时，Agent 必须
+登记结构化 Agent question，让 Human 在 Dashboard 回答。当前对话只用于同步解释，不替代持久化问题。
 
 ### 4.1 从查看状态到完成一个目标
 
@@ -1006,8 +1010,8 @@ sequenceDiagram
 
 ### 4.2 需要人工判断时怎样暂停和继续
 
-人工干预不是后台进程等待 stdin。Engine 只把问题标为需要 Human；Agent 在当前对话解释，或把问题
-登记到 Dashboard。Human 在 Dashboard 提交后答案立即持久化，Agent 读取答案再继续分析和保存正式结论。
+人工干预不是后台进程等待 stdin。Engine 只把问题标为需要 Human；Agent 解释问题并登记到
+Dashboard。Human 在 Dashboard 提交后答案立即持久化，Agent 读取答案再继续分析和保存正式结论。
 
 ```mermaid
 flowchart TD
@@ -1216,9 +1220,10 @@ DUT top 与 top file、代码基线和 runtime；主总览的其余核心内容�
 ```text
 # bootstrap 通常已经在交互环境中启动或复用了 Dashboard；以下命令用于手动启动或恢复
 # Human：在当前 Agent 对话中提出“打开 Dashboard”；通常不直接输入 shell 命令
-# Agent：确认项目已 bootstrap 后启动本机服务并把地址展示给 Human
+# Agent：确认项目已 bootstrap 后，以与 bootstrap 相同的后台动作启动或复用服务并展示地址
 # Engine：从同一个 model.sqlite3 读取状态，状态变化时通过浏览器连接推送新快照
 verif-harness dashboard --open-browser
+verif-harness dashboard --status
 ```
 
 #### 从本地浏览器访问远端 Dashboard
@@ -1257,11 +1262,13 @@ Host verification-server
     LocalForward 8765 127.0.0.1:8765
 ```
 
-先在远端服务器启动 Dashboard，再在本地电脑建立隧道：
+先在远端服务器启动 Dashboard，再在本地电脑建立隧道。直接运行 `dashboard` 与 bootstrap 使用同一个
+后台启动/复用动作，命令返回后服务仍继续运行：
 
 ```bash
 # 远端服务器：默认监听远端 127.0.0.1:8765
 verif-harness dashboard
+verif-harness dashboard --status
 
 # 本地电脑：保持运行，不会出现新的 shell 提示符
 ssh -N verification-server
@@ -1283,16 +1290,17 @@ Human 写操作入口，当前设计只允许 loopback。常见连接问题见
 实时显示需要 Agent 或项目工具把正在做的工作登记为
 [Activity（当前活动）](glossary.md#dashboard)。登记活动不会把目标改成 `VALID`；最终结论仍必须来自
 规定格式的证据或 Human 明确作出的评审、豁免和冻结决定。`当前 Activity` 只统计已经登记且尚未
-结束的具体实现、编译、仿真或分析动作，不是 Workstream 完成百分比。Agent 在目标节点上开始任何
-非简单工程动作前必须登记 Activity；否则 Dashboard 无法从另一个终端的普通进程或对话文字中猜出
-它正在做什么。
+结束的具体实现、编译、仿真或分析动作，不是 Workstream 完成百分比。Agent 开始任何非简单工程动作
+前必须登记 Activity；计划建立前登记到项目级 `project`，已有计划后登记到最具体的目标节点。否则
+Dashboard 无法从另一个终端的普通进程或对话文字中猜出它正在做什么。
 
 项目总览只保留五个入口，不在首页展开细节或堆叠统计卡片：
 
 1. **项目与验证对象**：默认折叠；标题仍显示项目名、DUT 和当前代码版本；
-2. **Agent 交互**：只显示当前状态摘要；`WAITING_FOR_HUMAN` 使用缓慢呼吸状态条，点击后在新标签页回答；
+2. **Agent 交互**：只显示当前状态摘要；`WAITING_FOR_HUMAN` 使用缓慢呼吸状态灯，点击后在新标签页回答；
 3. **待处理事项**：只显示 Human 当前需要回答、审批或确认的数量，点击后在新标签页处理；
-4. **验证工作流**：显示每条 Workstream 的节点进度、状态和需 Human 处理数量，点击后在新标签页打开；
+4. **验证工作流**：显示每条 Workstream 的节点完成度、状态和需 Human 处理数量；总览用缓慢呼吸的
+   进度圈表达可量化完成度，点击后在新标签页打开；节点列表为了横向比较仍使用进度条；
 5. **验证风险与变更**：只显示可能使既有结论失效的数量和严重程度，点击后在新标签页查看。
 
 总览不再单列“当前工作”或“等待人工处理”。Agent 运行进度归入 Agent 交互；正式方案审批、文档
@@ -1303,13 +1311,26 @@ Human 写操作入口，当前设计只允许 loopback。常见连接问题见
 Agent 交互详情页同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答
 问题所属的 Workstream、节点、选项和 Agent 推荐项。Human 直接在网页回答，不需要进入服务器终端或
 在 Agent CLI 里按数字。远端 Dashboard 仍须按上一节建立安全的 SSH 端口转发，但回答动作本身不需要
-交互式 SSH 会话。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸条，并遵守浏览器的
+交互式 SSH 会话。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
 `prefers-reduced-motion` 设置。
 
 原生 Codex/Kimi 终端选择器不会被网页自动截获。Agent 必须在停下前登记结构化问题：
 
 ```text
-# Agent：先已有 Activity，再把问题送到 Dashboard
+# Agent：VDOC 计划尚未建立时，先登记项目级 Activity 和项目级问题
+verif-harness activity start project \
+  --operation analyze-dut-for-vdoc \
+  --actor Agent \
+  --message "分析 DUT 规格与 RTL"
+verif-harness agent-question ask project \
+  --prompt "VDOC 验证文档输出到哪个目录？" \
+  --context "当前尚未创建 VDOC 工作流或工作节点" \
+  --option default "使用默认目录" "verif/docs/verification" \
+  --option custom "指定其他目录" "由 Human 填写目录" \
+  --recommended default \
+  --activity ACTIVITY_ID
+
+# Agent：已有工作节点时，绑定最具体的节点 Activity 和问题
 verif-harness agent-question ask NODE \
   --prompt "参考模型策略选哪个？" \
   --context "说明规格约束、已知事实和受影响节点" \
@@ -1533,7 +1554,7 @@ verif-harness bootstrap [OPTIONS]
 | `--refresh` | 重新配置并读取文件/工具清单；同步 `.harness-config.json` 管理字段，保留已有目标、证据和评审状态 |
 | `--dashboard` | 即使在 CI/非交互调用中，也在 bootstrap 成功后启动或复用后台 Dashboard |
 | `--no-dashboard` | 本次 bootstrap 不自动启动 Dashboard |
-| `--dashboard-port PORT` | 自动启动使用的固定 loopback 端口，默认 `8765`；只接受 `1..65535` |
+| `--dashboard-port PORT` | 自动启动使用的固定 loopback 端口；未指定时复用当前运行记录，否则使用 `8765`；只接受 `1..65535` |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。对话中只需提出
 `bootstrap --refresh`；Agent 必须重新确认参数，再展开成底层完整命令。
@@ -1554,19 +1575,26 @@ verif-harness bootstrap [OPTIONS]
 
 ### `dashboard`
 
-启动供 Human 实时查看和参与的本机 Web 界面；页面状态来自同一份 SQLite 模型。
+后台启动或复用供 Human 实时查看和参与的本机 Web 界面；页面状态来自同一份 SQLite 模型。
+这一默认动作与 bootstrap 自动打开 Dashboard 完全相同，命令返回不会停止服务。
 
 ```text
 verif-harness dashboard [--host 127.0.0.1|localhost] [--port PORT] [--open-browser]
+verif-harness dashboard --status
+verif-harness dashboard --stop
 verif-harness dashboard --snapshot
+verif-harness dashboard --foreground
 ```
 
 | 参数 | 说明 |
 | --- | --- |
 | `--host` | 监听地址；只接受 `127.0.0.1` 或 `localhost`，默认 `127.0.0.1` |
-| `--port` | Dashboard 所在机器的监听端口，默认固定为 `8765`；`0` 表示由操作系统选择空闲端口 |
+| `--port` | Dashboard 所在机器的固定监听端口，默认 `8765`；后台模式不接受 `0` |
 | `--open-browser` | 仅当浏览器与 Dashboard 位于同一台机器时使用；SSH 场景应建立端口转发 |
+| `--status` | 检查当前项目记录的后台服务及健康状态，不启动服务 |
+| `--stop` | 只停止当前项目运行记录对应的后台服务；不会结束不属于本项目的端口进程 |
 | `--snapshot` | 只输出一次完整 JSON 快照后退出，适合 CI 或自定义前端 |
+| `--foreground` | 前台运行服务，仅用于调试和后台启动器内部；正常使用不要搭配管道或 `head` |
 
 页面通过本机事件流接收状态更新，不轮询外部服务。关闭页面或停止 Dashboard 不会停止仿真，
 也不会清除 SQLite 状态。Dashboard 不是证据生产工具；它只展示或提交受控的 Human 输入。
@@ -1788,7 +1816,8 @@ verif-harness activity list [--workstream WORKSTREAM] [--node NODE] [--active]
 ### `agent-question`
 
 Agent 用它把工程选择题持久化到 Dashboard。Human 在独立的“Agent 交互”板块直接回答；通常不调用
-下面的 `answer` CLI。问题应绑定当前 Workstream 或节点，阻塞问题可以再绑定一个 Activity。
+下面的 `answer` CLI。计划尚未建立时使用项目级目标 `project`；已有计划后应绑定最具体的当前
+Workstream 或节点。阻塞问题可以再绑定同一范围的 Activity。
 
 ```text
 verif-harness agent-question ask TARGET --prompt TEXT \
@@ -1803,7 +1832,8 @@ verif-harness agent-question answer QUESTION_ID --option ID --reviewer NAME [--t
 每个问题必须有 2 到 8 个唯一选项；Dashboard 还提供“其他”，选择它时必须填写说明。默认问题会
 进入等待人工列表；`--non-blocking` 只记录问题，不暂停 Activity。Human 的回答会持久化并解除最后一个
 关联阻塞问题的 Activity 等待，但不会改变节点有效性或代替 `review`、`evidence`、`waive`、`freeze`。
-原生 Agent 终端中的临时选择器不会自动同步，Agent 应在停下前使用 `ask`。
+原生 Agent 终端中的临时选择器不会自动同步。凡是会让 Agent 停下等待 Human 的问题，都必须先用
+`ask` 登记；终端选择器不得作为唯一入口。
 
 ### `human-action`
 

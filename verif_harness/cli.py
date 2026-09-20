@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 from .store import (
@@ -165,20 +166,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="bootstrap 完成后不启动 Dashboard",
     )
     bootstrap.add_argument(
-        "--dashboard-port", type=bootstrap_dashboard_port, default=8765,
-        help="bootstrap 自动启动 Dashboard 使用的固定端口（默认 8765）",
+        "--dashboard-port", type=bootstrap_dashboard_port,
+        help="bootstrap 自动启动 Dashboard 使用的固定端口（默认复用运行记录，否则 8765）",
     )
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")
     project_argument(status)
     status.add_argument("workstream", nargs="?", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
 
-    dashboard = commands.add_parser("dashboard", help="启动 Human 可实时查看和评审的本地 Web Dashboard")
+    dashboard = commands.add_parser("dashboard", help="后台启动、检查或停止 Human Dashboard")
     project_argument(dashboard)
-    dashboard.add_argument("--host", default="127.0.0.1", help="仅允许 loopback host")
-    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--host", help="仅允许 loopback host；默认读取运行记录或使用 127.0.0.1")
+    dashboard.add_argument("--port", type=int, help="默认读取运行记录或使用 8765")
     dashboard.add_argument("--open-browser", action="store_true")
-    dashboard.add_argument("--snapshot", action="store_true", help="输出 Dashboard JSON 后退出，不启动服务")
+    dashboard_mode = dashboard.add_mutually_exclusive_group()
+    dashboard_mode.add_argument(
+        "--status", action="store_true", help="检查后台 Dashboard 状态后退出",
+    )
+    dashboard_mode.add_argument(
+        "--stop", action="store_true", help="停止当前项目记录的后台 Dashboard",
+    )
+    dashboard_mode.add_argument(
+        "--snapshot", action="store_true", help="输出 Dashboard JSON 后退出，不启动服务",
+    )
+    dashboard_mode.add_argument(
+        "--foreground", action="store_true", help="前台运行服务；仅用于调试和后台启动器内部",
+    )
 
     plan = commands.add_parser("plan", help="Verification Planner：使用 plan WORKSTREAM 形成/修订 desired state")
     plan_commands = plan.add_subparsers(dest="plan_command", required=True)
@@ -304,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     activity_commands = activity.add_subparsers(dest="activity_command", required=True)
     activity_start = activity_commands.add_parser("start", help="开始一个 Activity")
     project_argument(activity_start)
-    activity_start.add_argument("node_id")
+    activity_start.add_argument("node_id", help="工作节点 ID；plan 前的项目级工作使用 project")
     activity_start.add_argument("--operation", required=True)
     activity_start.add_argument("--actor", default="Agent")
     activity_start.add_argument("--message", default="")
@@ -357,7 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
     question_commands = agent_question.add_subparsers(dest="question_command", required=True)
     question_ask = question_commands.add_parser("ask", help="登记问题和候选项；可绑定 Activity")
     project_argument(question_ask)
-    question_ask.add_argument("target", help="当前 Workstream 或具体工作节点")
+    question_ask.add_argument("target", help="project、当前 Workstream 或具体工作节点")
     question_ask.add_argument("--prompt", required=True)
     question_ask.add_argument("--context", default="")
     question_ask.add_argument("--actor", default="Agent")
@@ -494,7 +507,7 @@ def _truthy_environment(name: str) -> bool:
 
 
 def bootstrap_dashboard(
-    store: ProjectStore, runtime: str, force: bool, disabled: bool, port: int,
+    store: ProjectStore, runtime: str, force: bool, disabled: bool, port: int | None,
 ) -> dict[str, object]:
     """Apply bootstrap's interactive/CI policy and return a structured launch result."""
     if disabled:
@@ -517,20 +530,22 @@ def bootstrap_dashboard(
     )
     from .dashboard import ensure_dashboard_running
     result = ensure_dashboard_running(
-        store, "127.0.0.1", port,
+        store, None, port,
         open_browser=bool(not remote and desktop and (agent_runtime or terminal_interactive)),
     )
+    dashboard_url = str(result.get("url") or "http://127.0.0.1:8765/")
+    dashboard_port = urllib.parse.urlsplit(dashboard_url).port or 8765
     if remote:
         result["access"] = {
             "mode": "ssh-tunnel",
-            "command": f"ssh -L {port}:127.0.0.1:{port} <server>",
-            "url": f"http://127.0.0.1:{port}/",
+            "command": f"ssh -L {dashboard_port}:127.0.0.1:{dashboard_port} <server>",
+            "url": f"http://127.0.0.1:{dashboard_port}/",
             "message": "远端不会尝试打开浏览器；请在本地建立 SSH 转发",
         }
     else:
         result["access"] = {
             "mode": "local-browser" if result.get("browser_opened") else "local-url",
-            "url": f"http://127.0.0.1:{port}/",
+            "url": dashboard_url,
         }
     return result
 
@@ -591,9 +606,24 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "dashboard":
             if args.snapshot:
                 emit(store.dashboard_snapshot())
-            else:
+            elif args.status:
+                from .dashboard import dashboard_status
+                emit(dashboard_status(store, args.host, args.port))
+            elif args.stop:
+                from .dashboard import stop_dashboard
+                emit(stop_dashboard(store, args.host, args.port))
+            elif args.foreground:
                 from .dashboard import serve_dashboard
-                return serve_dashboard(store, args.host, args.port, args.open_browser)
+                return serve_dashboard(
+                    store, args.host or "127.0.0.1",
+                    args.port if args.port is not None else 8765, args.open_browser,
+                )
+            else:
+                from .dashboard import ensure_dashboard_running
+                emit(ensure_dashboard_running(
+                    store, args.host, args.port,
+                    open_browser=args.open_browser,
+                ))
         elif args.command == "doctor":
             if not store.initialized:
                 emit({"status": "INFO", "code": "BOOTSTRAP_REQUIRED", "next": "bootstrap", "project_root": str(store.root)})

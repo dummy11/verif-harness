@@ -40,7 +40,11 @@ Workstream. Project lifecycle is separate.
   bootstrap dialogue: show the current values, reconfirm every path and DUT field,
   then call the low-level CLI with the complete confirmed parameter set. Refresh
   must synchronize bootstrap-managed `.harness-config.json` fields while preserving
-  optional project-owned fields.
+  optional project-owned fields. For a live Human/Agent bootstrap, pass
+  `--dashboard` so the background Dashboard is started or reused after bootstrap.
+  Never add `--no-dashboard` unless the Human explicitly asks to disable the
+  Dashboard; SSH, a headless server, or a non-interactive Agent invocation is not
+  permission to disable it. CI may use the CLI's normal skip policy.
 - Verification Planner (`plan`): combine a detailed Workstream template, current
   Verification Knowledge Model, project
   context, and Human dialogue into revisioned desired state. Read
@@ -73,13 +77,23 @@ Workstream. Project lifecycle is separate.
   `vclosure/INSTRUCTIONS.md`.
 - Human dashboard (`dashboard`): start the loopback-only live view when the Human
   asks to monitor Workstreams, nodes, evidence, progress, or intervene before
-  closure. After a desired-state node exists, register every non-trivial bounded
-  Agent/tool operation with `activity start` before doing the work, update it
-  when progress changes or Human input is required, and close it with the real
-  terminal result. Before starting, resuming, or completing an Activity, read
+  closure. The plain `dashboard` command and bootstrap both use the same detached
+  start-or-reuse action; never keep it alive with a foreground shell, pipe it to
+  `head`, or assume that a printed URL proves the service is still running. Use
+  `dashboard --status` to verify it and `dashboard --stop` to stop the managed
+  service. Register every non-trivial bounded Agent/tool operation with `activity
+  start` before doing the work, update it when progress changes or Human input is
+  required, and close it with the real terminal result. Before a desired-state
+  node exists, use `activity start project`; afterwards bind the Activity to the
+  most specific current node. Before starting, resuming, or completing an Activity, read
   open `human-action` records and apply relevant Human input. Dashboard writes
   are persistent control-plane input, not arbitrary chat-message injection into
-  a running Agent. When Closure contains `HUMAN_REVIEW`, bind the current
+  a running Agent. If an Agent must stop for Human input, it must register the
+  question with `agent-question ask` before waiting. Use target `project` before
+  a Workstream or node exists; otherwise use the most specific current Workstream
+  or node. Include the choices, recommendation, context, and engineering impact.
+  Native Codex/Kimi terminal selectors are not a substitute and must not be the
+  only place where a blocking question appears. When Closure contains `HUMAN_REVIEW`, bind the current
   Workstream revision and current Activity with `await-human`; retry bounded
   TIMEOUT results while the Human is still expected to decide. Continue normal
   work only for `APPROVE`; handle `MODIFY`, `CLARIFY`, and `REJECT` according to

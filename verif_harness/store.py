@@ -37,6 +37,8 @@ ACTIVITY_STATUSES = {
 HUMAN_ACTIONS = {"COMMENT", "REQUEST_CHANGE", "CLARIFY", "PRIORITIZE", "ACKNOWLEDGE"}
 HUMAN_ACTION_STATUSES = {"OPEN", "RECORDED", "RESOLVED", "SUPERSEDED"}
 AGENT_QUESTION_STATUSES = {"OPEN", "ANSWERED", "CANCELLED", "SUPERSEDED"}
+PROJECT_TARGET = "project"
+PROJECT_WORKSTREAM = "PROJECT"
 AGENTS_MANAGED_BEGIN = "<!-- BEGIN verif-harness managed project instructions -->"
 AGENTS_MANAGED_END = "<!-- END verif-harness managed project instructions -->"
 
@@ -698,6 +700,11 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "",
         "- Human 在 Agent 对话中说明目标、回答工程问题，并明确决定 review、waiver、",
         "  freeze 等 gate。",
+        "- Agent 一旦因为需要 Human 输入而停下，必须先把问题、选项、推荐项和影响登记到",
+        "  Dashboard 的 `Agent 交互`。计划建立前使用项目级目标 `project`；已有工作流或",
+        "  工作节点后绑定最具体的对象。不得用 Agent CLI 的临时选择器代替 Dashboard。",
+        "- Agent 开始非简单分析或后台子任务前必须登记 Activity。计划建立前使用",
+        "  `activity start project`，使 Human 不依赖 SSH 或终端也能看到真实运行状态。",
         "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
         "- 生成文件只是 review candidate。文件存在、模板已复制或 Agent 自检通过，",
         "  都不等于语义已批准或 evidence 已通过。",
@@ -1742,17 +1749,23 @@ class ProjectStore:
         activity_id = f"activity:{uuid.uuid4().hex[:12]}"
         timestamp = now()
         with self.connect() as connection:
-            node = connection.execute(
-                "SELECT workstream FROM nodes WHERE id=?", (node_id,),
-            ).fetchone()
-            if node is None:
-                raise HarnessError(f"未知 node: {node_id}")
+            normalized_target = node_id.strip()
+            if normalized_target.lower() == PROJECT_TARGET:
+                normalized_target = PROJECT_TARGET
+                workstream = PROJECT_WORKSTREAM
+            else:
+                node = connection.execute(
+                    "SELECT workstream FROM nodes WHERE id=?", (normalized_target,),
+                ).fetchone()
+                if node is None:
+                    raise HarnessError(f"未知 node 或项目级目标: {node_id}")
+                workstream = node["workstream"]
             connection.execute(
                 """INSERT INTO activities
                    (id,node_id,workstream,operation,status,actor,message,
                     progress_current,progress_total,log_path,created_at,updated_at,ended_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (activity_id, node_id, node["workstream"], operation.strip(), "RUNNING",
+                (activity_id, normalized_target, workstream, operation.strip(), "RUNNING",
                  actor.strip(), message.strip(), 0 if total is not None else None, total,
                  normalized_log, timestamp, timestamp, None),
             )
@@ -1964,7 +1977,12 @@ class ProjectStore:
             workstream = connection.execute(
                 "SELECT name FROM workstreams WHERE name=?", (workstream_name,),
             ).fetchone()
-            if node is not None:
+            if raw_target.lower() == PROJECT_TARGET:
+                normalized_target = PROJECT_TARGET
+                target_type = "project"
+                node_id = None
+                question_workstream = PROJECT_WORKSTREAM
+            elif node is not None:
                 normalized_target = node["id"]
                 target_type = "node"
                 node_id = node["id"]
@@ -1987,6 +2005,8 @@ class ProjectStore:
                     raise HarnessError("已结束的 Activity 不能提出等待回答的问题")
                 if activity["workstream"] != question_workstream:
                     raise HarnessError("agent question 与 Activity 必须属于同一 Workstream")
+                if target_type == "project" and activity["node_id"] != PROJECT_TARGET:
+                    raise HarnessError("项目级 agent question 必须绑定项目级 Activity")
                 if node_id and activity["node_id"] != node_id:
                     raise HarnessError("节点级 agent question 必须绑定同一节点的 Activity")
 
@@ -4247,6 +4267,25 @@ class ProjectStore:
 
         workstream_views: list[dict[str, Any]] = []
         waiting_for_human: list[dict[str, Any]] = []
+        def question_waiting_item(item: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "id": item["id"],
+                "source": "agent-question",
+                "target": item["target"],
+                "target_type": item["target_type"],
+                "action": "AGENT_QUESTION",
+                "status": item["status"],
+                "reviewer": "待回答",
+                "reason": item["prompt"],
+                "created_at": item["created_at"],
+                "question_id": item["id"],
+                "options": item["options"],
+                "recommended_option": item["recommended_option"],
+                "context": item["context"],
+                "asked_by": item["asked_by"],
+                "blocking": item["blocking"],
+            }
+
         current_desired_ids: set[str] = set()
         for plan in summary["workstreams"]:
             desired_nodes: list[dict[str, Any]] = []
@@ -4398,23 +4437,7 @@ class ProjectStore:
                 if item["target"] == plan["workstream"] or item["target"] in desired_ids
             ]
             question_waiting = [
-                {
-                    "id": item["id"],
-                    "source": "agent-question",
-                    "target": item["target"],
-                    "target_type": item["target_type"],
-                    "action": "AGENT_QUESTION",
-                    "status": item["status"],
-                    "reviewer": "待回答",
-                    "reason": item["prompt"],
-                    "created_at": item["created_at"],
-                    "question_id": item["id"],
-                    "options": item["options"],
-                    "recommended_option": item["recommended_option"],
-                    "context": item["context"],
-                    "asked_by": item["asked_by"],
-                    "blocking": item["blocking"],
-                }
+                question_waiting_item(item)
                 for item in workstream_agent_questions
                 if item["status"] == "OPEN" and item["blocking"]
             ]
@@ -4500,7 +4523,17 @@ class ProjectStore:
             item for item in model["findings"]
             if item["subject"] not in historical_desired_ids
         ]
-        current_activities = [item for item in activities if item["node_id"] in current_desired_ids]
+        project_questions = [
+            item for item in agent_questions if item["target_type"] == "project"
+        ]
+        waiting_for_human.extend(
+            question_waiting_item(item) for item in project_questions
+            if item["status"] == "OPEN" and item["blocking"]
+        )
+        current_activities = [
+            item for item in activities
+            if item["node_id"] in current_desired_ids or item["node_id"] == PROJECT_TARGET
+        ]
         current_human_actions = [item for item in human_actions if (
             item["target"] in current_desired_ids
             or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
@@ -4508,6 +4541,7 @@ class ProjectStore:
         current_agent_questions = [item for item in agent_questions if (
             item["target"] in current_desired_ids
             or item["target"] in {plan["workstream"] for plan in summary["workstreams"]}
+            or item["target_type"] == "project"
         )]
 
         payload: dict[str, Any] = {

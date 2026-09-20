@@ -200,6 +200,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("节点类型、数量、依赖和完成条件可以", instructions)
         self.assertIn("不机械翻译英文，不自行创造术语", instructions)
         self.assertIn("不是 ASIC 验证工程师的用户也能理解", instructions)
+        self.assertIn("计划建立前使用项目级目标 `project`", instructions)
+        self.assertIn("不得用 Agent CLI 的临时选择器代替 Dashboard", instructions)
+        self.assertIn("`activity start project`", instructions)
         self.assertIn("VDOC 文档路由尚未建立", instructions)
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
         with sqlite3.connect(state / "model.sqlite3") as connection:
@@ -217,6 +220,22 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(payload["dashboard"]["schema"], "DashboardLaunch/1")
         self.assertEqual(payload["dashboard"]["status"], "DISABLED")
         self.assertFalse((self.root / ".verif-harness/dashboard-runtime.json").exists())
+
+    def test_bootstrap_agent_rules_keep_dashboard_enabled_by_default(self) -> None:
+        skill = (ROOT / "skills/verif-harness/SKILL.md").read_text(encoding="utf-8")
+        instructions = (
+            ROOT / "skills/verif-harness/bootstrap/INSTRUCTIONS.md"
+        ).read_text(encoding="utf-8")
+        guide = (
+            ROOT / "skills/verif-harness/docs/user_guide.md"
+        ).read_text(encoding="utf-8")
+
+        for source in (skill, instructions, guide):
+            self.assertIn("--dashboard", source)
+            self.assertIn("--no-dashboard", source)
+        self.assertIn("Never add `--no-dashboard` unless the Human explicitly asks", skill)
+        self.assertIn("SSH, a headless server, or a non-interactive Agent", skill)
+        self.assertIn("只有 `STARTED` 和 `REUSED`", guide)
 
     def test_bootstrap_rejects_invalid_dashboard_port_before_writing_state(self) -> None:
         result = self.invoke(
@@ -727,6 +746,43 @@ class V1ControlPlaneTest(unittest.TestCase):
         # A choice unblocks Agent reasoning but never proves the verification node.
         node = self.run_cli("inspect", node_id)["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
+
+    def test_project_question_is_visible_before_any_workstream_exists(self) -> None:
+        self.bootstrap()
+        activity = self.run_cli(
+            "activity", "start", "project", "--operation", "analyze-dut-for-vdoc",
+            "--actor", "Kimi explore", "--message", "分析 DUT 规格与 RTL",
+        )
+        question = self.run_cli(
+            "agent-question", "ask", "project",
+            "--prompt", "VDOC 验证文档输出到哪个目录？",
+            "--context", "当前尚未创建 VDOC 工作流或工作节点",
+            "--option", "default", "使用默认目录", "verif/docs/verification",
+            "--option", "custom", "指定其他目录", "由 Human 填写目录",
+            "--recommended", "default", "--activity", activity["id"],
+        )
+        self.assertEqual(question["target_type"], "project")
+        self.assertEqual(question["workstream"], "PROJECT")
+
+        snapshot = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(snapshot["workstreams"], [])
+        self.assertEqual(snapshot["activities"][0]["node_id"], "project")
+        self.assertEqual(snapshot["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(snapshot["agent_questions"][0]["id"], question["id"])
+        self.assertTrue(any(
+            item["source"] == "agent-question"
+            and item["target_type"] == "project"
+            for item in snapshot["waiting_for_human"]
+        ))
+
+        answered = self.run_cli(
+            "agent-question", "answer", question["id"], "--option", "default",
+            "--reviewer", "alice",
+        )
+        self.assertEqual(answered["status"], "ANSWERED")
+        refreshed = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(refreshed["activities"][0]["status"], "RUNNING")
+        self.assertEqual(refreshed["agent_questions"][0]["status"], "ANSWERED")
 
     def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
         self.bootstrap()

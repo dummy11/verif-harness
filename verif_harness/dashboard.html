@@ -77,27 +77,45 @@
     .workstream-grid { grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); }
     .ws-card { padding: 18px; transition: transform .15s ease, border-color .15s ease; }
     .ws-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+    .overview-action-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .overview-tile { position: relative; min-height: 142px; padding: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--panel); box-shadow: var(--shadow); text-align: left; transition: transform .15s ease, border-color .15s ease; }
+    .overview-tile:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+    .overview-tile::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--gray); }
+    .overview-tile.agent::before { background: var(--blue); }
+    .overview-tile.pending::before { background: var(--yellow); }
+    .overview-tile.risk::before { background: var(--orange); }
+    .tile-head { display: flex; align-items: center; gap: 9px; }
+    .tile-head strong { font-size: 16px; }
+    .tile-head .tile-arrow { margin-left: auto; color: var(--muted); }
+    .tile-visual { min-height: 42px; margin-top: 14px; display: flex; align-items: center; gap: 10px; }
+    .state-dot { width: 13px; height: 13px; border: 3px solid var(--panel); border-radius: 50%; background: var(--gray); box-shadow: 0 0 0 2px var(--gray-bg); }
+    .state-dot.RUNNING { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
+    .state-dot.WAITING_FOR_HUMAN { background: var(--yellow); box-shadow: 0 0 0 2px var(--yellow-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
+    .state-dot.FAILED { background: var(--red); box-shadow: 0 0 0 2px var(--red-bg); }
+    .state-dot.COMPLETED { background: var(--green); box-shadow: 0 0 0 2px var(--green-bg); }
+    .tile-number { font-size: 34px; line-height: 1; font-weight: 790; }
+    .tile-unit { color: var(--muted); font-size: 13px; }
+    .tile-summary { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
     .overview-entry { width: 100%; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--panel); box-shadow: var(--shadow); text-align: left; }
     .overview-entry:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
     .entry-head { display: flex; align-items: center; gap: 10px; }
     .entry-head strong { font-size: 16px; }
     .entry-head .badge { margin-left: auto; }
     .entry-summary { margin-top: 5px; color: var(--muted); }
-    .status-strip { height: 5px; margin-top: 12px; overflow: hidden; border-radius: 5px; background: var(--gray-bg); }
-    .status-strip > span { display: block; width: 100%; height: 100%; background: var(--gray); }
-    .status-strip.RUNNING > span { background: linear-gradient(90deg, var(--blue), #7db5ff, var(--blue)); background-size: 200% 100%; animation: status-flow 2.4s linear infinite; }
-    .status-strip.WAITING_FOR_HUMAN > span { background: var(--yellow); animation: waiting-breathe 1.8s ease-in-out infinite; }
-    .status-strip.FAILED > span, .status-strip.INVALID > span { background: var(--red); }
-    .status-strip.COMPLETED > span, .status-strip.VALID > span { background: var(--green); }
-    @keyframes status-flow { to { background-position: -200% 0; } }
     @keyframes waiting-breathe { 50% { opacity: .35; } }
     .ws-title { display: flex; align-items: center; gap: 10px; }
     .ws-title strong { font-size: 16px; }
     .ws-title .revision { margin-left: auto; color: var(--muted); font-size: 12px; }
     .ws-objective { min-height: 42px; margin: 10px 0; color: var(--muted); }
-    .progress { height: 8px; overflow: hidden; border-radius: 8px; background: var(--gray-bg); }
-    .progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
-    .progress-text { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .ws-progress { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+    .ws-progress-text { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .progress-ring { --progress: 0; position: relative; flex: 0 0 auto; width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--blue) calc(var(--progress) * 1%), var(--gray-bg) 0); animation: progress-breathe 2.2s ease-in-out infinite; }
+    .progress-ring::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: var(--panel); }
+    .progress-ring span { position: relative; color: var(--text); font-size: 12px; font-weight: 800; }
+    .progress-ring.small { width: 46px; height: 46px; }
+    .progress-ring.small::before { inset: 6px; }
+    .progress-ring.small span { font-size: 10px; }
+    @keyframes progress-breathe { 50% { transform: scale(.96); filter: saturate(.82); box-shadow: 0 0 0 5px color-mix(in srgb, var(--blue) 8%, transparent); } }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 8px; font-size: 11px; font-weight: 750; white-space: nowrap; }
     .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED, .CLOSED, .SUPPORTED, .APPROVED { color: var(--green); background: var(--green-bg); }
@@ -117,8 +135,6 @@
     .row-meta { margin-top: 3px; color: var(--muted); font-size: 12px; }
     .empty { padding: 30px; text-align: center; color: var(--muted); }
     .attention { border-left: 4px solid var(--yellow); }
-    .activity-bar { margin-top: 8px; height: 5px; border-radius: 4px; background: var(--gray-bg); overflow: hidden; }
-    .activity-bar span { display: block; height: 100%; background: var(--blue); }
     .node-table { width: 100%; border-collapse: collapse; }
     .node-table th { padding: 10px 14px; text-align: left; color: var(--muted); background: var(--panel-2); font-size: 12px; }
     .node-table td { padding: 12px 14px; border-top: 1px solid var(--line); vertical-align: top; }
@@ -126,6 +142,7 @@
     .node-table th:first-child { width: 46%; }
     .node-table th:nth-child(2) { width: 20%; }
     .node-progress-cell { min-width: 240px; }
+    .node-progress-head { display: flex; align-items: center; gap: 10px; }
     .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
     .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
     .node-progress-text { margin-top: 6px; color: var(--muted); font-size: 12px; }
@@ -187,7 +204,8 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col, .agent-grid { grid-template-columns: 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .status-strip > span { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
+    @media (max-width: 980px) { .overview-action-grid { grid-template-columns: 1fr; } }
     @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; } .brand { min-width: 0; } .brand small { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -416,7 +434,7 @@
         ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream ? 'active' : ''}" data-nav="${escapeHtml(w.workstream)}">
           <span class="nav-code">${escapeHtml(w.workstream)}</span><span>${escapeHtml(workstreamLabel(w.workstream))}</span><span class="nav-state ${escapeHtml(w.lifecycle)}"></span>
         </button>`).join('')}
-        <div class="sidebar-foot">项目状态和评审记录保存在本地数据库中。本页不会直接更改验证结果。</div>`;
+        `;
       document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => {
         const selected = button.dataset.nav === 'overview' ? null : button.dataset.nav;
         if (state.reviewPlanNode) leaveNodePlanReview(selected || 'VDOC', false);
@@ -472,7 +490,17 @@
       return [...new Map(risks.map(item => [item.id, item])).values()];
     }
     function overviewEntry(title, status, summary, attribute) {
-      return `<button class="overview-entry" ${attribute}><div class="entry-head"><strong>${escapeHtml(title)}</strong>${statusBadge(status)}<span aria-hidden="true">↗</span></div><div class="entry-summary">${escapeHtml(summary)}</div><div class="status-strip ${escapeHtml(status)}"><span></span></div></button>`;
+      return `<button class="overview-entry" ${attribute}><div class="entry-head"><strong>${escapeHtml(title)}</strong>${statusBadge(status)}<span aria-hidden="true">↗</span></div><div class="entry-summary">${escapeHtml(summary)}</div></button>`;
+    }
+    function progressRing(value, label, small=false) {
+      const normalized = Math.max(0, Math.min(100, Number(value) || 0));
+      return `<div class="progress-ring${small ? ' small' : ''}" style="--progress:${normalized}" role="img" aria-label="${escapeHtml(label)}"><span>${normalized}%</span></div>`;
+    }
+    function overviewTile(kind, title, status, summary, attribute, count=null) {
+      const visual = kind === 'agent'
+        ? `<div class="tile-visual"><span class="state-dot ${escapeHtml(status)}" aria-hidden="true"></span>${statusBadge(status)}</div>`
+        : `<div class="tile-visual"><span class="tile-number">${Number(count || 0)}</span><span class="tile-unit">${kind === 'pending' ? '项待处理' : '项风险或变化'}</span>${statusBadge(status)}</div>`;
+      return `<button class="overview-tile ${escapeHtml(kind)}" ${attribute}><div class="tile-head"><strong>${escapeHtml(title)}</strong><span class="tile-arrow" aria-hidden="true">↗</span></div>${visual}<div class="tile-summary">${escapeHtml(summary)}</div></button>`;
     }
     function renderOverview() {
       const s = state.snapshot, agent = agentSummary(s), pending = humanPendingItems(s), risks = riskItems(s);
@@ -482,17 +510,20 @@
       const reviewCount = pending.filter(item => item.source === 'closure').length;
       $('#main').innerHTML = `<div class="page-head"><div><h1>验证项目总览</h1><p>快速查看 Agent 状态、需要您处理的事项、验证工作流进度，以及可能影响既有验证结论的风险与变更。</p></div></div>
         ${projectContextHtml()}
-        <section class="section">${overviewEntry('Agent 交互', agent.status, agent.text, 'data-open-agent-interaction')}</section>
-        <section class="section">${overviewEntry('待处理事项', pendingStatus, pending.length ? `${pending.length} 项需要您处理 · ${questionCount} 项待回答 · ${reviewCount} 项待评审` : '当前没有需要您处理的事项', 'data-open-pending-items')}</section>
+        <section class="section"><div class="grid overview-action-grid">
+          ${overviewTile('agent', 'Agent 交互', agent.status, agent.text, 'data-open-agent-interaction')}
+          ${overviewTile('pending', '待处理事项', pendingStatus, pending.length ? `${questionCount} 项待回答 · ${reviewCount} 项待评审` : '当前没有需要您处理的事项', 'data-open-pending-items', pending.length)}
+          ${overviewTile('risk', '验证风险与变更', riskStatus, risks.length ? '可能影响当前验证结论，需要检查影响范围' : '当前没有影响验证结论的重要变化', 'data-open-risk-changes', risks.length)}
+        </div></section>
         <section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>
-        <section class="section">${overviewEntry('验证风险与变更', riskStatus, risks.length ? `${risks.length} 项可能影响当前验证结论` : '当前没有影响验证结论的重要变化', 'data-open-risk-changes')}</section>`;
+        `;
       bindOverviewEntries(); bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
       const p = percent(w.progress);
       const human = (w.waiting_for_human || []).filter(item => ['agent-question','closure','document-item'].includes(item.source)).length;
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</strong>${statusBadge(w.lifecycle)}<span class="revision">计划 ${w.revision}</span></div>
-        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="progress" title="只按工作节点数量计算，不代表整体验证质量"><span style="width:${p}%"></span></div><div class="progress-text"><span>${w.progress.satisfied}/${w.progress.required} 个工作节点已有明确完成结论</span><span>${p}%</span></div>
+        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-progress">${progressRing(p, `${w.workstream} 工作节点完成度 ${p}%`)}<div class="ws-progress-text">${w.progress.satisfied}/${w.progress.required} 个工作节点已有明确完成结论<br>只按工作节点数量计算，不代表整体验证质量</div></div>
         <div class="chips"><span class="badge ${human ? 'OPEN':'RECORDED'}">${human} 项需要您处理</span>${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(STATUS_LABELS[k] || k)}</span>`).join('')}</div></article>`;
     }
     function bindOverviewEntries() {
@@ -531,19 +562,20 @@
     }
     function activityRows(items) {
       if (!items.length) return '<div class="empty">当前没有登记为正在进行的工作</div>';
-      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta mono">${escapeHtml(a.node_id)} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div>${p === null ? '' : `<div class="activity-bar"><span style="width:${p}%"></span></div>`}</div><div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div>`; }).join('');
+      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = a.node_id === 'project' ? '项目级' : a.node_id; return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta mono">${escapeHtml(target)} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true)}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
     }
     function agentInteractionHtml(questions, activities) {
       const active = (activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN'].includes(a.status));
       const open = (questions || []).filter(q => q.status === 'OPEN');
       const statuses = active.length
-        ? active.map(a => `<div class="list-row"><div><div class="row-title">${escapeHtml(a.actor)} · ${escapeHtml(a.operation)}</div><div class="row-meta">${escapeHtml(a.message || '无进度说明')} · ${escapeHtml(a.node_id)}</div></div>${statusBadge(a.status)}</div>`).join('')
+        ? active.map(a => `<div class="list-row"><div><div class="row-title">${escapeHtml(a.actor)} · ${escapeHtml(a.operation)}</div><div class="row-meta">${escapeHtml(a.message || '无进度说明')} · ${escapeHtml(a.node_id === 'project' ? '项目级' : a.node_id)}</div></div>${statusBadge(a.status)}</div>`).join('')
         : '<div class="empty">当前没有登记为运行中或等待中的 Agent 工作</div>';
       const questionRows = open.length
         ? open.map(q => {
             const recommended = (q.options || []).find(option => option.id === q.recommended_option);
             const options = (q.options || []).map(option => `<label class="detail-card" style="display:block;margin-top:8px"><input type="radio" name="option" value="${escapeHtml(option.id)}" style="width:auto" required> <strong>${escapeHtml(option.label)}</strong>${option.id === q.recommended_option ? ' <span class="badge PROVISIONAL">Agent 推荐</span>' : ''}<div class="row-meta">${escapeHtml(option.description || '无补充说明')}</div></label>`).join('');
-            return `<div class="list-row" style="display:block"><div style="display:flex;gap:10px;align-items:center"><div class="row-title">${escapeHtml(q.prompt)}</div><span style="margin-left:auto">${statusBadge(q.status)}</span></div><div class="row-meta">${escapeHtml(q.workstream)} · ${escapeHtml(q.target_type === 'node' ? q.target : '工作流')} · ${escapeHtml(q.asked_by)}${recommended ? ` · 推荐：${escapeHtml(recommended.label)}` : ''}</div>${q.context ? `<div class="notice" style="margin-top:10px">${escapeHtml(q.context)}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><div class="field"><label>选择一个答案</label>${options}<label class="detail-card" style="display:block;margin-top:8px"><input type="radio" name="option" value="other" style="width:auto" required> <strong>其他</strong></label></div><div class="field"><label>回答人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>补充说明（选择“其他”时必填）</label><textarea name="answer_text" placeholder="可补充约束、理由或需要 Agent 注意的边界"></textarea></div><div class="modal-actions"><button class="btn primary">提交回答并通知 Agent</button></div></form></div>`;
+            const target = q.target_type === 'project' ? '项目级' : q.target_type === 'node' ? q.target : `${q.workstream} 工作流`;
+            return `<div class="list-row" style="display:block"><div style="display:flex;gap:10px;align-items:center"><div class="row-title">${escapeHtml(q.prompt)}</div><span style="margin-left:auto">${statusBadge(q.status)}</span></div><div class="row-meta">${escapeHtml(target)} · ${escapeHtml(q.asked_by)}${recommended ? ` · 推荐：${escapeHtml(recommended.label)}` : ''}</div>${q.context ? `<div class="notice" style="margin-top:10px">${escapeHtml(q.context)}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><div class="field"><label>选择一个答案</label>${options}<label class="detail-card" style="display:block;margin-top:8px"><input type="radio" name="option" value="other" style="width:auto" required> <strong>其他</strong></label></div><div class="field"><label>回答人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>补充说明（选择“其他”时必填）</label><textarea name="answer_text" placeholder="可补充约束、理由或需要 Agent 注意的边界"></textarea></div><div class="modal-actions"><button class="btn primary">提交回答并通知 Agent</button></div></form></div>`;
           }).join('')
         : '<div class="empty">当前没有 Agent 等待回答的问题</div>';
       return `<section class="section"><div class="section-head"><h2>Agent 交互</h2><span class="count">${open.length} 个问题等待回答</span></div><div class="notice"><strong>在这里直接回答 Agent。</strong> 无需 SSH 到服务器，也无需在 Agent CLI 中选择。回答会解除对应等待并让 Agent 读取结果继续分析，但不会自动批准节点或补充验证证据。</div><div class="grid agent-grid"><div><div class="section-head"><h2>Agent 状态</h2></div><div class="card list-card">${statuses}</div></div><div><div class="section-head"><h2>待回答问题</h2></div><div class="card list-card attention">${questionRows}</div></div></div></section>`;
