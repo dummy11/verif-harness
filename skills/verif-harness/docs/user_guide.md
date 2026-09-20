@@ -142,20 +142,24 @@ $verif-harness bootstrap
 # Kimi 使用 /skill:verif-harness bootstrap
 ```
 
-Agent 必须通过对话要求用户明确提供以下输入，不搜索候选目录、不猜测或自行选择 DUT：
+Agent 必须通过对话要求用户明确提供以下输入，不搜索候选目录、不猜测或自行选择 DUT。问题按表中
+顺序进行，一次只问一个字段；Human 回答且只读校验通过后，Agent 才进入下一题：
 
-| 对话输入 | 是否必填 | 含义 |
-| --- | --- | --- |
-| `rtl root` | 必填 | RTL 根目录 |
-| `dut top` | 必填 | DUT 顶层模块名 |
-| `dut top file` | 必填 | DUT 顶层源文件路径 |
-| `spec` | 可选 | RTL 规格文件或目录；可以不提供 |
-| `testbench` | 可选 | 一个已有 testbench 根目录；不再分别填写 UVM、testcase、assertion 或 coverage 路径 |
-| `reference/golden model` | 可选 | 一个已有参考模型文件或目录；登记不表示决定采用该模型 |
-| `verification scripts` | 可选 | 已有编译、仿真或回归入口脚本；可以提供多个 |
+| 顺序 | 对话输入 | 是否必填 | 含义 |
+| --- | --- | --- | --- |
+| 1 | `rtl root` | 必填 | RTL 根目录；可以明确提供多个 |
+| 2 | `dut top` | 必填 | DUT 顶层模块名 |
+| 3 | `dut top file` | 必填 | DUT 顶层源文件路径 |
+| 4 | `verification output root` | 必填 | 项目内保存验证资产和产物的目录 |
+| 5 | `spec` | 可选 | RTL 规格文件或目录；可以明确回答“跳过” |
+| 6 | `testbench` | 可选 | 一个已有 testbench 根目录；不再分别填写 UVM、testcase、assertion 或 coverage 路径 |
+| 7 | `reference/golden model` | 可选 | 一个已有参考模型文件或目录；登记不表示决定采用该模型 |
+| 8 | `verification scripts` | 可选 | 已有编译、仿真或回归入口脚本；可以提供多个，也可以明确回答“跳过” |
 
-本次对话已明确提供的字段不重复询问；缺失必填字段时先等待用户补齐，不执行初始化。
-Agent 只读校验用户给定的路径，然后将回答转为底层 CLI 参数。以下是 Agent 的执行示例，
+每个可选项也必须得到明确的“提供路径”或“跳过”回答，不能把沉默当成跳过。本次对话已经明确
+提供的字段视为已回答，不重复询问；输入不合法时停留在当前题，修正后再继续。全部八项完成后，
+Agent 汇总所有答案，请 Human 最后确认一次；确认前不执行初始化。底层 CLI 仍是非交互参数接口，
+顺序问答由 Agent 负责。以下是 Agent 最终确认后的执行示例，
 用户无需手动拼接参数；可选 spec 使用现有 `--docs-root` 接口传入：
 
 ```text
@@ -195,8 +199,8 @@ CI 可以省略两个选项并使用默认跳过策略。自动启动使用固�
 表示 Dashboard 可用，不能把 `SKIPPED`、`DISABLED`、`FAILED` 或 `PORT_CONFLICT` 说成已经启动。
 
 路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
-静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec、
-可选 testbench、参考模型、验证脚本和 verification 输出目录。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
+静默沿用旧路径：Agent 按首次 bootstrap 的相同顺序逐题显示当前值，每次只让 Human 对当前字段
+选择保留、替换或移除；全部问题回答后再汇总确认。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
 `project.json`、`inventory.json`、`AGENTS.md` 和 `.harness-config.json` 中由 bootstrap 管理的
 路径字段；已有 Workstream、证据、评审和文档治理状态保持不变。
 
@@ -584,15 +588,15 @@ VENV smoke 和 VSTIM reachability。
 当 `closure` 返回 `executor=human` 时：
 
 1. Engine 只报告目标、缺失信息和受影响节点，不自行选择答案；
-2. Agent 解释问题，并把问题、选项、推荐项和工程影响登记到 Dashboard 的“Agent 交互”；
-3. Human 在 Dashboard 作出决定，或要求保留为开放问题；
+2. Agent 解释问题，并把问题、选项、推荐项和工程影响登记到项目控制状态及 Dashboard 的“Agent 交互”；
+3. Human 在 Dashboard 或通过 `agent-question answer` 在 Agent CLI 作出决定，或要求保留为开放问题；
 4. Agent 将决定写入相应文档/plan，并调用结构化命令登记；
 5. Engine 重新计算依赖和未完成项；
 6. 当前没有依赖该决定的其他工作可以继续，不需要暂停六个 Workstream。
 
-不存在后台 worker 在终端中显示问题并等待 stdin 的机制。需要 Human 的动作必须进入持久化的
-Dashboard Agent question；当前对话可以补充解释，但不能替代登记。Dashboard 回答后，后台 Agent 从 SQLite 检查点读取答案；
-Human 不需要 SSH 到服务器终端，也不需要在 Agent CLI 中选择。如果 Agent 会话中断，重新启动后可从
+不存在后台 worker 在终端中显示未登记问题并等待 stdin 的机制。需要 Human 的动作必须进入持久化的
+Agent question；当前对话可以补充解释，但不能替代登记。Dashboard 与 Agent CLI 都从同一个 SQLite
+检查点读写答案，因此 Human 可以选择网页或 `agent-question answer`，使用网页时无需 SSH。如果 Agent 会话中断，重新启动后可从
 `status`、`inspect`、`closure` 和 `agent-question list` 恢复磁盘状态。
 
 #### 并行执行的典型命令顺序
@@ -1308,10 +1312,12 @@ Dashboard 无法从另一个终端的普通进程或对话文字中猜出它正�
 修改请求不重复算作 Human 待办。风险页只收集 `INVALID`、`BLOCKED`、`STALE`、
 `REVALIDATION_REQUIRED`、`PROVISIONAL`、正文变化及开放 finding，不把普通进度冒充风险。
 
-Agent 交互详情页同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答
-问题所属的 Workstream、节点、选项和 Agent 推荐项。Human 直接在网页回答，不需要进入服务器终端或
-在 Agent CLI 里按数字。远端 Dashboard 仍须按上一节建立安全的 SSH 端口转发，但回答动作本身不需要
-交互式 SSH 会话。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
+Agent 交互详情页始终显示项目级 Agent；没有当前 Activity 时显示“空闲”，不会误报为没有 Agent。页面
+同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答问题所属的
+Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Agent CLI 对话回答；
+Agent 收到 CLI 回答后必须立即用 `verif-harness agent-question answer` 写回同一个 SQLite 问题记录。
+任一入口提交后，另一个入口立即看到相同答案。使用网页时不需要进入服务器终端。远端 Dashboard 仍须按上一节建立
+安全的 SSH 端口转发。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
 `prefers-reduced-motion` 设置。
 
 原生 Codex/Kimi 终端选择器不会被网页自动截获。Agent 必须在停下前登记结构化问题：
@@ -1341,9 +1347,12 @@ verif-harness agent-question ask NODE \
 
 # Agent：等待网页答案；超时后可用同一问题 ID 重试
 verif-harness agent-question await QUESTION_ID --timeout 60
+
+# Human：也可以在 Agent CLI 回答同一个问题；Dashboard 会同步显示结果
+verif-harness agent-question answer QUESTION_ID --option OPTION_ID --reviewer NAME
 ```
 
-登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`。Human 在网页提交答案后，该 Activity
+登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`。Human 在网页或 Agent CLI 提交答案后，该 Activity
 恢复 `RUNNING`，等待命令返回 `AgentQuestionCheckpoint/1`。答案只是一项工程输入：不会把节点改成
 `VALID`，不会批准实施方案或文档交付，也不会生成证据、豁免或冻结结论。Agent 必须分析答案并通过
 相应的 plan、document、evidence 或 review 流程记录后续结果。
@@ -1557,12 +1566,19 @@ verif-harness bootstrap [OPTIONS]
 | `--dashboard-port PORT` | 自动启动使用的固定 loopback 端口；未指定时复用当前运行记录，否则使用 `8765`；只接受 `1..65535` |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。对话中只需提出
-`bootstrap --refresh`；Agent 必须重新确认参数，再展开成底层完整命令。
+`bootstrap --refresh`；Agent 必须按固定顺序一次确认一个字段，最后汇总确认，再展开成底层完整命令。
 如果底层 CLI 在没有其他参数的情况下收到裸 `bootstrap --refresh`，它只返回
 `BootstrapReconfiguration/1` 的当前值与待确认问题，不修改任何文件；这是防止 Agent 跳过对话的
-保护措施，也不会启动 Dashboard。
-上述参数属于底层自动化接口；Skill 首次初始化必须先在对话中收齐三个必填 DUT 字段。
+保护措施，也不会启动 Dashboard。返回值中的 `interaction.mode=SEQUENTIAL`、题号和
+`current_question_id` 要求 Agent 一次只展示当前一题，不能把整个问题数组同时交给 Human。
+上述参数属于底层自动化接口；Skill 首次初始化必须先按顺序完成全部 bootstrap 问题，其中三个 DUT
+身份字段和验证输出目录必须提供，可选项必须明确回答提供或跳过。
 用户提供的可选 spec 路径映射到 `--docs-root`，未提供时不推导或补填。
+
+首次 bootstrap 的字段在当前 Agent 对话中逐项收集，因为此时项目控制状态和 Dashboard 还没有建立。
+bootstrap 成功并启动 Dashboard 后，后续会阻塞 Agent 的问题（例如“是否开始规划 VDOC”）必须先登记为
+项目级 Activity 和项目级 Agent question，不能只留在原生终端选择器。Human 随后既可在 Dashboard 回答，
+也可通过 `agent-question answer` 在 Agent CLI 回答；若初始请求已经明确授权下一步，则不重复询问。
 
 后台启动元数据写入 `.verif-harness/dashboard-runtime.json`，输出日志写入
 `.verif-harness/dashboard.log`。二者用于运行诊断，不是验证证据或项目语义事实源。
@@ -1815,8 +1831,8 @@ verif-harness activity list [--workstream WORKSTREAM] [--node NODE] [--active]
 
 ### `agent-question`
 
-Agent 用它把工程选择题持久化到 Dashboard。Human 在独立的“Agent 交互”板块直接回答；通常不调用
-下面的 `answer` CLI。计划尚未建立时使用项目级目标 `project`；已有计划后应绑定最具体的当前
+Agent 用它把工程选择题持久化到项目控制状态。Human 可以在独立的“Agent 交互”板块回答，也可以调用
+下面的 `answer` CLI；两者是同一问题的两个交互入口。计划尚未建立时使用项目级目标 `project`；已有计划后应绑定最具体的当前
 Workstream 或节点。阻塞问题可以再绑定同一范围的 Activity。
 
 ```text

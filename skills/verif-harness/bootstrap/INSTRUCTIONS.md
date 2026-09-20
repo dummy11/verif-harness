@@ -12,16 +12,26 @@ and questions, and does not write project state.
    `rtl root`, `dut top`, and `dut top file` are mandatory. The following inputs
    are independent and optional: `spec` (RTL specification file or directory),
    one existing `testbench` directory, one reference/golden model file or directory,
-   and one or more compile/simulation/regression scripts. Ask for missing mandatory
-   fields together; present optional inputs as skippable choices rather than blockers.
-   Values explicitly supplied by the user in this conversation count as answers.
+   and one or more compile/simulation/regression scripts. Run the conversation in
+   this fixed order: (1) `rtl root`, (2) `dut top`, (3) `dut top file`,
+   (4) verification output root, (5) optional `spec`, (6) optional `testbench`,
+   (7) optional reference/golden model, and (8) optional verification scripts.
+   Ask exactly one unanswered field per Agent turn. Wait for the Human's answer,
+   validate that field read-only, and remain on the same field if correction is
+   required; only then ask the next field. Never batch several unanswered fields
+   into one prompt. For every optional field, require an explicit supplied value
+   or an explicit `skip`/`none`; silence does not mean omission. Values explicitly
+   supplied by the user in this conversation count as answers and must not be
+   asked twice.
    Do not discover candidate directories, guess a top module, or silently use
    existing configuration as the user's answer. For refresh, read current values
-   only so they can be shown as defaults; ask the Human to confirm, replace, or
-   remove them. Reconfirm `rtl root`, `dut top`, `dut top file`, optional `spec`,
-   optional testbench/reference-model/script inputs, and the verification output
-   root. Do not run bootstrap until all three mandatory fields have been provided.
-   Omitting any optional input must not block setup.
+   only so each one can be shown as the default when its turn arrives; ask the
+   Human to keep, replace, or remove that one value before advancing. Reconfirm
+   all eight fields in the same order. After the last answer, show one consolidated
+   summary of all resolved values and ask for final confirmation. Invoke the
+   low-level CLI only after that confirmation. Do not run bootstrap until all
+   three mandatory fields have been provided. Explicitly skipping optional inputs
+   must not block setup.
 3. Validate only the supplied paths read-only. If a path is missing, ambiguous,
    or unsupported by the CLI, explain the issue and ask the user to correct it;
    do not search for substitutes or copy inputs into the public repository.
@@ -64,6 +74,14 @@ and questions, and does not write project state.
 7. Continue with `plan WORKSTREAM`; recording an existing reference-model path does
    not decide that the project will use it. Bootstrap must not decide coverage,
    tests, interfaces, checking strategy, acceptance criteria, or Human Decisions.
+   After bootstrap has successfully created the control state and started the
+   Dashboard, never leave a follow-up blocking prompt such as "start plan VDOC?"
+   only in a native Agent terminal selector. If the Human's original request did
+   not already authorize the next step, start a project-level Activity, register a
+   project-level `agent-question`, and let the Human answer from either Dashboard
+   or `verif-harness agent-question answer`; both entries share the same persisted
+   question. Pre-bootstrap field collection remains in the current Agent conversation
+   because the Dashboard and its project state do not exist yet.
 
 When DUT identity is complete, initial bootstrap also writes the lower-level capability
 projection `.harness-config.json`. Refresh synchronizes its bootstrap-managed

@@ -701,8 +701,10 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- Human 在 Agent 对话中说明目标、回答工程问题，并明确决定 review、waiver、",
         "  freeze 等 gate。",
         "- Agent 一旦因为需要 Human 输入而停下，必须先把问题、选项、推荐项和影响登记到",
-        "  Dashboard 的 `Agent 交互`。计划建立前使用项目级目标 `project`；已有工作流或",
-        "  工作节点后绑定最具体的对象。不得用 Agent CLI 的临时选择器代替 Dashboard。",
+        "  项目控制状态。计划建立前使用项目级目标 `project`；已有工作流或工作节点后绑定",
+        "  最具体的对象。Human 可在 Dashboard 或当前 Agent CLI 对话回答；CLI 中的答案必须由",
+        "  Agent 立即用 `agent-question answer` 写回同一问题。不得只使用未登记的原生终端",
+        "  临时选择器，也不得让两个入口形成两套问题状态。",
         "- Agent 开始非简单分析或后台子任务前必须登记 Activity。计划建立前使用",
         "  `activity start project`，使 Human 不依赖 SSH 或终端也能看到真实运行状态。",
         "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
@@ -1003,24 +1005,34 @@ class ProjectStore:
         return {
             "schema": "BootstrapReconfiguration/1",
             "status": "ACTION_REQUIRED",
-            "message": "请在当前对话重新确认 bootstrap 参数；尚未修改任何配置。",
+            "message": "请在当前对话按顺序逐题确认 bootstrap 参数；尚未修改任何配置。",
             "current": current,
+            "interaction": {
+                "mode": "SEQUENTIAL",
+                "one_question_at_a_time": True,
+                "current_question_id": "rtl_roots",
+                "final_confirmation_required": True,
+            },
             "questions_for_human": [
-                {"id": "rtl_roots", "required": True, "current": current["rtl_roots"],
+                {"sequence": 1, "id": "rtl_roots", "required": True, "current": current["rtl_roots"],
                  "question": "只读 RTL root 是哪些目录？"},
-                {"id": "dut_top", "required": True, "current": current["dut_top"],
+                {"sequence": 2, "id": "dut_top", "required": True, "current": current["dut_top"],
                  "question": "DUT top 模块名是什么？"},
-                {"id": "dut_top_file", "required": True, "current": current["dut_top_file"],
+                {"sequence": 3, "id": "dut_top_file", "required": True, "current": current["dut_top_file"],
                  "question": "DUT top file 是哪个文件？"},
-                {"id": "docs_roots", "required": False, "current": current["docs_roots"],
-                 "question": "可选 RTL spec 路径是哪些；保留、替换还是移除？"},
-                {"id": "verif_root", "required": True, "current": current["verif_root"],
+                {"sequence": 4, "id": "verif_root", "required": True, "current": current["verif_root"],
                  "question": "项目内 verification 输出目录是什么？"},
-                {"id": "testbench_root", "required": False, "current": current["testbench_root"],
+                {"sequence": 5, "id": "docs_roots", "required": False, "skip_allowed": True,
+                 "current": current["docs_roots"],
+                 "question": "可选 RTL spec 路径是哪些；保留、替换还是移除？"},
+                {"sequence": 6, "id": "testbench_root", "required": False, "skip_allowed": True,
+                 "current": current["testbench_root"],
                  "question": "是否已有 testbench 目录；保留、替换还是移除？"},
-                {"id": "reference_model", "required": False, "current": current["reference_model"],
+                {"sequence": 7, "id": "reference_model", "required": False, "skip_allowed": True,
+                 "current": current["reference_model"],
                  "question": "是否已有 reference/golden model；保留、替换还是移除？"},
-                {"id": "verification_scripts", "required": False,
+                {"sequence": 8, "id": "verification_scripts", "required": False,
+                 "skip_allowed": True,
                  "current": current["verification_scripts"],
                  "question": "是否已有编译、仿真或回归脚本；保留、替换还是移除？"},
             ],
@@ -4544,6 +4556,65 @@ class ProjectStore:
             or item["target_type"] == "project"
         )]
 
+        # The project Agent is a persistent control-plane actor, not an Activity row.
+        # Activities describe bounded work and may legitimately be empty while the
+        # Agent is ready for its next instruction.
+        active_agent_activities = [
+            item for item in current_activities
+            if item["status"] in {"PENDING", "RUNNING", "WAITING_FOR_HUMAN"}
+        ]
+        open_agent_questions = [
+            item for item in current_agent_questions if item["status"] == "OPEN"
+        ]
+        blocking_question_count = sum(
+            bool(item["blocking"]) for item in open_agent_questions
+        )
+        waiting_activity_count = sum(
+            item["status"] == "WAITING_FOR_HUMAN" for item in active_agent_activities
+        )
+        running_activity_count = sum(
+            item["status"] == "RUNNING" for item in active_agent_activities
+        )
+        pending_activity_count = sum(
+            item["status"] == "PENDING" for item in active_agent_activities
+        )
+        latest_activity = current_activities[0] if current_activities else (
+            activities[0] if activities else None
+        )
+        if blocking_question_count or waiting_activity_count:
+            project_agent_status = "WAITING_FOR_HUMAN"
+            project_agent_message = (
+                f"等待 Human 回答 {blocking_question_count or waiting_activity_count} 个问题"
+            )
+        elif running_activity_count:
+            project_agent_status = "RUNNING"
+            project_agent_message = f"{running_activity_count} 项 Agent 工作正在执行"
+        elif pending_activity_count:
+            project_agent_status = "PENDING"
+            project_agent_message = f"{pending_activity_count} 项 Agent 工作等待执行"
+        elif latest_activity and latest_activity["status"] == "FAILED":
+            project_agent_status = "FAILED"
+            project_agent_message = (
+                f"最近一项 Agent 工作执行失败：{latest_activity['operation']}"
+            )
+        else:
+            project_agent_status = "IDLE"
+            project_agent_message = "项目级 Agent 当前空闲，没有已登记活动"
+            if latest_activity and latest_activity["status"] == "COMPLETED":
+                project_agent_message += f"；最近完成：{latest_activity['operation']}"
+
+        project_agent = {
+            "id": "project-agent",
+            "scope": "project",
+            "label": "项目级 Agent",
+            "runtime": summary["runtime"],
+            "status": project_agent_status,
+            "message": project_agent_message,
+            "active_activity_count": len(active_agent_activities),
+            "open_question_count": len(open_agent_questions),
+            "latest_activity": latest_activity,
+        }
+
         payload: dict[str, Any] = {
             "schema": "VerificationDashboard/1",
             "project": {
@@ -4558,6 +4629,7 @@ class ProjectStore:
                 "verif_root": summary["verif_root"],
                 "verification_inputs": summary["verification_inputs"],
             },
+            "project_agent": project_agent,
             # Dashboard totals describe the active desired-state revisions. The full model and
             # audit histories remain available below, but stale revisions must not look active.
             "node_status": current_node_status,

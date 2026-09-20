@@ -201,7 +201,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("不机械翻译英文，不自行创造术语", instructions)
         self.assertIn("不是 ASIC 验证工程师的用户也能理解", instructions)
         self.assertIn("计划建立前使用项目级目标 `project`", instructions)
-        self.assertIn("不得用 Agent CLI 的临时选择器代替 Dashboard", instructions)
+        self.assertIn("Dashboard 或当前 Agent CLI 对话回答", instructions)
+        self.assertIn("不得只使用未登记的原生终端", instructions)
+        self.assertIn("不得让两个入口形成两套问题状态", instructions)
         self.assertIn("`activity start project`", instructions)
         self.assertIn("VDOC 文档路由尚未建立", instructions)
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
@@ -236,6 +238,26 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("Never add `--no-dashboard` unless the Human explicitly asks", skill)
         self.assertIn("SSH, a headless server, or a non-interactive Agent", skill)
         self.assertIn("只有 `STARTED` 和 `REUSED`", guide)
+
+    def test_bootstrap_agent_rules_require_sequential_questions(self) -> None:
+        skill = (ROOT / "skills/verif-harness/SKILL.md").read_text(encoding="utf-8")
+        instructions = (
+            ROOT / "skills/verif-harness/bootstrap/INSTRUCTIONS.md"
+        ).read_text(encoding="utf-8")
+        guide = (
+            ROOT / "skills/verif-harness/docs/user_guide.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Ask exactly one unanswered bootstrap", skill)
+        self.assertIn("Never combine multiple unanswered fields", skill)
+        self.assertIn("Ask exactly one unanswered field per Agent turn", instructions)
+        self.assertIn("Never batch several unanswered fields", instructions)
+        self.assertNotIn("Ask for missing mandatory\n   fields together", instructions)
+        self.assertIn("一次只问一个字段", guide)
+        self.assertIn("最后确认一次", guide)
+        self.assertIn('never leave a follow-up blocking prompt such as "start plan VDOC?"', instructions)
+        self.assertIn("Dashboard and `verif-harness agent-question answer` are two", skill)
+        self.assertIn("写回同一个 SQLite 问题记录", guide)
 
     def test_bootstrap_rejects_invalid_dashboard_port_before_writing_state(self) -> None:
         result = self.invoke(
@@ -279,12 +301,26 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(prompted["status"], "ACTION_REQUIRED")
         self.assertEqual(prompted["current"]["rtl_roots"], ["rtl"])
         self.assertEqual(
-            {item["id"] for item in prompted["questions_for_human"]},
-            {
-                "rtl_roots", "dut_top", "dut_top_file", "docs_roots", "verif_root",
+            [item["id"] for item in prompted["questions_for_human"]],
+            [
+                "rtl_roots", "dut_top", "dut_top_file", "verif_root", "docs_roots",
                 "testbench_root", "reference_model", "verification_scripts",
-            },
+            ],
         )
+        self.assertEqual(prompted["interaction"], {
+            "mode": "SEQUENTIAL",
+            "one_question_at_a_time": True,
+            "current_question_id": "rtl_roots",
+            "final_confirmation_required": True,
+        })
+        self.assertEqual(
+            [item["sequence"] for item in prompted["questions_for_human"]],
+            list(range(1, 9)),
+        )
+        self.assertTrue(all(
+            item.get("skip_allowed") is True
+            for item in prompted["questions_for_human"][4:]
+        ))
         unchanged = json.loads(
             (self.root / ".verif-harness/project.json").read_text(encoding="utf-8")
         )
@@ -749,6 +785,11 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_project_question_is_visible_before_any_workstream_exists(self) -> None:
         self.bootstrap()
+        idle_snapshot = self.run_cli("dashboard", "--snapshot")
+        self.assertEqual(idle_snapshot["project_agent"]["id"], "project-agent")
+        self.assertEqual(idle_snapshot["project_agent"]["scope"], "project")
+        self.assertEqual(idle_snapshot["project_agent"]["status"], "IDLE")
+        self.assertEqual(idle_snapshot["project_agent"]["active_activity_count"], 0)
         activity = self.run_cli(
             "activity", "start", "project", "--operation", "analyze-dut-for-vdoc",
             "--actor", "Kimi explore", "--message", "分析 DUT 规格与 RTL",
@@ -768,6 +809,8 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(snapshot["workstreams"], [])
         self.assertEqual(snapshot["activities"][0]["node_id"], "project")
         self.assertEqual(snapshot["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(snapshot["project_agent"]["open_question_count"], 1)
         self.assertEqual(snapshot["agent_questions"][0]["id"], question["id"])
         self.assertTrue(any(
             item["source"] == "agent-question"
@@ -783,6 +826,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         refreshed = self.run_cli("dashboard", "--snapshot")
         self.assertEqual(refreshed["activities"][0]["status"], "RUNNING")
         self.assertEqual(refreshed["agent_questions"][0]["status"], "ANSWERED")
+        self.assertEqual(refreshed["project_agent"]["status"], "RUNNING")
 
     def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
         self.bootstrap()

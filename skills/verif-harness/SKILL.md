@@ -32,8 +32,15 @@ Workstream. Project lifecycle is separate.
   `bootstrap/INSTRUCTIONS.md`; require conversational user input for `rtl root`,
   `dut top`, and `dut top file`, with optional `spec`, `testbench` directory,
   reference/golden model, and verification scripts. The three verification inputs
-  are independent and may all be omitted. Never discover candidates or run
-  initialization while mandatory inputs are missing. After validation,
+  are independent and may all be omitted. Ask exactly one unanswered bootstrap
+  field at a time in the documented order, wait for and validate that answer,
+  then ask the next field. Never combine multiple unanswered fields into one
+  prompt. Every optional field requires an explicit path or `skip`; silence is
+  not an answer. After all fields, show one consolidated summary and obtain final
+  Human confirmation before invoking the non-interactive CLI. Values already
+  explicitly supplied in the current conversation count as answered and are not
+  asked twice. Never discover candidates or run initialization while mandatory
+  inputs are missing. After validation,
   create or refresh only the marked verif-harness block in the project-root
   `AGENTS.md`; preserve all project-owned instructions outside it. When the Human
   requests only `bootstrap --refresh`, treat that as a request to reopen the
@@ -88,7 +95,13 @@ Workstream. Project lifecycle is separate.
   most specific current node. Before starting, resuming, or completing an Activity, read
   open `human-action` records and apply relevant Human input. Dashboard writes
   are persistent control-plane input, not arbitrary chat-message injection into
-  a running Agent. If an Agent must stop for Human input, it must register the
+  a running Agent. Dashboard and `verif-harness agent-question answer` are two
+  interaction entries backed by the same persisted question state; an answer from
+  either entry must be visible from the other. The Agent may mirror the registered
+  question in its current CLI conversation; if the Human answers there, persist
+  that answer immediately with `agent-question answer` using the same question ID.
+  If an Agent must stop for Human
+  input, it must register the
   question with `agent-question ask` before waiting. Use target `project` before
   a Workstream or node exists; otherwise use the most specific current Workstream
   or node. Include the choices, recommendation, context, and engineering impact.
