@@ -122,6 +122,33 @@ def build_parser() -> argparse.ArgumentParser:
     docs_input.add_argument("--clear-docs-root", action="store_true",
                             help="refresh 时明确清除已有 RTL spec 输入")
     bootstrap.add_argument("--verif-root", help="project root 内的验证资产输出根目录")
+    testbench_input = bootstrap.add_mutually_exclusive_group()
+    testbench_input.add_argument(
+        "--testbench-root",
+        help="可选的已有 testbench 根目录；只登记和读取，不表示已通过验证",
+    )
+    testbench_input.add_argument(
+        "--clear-testbench-root", action="store_true",
+        help="refresh 时明确移除以前登记的 testbench 目录",
+    )
+    reference_model_input = bootstrap.add_mutually_exclusive_group()
+    reference_model_input.add_argument(
+        "--reference-model", "--gold-model", dest="reference_model",
+        help="可选的 reference/golden model 文件或目录；只登记，不执行",
+    )
+    reference_model_input.add_argument(
+        "--clear-reference-model", action="store_true",
+        help="refresh 时明确移除以前登记的参考模型",
+    )
+    verification_script_input = bootstrap.add_mutually_exclusive_group()
+    verification_script_input.add_argument(
+        "--verification-script", action="append", default=[],
+        help="可选的编译、仿真或回归入口脚本；可重复",
+    )
+    verification_script_input.add_argument(
+        "--clear-verification-scripts", action="store_true",
+        help="refresh 时明确移除以前登记的验证脚本",
+    )
     bootstrap.add_argument("--dut-top")
     bootstrap.add_argument("--dut-top-file", help="属于某个 --rtl-root 的 DUT top 文件")
     bootstrap.add_argument(
@@ -533,15 +560,26 @@ def main(arguments: list[str] | None = None) -> int:
         if args.command == "bootstrap":
             supplied_reconfiguration = any((
                 args.project_name, args.rtl_root, args.docs_root, args.clear_docs_root,
-                args.verif_root, args.dut_top, args.dut_top_file,
+                args.verif_root, args.testbench_root, args.clear_testbench_root,
+                args.reference_model, args.clear_reference_model,
+                args.verification_script, args.clear_verification_scripts,
+                args.dut_top, args.dut_top_file,
             ))
             if args.refresh and store.initialized and not supplied_reconfiguration:
                 emit(store.bootstrap_refresh_prompt())
             else:
                 result = store.bootstrap(
-                    args.project_name, args.runtime, args.rtl_root, args.docs_root,
-                    args.verif_root, args.dut_top, args.dut_top_file, args.refresh,
-                    args.clear_docs_root,
+                    project_name=args.project_name, runtime=args.runtime,
+                    rtl_roots=args.rtl_root, docs_roots=args.docs_root,
+                    verif_root=args.verif_root, dut_top=args.dut_top,
+                    dut_top_file=args.dut_top_file, refresh=args.refresh,
+                    clear_docs_roots=args.clear_docs_root,
+                    testbench_root=args.testbench_root,
+                    reference_model=args.reference_model,
+                    verification_scripts=args.verification_script,
+                    clear_testbench_root=args.clear_testbench_root,
+                    clear_reference_model=args.clear_reference_model,
+                    clear_verification_scripts=args.clear_verification_scripts,
                 )
                 result["dashboard"] = bootstrap_dashboard(
                     store, str(result.get("runtime", "")), args.force_dashboard,

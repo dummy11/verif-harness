@@ -195,6 +195,11 @@ class V1ControlPlaneTest(unittest.TestCase):
         instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("verif-harness 项目合同", instructions)
         self.assertIn("DUT top: `dut`", instructions)
+        self.assertIn("ASIC 验证控制面约束", instructions)
+        self.assertIn("不是通用项目管理、", instructions)
+        self.assertIn("节点类型、数量、依赖和完成条件可以", instructions)
+        self.assertIn("不机械翻译英文，不自行创造术语", instructions)
+        self.assertIn("不是 ASIC 验证工程师的用户也能理解", instructions)
         self.assertIn("VDOC 文档路由尚未建立", instructions)
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
         with sqlite3.connect(state / "model.sqlite3") as connection:
@@ -256,7 +261,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(prompted["current"]["rtl_roots"], ["rtl"])
         self.assertEqual(
             {item["id"] for item in prompted["questions_for_human"]},
-            {"rtl_roots", "dut_top", "dut_top_file", "docs_roots", "verif_root"},
+            {
+                "rtl_roots", "dut_top", "dut_top_file", "docs_roots", "verif_root",
+                "testbench_root", "reference_model", "verification_scripts",
+            },
         )
         unchanged = json.loads(
             (self.root / ".verif-harness/project.json").read_text(encoding="utf-8")
@@ -272,6 +280,89 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(payload["dut"]["top_module"], "dut")
         self.assertEqual(config["rtl"]["top_file"], "rtl/dut.sv")
         self.assertEqual(config["verif"]["docs_root"], "verification/docs")
+        self.assertEqual(config["verification_inputs"], {
+            "testbench_root": None, "reference_model": None, "scripts": [],
+        })
+
+    def test_bootstrap_registers_three_independent_optional_verification_inputs(self) -> None:
+        testbench = self.root / "tb"
+        testbench.mkdir()
+        (testbench / "env.sv").write_text("module env; endmodule\n", encoding="utf-8")
+        reference_model = self.root / "models/reference.py"
+        reference_model.parent.mkdir()
+        reference_model.write_text("def predict(value): return value\n", encoding="utf-8")
+        run_script = self.root / "scripts/run_sim.sh"
+        regression_script = self.root / "scripts/run_regression.py"
+        run_script.parent.mkdir()
+        run_script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        regression_script.write_text("raise SystemExit(0)\n", encoding="utf-8")
+
+        payload = self.run_cli(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut",
+            "--dut-top-file", "rtl/dut.sv", "--testbench-root", "tb",
+            "--gold-model", "models/reference.py",
+            "--verification-script", "scripts/run_sim.sh",
+            "--verification-script", "scripts/run_regression.py",
+        )
+        self.assertEqual(payload["verification_inputs"], {
+            "testbench_root": "tb", "reference_model": "models/reference.py",
+            "scripts": ["scripts/run_sim.sh", "scripts/run_regression.py"],
+        })
+        config = json.loads((self.root / ".harness-config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["verification_inputs"], payload["verification_inputs"])
+        inventory = json.loads(
+            (self.root / ".verif-harness/inventory.json").read_text(encoding="utf-8")
+        )
+        by_path = {item["path"]: item for item in inventory}
+        self.assertIn("tb/env.sv", by_path)
+        self.assertEqual(by_path["scripts/run_sim.sh"]["kind"], "verification-asset")
+        self.assertEqual(by_path["scripts/run_regression.py"]["kind"], "verification-asset")
+        instructions = (self.root / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Testbench 目录：`tb`", instructions)
+        self.assertIn("参考模型（reference/golden model）：`models/reference.py`", instructions)
+        self.assertIn("`scripts/run_sim.sh`, `scripts/run_regression.py`", instructions)
+
+        refreshed = self.run_cli(
+            "bootstrap", "--refresh", "--runtime", "none", "--rtl-root", "rtl",
+            "--verif-root", "verification", "--dut-top", "dut",
+            "--dut-top-file", "rtl/dut.sv", "--clear-testbench-root",
+            "--clear-reference-model", "--clear-verification-scripts",
+        )
+        self.assertEqual(refreshed["verification_inputs"], {
+            "testbench_root": None, "reference_model": None, "scripts": [],
+        })
+
+    def test_bootstrap_validates_each_optional_verification_input_independently(self) -> None:
+        model = self.root / "reference-model"
+        model.mkdir()
+        script = self.root / "run.sh"
+        script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+
+        invalid_testbench = self.invoke(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+            "--testbench-root", "run.sh",
+        )
+        self.assertEqual(invalid_testbench.returncode, 2)
+        self.assertIn("testbench 路径不是目录", invalid_testbench.stderr)
+
+        missing_model = self.invoke(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+            "--reference-model", "missing-model",
+        )
+        self.assertEqual(missing_model.returncode, 2)
+        self.assertIn("reference/golden model 路径不存在", missing_model.stderr)
+
+        invalid_script = self.invoke(
+            "bootstrap", "--runtime", "none", "--rtl-root", "rtl",
+            "--dut-top", "dut", "--dut-top-file", "rtl/dut.sv",
+            "--reference-model", "reference-model",
+            "--verification-script", "reference-model",
+        )
+        self.assertEqual(invalid_script.returncode, 2)
+        self.assertIn("验证脚本不是文件", invalid_script.stderr)
 
     def test_bootstrap_refresh_synchronizes_capability_config_and_preserves_optional_fields(self) -> None:
         self.bootstrap()

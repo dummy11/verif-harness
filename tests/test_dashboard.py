@@ -157,6 +157,9 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('<details class="detail-group" open><summary>项目与验证对象', html)
         self.assertIn("仅显示评审和意见记录中的身份", html)
         self.assertIn("只校验与聚合，不代替 Human 审批", html)
+        self.assertIn("Testbench 目录（可选）", html)
+        self.assertIn("参考模型（可选）", html)
+        self.assertIn("验证脚本（可选）", html)
         self.assertIn("<th>节点名称</th><th>节点类型</th><th>状态 / 进度</th>", html)
         self.assertIn("function nodeProgressHtml(n)", html)
         self.assertIn("点击名称查看详情", html)
@@ -181,6 +184,9 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(snapshot["project"]["dut"], {"top_module": "dut", "top_file": "rtl/dut.sv"})
         self.assertEqual(snapshot["project"]["rtl_roots"], ["rtl"])
         self.assertEqual(snapshot["project"]["verif_root"], "verification")
+        self.assertEqual(snapshot["project"]["verification_inputs"], {
+            "testbench_root": None, "reference_model": None, "scripts": [],
+        })
         self.assertEqual(snapshot["workstreams"][0]["workstream"], "VCHK")
         self.assertTrue(snapshot["workstreams"][0]["nodes"])
         self.assertIn("closure", snapshot["workstreams"][0])

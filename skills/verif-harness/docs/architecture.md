@@ -1,5 +1,22 @@
 # v1 control-plane architecture
 
+## Product boundary
+
+verif-harness is an ASIC-verification control plane, not a generic project,
+task, or approval manager. Its reusable part is verification control: concrete
+Workstreams, nodes, dependencies, progress, and exit conditions are derived
+from the current DUT, interface, function, verification point, scenario,
+checker, coverage target, and evidence. Different verification objects may
+therefore produce different node types and counts.
+
+Human-facing pages lead with the verification object, current conclusion,
+supporting basis, remaining gap, and next action. They use established ASIC
+verification terms instead of literal translations or invented terminology;
+when no established Chinese term exists, the standard English term remains and
+is explained on first use. Primary actions must be understandable without ASIC
+verification or internal schema knowledge. Internal IDs, schema names, digests,
+database states, and tool fields belong in detail or audit views.
+
 verif-harness v1 stores typed project facts in one Verification Knowledge Model and runs
 a continuous global loop:
 

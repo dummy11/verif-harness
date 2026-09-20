@@ -150,6 +150,9 @@ Agent 必须通过对话要求用户明确提供以下输入，不搜索候选�
 | `dut top` | 必填 | DUT 顶层模块名 |
 | `dut top file` | 必填 | DUT 顶层源文件路径 |
 | `spec` | 可选 | RTL 规格文件或目录；可以不提供 |
+| `testbench` | 可选 | 一个已有 testbench 根目录；不再分别填写 UVM、testcase、assertion 或 coverage 路径 |
+| `reference/golden model` | 可选 | 一个已有参考模型文件或目录；登记不表示决定采用该模型 |
+| `verification scripts` | 可选 | 已有编译、仿真或回归入口脚本；可以提供多个 |
 
 本次对话已明确提供的字段不重复询问；缺失必填字段时先等待用户补齐，不执行初始化。
 Agent 只读校验用户给定的路径，然后将回答转为底层 CLI 参数。以下是 Agent 的执行示例，
@@ -159,10 +162,16 @@ Agent 只读校验用户给定的路径，然后将回答转为底层 CLI 参数
 # Agent：根据 Human 已明确提供的信息调用 CLI；Human 无需手工拼接参数
 verif-harness bootstrap \
   --rtl-root rtl --docs-root docs --verif-root verification \
+  --testbench-root tb --reference-model models/reference.py \
+  --verification-script scripts/run_sim.sh \
   --dut-top dut --dut-top-file rtl/dut.sv
 ```
 
-RTL root、DUT top file 和 spec 不要求位于 workspace/project root；用户显式给出的项目外
+上例中的三个验证输入只是示例；没有现成资产时全部省略。bootstrap 只登记并只读检查这些路径，
+不执行、不修改，也不把文件存在当成已经接入或通过验证。提供 testbench 根目录后，Agent 在后续
+工作流中按需识别其中的环境、testcase、assertion 和 coverage 内容；Human 不需要逐类填写路径。
+
+RTL root、DUT top file、spec、已有 testbench、参考模型和验证脚本不要求位于 workspace/project root；用户显式给出的项目外
 路径会以绝对路径记录。DUT top file 必须位于至少一个已声明 RTL root 内。这些路径名的
 含义见[项目路径和启动相关词](glossary.md#project-setup)。
 `verif-root`、`.verif-harness/`、`AGENTS.md` 和所有生成产物则必须留在 project root 内。
@@ -183,14 +192,15 @@ SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转�
 端口被其他项目或服务占用时会报告冲突，不会静默换端口。
 
 路径填错或项目输入发生变化时，Human 只需在对话中输入 `bootstrap --refresh`。这不是让 CLI
-静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec
-和 verification 输出目录。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
+静默沿用旧路径：Agent 会显示当前值，并重新确认 RTL root、DUT top、DUT top file、可选 spec、
+可选 testbench、参考模型、验证脚本和 verification 输出目录。确认后，Agent 才使用完整参数调用底层 CLI。刷新会同步
 `project.json`、`inventory.json`、`AGENTS.md` 和 `.harness-config.json` 中由 bootstrap 管理的
 路径字段；已有 Workstream、证据、评审和文档治理状态保持不变。
 
 这一步的角色边界是：
 
-- **Human**：明确提供 workspace、RTL root、DUT top、DUT top file 和可选 spec；决定输入错误
+- **Human**：明确提供 workspace、RTL root、DUT top、DUT top file，以及可选 spec、testbench、
+  参考模型和验证脚本；决定输入错误
   应如何处理。Human 不需要手工创建 SQLite 或 `AGENTS.md`。
 - **Agent**：在当前对话收集必填信息，只读检查路径和 DUT 身份，然后调用 `bootstrap`；不得搜索
   候选 DUT，也不得修改 RTL 或 RTL spec。
@@ -1512,6 +1522,12 @@ verif-harness bootstrap [OPTIONS]
 | `--docs-root PATH` | 声明只读 RTL spec 文件或目录；可重复；允许显式项目外路径 |
 | `--clear-docs-root` | refresh 时明确移除以前登记的可选 RTL spec 输入；不能与 `--docs-root` 同时使用 |
 | `--verif-root PATH` | 声明项目内验证资产输出根目录，不允许位于项目外 |
+| `--testbench-root PATH` | 可选的已有 testbench 根目录；其内部资产由后续工作流识别 |
+| `--reference-model PATH`、`--gold-model PATH` | 可选的 reference/golden model 文件或目录；两个参数名含义相同 |
+| `--verification-script PATH` | 可选的编译、仿真或回归入口脚本；可重复 |
+| `--clear-testbench-root` | refresh 时明确移除以前登记的 testbench 目录 |
+| `--clear-reference-model` | refresh 时明确移除以前登记的参考模型 |
+| `--clear-verification-scripts` | refresh 时明确移除以前登记的全部验证脚本 |
 | `--dut-top MODULE` | 明确 DUT top；不会自动猜测 |
 | `--dut-top-file PATH` | 明确 DUT top 文件；必须属于某个 `--rtl-root`，允许位于项目外 |
 | `--refresh` | 重新配置并读取文件/工具清单；同步 `.harness-config.json` 管理字段，保留已有目标、证据和评审状态 |

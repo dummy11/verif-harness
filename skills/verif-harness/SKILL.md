@@ -30,8 +30,10 @@ Workstream. Project lifecycle is separate.
 - `bootstrap`: inventory a project and create the minimal model shell. It does
   not make verification decisions or generate a monolithic plan. Read
   `bootstrap/INSTRUCTIONS.md`; require conversational user input for `rtl root`,
-  `dut top`, and `dut top file`, with optional `spec`. Never discover candidates
-  or run initialization while mandatory inputs are missing. After validation,
+  `dut top`, and `dut top file`, with optional `spec`, `testbench` directory,
+  reference/golden model, and verification scripts. The three verification inputs
+  are independent and may all be omitted. Never discover candidates or run
+  initialization while mandatory inputs are missing. After validation,
   create or refresh only the marked verif-harness block in the project-root
   `AGENTS.md`; preserve all project-owned instructions outside it. When the Human
   requests only `bootstrap --refresh`, treat that as a request to reopen the

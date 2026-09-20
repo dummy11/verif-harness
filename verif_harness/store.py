@@ -599,6 +599,17 @@ def capability_config_projection(
     docs_output = "docs" if verif_root in {"", "."} else f"{verif_root.rstrip('/')}/docs"
     existing_rtl = existing.get("rtl") if isinstance(existing.get("rtl"), dict) else {}
     existing_verif = existing.get("verif") if isinstance(existing.get("verif"), dict) else {}
+    existing_inputs = (
+        existing.get("verification_inputs")
+        if isinstance(existing.get("verification_inputs"), dict) else {}
+    )
+    verification_inputs = (
+        manifest.get("verification_inputs")
+        if isinstance(manifest.get("verification_inputs"), dict) else {}
+    )
+    verification_scripts = verification_inputs.get("scripts")
+    if not isinstance(verification_scripts, list):
+        verification_scripts = []
     return {
         **existing,
         "project_name": manifest["project_name"],
@@ -615,6 +626,12 @@ def capability_config_projection(
             "verification_subdir": existing_verif.get("verification_subdir", "verification"),
             "governance_subdir": existing_verif.get("governance_subdir", "governance"),
         },
+        "verification_inputs": {
+            **existing_inputs,
+            "testbench_root": verification_inputs.get("testbench_root"),
+            "reference_model": verification_inputs.get("reference_model"),
+            "scripts": list(verification_scripts),
+        },
     }
 
 
@@ -627,6 +644,11 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
     rtl_roots = manifest.get("rtl_roots") or []
     docs_roots = manifest.get("docs_roots") or []
     dut = manifest.get("dut") if isinstance(manifest.get("dut"), dict) else {}
+    verification_inputs = (
+        manifest.get("verification_inputs")
+        if isinstance(manifest.get("verification_inputs"), dict) else {}
+    )
+    verification_scripts = verification_inputs.get("scripts") or []
     lines = [
         AGENTS_MANAGED_BEGIN,
         "## verif-harness 项目合同（受管）",
@@ -643,6 +665,28 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         f"- RTL specification 输入（只读，可位于项目外）：{', '.join(f'`{item}`' for item in docs_roots) or '`未提供`'}",
         f"- Verification 输出根目录：`{manifest.get('verif_root') or '.'}`",
         "- 治理状态事实源：`.verif-harness/model.sqlite3`",
+        "",
+        "### 已登记的验证输入（均为可选）",
+        "",
+        f"- Testbench 目录：`{verification_inputs.get('testbench_root') or '未提供'}`",
+        f"- 参考模型（reference/golden model）：`{verification_inputs.get('reference_model') or '未提供'}`",
+        f"- 编译、仿真或回归脚本：{', '.join(f'`{item}`' for item in verification_scripts) or '`未提供`'}",
+        "- bootstrap 只确认这些路径存在并登记清单，不执行、不修改，也不把文件存在",
+        "  当成已经接入、运行成功或通过验证。具体用途和状态由对应 Workstream 确认。",
+        "",
+        "### ASIC 验证控制面约束",
+        "",
+        "- 本项目使用的是面向 ASIC 验证工程师的验证控制面，不是通用项目管理、",
+        "  任务管理或审批系统。可复用的是 ASIC 验证控制能力，不是通用工作流模板。",
+        "- 工作流和工作节点必须根据当前 DUT、接口、功能、验证点、测试场景、",
+        "  检查机制、覆盖目标和验证证据形成；节点类型、数量、依赖和完成条件可以",
+        "  随验证对象变化，不得套用固定项目模板。",
+        "- 面向用户时优先说明验证对象、当前结论、依据、缺口和下一步。使用已有的",
+        "  ASIC 验证术语，不机械翻译英文，不自行创造术语；没有通行中文名称时保留",
+        "  标准英文，并在首次出现时说明含义。",
+        "- 主要页面和操作必须让不是 ASIC 验证工程师的用户也能理解当前对象、状态、",
+        "  依据和下一步；内部编号、schema、digest、数据库状态码和工具字段只放在",
+        "  详情或审计信息中。",
         "",
         "工程语义以列出的 Markdown 合同为准；SQLite 保存文档摘要、revision、review、",
         "evidence、开放事项状态和失效关系，不保存或覆盖工程语义正文。",
@@ -771,10 +815,17 @@ def source_inventory(
             if any(part in IGNORED_PARTS for part in relative_to_source.parts):
                 continue
             suffix = path.suffix.lower()
-            if suffix not in RTL_SUFFIXES | DOC_SUFFIXES | {".json", ".yaml", ".yml", ".toml", ".f"}:
+            explicitly_named_file = source.is_file() and path == source
+            if (suffix not in RTL_SUFFIXES | DOC_SUFFIXES | {".json", ".yaml", ".yml", ".toml", ".f"}
+                    and not explicitly_named_file):
                 continue
             stat = path.stat()
-            kind = "rtl" if suffix in RTL_SUFFIXES else "document" if suffix in DOC_SUFFIXES else "metadata"
+            kind = (
+                "rtl" if suffix in RTL_SUFFIXES else
+                "document" if suffix in DOC_SUFFIXES else
+                "metadata" if suffix in {".json", ".yaml", ".yml", ".toml", ".f"} else
+                "verification-asset"
+            )
             rows.append({"path": input_path(root, path), "kind": kind, "size": stat.st_size})
             if len(rows) >= limit:
                 return rows
@@ -927,6 +978,10 @@ class ProjectStore:
         self.require()
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
         dut = manifest.get("dut", {})
+        verification_inputs = (
+            manifest.get("verification_inputs")
+            if isinstance(manifest.get("verification_inputs"), dict) else {}
+        )
         current = {
             "project_name": manifest.get("project_name"),
             "rtl_roots": manifest.get("rtl_roots", []),
@@ -934,6 +989,9 @@ class ProjectStore:
             "dut_top_file": dut.get("top_file"),
             "docs_roots": manifest.get("docs_roots", []),
             "verif_root": manifest.get("verif_root"),
+            "testbench_root": verification_inputs.get("testbench_root"),
+            "reference_model": verification_inputs.get("reference_model"),
+            "verification_scripts": verification_inputs.get("scripts", []),
         }
         return {
             "schema": "BootstrapReconfiguration/1",
@@ -951,6 +1009,13 @@ class ProjectStore:
                  "question": "可选 RTL spec 路径是哪些；保留、替换还是移除？"},
                 {"id": "verif_root", "required": True, "current": current["verif_root"],
                  "question": "项目内 verification 输出目录是什么？"},
+                {"id": "testbench_root", "required": False, "current": current["testbench_root"],
+                 "question": "是否已有 testbench 目录；保留、替换还是移除？"},
+                {"id": "reference_model", "required": False, "current": current["reference_model"],
+                 "question": "是否已有 reference/golden model；保留、替换还是移除？"},
+                {"id": "verification_scripts", "required": False,
+                 "current": current["verification_scripts"],
+                 "question": "是否已有编译、仿真或回归脚本；保留、替换还是移除？"},
             ],
         }
 
@@ -991,6 +1056,12 @@ class ProjectStore:
         verif_root: str | None = None, dut_top: str | None = None,
         dut_top_file: str | None = None, refresh: bool = False,
         clear_docs_roots: bool = False,
+        testbench_root: str | None = None,
+        reference_model: str | None = None,
+        verification_scripts: Iterable[str] = (),
+        clear_testbench_root: bool = False,
+        clear_reference_model: bool = False,
+        clear_verification_scripts: bool = False,
     ) -> dict[str, Any]:
         if self.initialized and not refresh:
             raise HarnessError("项目已经 bootstrap；如需刷新非语义清单，请使用 --refresh")
@@ -1011,6 +1082,30 @@ class ProjectStore:
             else [input_path(self.root, item) for item in docs_roots]
             or list(previous.get("docs_roots", []))
         )
+        previous_inputs = (
+            previous.get("verification_inputs")
+            if isinstance(previous.get("verification_inputs"), dict) else {}
+        )
+        testbench_value = (
+            None if clear_testbench_root
+            else input_path(self.root, testbench_root) if testbench_root is not None
+            else previous_inputs.get("testbench_root")
+        )
+        reference_model_value = (
+            None if clear_reference_model
+            else input_path(self.root, reference_model) if reference_model is not None
+            else previous_inputs.get("reference_model")
+        )
+        script_inputs = list(verification_scripts)
+        previous_scripts = previous_inputs.get("scripts", [])
+        if not isinstance(previous_scripts, list):
+            previous_scripts = []
+        raw_verification_script_values = (
+            [] if clear_verification_scripts
+            else [input_path(self.root, item) for item in script_inputs]
+            if script_inputs else [str(item) for item in previous_scripts if str(item).strip()]
+        )
+        verification_script_values = list(dict.fromkeys(raw_verification_script_values))
         verif_value = relative_path(self.root, verif_root) if verif_root is not None else str(previous.get("verif_root", "."))
         previous_dut = previous.get("dut", {}) if isinstance(previous.get("dut"), dict) else {}
         dut_top = dut_top or previous_dut.get("top_module")
@@ -1029,6 +1124,13 @@ class ProjectStore:
         for value in docs_values:
             if not resolved_path(self.root, value).exists():
                 raise HarnessError(f"RTL specification 输入不存在: {value}")
+        if testbench_value is not None and not resolved_path(self.root, testbench_value).is_dir():
+            raise HarnessError(f"testbench 路径不是目录: {testbench_value}")
+        if reference_model_value is not None and not resolved_path(self.root, reference_model_value).exists():
+            raise HarnessError(f"reference/golden model 路径不存在: {reference_model_value}")
+        for value in verification_script_values:
+            if not resolved_path(self.root, value).is_file():
+                raise HarnessError(f"验证脚本不是文件: {value}")
         vdoc_document_root = previous.get("vdoc_document_root")
         manifest = {
             "schema_version": SCHEMA_VERSION,
@@ -1036,6 +1138,11 @@ class ProjectStore:
             "project_root": str(self.root), "runtime": selected,
             "baseline_revision": git_revision(self.root), "rtl_roots": rtl_values,
             "docs_roots": docs_values, "verif_root": verif_value,
+            "verification_inputs": {
+                "testbench_root": testbench_value,
+                "reference_model": reference_model_value,
+                "scripts": verification_script_values,
+            },
             "dut": {"top_module": dut_top, "top_file": top_file_value},
             "vdoc_document_root": vdoc_document_root,
             "project_instructions": {"path": "AGENTS.md", "managed_by": ["bootstrap", "VDOC"]},
@@ -1046,7 +1153,12 @@ class ProjectStore:
         update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, vdoc_document_root))
         if capability_projection is not None:
             atomic_json(capability_config, capability_projection)
-        inventory = source_inventory(self.root, [*rtl_values, *docs_values])
+        inventory_inputs = [*rtl_values, *docs_values, *verification_script_values]
+        if testbench_value is not None:
+            inventory_inputs.append(testbench_value)
+        if reference_model_value is not None:
+            inventory_inputs.append(reference_model_value)
+        inventory = source_inventory(self.root, inventory_inputs)
         manifest["inventory_count"] = len(inventory)
         atomic_json(self.state / "project.json", manifest)
         atomic_json(self.state / "inventory.json", inventory)
@@ -4061,6 +4173,12 @@ class ProjectStore:
             "rtl_roots": manifest.get("rtl_roots", []),
             "docs_roots": manifest.get("docs_roots", []),
             "verif_root": manifest.get("verif_root"),
+            "verification_inputs": (
+                manifest.get("verification_inputs")
+                if isinstance(manifest.get("verification_inputs"), dict) else {
+                    "testbench_root": None, "reference_model": None, "scripts": [],
+                }
+            ),
             "workstreams": plans, "closures": [self.evaluate_closure(item["workstream"], persist=False) for item in plans],
             "node_status": counts, "open_findings": sum(item["status"] == "OPEN" for item in model["findings"]),
             "documents": {"count": len(document_rows), "status": document_status,
@@ -4404,6 +4522,7 @@ class ProjectStore:
                 "rtl_roots": summary["rtl_roots"],
                 "docs_roots": summary["docs_roots"],
                 "verif_root": summary["verif_root"],
+                "verification_inputs": summary["verification_inputs"],
             },
             # Dashboard totals describe the active desired-state revisions. The full model and
             # audit histories remain available below, but stale revisions must not look active.
