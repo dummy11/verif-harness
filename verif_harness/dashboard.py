@@ -28,10 +28,14 @@ MAX_REQUEST_BYTES = 1_048_576
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 DASHBOARD_RUNTIME_FILE = "dashboard-runtime.json"
 DASHBOARD_LOG_FILE = "dashboard.log"
-DASHBOARD_HUB_SCHEMA = "DashboardHubHealth/1"
-DASHBOARD_RUNTIME_SCHEMA = "DashboardRuntime/2"
+DASHBOARD_ACCESS_TOKEN_FILE = "access-token"
+DASHBOARD_HUB_SCHEMA = "DashboardHubHealth/2"
+LEGACY_DASHBOARD_HUB_SCHEMA = "DashboardHubHealth/1"
+DASHBOARD_RUNTIME_SCHEMA = "DashboardRuntime/3"
 DASHBOARD_PROJECT_SCHEMA = "DashboardProjectRegistration/1"
 DASHBOARD_REGISTRY_ENV = "VERIF_HARNESS_DASHBOARD_REGISTRY_DIR"
+DASHBOARD_DEFAULT_PORT = 8765
+DASHBOARD_AUTO_PORT_COUNT = 32
 
 
 def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
@@ -42,6 +46,45 @@ def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return (Path.home() / ".verif-harness" / "dashboard").resolve()
+
+
+def dashboard_owner_id(registry_dir: Path | None = None) -> str:
+    """Return a stable, secret-derived identity for one account registry."""
+    token = dashboard_access_token(registry_dir)
+    identity = f"verif-harness-dashboard-owner\0{token}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def dashboard_access_token(registry_dir: Path | None = None) -> str:
+    """Return the current account's persistent secret used to protect the local UI."""
+    directory = dashboard_registry_dir(registry_dir)
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        directory.chmod(0o700)
+    except OSError:
+        pass
+    path = directory / DASHBOARD_ACCESS_TOKEN_FILE
+    if path.is_file():
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+        token = path.read_text(encoding="utf-8").strip()
+        if len(token) < 32:
+            raise HarnessError("Dashboard 访问令牌文件无效；请检查账号级 Dashboard 注册目录")
+        return token
+    token = secrets.token_urlsafe(32)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError:
+        token = path.read_text(encoding="utf-8").strip()
+        if len(token) < 32:
+            raise HarnessError("Dashboard 访问令牌文件无效；请检查账号级 Dashboard 注册目录")
+        return token
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        stream.write(f"{token}\n")
+    return token
 
 
 def dashboard_project_id(root: Path) -> str:
@@ -145,11 +188,12 @@ class DashboardHTTPServer(ThreadingHTTPServer):
     ):
         super().__init__(address, DashboardHandler)
         self.registry_dir = dashboard_registry_dir(registry_dir)
+        self.owner_id = dashboard_owner_id(self.registry_dir)
+        self.write_token = dashboard_access_token(self.registry_dir)
         registration = register_dashboard_project(store, self.registry_dir)
         self.default_project_id = registration["id"]
         # Retained for small third-party integrations; request handling never routes through it.
         self.store = store
-        self.write_token = secrets.token_urlsafe(32)
 
     def projects(self) -> list[dict[str, Any]]:
         return registered_dashboard_projects(self.registry_dir)
@@ -193,8 +237,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             raise HarnessError("请求正文必须是 JSON object")
         return value
 
-    def _authorized(self) -> bool:
+    def _authorized(self, parsed: urllib.parse.ParseResult | None = None) -> bool:
         provided = self.headers.get("X-Verif-Token", "")
+        if not provided and parsed is not None:
+            provided = urllib.parse.parse_qs(parsed.query).get("token", [""])[0]
         return hmac.compare_digest(provided, self.server.write_token)
 
     def _selected_project_id(self, supplied: str = "") -> str:
@@ -213,6 +259,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != "/healthz" and not self._authorized(parsed):
+            self._json({"error": "invalid dashboard access token"}, HTTPStatus.FORBIDDEN)
+            return
         if parsed.path == "/":
             source = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
             source = source.replace("__VERIF_DASHBOARD_TOKEN__", self.server.write_token)
@@ -270,6 +319,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "schema": DASHBOARD_HUB_SCHEMA,
                 "status": "ok",
                 "pid": os.getpid(),
+                "owner_id": self.server.owner_id,
                 "project_count": len(projects),
                 "projects": [item["id"] for item in projects],
             })
@@ -468,7 +518,7 @@ def _dashboard_runtime(store: ProjectStore) -> dict[str, Any] | None:
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HarnessError(f"无法读取 Dashboard 运行记录: {exc}") from exc
     if not isinstance(value, dict) or value.get("schema") not in {
-        "DashboardRuntime/1", DASHBOARD_RUNTIME_SCHEMA,
+        "DashboardRuntime/1", "DashboardRuntime/2", DASHBOARD_RUNTIME_SCHEMA,
     }:
         raise HarnessError("Dashboard 运行记录格式无效")
     if str(value.get("project", "")) != str(store.root):
@@ -480,19 +530,137 @@ def _dashboard_runtime(store: ProjectStore) -> dict[str, Any] | None:
     if not isinstance(runtime_port, int) or runtime_port <= 0 or runtime_port > 65535:
         raise HarnessError("Dashboard 运行记录包含无效端口")
     if (
-        value.get("schema") == DASHBOARD_RUNTIME_SCHEMA
+        value.get("schema") in {"DashboardRuntime/2", DASHBOARD_RUNTIME_SCHEMA}
         and value.get("project_id") != dashboard_project_id(store.root)
     ):
         raise HarnessError("Dashboard 运行记录的项目标识无效")
+    if (
+        value.get("schema") == DASHBOARD_RUNTIME_SCHEMA
+        and value.get("owner_id") != dashboard_owner_id()
+    ):
+        raise HarnessError("Dashboard 运行记录不属于当前系统账号")
     return value
 
 
 def _is_dashboard_hub(health: dict[str, Any] | None) -> bool:
-    return bool(health and health.get("schema") == DASHBOARD_HUB_SCHEMA)
+    return bool(health and health.get("schema") in {
+        LEGACY_DASHBOARD_HUB_SCHEMA, DASHBOARD_HUB_SCHEMA,
+    })
 
 
-def _project_dashboard_url(host: str, port: int, project_id: str) -> str:
-    return f"http://{host}:{port}/?project={urllib.parse.quote(project_id)}"
+def _is_owned_dashboard_hub(
+    health: dict[str, Any] | None, registry_dir: Path | None = None,
+) -> bool:
+    return bool(
+        health
+        and health.get("schema") == DASHBOARD_HUB_SCHEMA
+        and hmac.compare_digest(
+            str(health.get("owner_id", "")), dashboard_owner_id(registry_dir),
+        )
+    )
+
+
+def _automatic_dashboard_ports(preferred: int | None = None) -> list[int]:
+    ports: list[int] = []
+    if isinstance(preferred, int) and 0 < preferred <= 65535:
+        ports.append(preferred)
+    for candidate in range(
+        DASHBOARD_DEFAULT_PORT, DASHBOARD_DEFAULT_PORT + DASHBOARD_AUTO_PORT_COUNT,
+    ):
+        if candidate <= 65535 and candidate not in ports:
+            ports.append(candidate)
+    return ports
+
+
+def _select_dashboard_endpoint(
+    host: str, requested_port: int | None, preferred_port: int | None = None,
+) -> dict[str, Any]:
+    """Find this account's hub first, otherwise select an unoccupied auto port."""
+    ports = [requested_port] if requested_port is not None else _automatic_dashboard_ports(
+        preferred_port,
+    )
+    first_free: int | None = None
+    skipped_ports: list[dict[str, Any]] = []
+    foreign_hubs = 0
+    for candidate in ports:
+        if candidate is None:
+            continue
+        health = _dashboard_health(host, candidate)
+        if _is_owned_dashboard_hub(health):
+            return {
+                "port": candidate, "health": health, "conflict": None,
+                "skipped_ports": skipped_ports,
+            }
+        if _is_dashboard_hub(health):
+            if health and health.get("schema") == DASHBOARD_HUB_SCHEMA:
+                foreign_hubs += 1
+                if requested_port is not None:
+                    return {
+                        "port": candidate, "health": health,
+                        "conflict": "OTHER_USER_DASHBOARD",
+                    }
+                skipped_ports.append({"port": candidate, "reason": "OTHER_USER_DASHBOARD"})
+                continue
+            if requested_port is not None:
+                return {
+                    "port": candidate, "health": health,
+                    "conflict": "LEGACY_SHARED_DASHBOARD",
+                }
+            skipped_ports.append({"port": candidate, "reason": "LEGACY_SHARED_DASHBOARD"})
+            continue
+        if health is not None:
+            if requested_port is not None:
+                return {
+                    "port": candidate, "health": health,
+                    "conflict": "LEGACY_SINGLE_PROJECT_DASHBOARD",
+                }
+            skipped_ports.append({
+                "port": candidate, "reason": "LEGACY_SINGLE_PROJECT_DASHBOARD",
+            })
+            continue
+        if _port_accepts_connections(host, candidate):
+            if requested_port is not None:
+                return {
+                    "port": candidate, "health": None,
+                    "conflict": "OTHER_SERVICE",
+                }
+            skipped_ports.append({"port": candidate, "reason": "OTHER_SERVICE"})
+            continue
+        if first_free is None:
+            first_free = candidate
+    if first_free is not None:
+        return {
+            "port": first_free, "health": None, "conflict": None,
+            "skipped_ports": skipped_ports,
+        }
+    return {
+        "port": ports[0] if ports else DASHBOARD_DEFAULT_PORT,
+        "health": None, "conflict": "AUTO_PORTS_EXHAUSTED",
+        "foreign_hubs": foreign_hubs,
+    }
+
+
+def _dashboard_conflict_message(conflict: str) -> str:
+    if conflict == "OTHER_USER_DASHBOARD":
+        return "该端口属于同机另一个系统账号的 Dashboard；不会跨账号复用"
+    if conflict == "LEGACY_SHARED_DASHBOARD":
+        return "该端口运行的是升级前的共享 Dashboard；请先停止旧服务再升级"
+    if conflict == "LEGACY_SINGLE_PROJECT_DASHBOARD":
+        return "该端口运行的是旧版单项目 Dashboard；请先停止旧服务再升级"
+    if conflict == "AUTO_PORTS_EXHAUSTED":
+        return "Dashboard 自动端口范围内没有可用端口"
+    return "该端口由非 Dashboard 服务使用"
+
+
+def _project_dashboard_url(
+    host: str, port: int, project_id: str, registry_dir: Path | None = None,
+    *, include_token: bool = True,
+) -> str:
+    parameters = {"project": project_id}
+    if include_token:
+        parameters["token"] = dashboard_access_token(registry_dir)
+    query = urllib.parse.urlencode(parameters)
+    return f"http://{host}:{port}/?{query}"
 
 
 def _write_dashboard_runtime(
@@ -504,9 +672,11 @@ def _write_dashboard_runtime(
         "pid": pid,
         "host": host,
         "port": port,
-        "url": _project_dashboard_url(host, port, project_id),
+        # Project state may be shared; keep the account credential out of this file.
+        "url": _project_dashboard_url(host, port, project_id, include_token=False),
         "project": str(store.root),
         "project_id": project_id,
+        "owner_id": dashboard_owner_id(),
         "shared_service": True,
         "log": str(log_path),
         "started_at": now(),
@@ -522,32 +692,45 @@ def dashboard_status(
     store.require()
     runtime = _dashboard_runtime(store)
     selected_host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
-    selected_port = port if port is not None else int((runtime or {}).get("port") or 8765)
     if selected_host not in LOOPBACK_HOSTS:
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
-    if selected_port <= 0 or selected_port > 65535:
+    if port is not None and (port <= 0 or port > 65535):
         raise HarnessError("Dashboard port 必须在 1..65535")
+    preferred_port = int((runtime or {}).get("port") or DASHBOARD_DEFAULT_PORT)
+    endpoint = _select_dashboard_endpoint(selected_host, port, preferred_port)
+    selected_port = int(endpoint["port"])
     project_id = dashboard_project_id(store.root)
     url = _project_dashboard_url(selected_host, selected_port, project_id)
     expected_project = str(store.root)
-    health = _dashboard_health(selected_host, selected_port)
+    health = endpoint.get("health")
+    conflict = str(endpoint.get("conflict") or "")
+    if conflict:
+        return {
+            "schema": "DashboardStatus/1", "status": "PORT_CONFLICT", "url": url,
+            "project": expected_project, "project_id": project_id,
+            "owner_scoped": True, "conflict": conflict,
+            "message": _dashboard_conflict_message(conflict),
+        }
     if health is not None:
-        if _is_dashboard_hub(health):
+        if _is_owned_dashboard_hub(health):
             registered = project_id in health.get("projects", [])
             if not registered:
                 return {
                     "schema": "DashboardStatus/1", "status": "NOT_REGISTERED", "url": url,
                     "project": expected_project, "project_id": project_id,
-                    "hub_running": True, "pid": health.get("pid"),
-                    "message": "共享 Dashboard 正在运行，但当前项目尚未注册",
+                    "hub_running": True, "pid": health.get("pid"), "owner_scoped": True,
+                    "skipped_ports": endpoint.get("skipped_ports", []),
+                    "message": "当前账号的共享 Dashboard 正在运行，但当前项目尚未注册",
                 }
             return {
                 "schema": "DashboardStatus/1", "status": "RUNNING", "url": url,
                 "project": expected_project, "project_id": project_id,
                 "managed": bool(runtime), "shared_service": True,
+                "owner_scoped": True,
+                "skipped_ports": endpoint.get("skipped_ports", []),
                 "pid": health.get("pid") or (runtime or {}).get("pid"),
                 "log": (runtime or {}).get("log"),
-                "message": "当前项目已注册到共享 Dashboard",
+                "message": "当前项目已注册到当前系统账号的共享 Dashboard",
             }
         observed_project = str(health.get("project", ""))
         if observed_project != expected_project:
@@ -562,22 +745,19 @@ def dashboard_status(
             "pid": (runtime or {}).get("pid"), "log": (runtime or {}).get("log"),
             "message": "Dashboard 正在运行",
         }
-    if _port_accepts_connections(selected_host, selected_port):
-        return {
-            "schema": "DashboardStatus/1", "status": "PORT_CONFLICT", "url": url,
-            "project": expected_project, "observed_project": None,
-            "message": "该端口由非 Dashboard 服务使用",
-        }
     if runtime is not None:
         return {
             "schema": "DashboardStatus/1", "status": "STALE", "url": url,
             "project": expected_project, "pid": runtime.get("pid"),
-            "log": runtime.get("log"),
+            "log": runtime.get("log"), "owner_scoped": True,
+            "skipped_ports": endpoint.get("skipped_ports", []),
             "message": "Dashboard 已停止，但仍有旧运行记录",
         }
     return {
         "schema": "DashboardStatus/1", "status": "STOPPED", "url": url,
-        "project": expected_project, "message": "Dashboard 当前未运行",
+        "project": expected_project, "owner_scoped": True,
+        "skipped_ports": endpoint.get("skipped_ports", []),
+        "message": "当前系统账号的 Dashboard 尚未运行",
     }
 
 
@@ -598,10 +778,15 @@ def stop_dashboard(
         observed = dashboard_status(store, host, port)
     runtime_path = store.state / DASHBOARD_RUNTIME_FILE
     project_id = dashboard_project_id(store.root)
-    selected_host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
-    selected_port = port if port is not None else int((runtime or {}).get("port") or 8765)
+    observed_url = urllib.parse.urlsplit(str(observed.get("url") or ""))
+    selected_host = observed_url.hostname or host or str(
+        (runtime or {}).get("host") or "127.0.0.1"
+    )
+    selected_port = observed_url.port or port or int(
+        (runtime or {}).get("port") or DASHBOARD_DEFAULT_PORT
+    )
     health = _dashboard_health(selected_host, selected_port)
-    if _is_dashboard_hub(health):
+    if _is_owned_dashboard_hub(health):
         unregister_dashboard_project(store)
         runtime_path.unlink(missing_ok=True)
         remaining = registered_dashboard_projects()
@@ -648,6 +833,11 @@ def stop_dashboard(
             "schema": "DashboardStop/1", "status": "FAILED",
             "project": str(store.root), "project_id": project_id,
             "pid": pid, "message": "项目已注销，但共享 Dashboard 未在限定时间内停止",
+        }
+    if _is_dashboard_hub(health):
+        return {
+            **observed, "schema": "DashboardStop/1", "status": "PORT_CONFLICT",
+            "message": "拒绝注销或停止其他系统账号的 Dashboard",
         }
     if observed["status"] in {"STOPPED", "NOT_REGISTERED"}:
         unregister_dashboard_project(store)
@@ -707,17 +897,33 @@ def ensure_dashboard_running(
     store.require()
     runtime = _dashboard_runtime(store) if host is None or port is None else None
     host = host if host is not None else str((runtime or {}).get("host") or "127.0.0.1")
-    port = port if port is not None else int((runtime or {}).get("port") or 8765)
     if host not in LOOPBACK_HOSTS:
         raise HarnessError("Dashboard 当前只允许监听 127.0.0.1 或 localhost")
-    if port <= 0 or port > 65535:
+    if port is not None and (port <= 0 or port > 65535):
         raise HarnessError("后台 Dashboard port 必须在 1..65535")
+    requested_port = port
+    preferred_port = int((runtime or {}).get("port") or DASHBOARD_DEFAULT_PORT)
+    endpoint = _select_dashboard_endpoint(host, requested_port, preferred_port)
+    port = int(endpoint["port"])
     project_id = dashboard_project_id(store.root)
     url = _project_dashboard_url(host, port, project_id)
     expected_project = str(store.root)
-    health = _dashboard_health(host, port)
+    health = endpoint.get("health")
+    conflict = str(endpoint.get("conflict") or "")
+    if conflict:
+        result = {
+            "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
+            "project": expected_project, "project_id": project_id,
+            "owner_scoped": True, "conflict": conflict,
+            "message": _dashboard_conflict_message(conflict),
+            "browser_opened": False,
+        }
+        observed_project = str((health or {}).get("project", ""))
+        if observed_project:
+            result["observed_project"] = observed_project
+        return result
     if health is not None:
-        if _is_dashboard_hub(health):
+        if _is_owned_dashboard_hub(health):
             register_dashboard_project(store)
             log_path = dashboard_registry_dir() / DASHBOARD_LOG_FILE
             runtime_warning = None
@@ -728,8 +934,11 @@ def ensure_dashboard_running(
             result = {
                 "schema": "DashboardLaunch/1", "status": "REUSED", "url": url,
                 "project": expected_project, "project_id": project_id,
-                "shared_service": True, "pid": health.get("pid"),
-                "message": "当前项目已注册并复用共享 Dashboard",
+                "shared_service": True, "owner_scoped": True,
+                "auto_selected_port": requested_port is None,
+                "skipped_ports": endpoint.get("skipped_ports", []),
+                "pid": health.get("pid"),
+                "message": "当前项目已注册并复用当前系统账号的共享 Dashboard",
             }
             if runtime_warning:
                 result["warning"] = runtime_warning
@@ -747,12 +956,6 @@ def ensure_dashboard_running(
             "project": expected_project, "project_id": project_id,
             "observed_project": observed_project or None,
             "message": "端口运行的是旧版单项目 Dashboard；请先停止旧服务，再启动共享 Dashboard",
-        }
-    elif _port_accepts_connections(host, port):
-        return {
-            "schema": "DashboardLaunch/1", "status": "PORT_CONFLICT", "url": url,
-            "project": expected_project, "observed_project": None,
-            "message": "端口已被其他服务使用；未静默切换端口",
         }
     else:
         registration = register_dashboard_project(store)
@@ -799,21 +1002,25 @@ def ensure_dashboard_running(
             if (
                 health is not None
                 and (
-                    not _is_dashboard_hub(health)
+                    not _is_owned_dashboard_hub(health)
                     or registration["id"] in health.get("projects", [])
                 )
             ):
                 break
             time.sleep(0.1)
         if (
-            not _is_dashboard_hub(health)
+            not _is_owned_dashboard_hub(health)
             or registration["id"] not in health.get("projects", [])
         ):
             unregister_dashboard_project(store)
             return {
                 "schema": "DashboardLaunch/1", "status": "FAILED", "url": url,
                 "project": expected_project, "pid": process.pid, "log": str(log_path),
-                "message": "Dashboard 未能在限定时间内启动；请查看日志",
+                "message": (
+                    "自动选择端口时检测到另一个系统账号并发启动 Dashboard；请重试"
+                    if _is_dashboard_hub(health) else
+                    "Dashboard 未能在限定时间内启动；请查看日志"
+                ),
             }
         runtime_warning = None
         try:
@@ -825,11 +1032,15 @@ def ensure_dashboard_running(
             "schema": "DashboardLaunch/1",
             "status": "REUSED" if reused_concurrent_service else "STARTED", "url": url,
             "project": expected_project, "project_id": project_id,
-            "shared_service": True, "pid": health.get("pid") or process.pid,
+            "shared_service": True, "owner_scoped": True,
+            "auto_selected_port": requested_port is None,
+            "skipped_ports": endpoint.get("skipped_ports", []),
+            "pid": health.get("pid") or process.pid,
             "log": str(log_path),
             "message": (
-                "当前项目已注册并复用并发启动的共享 Dashboard"
-                if reused_concurrent_service else "共享 Dashboard 已启动，当前项目已注册"
+                "当前项目已注册并复用当前账号并发启动的共享 Dashboard"
+                if reused_concurrent_service else
+                "当前系统账号的共享 Dashboard 已启动，当前项目已注册"
             ),
         }
         if runtime_warning:
@@ -857,12 +1068,21 @@ def create_dashboard_server(
 
 
 def serve_dashboard(
-    store: ProjectStore, host: str = "127.0.0.1", port: int = 8765,
+    store: ProjectStore, host: str = "127.0.0.1", port: int | None = None,
     open_browser: bool = False,
 ) -> int:
+    endpoint = _select_dashboard_endpoint(host, port, DASHBOARD_DEFAULT_PORT)
+    conflict = str(endpoint.get("conflict") or "")
+    if conflict:
+        raise HarnessError(_dashboard_conflict_message(conflict))
+    if _is_owned_dashboard_hub(endpoint.get("health")):
+        raise HarnessError("当前系统账号的共享 Dashboard 已经运行；请使用普通 dashboard 命令复用")
+    port = int(endpoint["port"])
     server = create_dashboard_server(store, host, port)
-    base_url = dashboard_url(server)
-    url = f"{base_url}?project={dashboard_project_id(store.root)}"
+    url = _project_dashboard_url(
+        host, int(server.server_address[1]), dashboard_project_id(store.root),
+        server.registry_dir,
+    )
     print(f"verif-harness dashboard: {url}", flush=True)
     print("只监听本机；按 Ctrl-C 停止。负责人提交的意见会记录评审人和理由。", flush=True)
     if open_browser:

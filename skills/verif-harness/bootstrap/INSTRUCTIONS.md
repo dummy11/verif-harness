@@ -64,15 +64,22 @@ and questions, and does not write project state.
    server, or from a non-interactive Agent is not a reason to disable it. On SSH, do
    not try to open a remote browser; return the `access.command` and `access.url`
    from the CLI result. CI may omit both flags and use the CLI's automatic skip.
-   The fixed port hosts one shared Dashboard service. Each bootstrap registers
-   only the current project as an independent route; later projects reuse the
-   same service and must never share SQLite state, progress, questions, reviews,
-   evidence, or writes. Check the returned `dashboard.status`: only `STARTED`
+   One automatically selected loopback port hosts a shared Dashboard service for
+   the current OS account. Selection starts at `8765`; a Dashboard owned by
+   another account is skipped rather than reused. Each bootstrap registers only
+   the current project as an independent route; later projects from the same
+   account reuse the service and must never share SQLite state, progress,
+   questions, reviews, evidence, or writes. A successful remote result includes
+   copyable single-hop and double-hop SSH forwarding templates using the actual
+   selected port plus the full token-bearing project URL. Never omit that URL's
+   token parameter or disclose it to another user. Check the returned
+   `dashboard.status`: only `STARTED`
    and `REUSED` mean the Dashboard is available. Report `SKIPPED`, `DISABLED`,
    `FAILED`, or `PORT_CONFLICT` truthfully and do not claim that the Dashboard
-   is running. `PORT_CONFLICT` now means a non-Dashboard service or an old
-   single-project Dashboard is occupying the fixed port, not that another
-   current project is registered.
+   is running. Automatic selection skips occupied, old, or foreign-account ports
+   and reports them in `skipped_ports`. `PORT_CONFLICT` means an explicitly
+   requested port is occupied or the automatic account-port range is exhausted. It never means
+   that another current project from the same account is registered.
    If it must be started or recovered later, use plain `verif-harness dashboard`;
    this invokes the same detached start-or-reuse action as bootstrap. Verify with
    `verif-harness dashboard --status`. Do not run a foreground Dashboard through

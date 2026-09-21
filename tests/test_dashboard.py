@@ -18,8 +18,8 @@ from unittest import mock
 from verif_harness.cli import bootstrap_dashboard, main
 from verif_harness.dashboard import (
     DASHBOARD_HUB_SCHEMA, DASHBOARD_REGISTRY_ENV, create_dashboard_server,
-    dashboard_project_id, dashboard_status, dashboard_url, ensure_dashboard_running,
-    register_dashboard_project, stop_dashboard,
+    dashboard_owner_id, dashboard_project_id, dashboard_status, dashboard_url,
+    ensure_dashboard_running, register_dashboard_project, stop_dashboard,
 )
 from verif_harness.store import HarnessError, ProjectStore
 
@@ -58,7 +58,10 @@ class DashboardTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def get(self, path: str) -> urllib.request.addinfourl:
-        return urllib.request.urlopen(self.url + path.lstrip("/"), timeout=3)
+        request = urllib.request.Request(
+            self.url + path.lstrip("/"), headers={"X-Verif-Token": self.server.write_token},
+        )
+        return urllib.request.urlopen(request, timeout=3)
 
     def post(self, path: str, payload: dict, token: str | None = None) -> dict:
         headers = {"Content-Type": "application/json"}
@@ -97,8 +100,61 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(result["status"], "REUSED")
         self.assertEqual(result["project"], str(self.store.root))
         self.assertTrue(result["url"].startswith(self.url + "?project="))
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(result["url"]).query)
+        self.assertEqual(query["token"], [self.server.write_token])
         self.assertTrue(result["shared_service"])
         self.assertFalse(result["browser_opened"])
+
+    def test_explicit_port_rejects_another_os_users_dashboard(self) -> None:
+        foreign = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 27182,
+            "owner_id": "f" * 24, "projects": [],
+        }
+        with mock.patch("verif_harness.dashboard._dashboard_health", return_value=foreign):
+            result = ensure_dashboard_running(self.store, "127.0.0.1", 8765)
+        self.assertEqual(result["status"], "PORT_CONFLICT")
+        self.assertEqual(result["conflict"], "OTHER_USER_DASHBOARD")
+        self.assertIn("另一个系统账号", result["message"])
+
+    def test_automatic_port_skips_other_os_users_dashboard(self) -> None:
+        project_id = dashboard_project_id(self.store.root)
+        foreign = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 27182,
+            "owner_id": "f" * 24, "projects": [],
+        }
+        owned = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "owner_id": dashboard_owner_id(), "projects": [project_id],
+        }
+        process = mock.Mock(pid=31415)
+        process.poll.return_value = None
+        started = False
+
+        def health(_host: str, port: int):
+            if port == 8765:
+                return foreign
+            if port == 8766 and started:
+                return owned
+            return None
+
+        def launch(*_args: object, **_kwargs: object) -> mock.Mock:
+            nonlocal started
+            started = True
+            return process
+
+        with (
+            mock.patch("verif_harness.dashboard._dashboard_health", side_effect=health),
+            mock.patch("verif_harness.dashboard._port_accepts_connections", return_value=False),
+            mock.patch("verif_harness.dashboard.subprocess.Popen", side_effect=launch) as popen,
+        ):
+            result = ensure_dashboard_running(self.store)
+        self.assertEqual(result["status"], "STARTED")
+        self.assertTrue(result["auto_selected_port"])
+        self.assertEqual(result["skipped_ports"], [
+            {"port": 8765, "reason": "OTHER_USER_DASHBOARD"},
+        ])
+        self.assertIn("127.0.0.1:8766", result["url"])
+        self.assertIn("8766", popen.call_args.args[0])
 
     def test_background_launcher_registers_other_project_on_same_fixed_port(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -123,6 +179,7 @@ class DashboardTest(unittest.TestCase):
         process.poll.return_value = None
         healthy = {
             "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "owner_id": dashboard_owner_id(),
             "projects": [dashboard_project_id(self.store.root)],
         }
         with (
@@ -138,12 +195,16 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("dashboard", invocation)
         self.assertIn("--project-root", invocation)
         self.assertIn("--foreground", invocation)
-        runtime = json.loads(
-            (self.root / ".verif-harness/dashboard-runtime.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(runtime["schema"], "DashboardRuntime/2")
+        runtime_path = self.root / ".verif-harness/dashboard-runtime.json"
+        runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+        self.assertEqual(runtime["schema"], "DashboardRuntime/3")
         self.assertEqual(runtime["port"], 18765)
         self.assertEqual(runtime["pid"], 31415)
+        self.assertEqual(runtime["owner_id"], dashboard_owner_id())
+        self.assertNotIn("token", urllib.parse.parse_qs(
+            urllib.parse.urlsplit(runtime["url"]).query,
+        ))
+        self.assertNotIn(self.server.write_token, runtime_path.read_text(encoding="utf-8"))
 
     def test_background_launcher_rejects_old_single_project_dashboard(self) -> None:
         legacy = {"status": "ok", "project": "/tmp/legacy-project"}
@@ -176,21 +237,50 @@ class DashboardTest(unittest.TestCase):
 
     def test_remote_bootstrap_access_url_preserves_selected_project(self) -> None:
         project_id = dashboard_project_id(self.store.root)
+        access_url = (
+            f"http://127.0.0.1:8765/?project={project_id}&token=example-account-token"
+        )
         launched = {
             "schema": "DashboardLaunch/1", "status": "REUSED",
             "project": str(self.root),
-            "url": f"http://127.0.0.1:8765/?project={project_id}",
+            "url": access_url,
         }
         with (
             mock.patch("verif_harness.dashboard.ensure_dashboard_running", return_value=launched),
             mock.patch.dict(os.environ, {"SSH_CONNECTION": "client server"}),
         ):
             result = bootstrap_dashboard(self.store, "codex", True, False, None)
+        self.assertEqual(result["access"]["url"], access_url)
         self.assertEqual(
-            result["access"]["url"], f"http://127.0.0.1:8765/?project={project_id}",
+            result["access"]["command"],
+            "ssh -N -L 8765:127.0.0.1:8765 <remote-user>@<remote-host>",
         )
-        self.assertEqual(
-            result["access"]["command"], "ssh -L 8765:127.0.0.1:8765 <server>",
+        self.assertEqual(result["access"]["single_hop"]["command"], result["access"]["command"])
+        self.assertIn("Host verification-jump", result["access"]["double_hop"]["ssh_config"])
+        self.assertIn("ProxyJump verification-jump", result["access"]["double_hop"]["ssh_config"])
+        self.assertIn(
+            "LocalForward 8765 127.0.0.1:8765",
+            result["access"]["double_hop"]["ssh_config"],
+        )
+        self.assertEqual(result["access"]["double_hop"]["command"], "ssh -N verification-server")
+
+    def test_remote_access_templates_use_the_selected_account_port(self) -> None:
+        project_id = dashboard_project_id(self.store.root)
+        launched = {
+            "schema": "DashboardLaunch/1", "status": "STARTED",
+            "project": str(self.root),
+            "url": f"http://127.0.0.1:8766/?project={project_id}",
+        }
+        with (
+            mock.patch("verif_harness.dashboard.ensure_dashboard_running", return_value=launched),
+            mock.patch.dict(os.environ, {"SSH_CONNECTION": "client server"}),
+        ):
+            result = bootstrap_dashboard(self.store, "codex", True, False, None)
+        self.assertEqual(result["access"]["remote_dashboard_port"], 8766)
+        self.assertIn("8766:127.0.0.1:8766", result["access"]["single_hop"]["command"])
+        self.assertIn(
+            "LocalForward 8766 127.0.0.1:8766",
+            result["access"]["double_hop"]["ssh_config"],
         )
 
     def test_dashboard_status_and_stop_use_managed_runtime(self) -> None:
@@ -204,6 +294,7 @@ class DashboardTest(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         healthy = {
             "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "owner_id": dashboard_owner_id(),
             "projects": [dashboard_project_id(self.store.root)],
         }
         with mock.patch("verif_harness.dashboard._dashboard_health", return_value=healthy):
@@ -279,6 +370,7 @@ class DashboardTest(unittest.TestCase):
         current_id = dashboard_project_id(self.store.root)
         healthy = {
             "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 31415,
+            "owner_id": dashboard_owner_id(),
             "projects": [current_id, other_registration["id"]],
         }
         with (
@@ -307,6 +399,20 @@ class DashboardTest(unittest.TestCase):
                 stop_dashboard(self.store)
         kill.assert_not_called()
 
+    def test_dashboard_stop_never_stops_another_os_users_dashboard(self) -> None:
+        foreign = {
+            "schema": DASHBOARD_HUB_SCHEMA, "status": "ok", "pid": 27182,
+            "owner_id": "f" * 24, "projects": [dashboard_project_id(self.store.root)],
+        }
+        with (
+            mock.patch("verif_harness.dashboard._dashboard_health", return_value=foreign),
+            mock.patch("verif_harness.dashboard.os.kill") as kill,
+        ):
+            stopped = stop_dashboard(self.store, "127.0.0.1", 18765)
+        self.assertEqual(stopped["status"], "PORT_CONFLICT")
+        self.assertIn("拒绝", stopped["message"])
+        kill.assert_not_called()
+
     def test_html_is_local_layered_and_snapshot_is_detailed(self) -> None:
         with self.get("/") as response:
             html = response.read().decode("utf-8")
@@ -317,7 +423,8 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('aria-label="返回项目总览"', html)
         self.assertIn('id="project-switcher"', html)
         self.assertIn('id="project-unregister"', html)
-        self.assertIn("fetch('/api/projects')", html)
+        self.assertIn("fetch('/api/projects', {headers:{'X-Verif-Token':token}})", html)
+        self.assertIn("&token=${encodeURIComponent(token)}", html)
         self.assertIn("data.dashboard_project = state.project", html)
         self.assertIn("/api/registrations/remove", html)
         self.assertNotIn('data-nav="overview"', html)
@@ -528,6 +635,20 @@ class DashboardTest(unittest.TestCase):
                 "target": node_id, "action": "COMMENT", "reviewer": "alice", "reason": "note",
             })
         self.assertEqual(captured.exception.code, 403)
+
+    def test_read_api_and_page_require_account_access_token(self) -> None:
+        for path in ("/", "/api/projects"):
+            with self.subTest(path=path):
+                with self.assertRaises(urllib.error.HTTPError) as captured:
+                    urllib.request.urlopen(self.url + path.lstrip("/"), timeout=3)
+                self.assertEqual(captured.exception.code, 403)
+        with urllib.request.urlopen(self.url + "healthz", timeout=3) as response:
+            health = json.loads(response.read())
+        self.assertEqual(health["owner_id"], dashboard_owner_id())
+        token_path = self.registry / "access-token"
+        self.assertTrue(token_path.is_file())
+        if os.name != "nt":
+            self.assertEqual(token_path.stat().st_mode & 0o777, 0o600)
 
     def test_agent_question_can_be_answered_in_dashboard_and_resumes_agent(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]

@@ -3,9 +3,10 @@
 <a id="dashboard-无法从本地浏览器打开"></a>
 ## Dashboard 无法从本地浏览器打开
 
-先区分两个端口：Dashboard 默认监听**远端服务器**的 `127.0.0.1:8765`；浏览器访问的是
-**本地电脑**的转发端口。两者可以使用不同数字，但 SSH `LocalForward` 的右侧必须等于
-Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监听 `0.0.0.0`。
+先区分两个端口：Dashboard 在**远端服务器**的 `127.0.0.1` 上从 `8765` 起为当前系统账号
+自动选择端口；浏览器访问的是**本地电脑**的转发端口。两者可以使用不同数字，但 SSH
+`LocalForward` 的右侧必须等于 Dashboard 成功结果中的实际远端端口。不要把 Dashboard 改为
+监听 `0.0.0.0`。
 
 按以下顺序检查：
 
@@ -20,6 +21,10 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 3. 本地执行 `curl http://127.0.0.1:<local-port>/healthz`。返回 `status: ok` 才说明隧道完整。
 4. 浏览器打开同一个本地端口，而不是远端私网 IP。
 
+页面或 API 返回 `403 invalid dashboard access token` 时，不要手工删掉 URL 的 `token` 参数；重新运行
+`verif-harness dashboard`，使用结果中的完整 `access.url`。访问令牌保存在当前远端账号自己的
+`~/.verif-harness/dashboard/access-token`，不得复制其他账号的令牌文件。
+
 常见 SSH 错误：
 
 - `connect to host <jump> port 22: Operation timed out`：本地到跳板机尚未建立；检查 VPN，或把
@@ -29,16 +34,20 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 - `Connection closed by UNKNOWN port 65535`：通常是前面的跳板机连接或认证失败引发的附带信息，
   先处理上一条真正错误。
 - `bind ... Address already in use`：本地端口被占用。把本地端口改成其他值，例如
-  `LocalForward 18765 127.0.0.1:8765`，浏览器相应访问 `127.0.0.1:18765`。
+  远端实际端口为 `8766` 时改成 `LocalForward 18766 127.0.0.1:8766`，浏览器相应访问
+  `127.0.0.1:18766`；右侧端口必须来自本次 Dashboard 成功结果。
 - `/healthz` 连接失败：Dashboard 已停止、隧道未运行，或转发右侧端口与远端 Dashboard 不一致。
 - `channel ... open failed: connect failed: Connection refused`：SSH 隧道仍在，但远端转发目标没有
   服务监听。先在远端运行 `verif-harness dashboard --status`，若不是 `RUNNING`，再运行
   `verif-harness dashboard` 恢复后台服务；不必重建项目状态。
-- 多个项目依次 bootstrap：不会冲突。第一个项目启动 `8765` 上的共享服务，后续项目注册独立入口并
-  复用它；顶部项目选择器只切换请求路由，不会合并项目的 SQLite、节点、问题、审批或证据。
-- bootstrap 返回 `PORT_CONFLICT`：固定端口属于非 verif-harness 服务，或仍在运行升级前的旧版
-  单项目 Dashboard。先停止该旧服务后重新运行 bootstrap；也可以显式指定
-  `--dashboard-port PORT`，但系统不会静默换端口。
+- 同一账号的多个项目依次 bootstrap：不会冲突。第一个项目启动账号级共享服务，后续项目注册独立
+  入口并复用它；顶部项目选择器只切换请求路由，不会合并项目的 SQLite、节点、问题、审批或证据。
+- 同机不同账号依次 bootstrap：后启动的账号会识别并跳过其他账号的新版 Dashboard，从后续端口启动
+  自己的服务；不会返回 `REUSED` 假装注册到了别人的服务。
+- bootstrap 返回 `PORT_CONFLICT`：显式端口已被占用，或自动账号端口范围耗尽。自动选择遇到
+  其他账号、非 verif-harness 或旧版服务时会跳过并记录在 `skipped_ports`。先检查结果中的
+  `conflict`、`skipped_ports` 和实际端口；可停止旧服务，或显式指定
+  `--dashboard-port PORT`。显式端口不会被静默替换。
 - 不再需要某个项目入口：在 Dashboard 顶部选择它并点击“注销项目”，或在该项目根目录运行
   `verif-harness dashboard --stop`。两种方式都不删除项目数据；有其他项目时共享服务继续运行，
   最后一个项目注销后才停止服务。

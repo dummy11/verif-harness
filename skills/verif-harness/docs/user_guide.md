@@ -225,16 +225,20 @@ VDOC”的规则。已有项目说明保留在 verif-harness 标记之外，不�
 验证设计写在 Markdown，文件版本、评审和证据状态保存在 SQLite。初始化后可用 `status`
 和 `doctor` 检查项目状态。
 
-bootstrap 成功后，交互式 Codex/Kimi/Claude 或终端会默认在 `127.0.0.1:8765` 启动（或复用）
-后台 Dashboard，bootstrap 自身随即返回，不会被 Web 服务阻塞。Agent 为 Human 执行实时 bootstrap
+bootstrap 成功后，交互式 Codex/Kimi/Claude 或终端会默认在 `127.0.0.1` 上为当前系统账号启动
+（或复用）后台 Dashboard，bootstrap 自身随即返回，不会被 Web 服务阻塞。自动端口从 `8765`
+开始选择；同机其他系统账号已经运行的 Dashboard 会被识别并跳过，不会跨账号复用。Agent 为 Human
+执行实时 bootstrap
 时必须显式使用 `--dashboard`，避免运行入口差异使 Dashboard 被跳过。只有 Human 在当前对话中明确
 要求关闭时，Agent 才能使用 `--no-dashboard`；SSH、无图形界面或非交互执行都不是关闭理由。
-本机桌面环境会尝试打开浏览器；SSH 远端不会启动远端浏览器，而会在结果中给出本地端口转发提示。
-CI 可以省略两个选项并使用默认跳过策略。自动启动使用固定端口。第一个项目启动共享 Dashboard，
-后续项目只注册自己的项目入口并复用同一服务，因此多个项目 bootstrap 不会争抢 `8765`。
+本机桌面环境会尝试打开浏览器；SSH 远端不会启动远端浏览器，而会在成功结果中给出使用实际端口的
+单跳命令、双跳 `~/.ssh/config` 模板、连接命令和浏览器地址。CI 可以省略两个选项并使用默认跳过
+策略。同一系统账号的第一个项目启动共享 Dashboard，后续项目只注册自己的项目入口并复用同一服务。
 项目选择器只是请求路由：每个项目仍只读写自己项目目录内的 SQLite、文档、节点、问题、审批和证据，
-不存在跨项目汇总、依赖或状态传播。只有非 verif-harness 服务或升级前的旧版单项目 Dashboard 占用
-端口时才报告 `PORT_CONFLICT`，系统不会静默换端口。Agent 必须检查返回的 `dashboard.status`；
+不存在跨项目汇总、依赖或状态传播。显式指定端口时不会自动改用其他端口；该端口属于其他账号、
+非 verif-harness 服务或旧版 Dashboard 时会报告 `PORT_CONFLICT`。自动选择会跳过已占用、旧版或
+其他账号的端口，在 `skipped_ports` 中说明原因；只有整个自动范围耗尽时才报告冲突。Agent 必须检查
+返回的 `dashboard.status`；
 只有 `STARTED` 和 `REUSED` 表示 Dashboard 可用，不能把 `SKIPPED`、`DISABLED`、`FAILED` 或
 `PORT_CONFLICT` 说成已经启动。
 
@@ -1277,39 +1281,45 @@ verif-harness dashboard --stop
 
 #### 从本地浏览器访问远端 Dashboard
 
-Dashboard 始终只监听它所在服务器的 `127.0.0.1`。不指定 `--port` 时，远端监听端口固定为
-`8765`。同一账号下的多个验证项目注册到这个服务，浏览器在顶部切换项目；项目之间除共享这个
-HTTP 服务和只含项目名称、DUT、根目录的本机路由注册外没有关系。启动日志打印的带 `project`
-参数 URL 是当前项目入口。如果浏览器和 Dashboard 在同一台机器，直接打开该 URL。通过 SSH 使用
-远端服务器时，不要依赖 `--open-browser`：远端服务器、跳板机和本地电脑的
-`127.0.0.1` 分别代表三台不同机器，必须先建立 SSH 本地端口转发。
+Dashboard 始终只监听它所在服务器的 `127.0.0.1`。不指定 `--port` 时，从 `8765` 起为当前系统账号
+自动选择端口，并优先复用该账号已经运行的服务；同机其他账号的 Dashboard 会被跳过。同一账号下的
+多个验证项目注册到这个服务，浏览器在顶部切换项目；项目之间除共享这个 HTTP 服务和只含项目名称、
+DUT、根目录的本机路由注册外没有关系。`STARTED`/`REUSED` 结果中的 `url` 和
+`access.remote_dashboard_port` 是本次实际端口，不能假定一定是 `8765`。
+
+SSH 场景的成功结果会直接给出 `access.single_hop` 和 `access.double_hop`；用实际值替换尖括号中的
+主机、账号、SSH 端口和私钥即可。远端服务器、跳板机和本地电脑的 `127.0.0.1` 分别代表不同机器，
+因此不能依赖远端 `--open-browser`，必须先建立 SSH 本地端口转发。
 
 单跳 SSH，即本地电脑可以直接登录远端服务器：
 
 ```bash
 # 本地电脑执行；保持该进程运行
 ssh -N \
-  -L 8765:127.0.0.1:8765 \
+  -L <dashboard-port>:127.0.0.1:<dashboard-port> \
   <remote-user>@<remote-host>
 ```
 
-双跳 SSH 推荐写入本地电脑的 `~/.ssh/config`。跳板机使用非标准端口或专用密钥时，必须把这些
-参数写在跳板机自己的 `Host` 条目里；命令行最外层的 `-p` 只控制最终服务器端口：
+双跳 SSH 推荐把 CLI 返回的 `access.double_hop.ssh_config` 写入本地电脑的 `~/.ssh/config`。
+例如，本地电脑先通过端口 `7822` 登录公网跳板机 `111.198.53.109`，再由跳板机访问内网验证服务器
+`192.168.50.92`；两台服务器都使用账号 `ai_eda05` 和本地私钥 `~/.ssh/id_rsa_ai_eda05`，本次
+Dashboard 实际端口为 `8765`。跳板机使用非标准端口或专用密钥时，必须把参数写在跳板机自己的
+`Host` 条目里；命令行最外层的 `-p` 只控制最终服务器端口：
 
 ```sshconfig
-Host verification-jump
-    HostName <jump-host>
-    User <jump-user>
-    Port <jump-port>
-    IdentityFile ~/.ssh/<private-key>
+Host ai-jump
+    HostName 111.198.53.109
+    User ai_eda05
+    Port 7822
+    IdentityFile ~/.ssh/id_rsa_ai_eda05
     IdentitiesOnly yes
 
-Host verification-server
-    HostName <remote-private-host>
-    User <remote-user>
-    IdentityFile ~/.ssh/<private-key>
+Host ai-verif
+    HostName 192.168.50.92
+    User ai_eda05
+    IdentityFile ~/.ssh/id_rsa_ai_eda05
     IdentitiesOnly yes
-    ProxyJump verification-jump
+    ProxyJump ai-jump
     LocalForward 8765 127.0.0.1:8765
 ```
 
@@ -1317,25 +1327,27 @@ Host verification-server
 后台启动/复用动作，命令返回后服务仍继续运行：
 
 ```bash
-# 远端服务器：默认监听远端 127.0.0.1:8765
+# 远端服务器：结果会显示实际选择的端口和以下两套 SSH 配置
 verif-harness dashboard
 verif-harness dashboard --status
 
 # 本地电脑：保持运行，不会出现新的 shell 提示符
-ssh -N verification-server
+ssh -N ai-verif
 
 # 另一个本地终端：确认请求确实到达远端 Dashboard
 curl http://127.0.0.1:8765/healthz
 ```
 
-健康检查应返回 `schema: DashboardHubHealth/1`、`status: ok` 和已注册项目数量。随后在本地浏览器打开
-`http://127.0.0.1:8765/`。如果本地 `8765` 已占用，可以只改变本地一侧，例如
-`LocalForward 18765 127.0.0.1:8765`，此时浏览器访问 `http://127.0.0.1:18765/`；远端
-Dashboard 端口仍是 `8765`。如果远端启动时使用 `--port 9000`，转发右侧也必须改成
-`127.0.0.1:9000`。
+健康检查应返回 `schema: DashboardHubHealth/2`、`status: ok`、当前账号的不透明 `owner_id` 和已注册
+项目数量。随后打开 CLI 返回的 `access.url`。如果该本地端口已占用，只改变 `-L` 或
+`LocalForward` 左侧，例如远端实际端口为 `8766` 时使用
+`LocalForward 18766 127.0.0.1:8766`，浏览器访问 `http://127.0.0.1:18766/`；右侧必须始终等于
+CLI 返回的远端实际端口。
 
-不要为了省略 SSH 转发而把 Dashboard 暴露到 `0.0.0.0`。Dashboard 含有带本机会话令牌的
-Human 写操作入口，当前设计只允许 loopback。常见连接问题见
+CLI 返回的项目 URL 含有当前账号的 Dashboard 访问令牌，不要把完整 URL、访问令牌文件或 SSH 配置中的
+私钥路径发给无权访问项目的人。页面、读取 API 和写操作都校验该令牌；`/healthz` 只暴露服务归属、
+存活信息和不透明项目 ID，不暴露项目路径、名称、验证事实或文档正文。不要为了省略 SSH 转发而把
+Dashboard 暴露到 `0.0.0.0`。当前设计只允许 loopback。常见连接问题见
 [Dashboard 无法从本地浏览器打开](troubleshooting.md#dashboard-无法从本地浏览器打开)。
 
 实时显示需要 Agent 或项目工具把正在做的工作登记为
@@ -1472,8 +1484,8 @@ verif-harness activity update ACTIVITY_ID --status COMPLETED --current 3
 Human 可以从界面选择 Workstream 或节点，提交评论、要求修改、要求说明或调整优先级。
 这些输入进入[人工操作记录](glossary.md#dashboard)，立即出现在 Dashboard 和后续 Agent 会话中；
 它们不会绕过 `evidence` 直接修改节点状态。Human 也可在界面中提交 Workstream 评审、豁免；
-豁免必须再次确认并填写 reviewer 与 reason。所有写操作只允许从打开页面时取得的本机会话令牌
-提交，服务只监听 `127.0.0.1` 或 `localhost`，不提供远程共享和用户认证。各 Workstream 页面的
+豁免必须再次确认并填写 reviewer 与 reason。页面、读取 API 和写操作都要求当前系统账号的本机
+访问令牌；服务只监听 `127.0.0.1` 或 `localhost`，不提供网络账号登录或远程共享。各 Workstream 页面的
 “审批/修改实施方案”会打开独立审批页；页面明确标记审批对象为工作域实施方案。VDOC 再从该页
 逐个打开按当前 DUT 分解出的方案节点新标签页，不使用弹窗；待确认工程问题、计划写入内容、输入依据/范围/交付对象
 以及实际存在的依赖影响分别审批。批准只授权开始工作，不表示文档正文、实现、证据或节点完成状态
@@ -1629,7 +1641,7 @@ verif-harness bootstrap [OPTIONS]
 | `--refresh` | 重新配置并读取文件/工具清单；同步 `.harness-config.json` 管理字段，保留已有目标、证据和评审状态 |
 | `--dashboard` | 即使在 CI/非交互调用中，也在 bootstrap 成功后启动或复用后台 Dashboard |
 | `--no-dashboard` | 本次 bootstrap 不自动启动 Dashboard |
-| `--dashboard-port PORT` | 自动启动使用的固定 loopback 端口；未指定时复用当前运行记录，否则使用 `8765`；只接受 `1..65535` |
+| `--dashboard-port PORT` | 显式指定 loopback 端口；未指定时优先复用当前账号的服务，否则从 `8765` 起自动选择；只接受 `1..65535` |
 
 已 bootstrap 的项目再次运行必须加 `--refresh`，防止意外覆盖。对话中只需提出
 `bootstrap --refresh`；Agent 必须按固定顺序一次确认一个字段，最后汇总确认，再展开成底层完整命令。
@@ -1646,9 +1658,11 @@ bootstrap 成功并启动 Dashboard 后，后续会阻塞 Agent 的问题（例�
 项目级 Activity 和项目级 Agent question，不能只留在原生终端选择器。Human 随后既可在 Dashboard 回答，
 也可通过 `agent-question answer` 在 Agent CLI 回答；若初始请求已经明确授权下一步，则不重复询问。
 
-每个项目的后台注册指针写入自己的 `.verif-harness/dashboard-runtime.json`；共享服务输出日志默认写入
-`~/.verif-harness/dashboard/dashboard.log`。机器级注册目录只保存项目入口所需的路由/显示信息，
-不保存验证结论。以上内容用于运行诊断，不是验证证据或项目语义事实源。
+每个项目的后台注册指针写入自己的 `.verif-harness/dashboard-runtime.json`；当前系统账号的共享服务
+输出日志默认写入 `~/.verif-harness/dashboard/dashboard.log`，访问令牌保存在权限为 `0600` 的
+`~/.verif-harness/dashboard/access-token`。账号级注册目录只保存项目入口所需的路由/显示信息和
+本机访问凭据，不保存验证结论。项目内的 `dashboard-runtime.json` 不保存访问令牌；完整访问 URL 只在
+启动结果和账号私有的 Dashboard 日志中出现。以上内容用于运行诊断，不是验证证据或项目语义事实源。
 
 ### `status [WORKSTREAM]`
 
@@ -1658,8 +1672,9 @@ bootstrap 成功并启动 Dashboard 后，后续会阻塞 Agent 的问题（例�
 
 ### `dashboard`
 
-在固定端口注册当前项目，并启动或复用供 Human 实时查看和参与的本机 Web 界面。多个项目共享服务，
-但每次请求只访问明确选中的项目 SQLite；页面不建立项目间关系。这一默认动作与 bootstrap 自动打开
+在当前系统账号自动选择的端口注册项目，并启动或复用供 Human 实时查看和参与的本机 Web 界面。
+同账号多个项目共享服务，同机不同账号不会互相复用；每次请求只访问明确选中的项目 SQLite，页面
+不建立项目间关系。这一默认动作与 bootstrap 自动打开
 Dashboard 完全相同，命令返回不会停止服务。顶部可切换项目，也可经二次确认注销当前项目。
 
 ```text
@@ -1673,7 +1688,7 @@ verif-harness dashboard --foreground
 | 参数 | 说明 |
 | --- | --- |
 | `--host` | 监听地址；只接受 `127.0.0.1` 或 `localhost`，默认 `127.0.0.1` |
-| `--port` | Dashboard 所在机器的固定监听端口，默认 `8765`；后台模式不接受 `0` |
+| `--port` | 显式指定 Dashboard 监听端口；未指定时复用当前账号的服务或从 `8765` 起自动选择；后台模式不接受 `0` |
 | `--open-browser` | 仅当浏览器与 Dashboard 位于同一台机器时使用；SSH 场景应建立端口转发 |
 | `--status` | 检查共享服务是否运行，以及当前项目是否已经注册；不启动服务 |
 | `--stop` | 注销当前项目且不影响其他项目；仅当它是最后一个注册项目时停止共享服务 |

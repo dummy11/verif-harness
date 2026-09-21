@@ -100,6 +100,19 @@ review at both the Dashboard and store boundaries. This makes the document node
 the default Human review surface without moving engineering semantics out of
 the Markdown body.
 
+The Dashboard hub is scoped to one operating-system account. Its health record
+includes an opaque owner identity derived from the account-local credential.
+Automatic startup first reuses the current account's hub, then scans
+from port 8765 while recording and skipping occupied, old, or foreign-account ports. It never registers a
+project in one account's registry while routing requests through another
+account's process. An explicit port remains strict and reports a conflict rather
+than switching. A persistent account-local token stored with mode `0600` gates
+the HTML page and every read/write API; unauthenticated health checks expose no
+project path, name, verification fact, or document content. Successful remote
+launches return single-hop and double-hop SSH
+forwarding templates plus the token-bearing project URL bound to the actual
+selected port.
+
 `await-human` is a bounded, revision-aware checkpoint over formal Workstream
 reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
 `RUNNING`, but comments cannot release it and it never injects arbitrary text

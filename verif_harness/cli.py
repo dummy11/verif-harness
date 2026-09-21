@@ -166,7 +166,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bootstrap.add_argument(
         "--dashboard-port", type=bootstrap_dashboard_port,
-        help="bootstrap 自动启动 Dashboard 使用的固定端口（默认复用运行记录，否则 8765）",
+        help="显式指定 Dashboard 端口；默认从 8765 起为当前系统账号自动选择并复用",
     )
 
     status = commands.add_parser("status", help="显示全局模型、Workstream 与自动 closure 摘要")
@@ -176,7 +176,10 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard = commands.add_parser("dashboard", help="在固定端口注册、检查或注销项目 Dashboard")
     project_argument(dashboard)
     dashboard.add_argument("--host", help="仅允许 loopback host；默认读取运行记录或使用 127.0.0.1")
-    dashboard.add_argument("--port", type=int, help="默认读取运行记录或使用 8765")
+    dashboard.add_argument(
+        "--port", type=int,
+        help="显式指定端口；默认读取运行记录，或从 8765 起为当前系统账号自动选择",
+    )
     dashboard.add_argument("--open-browser", action="store_true")
     dashboard_mode = dashboard.add_mutually_exclusive_group()
     dashboard_mode.add_argument(
@@ -581,6 +584,64 @@ def _truthy_environment(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() not in {"", "0", "false", "no", "off"}
 
 
+def _remote_session() -> bool:
+    return any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+
+
+def dashboard_access_instructions(dashboard_url: str, remote: bool) -> dict[str, object]:
+    """Build copyable local, single-hop, and double-hop access guidance."""
+    dashboard_parts = urllib.parse.urlsplit(dashboard_url)
+    dashboard_port = dashboard_parts.port or 8765
+    selected_project_url = urllib.parse.urlunsplit((
+        "http", f"127.0.0.1:{dashboard_port}", dashboard_parts.path or "/",
+        dashboard_parts.query, "",
+    ))
+    if not remote:
+        return {"mode": "local-url", "url": selected_project_url}
+    single_hop = (
+        f"ssh -N -L {dashboard_port}:127.0.0.1:{dashboard_port} "
+        "<remote-user>@<remote-host>"
+    )
+    double_hop_config = "\n".join((
+        "Host verification-jump",
+        "    HostName <jump-host>",
+        "    User <jump-user>",
+        "    Port <jump-ssh-port>",
+        "    IdentityFile ~/.ssh/<jump-private-key>",
+        "    IdentitiesOnly yes",
+        "",
+        "Host verification-server",
+        "    HostName <remote-host>",
+        "    User <remote-user>",
+        "    Port <remote-ssh-port>",
+        "    IdentityFile ~/.ssh/<remote-private-key>",
+        "    IdentitiesOnly yes",
+        "    ProxyJump verification-jump",
+        f"    LocalForward {dashboard_port} 127.0.0.1:{dashboard_port}",
+    ))
+    return {
+        "mode": "ssh-tunnel",
+        "url": selected_project_url,
+        "remote_dashboard_port": dashboard_port,
+        # Kept for existing consumers; the structured single_hop field is preferred.
+        "command": single_hop,
+        "single_hop": {
+            "command": single_hop,
+            "url": selected_project_url,
+        },
+        "double_hop": {
+            "ssh_config": double_hop_config,
+            "command": "ssh -N verification-server",
+            "url": selected_project_url,
+        },
+        "local_port_note": (
+            f"如果本地 {dashboard_port} 已占用，只修改 LocalForward 左侧端口；"
+            f"右侧仍使用远端 Dashboard 端口 {dashboard_port}"
+        ),
+        "message": "远端不会尝试打开浏览器；请任选单跳或双跳配置建立 SSH 转发",
+    }
+
+
 def bootstrap_dashboard(
     store: ProjectStore, runtime: str, force: bool, disabled: bool, port: int | None,
 ) -> dict[str, object]:
@@ -599,7 +660,7 @@ def bootstrap_dashboard(
         reason = "CI 环境不自动启动 Dashboard" if in_ci else "非交互环境不自动启动；需要时使用 --dashboard"
         return {"schema": "DashboardLaunch/1", "status": "SKIPPED", "message": reason}
 
-    remote = any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    remote = _remote_session()
     desktop = sys.platform == "darwin" or os.name == "nt" or bool(
         os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
     )
@@ -608,25 +669,12 @@ def bootstrap_dashboard(
         store, None, port,
         open_browser=bool(not remote and desktop and (agent_runtime or terminal_interactive)),
     )
-    dashboard_url = str(result.get("url") or "http://127.0.0.1:8765/")
-    dashboard_parts = urllib.parse.urlsplit(dashboard_url)
-    dashboard_port = dashboard_parts.port or 8765
-    selected_project_url = urllib.parse.urlunsplit((
-        "http", f"127.0.0.1:{dashboard_port}", dashboard_parts.path or "/",
-        dashboard_parts.query, "",
-    ))
-    if remote:
-        result["access"] = {
-            "mode": "ssh-tunnel",
-            "command": f"ssh -L {dashboard_port}:127.0.0.1:{dashboard_port} <server>",
-            "url": selected_project_url,
-            "message": "远端不会尝试打开浏览器；请在本地建立 SSH 转发",
-        }
-    else:
-        result["access"] = {
-            "mode": "local-browser" if result.get("browser_opened") else "local-url",
-            "url": dashboard_url,
-        }
+    if result.get("status") in {"STARTED", "REUSED"}:
+        result["access"] = dashboard_access_instructions(
+            str(result.get("url") or "http://127.0.0.1:8765/"), remote,
+        )
+        if not remote and result.get("browser_opened"):
+            result["access"]["mode"] = "local-browser"
     return result
 
 
@@ -696,14 +744,21 @@ def main(arguments: list[str] | None = None) -> int:
                 from .dashboard import serve_dashboard
                 return serve_dashboard(
                     store, args.host or "127.0.0.1",
-                    args.port if args.port is not None else 8765, args.open_browser,
+                    args.port, args.open_browser,
                 )
             else:
                 from .dashboard import ensure_dashboard_running
-                emit(ensure_dashboard_running(
+                launched = ensure_dashboard_running(
                     store, args.host, args.port,
                     open_browser=args.open_browser,
-                ))
+                )
+                if launched.get("status") in {"STARTED", "REUSED"}:
+                    launched["access"] = dashboard_access_instructions(
+                        str(launched["url"]), _remote_session(),
+                    )
+                    if not _remote_session() and launched.get("browser_opened"):
+                        launched["access"]["mode"] = "local-browser"
+                emit(launched)
         elif args.command == "doctor":
             if not store.initialized:
                 emit({"status": "INFO", "code": "BOOTSTRAP_REQUIRED", "next": "bootstrap", "project_root": str(store.root)})

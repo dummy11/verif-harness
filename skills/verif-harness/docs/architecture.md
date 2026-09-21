@@ -65,8 +65,8 @@ Activity state; its dedicated page lets the Human answer without opening an inte
 server shell. The Agent reads the
 stored answer and resumes its Activity. A question answer is engineering input only: it
 cannot approve a plan, validate a node, create evidence, waive a gap, or freeze a baseline.
-Writes use a per-process token, bind only to the
-loopback interface, and call the same ProjectStore review/waiver/freeze APIs.
+The page and all data APIs use a persistent account-local access token, bind only
+to the loopback interface, and call the same ProjectStore review/waiver/freeze APIs.
 Activity records communicate current Agent/tool progress but never mutate node
 validity; evidence validators and explicit Human gates remain authoritative.
 After a successful bootstrap, an interactive Agent/TTY may start or reuse the

@@ -62,8 +62,9 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - 可编辑验证文档与 SQLite 状态分离；`docs sync` 用 SHA-256 判断文档是否修改，并按需生成
   [状态阅读文件](skills/verif-harness/docs/glossary.md#authority)；
 - Codex/Kimi 运行环境、受管 Python 依赖和项目级 xverif MCP 配置。
-- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：固定端口可注册多个彼此独立的
-  验证项目并在顶部切换；它们只共享 Dashboard 服务，不共享 SQLite、工作流、节点、审批、问题或证据。
+- 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：每个系统账号自动选择一个
+  loopback 端口，并在该账号内注册多个彼此独立的验证项目；它们只共享 Dashboard 服务，不共享
+  SQLite、工作流、节点、审批、问题或证据。同机不同账号不会复用彼此的 Dashboard。
   当前项目总览以默认折叠的项目/DUT、
   Agent 交互、待处理事项、验证工作流和验证风险与变更作为入口；状态摘要点击后在新标签页查看或
   处理。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard

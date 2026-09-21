@@ -17,6 +17,11 @@ Versioning.
 
 ### Changed
 
+- Dashboard services are now scoped to the current OS account. Automatic startup
+  begins at port `8765`, skips occupied and foreign-account ports instead of
+  falsely reusing them, protects the page and data APIs with a mode-`0600` account token,
+  and returns single-hop and double-hop SSH forwarding templates using the actual
+  selected port.
 - VDOC now rejects structured proposals whose required writing plans lack
   independently reviewable delivery nodes, and routes already-stored incomplete
   revisions back to Agent refinement instead of requesting Human approval.

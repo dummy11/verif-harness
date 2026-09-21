@@ -99,8 +99,14 @@ Workstream. Project lifecycle is separate.
 - Human dashboard (`dashboard`): start the loopback-only live view when the Human
   asks to monitor Workstreams, nodes, evidence, progress, or intervene before
   closure. The plain `dashboard` command and bootstrap both use the same detached
-  start-or-reuse action; never keep it alive with a foreground shell, pipe it to
-  `head`, or assume that a printed URL proves the service is still running. Use
+  start-or-reuse action. The service is scoped to the current OS account: automatic
+  selection starts at port 8765, skips hubs owned by other accounts, and reuses
+  only the current account's registry. Require the account-local access token for
+  the page and every data API; never expose the token file or token-bearing URL to
+  another user. For SSH, return the successful result's single-hop and double-hop
+  templates and full access URL using its actual selected port. Never keep
+  the service alive with a foreground shell, pipe it to `head`, or assume that a
+  printed URL proves the service is still running. Use
   `dashboard --status` to verify it. `dashboard --stop` unregisters only the
   current project; the shared service stops only after the last registered
   project is removed. Projects share the loopback UI process and nothing else:

@@ -606,7 +606,7 @@
     }
     function connectProjectStream(projectId) {
       if (state.stream) state.stream.close();
-      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}`);
+      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}`);
       state.stream = stream;
       stream.addEventListener('snapshot', event => {
         const snapshot = JSON.parse(event.data);
@@ -625,7 +625,7 @@
       url.searchParams.set('project', projectId);
       window.history.replaceState({}, '', url);
       $('#main').innerHTML = '<div class="empty">正在加载所选项目…</div>';
-      const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`);
+      const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`, {headers:{'X-Verif-Token':token}});
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || response.statusText);
       setSnapshot(body);
@@ -633,7 +633,7 @@
     }
     async function initialLoad() {
       try {
-        const response = await fetch('/api/projects');
+        const response = await fetch('/api/projects', {headers:{'X-Verif-Token':token}});
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         state.projects = body.projects || [];
@@ -1653,7 +1653,7 @@
       $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档交付节点</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div><div class="card empty">正在读取所属文档正文…</div>`;
       $('[data-return-vdoc]').onclick = () => leaveDocumentDeliveryReview('VDOC');
       try {
-        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(n.delivery_review.document_id)}`);
+        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(n.delivery_review.document_id)}`, {headers:{'X-Verif-Token':token}});
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         const current = body.document;
@@ -1831,7 +1831,7 @@
     async function openDocumentReviewModal(document) {
       openModal('<h2>读取文档正文</h2><div class="empty">正在加载…</div>');
       try {
-        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(document.id)}`);
+        const response = await fetch(`/api/document?project=${encodeURIComponent(state.project)}&selector=${encodeURIComponent(document.id)}`, {headers:{'X-Verif-Token':token}});
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         const current = body.document;
