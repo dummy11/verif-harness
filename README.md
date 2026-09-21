@@ -65,10 +65,10 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：每个系统账号自动选择一个
   loopback 端口，并在该账号内注册多个彼此独立的验证项目；它们只共享 Dashboard 服务，不共享
   SQLite、工作流、节点、审批、问题或证据。同机不同账号不会复用彼此的 Dashboard。
-  当前项目总览以默认折叠的项目/DUT、“需要你处理”、验证工作流和验证风险与变更作为入口；
-  Agent 提问与审批、验收、确认统一进入“需要你处理”，Agent 运行状态和历史放在该页面底部的折叠
-  详情中。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard
-  决定后继续。
+  首页先用一张“当前项目状态”卡片说明正在验证什么、当前结论、完成进度和下一步；验证工作流保留在
+  主区域，“需要你处理”是右侧唯一的回答、审批、验收和确认入口。项目/DUT 默认折叠，风险与变更是
+  次要入口，Agent 运行状态和历史收在“需要你处理”底部的折叠详情中。Closure 需要正式评审时，
+  revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard 决定后继续。
 - 每个目标节点显示一份可复核的
   [节点完成结论](skills/verif-harness/docs/glossary.md#node-closure-assessment)：Engine 列出使用的规则、
   证据、前置节点、开放问题和逐项检查结果；Human 可以认可、要求修改、要求说明或拒绝该结论，

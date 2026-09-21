@@ -50,8 +50,6 @@
     .dot.offline { background: #e5484d; }
     .icon-btn { border: 1px solid var(--line); color: var(--text); background: var(--panel); border-radius: 9px; padding: 8px 10px; }
     .layout { min-height: calc(100vh - 68px); display: grid; grid-template-columns: 238px minmax(0, 1fr); }
-    .layout.overview-focus { grid-template-columns: minmax(0, 1fr); }
-    .layout.overview-focus .sidebar { display: none; }
     .sidebar { border-right: 1px solid var(--line); background: var(--panel); padding: 22px 14px; }
     .sidebar-head { display: flex; align-items: center; min-height: 29px; margin-bottom: 4px; }
     .nav-label { padding: 0 10px 8px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -64,7 +62,6 @@
     .nav-item .nav-state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
     @media (min-width: 761px) {
       .layout.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
-      .layout.sidebar-collapsed.overview-focus { grid-template-columns: minmax(0, 1fr); }
       .layout.sidebar-collapsed .sidebar { padding-inline: 9px; }
       .layout.sidebar-collapsed .sidebar-head { justify-content: center; }
       .layout.sidebar-collapsed .nav-label { display: none; }
@@ -85,7 +82,7 @@
     .btn.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--line)); }
     .btn.small { padding: 6px 9px; font-size: 12px; }
     .grid { display: grid; gap: 16px; }
-    .summary-grid { grid-template-columns: repeat(5, minmax(130px, 1fr)); margin-bottom: 20px; }
+    .summary-grid { grid-template-columns: repeat(4, minmax(130px, 1fr)); margin-bottom: 20px; }
     .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
     .metric { padding: 17px 18px; }
     .metric .label { color: var(--muted); font-size: 12px; }
@@ -99,31 +96,51 @@
     .workstream-grid { grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); }
     .ws-card { padding: 18px; transition: transform .15s ease, border-color .15s ease; }
     .ws-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
-    .overview-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .overview-tile { position: relative; min-height: 142px; padding: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--panel); box-shadow: var(--shadow); text-align: left; transition: transform .15s ease, border-color .15s ease; }
-    .overview-tile:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
-    .overview-tile::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--gray); }
-    .overview-tile.pending::before { background: var(--yellow); }
-    .overview-tile.risk::before { background: var(--orange); }
-    .tile-head { display: flex; align-items: center; gap: 9px; }
-    .tile-head strong { font-size: 16px; }
-    .tile-head .tile-arrow { margin-left: auto; color: var(--muted); }
-    .tile-visual { min-height: 42px; margin-top: 14px; display: flex; align-items: center; gap: 10px; }
+    .overview-shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(310px, 380px); gap: 20px; align-items: start; }
+    .overview-main, .overview-side { min-width: 0; }
+    .project-status-card { padding: 18px 20px; }
+    .project-status-label { margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    .project-status-head { display: flex; align-items: center; gap: 12px; }
+    .project-status-head h1 { margin: 0; font-size: 21px; line-height: 1.3; }
+    .project-status-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-left: auto; }
+    .project-status-progress { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; color: var(--muted); font-size: 13px; }
+    .project-status-progress strong { color: var(--text); }
+    .project-status-next { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); }
+    .project-status-next strong { color: var(--text); }
+    .overview-owner-panel { position: sticky; top: 88px; overflow: hidden; }
+    .owner-panel-head { display: flex; align-items: center; gap: 10px; padding: 16px 17px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .owner-panel-head h2 { margin: 0; font-size: 17px; }
+    .owner-panel-head .owner-count { margin-left: auto; }
+    .owner-count { display: grid; min-width: 28px; height: 28px; place-items: center; padding: 0 8px; border-radius: 99px; color: var(--yellow); background: var(--yellow-bg); font-weight: 780; }
+    .owner-panel-list { display: grid; gap: 10px; padding: 12px; }
+    .owner-group { padding: 13px; border: 1px solid color-mix(in srgb, var(--yellow) 38%, var(--line)); border-radius: 11px; background: var(--panel); }
+    .owner-group-head { display: flex; align-items: center; gap: 9px; }
+    .owner-group-head strong { min-width: 0; }
+    .owner-group-head .owner-count { margin-left: auto; }
+    .owner-group-detail { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .owner-group .btn { margin-top: 11px; }
+    .owner-panel-empty { padding: 22px 16px; color: var(--muted); text-align: center; }
+    .overview-agent-details { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--panel); }
+    .overview-agent-details > summary { display: flex; align-items: center; gap: 10px; padding: 14px 17px; list-style: none; }
+    .overview-agent-details > summary::-webkit-details-marker { display: none; }
+    .overview-agent-details > summary::before { content: '›'; color: var(--muted); font-size: 20px; line-height: 1; transition: transform .16s ease; }
+    .overview-agent-details[open] > summary::before { transform: rotate(90deg); }
+    .overview-agent-summary { min-width: 0; }
+    .overview-agent-summary strong, .overview-agent-summary span { display: block; }
+    .overview-agent-summary span { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .overview-agent-details > summary .badge { margin-left: auto; }
+    .overview-agent-body { padding: 13px 17px 16px; border-top: 1px solid var(--line); }
+    .overview-agent-line { color: var(--muted); font-size: 12px; }
+    .overview-agent-line + .overview-agent-line { margin-top: 7px; }
+    .overview-agent-line strong { color: var(--text); }
+    .overview-agent-body .btn { margin-top: 12px; }
+    .overview-risk-link { margin-left: auto; }
     .state-dot { width: 13px; height: 13px; border: 3px solid var(--panel); border-radius: 50%; background: var(--gray); box-shadow: 0 0 0 2px var(--gray-bg); }
     .state-dot.RUNNING { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.WAITING_FOR_PARENT { background: var(--purple); box-shadow: 0 0 0 2px var(--purple-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.WAITING_FOR_HUMAN { background: var(--yellow); box-shadow: 0 0 0 2px var(--yellow-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.FAILED { background: var(--red); box-shadow: 0 0 0 2px var(--red-bg); }
     .state-dot.COMPLETED { background: var(--green); box-shadow: 0 0 0 2px var(--green-bg); }
-    .tile-number { font-size: 34px; line-height: 1; font-weight: 790; }
-    .tile-unit { color: var(--muted); font-size: 13px; }
-    .tile-summary { margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
-    .overview-entry { width: 100%; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--panel); box-shadow: var(--shadow); text-align: left; }
-    .overview-entry:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
-    .entry-head { display: flex; align-items: center; gap: 10px; }
-    .entry-head strong { font-size: 16px; }
-    .entry-head .badge { margin-left: auto; }
-    .entry-summary { margin-top: 5px; color: var(--muted); }
     @keyframes waiting-breathe { 50% { opacity: .35; } }
     .ws-title { display: flex; align-items: center; gap: 10px; }
     .ws-title strong { font-size: 16px; }
@@ -335,15 +352,15 @@
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 80; max-width: 420px; padding: 12px 15px; border-radius: 10px; color: white; background: #173252; box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s; }
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
-    @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
-    @media (max-width: 980px) { .overview-action-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 1180px) { .overview-shell { grid-template-columns: 1fr; } .overview-owner-panel { position: static; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><button class="logo" id="home" type="button" title="返回项目总览" aria-label="返回项目总览">VH</button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
+    <div class="brand"><button class="logo" id="home" type="button" title="返回首页" aria-label="返回首页">VH</button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
     <div class="project-controls"><label class="sr-only" for="project-switcher">切换项目</label><select id="project-switcher" class="project-switcher" aria-label="切换项目"><option>正在读取项目…</option></select><button id="project-unregister" class="icon-btn project-unregister" type="button" title="仅从 Dashboard 注销当前项目">注销项目</button></div>
     <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件"></div>
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
@@ -530,6 +547,10 @@
     const documentItemLabel = value => DOCUMENT_ITEM_LABELS[value] || value || '文档事项';
     const humanActionLabel = value => HUMAN_ACTION_LABELS[value] || actionLabel(value) || humanText(value) || '等待负责人处理';
     const analyzerLabel = value => ANALYZER_LABELS[value] || `由 ${value} 检查`;
+    const revisionLabel = value => {
+      const text = String(value ?? '未记录');
+      return text === '未记录' || /^r/i.test(text) ? text : `r${text}`;
+    };
     function humanText(value) {
       let text = String(value ?? '');
       const governance = text.match(/^未决 VDOC 治理事项\s+([^ ]+)\s+\(([^,]+),\s*([^,]+),\s*(.+)\)$/);
@@ -693,8 +714,6 @@
     }
     function render() {
       if (!state.snapshot) return;
-      const overview = !state.workstream && !state.pendingItems && !state.riskChanges && !state.reviewWorkstream && !state.reviewPlanNode && !state.reviewDeliveryNode && !state.reviseVdocPlan;
-      $('#layout').classList.toggle('overview-focus', overview);
       renderSidebar();
       if (state.reviewDeliveryNode) renderDocumentDeliveryReview(findNode(state.reviewDeliveryNode));
       else if (state.reviseVdocPlan) renderVdocRevisionRequest();
@@ -763,40 +782,96 @@
       for (const f of (snapshot.model?.findings || []).filter(item => item.status === 'OPEN')) risks.push({id:`finding:${f.id}`, status:f.severity === 'CRITICAL' ? 'INVALID' : 'BLOCKED', title:humanText(f.details), detail:`${f.severity} · ${f.subject}`, target:f.subject, created_at:f.created_at});
       return [...new Map(risks.map(item => [item.id, item])).values()];
     }
-    function overviewEntry(title, status, summary, attribute) {
-      return `<button class="overview-entry" ${attribute}><div class="entry-head"><strong>${escapeHtml(title)}</strong>${agentStatusBadge(status)}<span aria-hidden="true">↗</span></div><div class="entry-summary">${escapeHtml(summary)}</div></button>`;
-    }
     function progressRing(value, label, small=false) {
       const normalized = Math.max(0, Math.min(100, Number(value) || 0));
       return `<div class="progress-ring${small ? ' small' : ''}" style="--progress:${normalized}" role="img" aria-label="${escapeHtml(label)}"><span>${normalized}%</span></div>`;
     }
-    function overviewTile(kind, title, status, summary, attribute, count=null) {
-      const visual = `<div class="tile-visual"><span class="tile-number">${Number(count || 0)}</span><span class="tile-unit">${kind === 'pending' ? '项需要处理' : '项风险或变化'}</span>${statusBadge(status)}</div>`;
-      return `<button class="overview-tile ${escapeHtml(kind)}" ${attribute}><div class="tile-head"><strong>${escapeHtml(title)}</strong><span class="tile-arrow" aria-hidden="true">↗</span></div>${visual}<div class="tile-summary">${escapeHtml(summary)}</div></button>`;
+    function currentProjectWorkstream(snapshot=state.snapshot) {
+      const lifecycleWeight = {REVISE:70, REVIEW:60, PARTIALLY_STALE:50, ACTIVE:40, SATISFIED:20, BASELINED:10};
+      return (snapshot.workstreams || []).map((item, index) => ({
+        item, index,
+        pending: humanPendingItems({waiting_for_human:item.waiting_for_human || []}).length,
+        lifecycle: lifecycleWeight[item.lifecycle] || 0,
+      })).sort((left, right) =>
+        right.pending - left.pending || right.lifecycle - left.lifecycle || left.index - right.index
+      )[0]?.item || null;
+    }
+    function projectStatusCardHtml(snapshot=state.snapshot) {
+      const w = currentProjectWorkstream(snapshot);
+      if (!w) return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>尚未规划验证工作</h1></div><div class="project-status-next"><strong>下一步：</strong>根据当前 DUT、接口、功能和验证目标建立验证工作流及工作节点。</div></section>`;
+      const writingPlans = (w.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required);
+      const approvedPlans = writingPlans.filter(node => node.plan_review?.status === 'APPROVED').length;
+      const changedPlans = writingPlans.filter(node => node.plan_review?.status === 'CHANGES_REQUESTED').length;
+      const planReviewActive = w.workstream === 'VDOC' && writingPlans.length > 0 && approvedPlans < writingPlans.length;
+      const pendingCount = humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length;
+      const title = planReviewActive ? 'VDOC · 文档撰写方案' : `${w.workstream} · ${workstreamLabel(w.workstream)}`;
+      const progress = planReviewActive
+        ? `<strong>已批准 ${approvedPlans} / ${writingPlans.length} 项</strong><span>${changedPlans ? `${changedPlans} 项需要修改，` : ''}还有 ${writingPlans.length - approvedPlans} 项尚未批准</span>`
+        : w.progress.required
+          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>还有 ${Math.max(0, w.progress.required - w.progress.satisfied)} 个工作节点尚未完成</span>`
+          : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT 继续分解</span>';
+      const firstAction = (w.closure?.actions || [])[0];
+      const next = planReviewActive && changedPlans
+        ? `Agent 先按评审意见修改 ${changedPlans} 项方案；修改后由负责人重新审批。`
+        : planReviewActive
+          ? '在右侧逐项审批。全部批准后可以开始撰写正文，但不代表正文已经通过。'
+          : pendingCount
+            ? `在右侧处理这条工作流的 ${pendingCount} 项待办；处理后 Agent 才会继续相关工作。`
+            : w.closure?.ready
+              ? '这条工作流的完成条件已经满足；继续检查其他工作流。'
+              : firstAction
+                ? `继续处理“${actionLabel(firstAction.kind)}”。${humanText(firstAction.reason || '')}`
+                : '继续按工作节点推进当前验证工作。';
+      return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>${escapeHtml(title)}</h1><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span>${workstreamStatusBadge(w)}</div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div></section>`;
+    }
+    function pendingItemGroupInfo(item) {
+      const targetNode = findNode(item.target);
+      const workstreamName = targetNode?.workstream || item.workstream || (item.target_type === 'workstream' ? String(item.target || '').replace(/^workstream:/, '') : null);
+      const targetWorkstream = workstreamName ? workstream(workstreamName) : null;
+      const scope = targetWorkstream ? `${targetWorkstream.workstream} · ${workstreamLabel(targetWorkstream.workstream)}` : '整个验证项目';
+      if (item.source === 'agent-question') return {key:'agent-question', title:'回答 Agent 问题', detail:`${scope} · 主 Agent 等待你的工程判断`, action:'回答问题', questionId:item.question_id};
+      if (targetNode?.role === 'document-writing-plan') return {key:`plan:${workstreamName || 'VDOC'}`, title:'审批文档撰写方案', detail:`${workstreamName || 'VDOC'} · 方案 ${revisionLabel(targetWorkstream?.revision)}`, action:'查看方案'};
+      if (targetNode?.role === 'document-deliverable') return {key:`delivery:${workstreamName || 'VDOC'}`, title:'验收文档交付内容', detail:`${workstreamName || 'VDOC'} · 当前正文内容`, action:'查看内容'};
+      if (item.source === 'document-item') return {key:'document-items', title:'处理文档中的问题和决定', detail:'VDOC · 文档内容尚有待确认事项', action:'查看并处理'};
+      if (item.source === 'closure' && targetWorkstream) return {key:`workstream:${workstreamName}`, title:`评审 ${workstreamName} 工作方案`, detail:scope, action:'查看方案'};
+      return {key:'other', title:'处理待确认事项', detail:scope, action:'查看并处理'};
+    }
+    function overviewPendingGroupsHtml(items) {
+      if (!items.length) return '<div class="owner-panel-empty">当前没有需要你处理的事项</div>';
+      const groups = new Map();
+      items.forEach(item => {
+        const info = pendingItemGroupInfo(item);
+        if (!groups.has(info.key)) groups.set(info.key, {...info, items:[]});
+        groups.get(info.key).items.push(item);
+      });
+      return `<div class="owner-panel-list">${[...groups.values()].map(group => {
+        const questionId = group.items.length === 1 ? group.questionId : null;
+        return `<article class="owner-group"><div class="owner-group-head"><strong>${escapeHtml(group.title)}</strong><span class="owner-count">${group.items.length}</span></div><div class="owner-group-detail">${escapeHtml(group.detail)}</div><button class="btn small" type="button" data-open-pending-items${questionId ? ` data-question-id="${escapeHtml(questionId)}"` : ''}>${escapeHtml(group.action)}</button></article>`;
+      }).join('')}</div>`;
+    }
+    function overviewAgentDetailsHtml(snapshot=state.snapshot) {
+      const summary = agentSummary(snapshot);
+      const status = summary.status || 'IDLE';
+      const message = humanText(agentMessageText(summary.message || summary.text || '当前没有正在处理的验证工作'));
+      const activeSubagents = snapshot.agent_collaboration?.active_subagents || [];
+      const recentSubagents = snapshot.agent_collaboration?.recent_subagents || [];
+      const questionHistory = snapshot.agent_question_history || snapshot.agent_questions || [];
+      const historyCount = (snapshot.activity_history || []).length + questionHistory.length;
+      return `<details class="overview-agent-details"><summary><span class="overview-agent-summary"><strong>Agent 运行详情</strong><span>${escapeHtml(message)}</span></span>${agentStatusBadge(status)}</summary><div class="overview-agent-body"><div class="overview-agent-line"><strong>主 Agent：</strong>${escapeHtml(message)}</div><div class="overview-agent-line"><strong>子 Agent：</strong>${activeSubagents.length} 个正在执行${recentSubagents.length ? `，${recentSubagents.length} 个最近结束` : ''}</div><div class="overview-agent-line"><strong>运行与回答记录：</strong>${historyCount} 条</div><button class="btn small" type="button" data-open-pending-items>查看完整运行详情</button></div></details>`;
     }
     function renderOverview() {
       const s = state.snapshot, pending = humanPendingItems(s), risks = riskItems(s);
-      const pendingStatus = pending.length ? 'WAITING_FOR_HUMAN' : 'COMPLETED';
-      const riskStatus = risks.some(item => item.status === 'INVALID') ? 'INVALID' : risks.length ? 'PROVISIONAL' : 'VALID';
-      $('#main').innerHTML = `<div class="page-head"><div><h1>验证项目总览</h1><p>快速查看需要你处理的事项、验证工作流进度，以及可能影响当前验证结论的风险与变更。</p></div></div>
-        ${projectContextHtml()}
-        <section class="section"><div class="grid overview-action-grid">
-          ${overviewTile('pending', '需要你处理', pendingStatus, pending.length ? pendingItemSummary(pending, true) : '当前没有需要你处理的事项', 'data-open-pending-items', pending.length)}
-          ${overviewTile('risk', '验证风险与变更', riskStatus, risks.length ? '可能影响当前验证结论，需要检查影响范围' : '当前没有影响验证结论的重要变化', 'data-open-risk-changes', risks.length)}
-        </div></section>
-        <section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>
-        `;
+      $('#main').innerHTML = `<div class="overview-shell"><div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span><button class="btn small overview-risk-link" type="button" data-open-risk-changes>风险与变更 ${risks.length}</button></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>${projectContextHtml()}</div><aside class="overview-side"><section class="card overview-owner-panel" aria-label="需要你处理"><div class="owner-panel-head"><h2>需要你处理</h2><span class="owner-count">${pending.length}</span></div>${overviewPendingGroupsHtml(pending)}${overviewAgentDetailsHtml(s)}</section></aside></div>`;
       bindOverviewEntries(); bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
       const p = percent(w.progress);
-      const human = (w.waiting_for_human || []).filter(item => ['agent-question','closure','document-item'].includes(item.source)).length;
-      return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</strong>${workstreamStatusBadge(w)}<span class="revision">计划 ${w.revision}</span></div>
+      return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</strong>${workstreamStatusBadge(w)}<span class="revision">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div>
         <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-progress">${progressRing(p, `${w.workstream} 工作节点完成度 ${p}%`)}<div class="ws-progress-text">${w.progress.satisfied}/${w.progress.required} 个工作节点已有明确完成结论<br>只按工作节点数量计算，不代表整体验证质量</div></div>
-        <div class="chips"><span class="badge ${human ? 'OPEN':'RECORDED'}">${human} 项需要您处理</span>${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(STATUS_LABELS[k] || k)}</span>`).join('')}</div></article>`;
+        <div class="chips">${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(STATUS_LABELS[k] || k)}</span>`).join('')}</div></article>`;
     }
     function bindOverviewEntries() {
-      document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab());
+      document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab(button.dataset.questionId || null));
       document.querySelectorAll('[data-open-risk-changes]').forEach(button => button.onclick = () => openRiskChangesTab());
     }
     function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => card.onclick = () => openWorkstreamTab(card.dataset.workstream)); }
@@ -1028,7 +1103,7 @@
       });
     }
     function humanRows(items) {
-      if (!items.length) return '<div class="empty">当前没有需要您处理的事项</div>';
+      if (!items.length) return '<div class="empty">当前没有需要你处理的事项</div>';
       return items.map(a => {
         const targetNode = findNode(a.target);
         const planNodeReview = a.source === 'closure' && Boolean(targetNode?.plan_review);
@@ -1267,7 +1342,7 @@
         ['审批对应当前工作流版本和当前文档正文', currentBindings],
         ['规则检查工具已确认依赖和退出条件满足', engineClosed],
       ];
-      return `<section class="section"><details class="detail-group"><summary>VDOC 文档评审与收敛状态 <span class="row-meta">${escapeHtml(phase)}</span></summary><div class="detail-group-body"><div class="card metric"><div class="label">当前轮次 · 工作流版本 ${w.revision}</div><div class="value" style="font-size:18px">${escapeHtml(phase)}</div><div class="hint">Agent 分析 → 系统登记版本 → 负责人评审 → 有修改则 Agent 迭代 → 负责人复审 → 系统检查依赖和退出条件</div></div><div class="notice" style="margin-top:12px"><strong>这里显示的是当前状态，不是另一套审批规则。</strong> Dashboard 记录意见和结论；Agent 读取反馈后分析修改；verif-harness 校验版本、依赖和退出条件，但不代替负责人作工程判断。</div><div class="grid two-col"><div><strong>当前重新评审原因</strong><ul class="exit-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div><strong>当前收敛条件</strong><div class="card list-card" style="margin-top:8px">${checklist.map(([label, satisfied]) => `<div class="list-row"><div>${escapeHtml(label)}</div>${statusBadge(satisfied ? 'APPROVED' : 'PENDING')}</div>`).join('')}</div></div></div><div class="row-meta" style="margin-top:12px">完整规范：skills/verif-harness/vplan/vdoc.md · 用户操作说明：skills/verif-harness/docs/user_guide.md</div></div></details></section>`;
+      return `<section class="section"><details class="detail-group"><summary>VDOC 文档评审与收敛状态 <span class="row-meta">${escapeHtml(phase)}</span></summary><div class="detail-group-body"><div class="card metric"><div class="label">当前轮次 · 方案 ${escapeHtml(revisionLabel(w.revision))}</div><div class="value" style="font-size:18px">${escapeHtml(phase)}</div><div class="hint">Agent 分析 → 系统登记版本 → 负责人评审 → 有修改则 Agent 迭代 → 负责人复审 → 系统检查依赖和退出条件</div></div><div class="notice" style="margin-top:12px"><strong>这里显示的是当前状态，不是另一套审批规则。</strong> Dashboard 记录意见和结论；Agent 读取反馈后分析修改；verif-harness 校验版本、依赖和退出条件，但不代替负责人作工程判断。</div><div class="grid two-col"><div><strong>当前重新评审原因</strong><ul class="exit-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div><strong>当前收敛条件</strong><div class="card list-card" style="margin-top:8px">${checklist.map(([label, satisfied]) => `<div class="list-row"><div>${escapeHtml(label)}</div>${statusBadge(satisfied ? 'APPROVED' : 'PENDING')}</div>`).join('')}</div></div></div><div class="row-meta" style="margin-top:12px">完整规范：skills/verif-harness/vplan/vdoc.md · 用户操作说明：skills/verif-harness/docs/user_guide.md</div></div></details></section>`;
     }
     function criteriaTableHtml(n) {
       const assessment = n.closure_assessment || {};
@@ -1299,7 +1374,7 @@
         : '<button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button>';
       $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions">${headerActions}</div></div>
         ${projectContextHtml(true)}
-        <div class="grid summary-grid"><article class="card metric"><div class="label">当前阶段</div><div class="value" style="font-size:18px">${workstreamStatusBadge(w)}</div><div class="hint">计划版本 ${w.revision}</div></article><article class="card metric"><div class="label">工作节点进度</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 已有明确完成结论</div></article><article class="card metric"><div class="label">当前工作</div><div class="value">${active.length}</div><div class="hint">${agentWaiting ? `其中 ${agentWaiting} 项等待负责人决定` : '已登记的实时工作'}</div></article><article class="card metric"><div class="label">需要你处理</div><div class="value">${openHuman.length}</div><div class="hint">${openHuman.length ? '对应节点已在下方标出' : '当前无需你处理'}</div></article><article class="card metric"><div class="label">当前还要处理</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '完成条件已满足' : '仍有未完成事项'}</div></article></div>
+        <div class="grid summary-grid"><article class="card metric"><div class="label">当前阶段</div><div class="value" style="font-size:18px">${workstreamStatusBadge(w)}</div><div class="hint">方案 ${escapeHtml(revisionLabel(w.revision))}</div></article><article class="card metric"><div class="label">工作节点进度</div><div class="value">${w.progress.satisfied}/${w.progress.required}</div><div class="hint">${p}% 已有明确完成结论</div></article><article class="card metric"><div class="label">当前工作</div><div class="value">${active.length}</div><div class="hint">${agentWaiting ? `其中 ${agentWaiting} 项等待负责人决定` : '已登记的实时工作'}</div></article><article class="card metric"><div class="label">当前还要处理</div><div class="value">${actions.length}</div><div class="hint">${w.closure.ready ? '完成条件已满足' : '仍有未完成事项'}</div></article></div>
         ${vdocConvergenceHtml(w, openHuman)}
         ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
         <section class="section"><div class="section-head"><h2>当前工作</h2></div><div class="card list-card">${activityRows(w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status)))}</div></section>
@@ -1494,7 +1569,7 @@
         : '批准后仅表示允许 Agent 按下列目标、节点、交付物和退出条件开始工作。';
       const planName = w.workstream === 'VDOC' ? '文档撰写方案' : '工作流实施方案';
       const catalogNote = w.workstream === 'VDOC' ? '不作为文档撰写方案节点计数' : '不作为实施方案节点计数';
-      return `<section class="section"><div class="section-head"><h2>本次审批对象：${planName}</h2><span class="count">计划版本 ${w.revision}</span></div><div class="notice"><strong>这一步审批的是${planName}，不是已经完成的内容。</strong> ${escapeHtml(vdocNotice)} 不表示文档正文、实现结果、仿真结果或节点完成状态已经通过验收。</div><div class="card"><dl class="kv"><dt>工作流</dt><dd>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</dd><dt>总体目标</dt><dd>${escapeHtml(humanText(w.objective || '未登记总体目标'))}</dd><dt>计划版本</dt><dd>${w.revision}</dd></dl></div><div class="section-head"><h2>基于当前 DUT 分解的方案节点</h2><span class="count">${planNodes.length} 项</span></div>${nodes}${documentOutputs ? `<details class="detail-group"><summary>查看文档交付分类（${catalogNote}）</summary><div class="detail-group-body card"><ul>${documentOutputs}</ul></div></details>` : ''}<div class="section-head"><h2>整体退出条件</h2></div><div class="card"><ul class="exit-list">${planListHtml(w.exit_criteria, '尚未登记整体退出条件')}</ul></div></section>`;
+      return `<section class="section"><div class="section-head"><h2>本次审批对象：${planName}</h2><span class="count">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div><div class="notice"><strong>这一步审批的是${planName}，不是已经完成的内容。</strong> ${escapeHtml(vdocNotice)} 不表示文档正文、实现结果、仿真结果或节点完成状态已经通过验收。</div><div class="card"><dl class="kv"><dt>工作流</dt><dd>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</dd><dt>总体目标</dt><dd>${escapeHtml(humanText(w.objective || '未登记总体目标'))}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(w.revision))}</dd></dl></div><div class="section-head"><h2>基于当前 DUT 分解的方案节点</h2><span class="count">${planNodes.length} 项</span></div>${nodes}${documentOutputs ? `<details class="detail-group"><summary>查看文档交付分类（${catalogNote}）</summary><div class="detail-group-body card"><ul>${documentOutputs}</ul></div></details>` : ''}<div class="section-head"><h2>整体退出条件</h2></div><div class="card"><ul class="exit-list">${planListHtml(w.exit_criteria, '尚未登记整体退出条件')}</ul></div></section>`;
     }
 
     function bindWorkstreamReviewForm(w, formId) {
@@ -1565,9 +1640,9 @@
       const dependencySection = planSectionReviewHtml(
         n, 'dependencies-impact', '依赖和影响', dependencyContent,
       );
-      $('#main').innerHTML = `<div class="page-head"><div><h1>审批文档撰写方案</h1><p>${escapeHtml(humanText(n.title))} · VDOC 计划版本 ${n.plan_review.revision}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC 方案</button></div></div>
+      $('#main').innerHTML = `<div class="page-head"><div><h1>审批文档撰写方案</h1><p>${escapeHtml(humanText(n.title))} · VDOC 方案 ${escapeHtml(revisionLabel(n.plan_review.revision))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC 方案</button></div></div>
         <div class="notice"><strong>${n.plan_review.status === 'APPROVED' ? '本撰写方案已经审批通过。' : n.plan_review.status === 'CHANGES_REQUESTED' ? '本撰写方案需要按评审意见修改。' : '本撰写方案仍待审批。'}</strong> 审批对象是当前 DUT 的这一个文档撰写方案节点，不是文档正文。“没有额外工程问题”只表示没有另行登记的确认事项，不表示方案已经审批。批准后允许 Agent 按方案编写或完善相关文档内容；正文完成后仍需单独验收。</div>
-        <section class="section"><div class="section-head"><h2>审批对象</h2>${planReviewStatusBadge(n.plan_review.status)}</div><div class="card"><dl class="kv"><dt>验证对象节点</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd><dt>节点目标</dt><dd>${escapeHtml(humanText(n.statement || '未登记'))}</dd><dt>方案版本</dt><dd>${n.plan_review.revision}</dd><dt>是否为计划要求</dt><dd>${n.required ? '是' : '否'}</dd></dl></div></section>
+        <section class="section"><div class="section-head"><h2>审批对象</h2>${planReviewStatusBadge(n.plan_review.status)}</div><div class="card"><dl class="kv"><dt>验证对象节点</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd><dt>节点目标</dt><dd>${escapeHtml(humanText(n.statement || '未登记'))}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(n.plan_review.revision))}</dd><dt>是否为计划要求</dt><dd>${n.required ? '是' : '否'}</dd></dl></div></section>
         ${confirmationSection}${contentSection}${inputsSection}${dependencySection}
         <section class="section"><div class="notice"><strong>节点通过规则：</strong>以上所有必审区块都必须针对当前方案版本批准；任一区块要求修改、要求说明或拒绝，节点方案均不能通过。</div></section>`;
       $('[data-return-vdoc]').onclick = () => leaveNodePlanReview('VDOC');
@@ -1711,9 +1786,9 @@
         `<li>${escapeHtml(humanText(item.title))} · ${statusBadge(item.status)}<details><summary>查看内部编号</summary><pre>${escapeHtml(item.id)}</pre></details></li>`
       ).join('') || '<li>没有需要先补齐的工作</li>';
       const reviewRows = (assessment.reviews || []).slice().reverse().map(item =>
-        `<div class="list-row"><div><div class="row-title">${escapeHtml(item.verdict === 'APPROVE' ? '认可判断' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '拒绝判断')} · ${escapeHtml(item.reviewer)}</div><div class="row-meta">${escapeHtml(item.reason)} · 计划版本 ${item.revision} · ${shortTime(item.created_at)}</div></div></div>`
+        `<div class="list-row"><div><div class="row-title">${escapeHtml(item.verdict === 'APPROVE' ? '认可判断' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '拒绝判断')} · ${escapeHtml(item.reviewer)}</div><div class="row-meta">${escapeHtml(item.reason)} · 方案 ${escapeHtml(revisionLabel(item.revision))} · ${shortTime(item.created_at)}</div></div></div>`
       ).join('') || '<div class="empty">尚未评审这份完成判断</div>';
-      return `<div class="detail-card"><dl class="kv"><dt>系统判断</dt><dd>${statusBadge(assessment.conclusion)}</dd><dt>当前状态</dt><dd>${statusBadge(assessment.node_status)}</dd><dt>计划版本</dt><dd>${assessment.revision}</dd><dt>判断时间</dt><dd>${shortTime(assessment.evaluated_at)}</dd></dl><strong>判断原因</strong><ul>${(assessment.reasons || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未说明</li>'}</ul><strong>还需先完成的工作</strong><ul>${dependencyRows}</ul><strong>待处理问题</strong><ul>${(assessment.open_findings || []).map(item => `<li>${escapeHtml(item.severity)} · ${escapeHtml(humanText(item.details))}</li>`).join('') || '<li>无</li>'}</ul><p class="muted">负责人确认只表示“同意这份判断和其理由”，不会自动把未完成的工作改成已完成。</p><details><summary>查看内部追踪信息</summary><pre>规则：${escapeHtml(assessment.rule_version)}\n内容摘要：${escapeHtml(assessment.digest)}</pre></details></div><details class="detail-group"><summary>查看负责人评审记录</summary><div class="detail-group-body card list-card">${reviewRows}</div></details>`;
+      return `<div class="detail-card"><dl class="kv"><dt>系统判断</dt><dd>${statusBadge(assessment.conclusion)}</dd><dt>当前状态</dt><dd>${statusBadge(assessment.node_status)}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(assessment.revision))}</dd><dt>判断时间</dt><dd>${shortTime(assessment.evaluated_at)}</dd></dl><strong>判断原因</strong><ul>${(assessment.reasons || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未说明</li>'}</ul><strong>还需先完成的工作</strong><ul>${dependencyRows}</ul><strong>待处理问题</strong><ul>${(assessment.open_findings || []).map(item => `<li>${escapeHtml(item.severity)} · ${escapeHtml(humanText(item.details))}</li>`).join('') || '<li>无</li>'}</ul><p class="muted">负责人确认只表示“同意这份判断和其理由”，不会自动把未完成的工作改成已完成。</p><details><summary>查看内部追踪信息</summary><pre>规则：${escapeHtml(assessment.rule_version)}\n内容摘要：${escapeHtml(assessment.digest)}</pre></details></div><details class="detail-group"><summary>查看负责人评审记录</summary><div class="detail-group-body card list-card">${reviewRows}</div></details>`;
     }
     function findNode(id) {
       for (const w of state.snapshot.workstreams) { const node = w.nodes.find(n => n.id === id); if (node) return node; }
@@ -1750,7 +1825,7 @@
         : n.definition_origin === 'project-proposal' ? '' : `<div class="notice"><strong>这是一项通用工作汇总。</strong> 它只用来提醒项目需要做这类工作，不代表具体功能或场景已经完成。</div>`;
       $('#drawer-backdrop').classList.add('open');
       $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(roleLabel(n.role))} · ${escapeHtml(n.workstream || '未归属工作流')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">✕</button></div>
-        ${genericNotice}<div class="node-summary-grid"><div class="summary-item wide"><div class="summary-label">要达到什么</div><div class="summary-value">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div></div><div class="summary-item"><div class="summary-label">当前完成判断</div><div class="summary-value">${statusBadge(assessment.conclusion || n.status)}<div class="compact-meta">${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</div></div></div><div class="summary-item"><div class="summary-label">实际进度</div><div class="summary-value">${escapeHtml(progressBrief(n))}</div></div><div class="summary-item"><div class="summary-label">当前最主要的问题</div><div class="summary-value">${escapeHtml(mainBlocker(n))}</div></div><div class="summary-item"><div class="summary-label">下一步</div><div class="summary-value">${escapeHtml(action.label)}<div class="compact-meta">${escapeHtml(action.reason)}</div></div></div><div class="summary-item wide"><div class="summary-label">是否需要负责人处理</div><div class="summary-value">${escapeHtml(humanNeed(n))}</div></div></div>
+        ${genericNotice}<div class="node-summary-grid"><div class="summary-item wide"><div class="summary-label">要达到什么</div><div class="summary-value">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div></div><div class="summary-item"><div class="summary-label">当前完成判断</div><div class="summary-value">${statusBadge(assessment.conclusion || n.status)}<div class="compact-meta">${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</div></div></div><div class="summary-item"><div class="summary-label">实际进度</div><div class="summary-value">${escapeHtml(progressBrief(n))}</div></div><div class="summary-item"><div class="summary-label">当前最主要的问题</div><div class="summary-value">${escapeHtml(mainBlocker(n))}</div></div><div class="summary-item"><div class="summary-label">下一步</div><div class="summary-value">${escapeHtml(action.label)}<div class="compact-meta">${escapeHtml(action.reason)}</div></div></div></div>
         <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${n.plan_review ? '<button class="btn primary" id="node-plan-review-tab">在新标签页审批文档撰写方案</button>' : ''}${n.delivery_review ? '<button class="btn" id="document-delivery-revision-tab">调整文档交付内容</button><button class="btn primary" id="document-delivery-review-tab">在新标签页验收本交付节点</button>' : ''}${n.role === 'document-catalog' && n.document ? '<button class="btn" id="document-review">查看旧式整篇评审</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">确认节点完成判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
         <section class="detail-block"><h3>完成条件与当前依据</h3>${criteriaTableHtml(n)}</section>
         <section class="detail-block"><h3>进度指标</h3>${progressHtml(n)}</section>
@@ -1811,7 +1886,7 @@
     }
     function openNodeClosureReviewModal(n) {
       const a = n.closure_assessment;
-      openModal(`<h2>确认节点完成判断</h2><p><strong>确认对象：系统对当前节点完成状态的判断及其依据。</strong></p><p><span class="mono">${escapeHtml(n.id)}</span> 当前判断：${statusBadge(a.conclusion)}。点击认可只表示您同意系统对现有材料的解释，不会补齐缺少的文档、日志、波形或覆盖率数据。</p><form id="node-closure-form"><div class="field"><label>确认结论</label><select name="verdict"><option value="approve">认可当前判断及依据</option><option value="modify">要求修改判断或补充材料</option><option value="clarify">要求进一步说明</option><option value="reject">当前判断不正确</option></select></div><div class="field"><label>确认人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>确认理由</label><textarea name="reason" placeholder="说明哪些材料支持这个结论，或哪里需要补充、修改" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交完成判断确认</button></div></form>`);
+      openModal(`<h2>确认节点完成判断</h2><p><strong>确认对象：系统对当前节点完成状态的判断及其依据。</strong></p><p><span class="mono">${escapeHtml(n.id)}</span> 当前判断：${statusBadge(a.conclusion)}。点击认可只表示你同意系统对现有材料的解释，不会补齐缺少的文档、日志、波形或覆盖率数据。</p><form id="node-closure-form"><div class="field"><label>确认结论</label><select name="verdict"><option value="approve">认可当前判断及依据</option><option value="modify">要求修改判断或补充材料</option><option value="clarify">要求进一步说明</option><option value="reject">当前判断不正确</option></select></div><div class="field"><label>确认人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>确认理由</label><textarea name="reason" placeholder="说明哪些材料支持这个结论，或哪里需要补充、修改" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提交完成判断确认</button></div></form>`);
       $('#node-closure-form').onsubmit = async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); data.node = n.id; data.assessment_digest = a.digest; rememberReviewer(data.reviewer); await post('/api/reviews/node-closure', data, '节点完成判断评审已保存'); };
     }
     async function openDocumentReviewModal(document) {
