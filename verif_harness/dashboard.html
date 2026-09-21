@@ -623,6 +623,7 @@
       renderProjectSwitcher();
       const url = resetView ? new URL(window.location.origin + window.location.pathname) : new URL(window.location.href);
       url.searchParams.set('project', projectId);
+      url.searchParams.set('token', token);
       window.history.replaceState({}, '', url);
       $('#main').innerHTML = '<div class="empty">正在加载所选项目…</div>';
       const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`, {headers:{'X-Verif-Token':token}});
@@ -807,6 +808,7 @@
     function standaloneUrl() {
       const url = new URL(window.location.origin + window.location.pathname);
       if (state.project) url.searchParams.set('project', state.project);
+      url.searchParams.set('token', token);
       return url;
     }
     function openAgentInteractionTab(questionId=null) {

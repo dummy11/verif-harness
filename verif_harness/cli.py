@@ -602,6 +602,15 @@ def dashboard_access_instructions(dashboard_url: str, remote: bool) -> dict[str,
         f"ssh -N -L {dashboard_port}:127.0.0.1:{dashboard_port} "
         "<remote-user>@<remote-host>"
     )
+    single_hop_config = "\n".join((
+        "Host verification-server-direct",
+        "    HostName <remote-host>",
+        "    User <remote-user>",
+        "    Port <remote-ssh-port>",
+        "    IdentityFile ~/.ssh/<remote-private-key>",
+        "    IdentitiesOnly yes",
+        f"    LocalForward {dashboard_port} 127.0.0.1:{dashboard_port}",
+    ))
     double_hop_config = "\n".join((
         "Host verification-jump",
         "    HostName <jump-host>",
@@ -626,6 +635,7 @@ def dashboard_access_instructions(dashboard_url: str, remote: bool) -> dict[str,
         # Kept for existing consumers; the structured single_hop field is preferred.
         "command": single_hop,
         "single_hop": {
+            "ssh_config": single_hop_config,
             "command": single_hop,
             "url": selected_project_url,
         },
@@ -638,7 +648,30 @@ def dashboard_access_instructions(dashboard_url: str, remote: bool) -> dict[str,
             f"如果本地 {dashboard_port} 已占用，只修改 LocalForward 左侧端口；"
             f"右侧仍使用远端 Dashboard 端口 {dashboard_port}"
         ),
-        "message": "远端不会尝试打开浏览器；请任选单跳或双跳配置建立 SSH 转发",
+        "required_agent_output": {
+            "must_print": True,
+            "items": [
+                "single_hop.ssh_config", "single_hop.command",
+                "double_hop.ssh_config", "double_hop.command", "url",
+            ],
+            "message": "\n".join((
+                "远端 Dashboard 已就绪。Agent 必须向负责人完整打印以下三项，不能只引用字段名：",
+                "",
+                "单跳 SSH 配置（写入本地 ~/.ssh/config）：",
+                single_hop_config,
+                f"启动命令：{single_hop}",
+                "",
+                "双跳 SSH 配置（写入本地 ~/.ssh/config）：",
+                double_hop_config,
+                "启动命令：ssh -N verification-server",
+                "",
+                "本地浏览器访问远端 Dashboard 的完整 URL（必须保留 project 和 token）：",
+                selected_project_url,
+            )),
+        },
+        "message": (
+            "远端不会尝试打开浏览器；Agent 必须完整打印单跳配置、双跳配置和本地访问 URL"
+        ),
     }
 
 

@@ -256,6 +256,14 @@ class DashboardTest(unittest.TestCase):
             "ssh -N -L 8765:127.0.0.1:8765 <remote-user>@<remote-host>",
         )
         self.assertEqual(result["access"]["single_hop"]["command"], result["access"]["command"])
+        self.assertIn(
+            "Host verification-server-direct",
+            result["access"]["single_hop"]["ssh_config"],
+        )
+        self.assertIn(
+            "LocalForward 8765 127.0.0.1:8765",
+            result["access"]["single_hop"]["ssh_config"],
+        )
         self.assertIn("Host verification-jump", result["access"]["double_hop"]["ssh_config"])
         self.assertIn("ProxyJump verification-jump", result["access"]["double_hop"]["ssh_config"])
         self.assertIn(
@@ -263,6 +271,15 @@ class DashboardTest(unittest.TestCase):
             result["access"]["double_hop"]["ssh_config"],
         )
         self.assertEqual(result["access"]["double_hop"]["command"], "ssh -N verification-server")
+        required = result["access"]["required_agent_output"]
+        self.assertTrue(required["must_print"])
+        self.assertEqual(required["items"], [
+            "single_hop.ssh_config", "single_hop.command",
+            "double_hop.ssh_config", "double_hop.command", "url",
+        ])
+        self.assertIn(result["access"]["single_hop"]["ssh_config"], required["message"])
+        self.assertIn(result["access"]["double_hop"]["ssh_config"], required["message"])
+        self.assertIn(access_url, required["message"])
 
     def test_remote_access_templates_use_the_selected_account_port(self) -> None:
         project_id = dashboard_project_id(self.store.root)
@@ -278,6 +295,10 @@ class DashboardTest(unittest.TestCase):
             result = bootstrap_dashboard(self.store, "codex", True, False, None)
         self.assertEqual(result["access"]["remote_dashboard_port"], 8766)
         self.assertIn("8766:127.0.0.1:8766", result["access"]["single_hop"]["command"])
+        self.assertIn(
+            "LocalForward 8766 127.0.0.1:8766",
+            result["access"]["single_hop"]["ssh_config"],
+        )
         self.assertIn(
             "LocalForward 8766 127.0.0.1:8766",
             result["access"]["double_hop"]["ssh_config"],
@@ -570,6 +591,17 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("button.dataset.reviewWorkstream", html)
         self.assertIn("openWorkstreamReviewTab(button.dataset.reviewWorkstream)", html)
         self.assertIn("window.open(url.toString(), '_blank', 'noopener')", html)
+        standalone_url = html[
+            html.index("function standaloneUrl()"):
+            html.index("function openAgentInteractionTab")
+        ]
+        self.assertIn("url.searchParams.set('project', state.project)", standalone_url)
+        self.assertIn("url.searchParams.set('token', token)", standalone_url)
+        select_project = html[
+            html.index("async function selectProject"):
+            html.index("async function initialLoad")
+        ]
+        self.assertIn("url.searchParams.set('token', token)", select_project)
         self.assertIn("renderWorkstreamReview(workstream(state.reviewWorkstream))", html)
         self.assertIn("$('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream)", html)
         self.assertIn("review-page-form", html)

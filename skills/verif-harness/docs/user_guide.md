@@ -1287,17 +1287,28 @@ Dashboard 始终只监听它所在服务器的 `127.0.0.1`。不指定 `--port` 
 DUT、根目录的本机路由注册外没有关系。`STARTED`/`REUSED` 结果中的 `url` 和
 `access.remote_dashboard_port` 是本次实际端口，不能假定一定是 `8765`。
 
-SSH 场景的成功结果会直接给出 `access.single_hop` 和 `access.double_hop`；用实际值替换尖括号中的
-主机、账号、SSH 端口和私钥即可。远端服务器、跳板机和本地电脑的 `127.0.0.1` 分别代表不同机器，
-因此不能依赖远端 `--open-browser`，必须先建立 SSH 本地端口转发。
+SSH 场景的成功结果会直接给出 `access.single_hop`、`access.double_hop` 和 `access.url`；用实际值
+替换尖括号中的主机、账号、SSH 端口和私钥即可。Agent 必须在当前对话逐项完整打印单跳 SSH 配置及
+启动命令、双跳 SSH 配置及启动命令，以及本地浏览器访问远端 Dashboard 的完整 URL；不能只打印
+其中一项、只说配置位于 bootstrap 结果中，或省略 URL 的 `project`/`token` 参数。CLI 同时返回可直接
+展示的 `access.required_agent_output.message`。远端服务器、跳板机和本地电脑的 `127.0.0.1` 分别
+代表不同机器，因此不能依赖远端 `--open-browser`，必须先建立 SSH 本地端口转发。
 
 单跳 SSH，即本地电脑可以直接登录远端服务器：
 
+```sshconfig
+Host verification-server-direct
+    HostName <remote-host>
+    User <remote-user>
+    Port <remote-ssh-port>
+    IdentityFile ~/.ssh/<remote-private-key>
+    IdentitiesOnly yes
+    LocalForward <dashboard-port> 127.0.0.1:<dashboard-port>
+```
+
 ```bash
-# 本地电脑执行；保持该进程运行
-ssh -N \
-  -L <dashboard-port>:127.0.0.1:<dashboard-port> \
-  <remote-user>@<remote-host>
+# 本地电脑执行；也可以直接使用 access.single_hop.command；保持该进程运行
+ssh -N verification-server-direct
 ```
 
 双跳 SSH 推荐把 CLI 返回的 `access.double_hop.ssh_config` 写入本地电脑的 `~/.ssh/config`。

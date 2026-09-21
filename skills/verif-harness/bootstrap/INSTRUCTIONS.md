@@ -62,8 +62,14 @@ and questions, and does not write project state.
    after bootstrap. Never add `--no-dashboard` unless the Human explicitly asked to
    disable the Dashboard in the current conversation. Running over SSH, on a headless
    server, or from a non-interactive Agent is not a reason to disable it. On SSH, do
-   not try to open a remote browser; return the `access.command` and `access.url`
-   from the CLI result. CI may omit both flags and use the CLI's automatic skip.
+   not try to open a remote browser. For every successful remote launch, print all
+   of the following values directly in the current Agent response: the complete
+   `access.single_hop.ssh_config` and its command, the complete
+   `access.double_hop.ssh_config` and its command, and the full token-bearing
+   `access.url`. Never omit one item, merely say that the configuration is in the
+   bootstrap result, or remove the URL's `project` or `token` parameter. The CLI's
+   `access.required_agent_output.message` is a ready-to-print rendering of this
+   mandatory response. CI may omit both flags and use the CLI's automatic skip.
    One automatically selected loopback port hosts a shared Dashboard service for
    the current OS account. Selection starts at `8765`; a Dashboard owned by
    another account is skipped rather than reused. Each bootstrap registers only

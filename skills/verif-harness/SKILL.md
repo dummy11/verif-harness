@@ -103,8 +103,12 @@ Workstream. Project lifecycle is separate.
   selection starts at port 8765, skips hubs owned by other accounts, and reuses
   only the current account's registry. Require the account-local access token for
   the page and every data API; never expose the token file or token-bearing URL to
-  another user. For SSH, return the successful result's single-hop and double-hop
-  templates and full access URL using its actual selected port. Never keep
+  another user. For every successful SSH remote result, print the complete
+  `access.single_hop.ssh_config` and command, the complete
+  `access.double_hop.ssh_config` and command, and the full token-bearing
+  `access.url` in the current Agent response using the actual selected port.
+  Never omit one of these three items, merely refer the Human to the JSON result,
+  or remove the `project` or `token` query parameter. Never keep
   the service alive with a foreground shell, pipe it to `head`, or assume that a
   printed URL proves the service is still running. Use
   `dashboard --status` to verify it. `dashboard --stop` unregisters only the

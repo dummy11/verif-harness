@@ -214,6 +214,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
         self.assertIn("不要直接显示协议角色名 Human", instructions)
         self.assertIn("不能只说“等待计划评审”“空闲”或“未登记活动”", instructions)
+        self.assertIn("单跳 SSH 配置及启动命令", instructions)
+        self.assertIn("双跳 SSH 配置及启动命令", instructions)
+        self.assertIn("不得从 URL 删除 `project` 或 `token` 参数", instructions)
         with sqlite3.connect(state / "model.sqlite3") as connection:
             version = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
             workstreams = connection.execute("SELECT COUNT(*) FROM workstreams").fetchone()[0]
@@ -244,6 +247,9 @@ class V1ControlPlaneTest(unittest.TestCase):
             self.assertIn("--no-dashboard", source)
         self.assertIn("Never add `--no-dashboard` unless the Human explicitly asks", skill)
         self.assertIn("SSH, a headless server, or a non-interactive Agent", skill)
+        self.assertIn("Never omit one of these three items", skill)
+        self.assertIn("access.required_agent_output.message", instructions)
+        self.assertIn("Agent 必须在当前对话逐项完整打印", guide)
         self.assertIn("只有 `STARTED` 和 `REUSED`", guide)
 
     def test_bootstrap_agent_rules_require_sequential_questions(self) -> None:
