@@ -65,9 +65,9 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 - 本机实时 [Dashboard](skills/verif-harness/docs/glossary.md#dashboard)：每个系统账号自动选择一个
   loopback 端口，并在该账号内注册多个彼此独立的验证项目；它们只共享 Dashboard 服务，不共享
   SQLite、工作流、节点、审批、问题或证据。同机不同账号不会复用彼此的 Dashboard。
-  当前项目总览以默认折叠的项目/DUT、
-  Agent 交互、待处理事项、验证工作流和验证风险与变更作为入口；状态摘要点击后在新标签页查看或
-  处理。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard
+  当前项目总览以默认折叠的项目/DUT、“需要你处理”、验证工作流和验证风险与变更作为入口；
+  Agent 提问与审批、验收、确认统一进入“需要你处理”，Agent 运行状态和历史放在该页面底部的折叠
+  详情中。Closure 需要正式评审时，revision-aware 人工检查点可让等待中的 Agent 在收到 Dashboard
   决定后继续。
 - 每个目标节点显示一份可复核的
   [节点完成结论](skills/verif-harness/docs/glossary.md#node-closure-assessment)：Engine 列出使用的规则、
@@ -75,7 +75,7 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
   但评审不会凭空创建 PASS 证据。
 - VDOC 在 Dashboard 中以正式文档作为父节点，节点内展示正文版本、内容变化、开放问题、工程决定
   和评审记录；Human 可直接预览当前 Markdown 正文并提交评审，无需直接输入评审命令。未处理的 `docs track` 问题会计入
-  “待处理事项”，不会再只影响退出检查而在页面上显示为 0。
+  “需要你处理”，不会再只影响退出检查而在页面上显示为 0。
 
 ## 运行逻辑
 

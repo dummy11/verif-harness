@@ -327,7 +327,7 @@ VDOC 对外只有两种节点类型：`document-writing-plan`（文档撰写方�
 文档交付节点支持“暂定接受”，但必须填写责任人和重新评审触发条件。暂定内容允许下游带风险开始工作，
 不计入文档通过、工作域完成或最终冻结；暂定语义变化后，依赖它的工作必须重新检查。
 工程语义继续写在 Markdown 正文中，不复制到 SQLite，也不会为每个标题或段落建立节点。只有需要
-Human 明确回答、决定或持续跟踪的事项才使用 `docs track`；这些事项未处理时会计入“待处理事项”。
+Human 明确回答、决定或持续跟踪的事项才使用 `docs track`；这些事项未处理时会计入“需要你处理”。
 
 #### VDOC 怎样迭代并收敛
 
@@ -595,7 +595,7 @@ VENV 已证明的最小运行能力，因此不会形成相互等待。完整节
 | --- | --- | --- |
 | 1. 读取当前状态 | Agent + Engine | Agent 调用 `status`、`inspect` 和 `closure`；Engine 返回当前 revision、未完成目标、前置依赖和开放问题 |
 | 2. 选择一个可执行动作 | Agent + Engine | Engine 返回目标、原因和建议执行者；Agent 一次只选择一个边界清楚、前置条件已满足的动作，不启动覆盖六个工作域的大型 task |
-| 3. 处理工程问题 | Human + Agent | 出现接口语义、容差、范围或风险取舍时，Agent 说明影响，并把问题、选项和推荐项登记到 Dashboard 的“Agent 交互”后等待 Human 回答；不受该问题影响的其他工作可以继续 |
+| 3. 处理工程问题 | Human + Agent | 出现接口语义、容差、范围或风险取舍时，Agent 说明影响，并把问题、选项和推荐项登记到 Dashboard 的“需要你处理”后等待 Human 回答；不受该问题影响的其他工作可以继续 |
 | 4. 完成实现或工具运行 | Agent | Agent 编写或修改验证环境、激励、检查器、覆盖率、用例或回归工具，运行编译、自检、仿真、回归或覆盖率工具，产生 log、manifest、VDB/UCDB、波形等原始文件 |
 | 5. 检查原始结果 | Agent | Agent 检查命令退出状态、错误和输出完整性；工具退出码本身不改变节点状态，也不能替代步骤 4 的证据登记 |
 | 6. 转入证据步骤 | Agent + Engine | 有可用工程结果时进入步骤 4；步骤 4 登记后由 Engine 更新节点状态，Agent 再回到本步骤调用 `closure` 选择下一项动作 |
@@ -633,7 +633,7 @@ VENV smoke 和 VSTIM reachability。
 当 `closure` 返回 `executor=human` 时：
 
 1. Engine 只报告目标、缺失信息和受影响节点，不自行选择答案；
-2. Agent 解释问题，并把问题、选项、推荐项和工程影响登记到项目控制状态及 Dashboard 的“Agent 交互”；
+2. Agent 解释问题，并把问题、选项、推荐项和工程影响登记到项目控制状态及 Dashboard 的“需要你处理”；
 3. Human 在 Dashboard 或通过 `agent-question answer` 在 Agent CLI 作出决定，或要求保留为开放问题；
 4. Agent 将决定写入相应文档/plan，并调用结构化命令登记；
 5. Engine 重新计算依赖和未完成项；
@@ -656,7 +656,7 @@ verif-harness closure
 verif-harness status VENV
 verif-harness status VSTIM
 
-# Human：仅在动作涉及工程判断时，在 Dashboard 的 Agent 交互中给出决定
+# Human：仅在动作涉及工程判断时，在 Dashboard 的“需要你处理”中给出决定
 # Agent：执行一个边界清楚的实现、编译、仿真、回归或覆盖率动作
 # 产生原始结果后进入步骤 4，不在步骤 3 直接宣告 PASS 或冻结
 ```
@@ -690,7 +690,7 @@ Verification Closure Engine 为每个 gap 返回：
 按 action 调用[代码生成工具或激励生成组件](glossary.md#dv-terms)、xverif、WavePeek、仿真，
 或者与 Human 讨论。CLI 不启动隐藏 [worker（任务进程）](glossary.md#gap-action)，
 也不会把一个大型 task 放进后台等待 stdin。需要人工输入时，问题统一在 Dashboard 的
-“Agent 交互”板块完成；回答后记录决策或重新 plan。
+“需要你处理”页面完成；回答后记录决策或重新 plan。
 
 这里四个容易混淆的词有明确边界：
 
@@ -1368,32 +1368,28 @@ Dashboard 暴露到 `0.0.0.0`。当前设计只允许 loopback。常见连接问
 前必须登记 Activity；计划建立前登记到项目级 `project`，已有计划后登记到最具体的目标节点。否则
 Dashboard 无法从另一个终端的普通进程或对话文字中猜出它正在做什么。
 
-项目总览只保留五个入口，不在首页展开细节或堆叠统计卡片：
+项目总览只保留四类信息，不在首页单列 Agent：
 
 1. **项目与验证对象**：默认折叠；标题仍显示项目名、DUT 和当前代码版本；
-2. **Agent 交互**：只显示当前状态摘要；`WAITING_FOR_HUMAN` 使用缓慢呼吸状态灯，点击后在新标签页回答；
-3. **待处理事项**：只显示 Human 当前需要回答、审批或确认的数量，点击后在新标签页处理；
-4. **验证工作流**：显示每条 Workstream 的节点完成度、状态和需 Human 处理数量；总览用缓慢呼吸的
+2. **需要你处理**：汇总当前需要 Human 回答、审批、验收或确认的数量，点击后在新标签页处理；
+3. **验证工作流**：显示每条 Workstream 的工作节点进度、状态和需 Human 处理数量；总览用缓慢呼吸的
    进度圈表达可量化完成度，点击后在新标签页打开；节点列表为了横向比较仍使用进度条；
-5. **验证风险与变更**：只显示可能使既有结论失效的数量和严重程度，点击后在新标签页查看。
+4. **验证风险与变更**：只显示可能使既有结论失效的数量和严重程度，点击后在新标签页查看。
 
-总览不再单列“当前工作”或“等待人工处理”。Agent 运行进度归入 Agent 交互；正式方案审批、文档
-交付验收、文档工程决定和 Agent questions 归入“待处理事项”。Human 已经提交、等待 Agent 执行的
-修改请求不重复算作 Human 待办。风险页只收集 `INVALID`、`BLOCKED`、`STALE`、
-`REVALIDATION_REQUIRED`、`PROVISIONAL`、正文变化及开放 finding，不把普通进度冒充风险。
+总览不单列 Agent 运行状态、“当前工作”或“等待人工处理”。正式方案审批、文档交付验收、文档工程决定和
+Agent questions 都进入“需要你处理”。Human 已经提交、等待 Agent 执行的修改请求不重复算作 Human 待办。
+风险页只收集 `INVALID`、`BLOCKED`、`STALE`、`REVALIDATION_REQUIRED`、
+`PROVISIONAL`、正文变化及开放 finding，不把普通进度冒充风险。
 
-Agent 交互详情页始终显示“当前项目的 Agent”。没有需要 Human 回答的问题、也没有 Agent 已同步的
-进行中工作时，页面显示“无需你处理”，并明确说明 Dashboard 尚未收到正在处理验证工作的记录；这不表示
-Agent 进程已经退出，也不能证明终端里没有尚未同步的操作。页面
-同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答问题所属的
-Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Main Agent 对话回答；
-Main Agent 必须先在对话中显示同一个 question ID、正文、全部选项和推荐项，收到回答后立即用
+“需要你处理”页面把开放的 Agent question 放在首位，直接展示影响范围、选项和推荐项；审批、验收和确认
+紧随其后。页面底部只有一个默认折叠的“Agent 运行详情”，其中再按需展开主 Agent 当前工作、子 Agent
+状态以及运行与回答记录。子 Agent 完成只表示分派工作结束，不代表验证通过，也不会自动确认工作节点。
+
+Human 可以直接在网页回答，也可以在当前主 Agent 对话回答。主 Agent 必须先在对话中显示同一个
+question ID、正文、全部选项和推荐项，收到回答后立即用
 `verif-harness agent-question answer` 写回同一个 SQLite 问题记录。写回后 Dashboard 的实时事件流会把
-该问题更新为“已回答”；反方向从 Dashboard 回答时，同一 ID 的 CLI 后台 `await` 会结束并通知 Main Agent。
-详情页把“需要你回答”放在首位并保持展开；Main Agent 的当前工作保持可见。只读的“subagent 工作状态”
-紧跟在 Main Agent 下方并默认折叠，“交互历史”也默认折叠；两者的折叠标题仍显示正在执行数量和记录数量，
-因此减少页面占用时不会隐藏是否需要 Human 回答。subagent 执行完成只表示分派工作结束，不代表验证通过，
-也不会自动生成验证证据或批准工作节点。
+该问题更新为“已回答”；反方向从 Dashboard 回答时，同一 ID 的 CLI 后台 `await` 会结束并通知主 Agent。
+任一入口的回答都只用于继续当前工作，不会自动批准工作流、确认工作节点或改变验证结论。
 任一入口提交后，另一个入口立即看到相同答案。使用网页时不需要进入服务器终端。远端 Dashboard 仍须按上一节建立
 安全的 SSH 端口转发。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
 `prefers-reduced-motion` 设置。
@@ -1506,7 +1502,7 @@ VDOC 文档节点还提供“评审文档正文”。Dashboard 从已经登记�
 正文，同时显示正文版本、内容变化、文档中的开放问题和工程决定。Human 阅读后可以选择认可当前
 正文、要求修改、要求说明或不同意，并填写评审说明。评审仍调用与 `docs review` 相同的底层接口，
 不会因为页面上存在文件就自动认可文档。`docs track` 登记且处于 `PENDING/ACTIVE` 的人工决定和
-外部开放问题会进入总览的“待处理事项”；点击后在新标签页打开对应文档节点。
+外部开放问题会进入总览的“需要你处理”；点击后在新标签页打开对应文档节点。
 只要这些问题或工程决定尚未处理，Dashboard 就不提供“认可当前正文”选项，底层接口也会拒绝绕过该检查。
 
 因此，Human 可以把 Dashboard 作为 VDOC 的默认审阅界面，不需要直接输入 `docs review` 命令。
@@ -1954,7 +1950,7 @@ evidence contract 的材料才能通过 `evidence` 改变节点 validity。
 
 ### `agent-question`
 
-Main Agent 用它把工程选择题持久化到项目控制状态。Human 可以在独立的“Agent 交互”板块回答，也可以调用
+Main Agent 用它把工程选择题持久化到项目控制状态。Human 可以在 Dashboard 的“需要你处理”页面回答，也可以调用
 下面的 `answer` CLI；两者是同一问题的两个交互入口。计划尚未建立时使用项目级目标 `project`；已有计划后应绑定最具体的当前
 Workstream 或节点。阻塞问题可以再绑定同一范围的 Activity。
 
