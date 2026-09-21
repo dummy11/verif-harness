@@ -17,6 +17,9 @@ Versioning.
 
 ### Changed
 
+- Blocking `agent-question ask` now keeps a bounded runtime checkpoint by
+  default, and the managed Kimi Main Agent profile prevents an open Dashboard
+  question from being abandoned at an idle CLI prompt.
 - Rebuilt the control plane around VPlan, VModel, VCheck, VClosure, and VReason.
 - Replaced frozen task execution and background workflow workers with a live
   Agent conversation plus short-lived deterministic commands.

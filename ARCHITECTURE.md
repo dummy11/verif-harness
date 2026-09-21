@@ -105,6 +105,14 @@ reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
 `RUNNING`, but comments cannot release it and it never injects arbitrary text
 into an Agent session.
 
+A blocking `agent-question ask` is likewise a runtime checkpoint: it registers
+the question and waits up to 300 seconds by default. While the question remains
+open, the Main Agent retries bounded waits instead of ending its turn. The
+Dashboard only persists the answer and releases the checkpoint; it never writes
+directly into a Codex/Kimi terminal. If no checkpoint is active because an older
+runtime session is already idle, the Human must start another turn so Main can
+read the persisted question state and continue.
+
 Multi-agent execution remains a single-runtime, parent-owned control loop.
 Codex or Kimi owns native child contexts and scheduling; verif-harness does not
 launch or inspect runtime threads. The Project Main Agent is the only Human-facing

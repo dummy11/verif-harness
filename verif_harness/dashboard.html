@@ -162,8 +162,9 @@
     .agent-session-badge { margin-left: auto; }
     .agent-session-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
     .agent-session-meta span { padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--panel-2); font-size: 12px; }
-    .agent-priority { overflow: hidden; border-left: 4px solid var(--yellow); box-shadow: var(--shadow); }
-    .agent-priority .agent-panel-head { background: color-mix(in srgb, var(--yellow-bg) 72%, var(--panel)); }
+    .agent-priority { overflow: hidden; border: 2px solid color-mix(in srgb, var(--yellow) 58%, var(--line)); border-left: 6px solid var(--yellow); box-shadow: 0 14px 34px color-mix(in srgb, var(--yellow) 15%, transparent); }
+    .agent-priority .agent-panel-head { padding-block: 18px; background: color-mix(in srgb, var(--yellow-bg) 82%, var(--panel)); }
+    .agent-priority .agent-panel-head h2 { font-size: 19px; }
     .agent-priority-clear { display: flex; align-items: center; gap: 12px; padding: 14px 17px; border-left: 4px solid var(--blue); box-shadow: var(--shadow); }
     .agent-priority-clear-copy { min-width: 0; }
     .agent-priority-clear-copy strong { display: block; }
@@ -236,7 +237,18 @@
     .agent-context-list { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px 11px; margin: 0; }
     .agent-context-list dt { color: var(--muted); }
     .agent-context-list dd { margin: 0; overflow-wrap: anywhere; }
-    .agent-collaboration { border-left: 4px solid var(--purple); box-shadow: var(--shadow); }
+    .agent-execution-stack { display: grid; gap: 12px; }
+    .agent-readonly-details { overflow: hidden; box-shadow: var(--shadow); }
+    .agent-readonly-details > summary { display: flex; align-items: center; gap: 11px; min-height: 58px; padding: 14px 17px; list-style: none; background: var(--panel-2); }
+    .agent-readonly-details > summary::-webkit-details-marker { display: none; }
+    .agent-readonly-details > summary::before { content: '›'; flex: 0 0 auto; color: var(--muted); font-size: 22px; line-height: 1; transition: transform .16s ease; }
+    .agent-readonly-details[open] > summary::before { transform: rotate(90deg); }
+    .agent-readonly-copy { min-width: 0; }
+    .agent-readonly-copy strong { display: block; font-size: 16px; }
+    .agent-readonly-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .agent-readonly-details > summary .count { margin-left: auto; white-space: nowrap; }
+    .agent-readonly-body { border-top: 1px solid var(--line); }
+    .agent-subagents { border-left: 4px solid var(--purple); }
     .agent-collaboration-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 13px; }
     .subagent-card { min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
     .subagent-head { display: flex; align-items: flex-start; gap: 8px; }
@@ -248,7 +260,6 @@
     .subagent-history { margin: 0 13px 13px; }
     .subagent-history .agent-collaboration-grid { padding: 0; }
     .agent-history { border-left: 4px solid color-mix(in srgb, var(--muted) 58%, var(--line)); box-shadow: var(--shadow); }
-    .agent-history .agent-panel-head { padding-block: 17px; }
     .list-card { overflow: hidden; }
     .list-row { display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 12px; padding: 13px 16px; border-top: 1px solid var(--line); align-items: center; }
     .list-row:first-child { border-top: 0; }
@@ -328,7 +339,7 @@
     @media (max-width: 1050px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
     @media (max-width: 980px) { .overview-action-grid { grid-template-columns: 1fr; } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .summary-grid, .node-summary-grid { grid-template-columns: repeat(2, 1fr); } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
 </head>
 <body>
@@ -844,18 +855,21 @@
       const scope = (agent.write_scope || []).length
         ? `写入范围：${agent.write_scope.map(item => escapeHtml(item)).join('、')}`
         : '只读执行';
-      return `<article class="subagent-card"><div class="subagent-head"><div><strong>${escapeHtml(agent.id)}</strong><div class="row-meta">${escapeHtml(agent.role)} · ${escapeHtml(runtimeLabel(agent.runtime))}</div></div>${statusBadge(agent.status)}</div><div class="subagent-operation">${escapeHtml(agent.operation || '未登记当前操作')}</div>${agent.message ? `<div class="subagent-message">${escapeHtml(agentMessageText(agent.message))}</div>` : ''}<div class="subagent-meta"><span>${target.html}</span><span>${escapeHtml(scope)}</span><span>heartbeat ${shortTime(agent.heartbeat_at)}</span>${progress === null ? '' : `<span>${agent.progress_current || 0}/${agent.progress_total} · ${progress}%</span>`}</div></article>`;
+      return `<article class="subagent-card"><div class="subagent-head"><div><strong>${escapeHtml(agent.id)}</strong><div class="row-meta">${escapeHtml(agent.role)} · ${escapeHtml(runtimeLabel(agent.runtime))}</div></div>${statusBadge(agent.status)}</div><div class="subagent-operation">${escapeHtml(agent.operation || '未登记当前操作')}</div>${agent.message ? `<div class="subagent-message">${escapeHtml(agentMessageText(agent.message))}</div>` : ''}<div class="subagent-meta"><span>${target.html}</span><span>${escapeHtml(scope)}</span><span>最近状态同步 ${shortTime(agent.heartbeat_at)}</span>${progress === null ? '' : `<span>${agent.progress_current || 0}/${agent.progress_total} · ${progress}%</span>`}</div></article>`;
     }
-    function agentCollaborationHtml(collaboration) {
+    function subagentWorkStatusHtml(collaboration) {
       const active = collaboration?.active_subagents || [];
       const recent = collaboration?.recent_subagents || [];
       const activeBody = active.length
         ? `<div class="agent-collaboration-grid">${active.map(subagentCardHtml).join('')}</div>`
-        : '<div class="empty">当前没有已登记的 subagent。Main Agent 分派后，这里会显示每个执行单元的节点、状态和 heartbeat。</div>';
+        : '<div class="empty">当前没有正在执行的 subagent。Main Agent 分派工作后，这里会显示其负责的验证对象、工作状态和最近同步时间。</div>';
       const recentBody = recent.length
         ? `<details class="subagent-history"><summary>最近结束的 subagent（${recent.length}）</summary><div class="agent-collaboration-grid">${recent.map(subagentCardHtml).join('')}</div></details>`
         : '';
-      return `<article class="card agent-panel agent-collaboration"><div class="agent-panel-head"><div><h2>协同执行</h2><p>subagent 只执行 Main Agent 分派的有界工作；Human 始终通过 Main Agent 交互。</p></div><span class="count">${active.length} 个 active</span></div>${activeBody}${recentBody}<div class="agent-side-note"><strong>协作状态不是验证结论。</strong> subagent 完成、多个 Agent 意见一致或 heartbeat 正常，都不会自动产生 evidence、PASS 或节点批准。</div></article>`;
+      const summary = active.length
+        ? `正在执行 ${active.length} 个${recent.length ? ` · 最近结束 ${recent.length} 个` : ''}`
+        : recent.length ? `当前未执行 · 最近结束 ${recent.length} 个` : '当前没有正在执行的工作';
+      return `<details class="card agent-readonly-details agent-subagents"><summary><span class="agent-readonly-copy"><strong>subagent 工作状态</strong><span>查看 Main Agent 分派出去的验证工作；Human 仍只需要与 Main Agent 交互。</span></span><span class="count">${summary}</span></summary><div class="agent-readonly-body">${activeBody}${recentBody}<div class="agent-side-note"><strong>这里显示的是执行状态，不是验证结论。</strong> subagent 完成工作不会自动表示验证通过，也不会自动生成验证证据或批准工作节点。</div></div></details>`;
     }
     function agentWorkStatusHtml(current, summary, openQuestions) {
       const project = state.snapshot?.project || {}, dut = project.dut || {};
@@ -905,13 +919,16 @@
       } : summary.latest_activity || latestMainHistory || null);
       const target = agentTarget(current);
       const responseBadge = open.length
-        ? '<span class="badge WAITING_FOR_HUMAN">等待回应</span>'
+        ? `<span class="badge WAITING_FOR_HUMAN">${open.length} 项等待回答</span>`
         : '<span class="badge RECORDED">无需回应</span>';
       const priority = open.length
-        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>当前需要处理</h2><p>Main Agent 正在等待你的工程判断；完成回应后才会继续协调相关工作。</p></div>${responseBadge}</div><div class="agent-question-list">${agentQuestionCardsHtml(open)}</div><div class="agent-side-note"><strong>Dashboard 和 Main Agent CLI 都可以回答。</strong> 两个入口读写同一份问题与答案。subagent 不直接向 Human 提问；这里提交只会解除 Main Agent 的等待，不会批准工作流、节点或验证证据。需要主动补充任务或纠偏时，请在当前 Main Agent 对话中输入。</div></article></section>`
+        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>需要你回答</h2><p>Main Agent 正在等待你的工程判断；回答后才会继续相关验证工作。</p></div>${responseBadge}</div><div class="agent-question-list">${agentQuestionCardsHtml(open)}</div><div class="agent-side-note"><strong>Dashboard 和 Main Agent CLI 都可以回答。</strong> 两个入口读写同一份问题与答案。subagent 不直接向 Human 提问；这里提交只会解除 Main Agent 的等待，不会批准工作流、节点或验证证据。需要主动补充任务或纠偏时，请在当前 Main Agent 对话中输入。</div></article></section>`
         : `<section class="section agent-section"><div class="card agent-priority-clear" id="agent-questions"><span class="state-dot IDLE" aria-hidden="true"></span><div class="agent-priority-clear-copy"><strong>当前无需你处理</strong><span>现在没有需要你回答的问题。</span></div>${responseBadge}</div></section>`;
       const subagentCount = (collaboration?.active_subagents || []).length;
-      return `<article class="card agent-session"><div class="agent-session-head"><div class="agent-session-state"><span class="state-dot ${escapeHtml(summary.status || 'IDLE')}" aria-hidden="true"></span><div><h2 class="agent-session-title">${escapeHtml(summary.label || '当前项目的 Agent')}</h2><div class="agent-session-summary">${escapeHtml(agentMessageText(current?.message || summary.message || '当前无需你操作'))}</div></div></div><div class="agent-session-badge">${agentStatusBadge(summary.status || 'IDLE')}</div></div><div class="agent-session-meta"><span>运行环境：${escapeHtml(runtimeLabel(summary.runtime))}</span><span>Human 交互入口：Main Agent</span><span>${subagentCount} 个 active subagent</span><span>${open.length ? `${open.length} 项等待你回应` : '当前无需回应'}</span></div></article>${priority}<section class="section agent-section">${agentCollaborationHtml(collaboration)}</section><section class="section agent-section">${agentWorkStatusHtml(current, summary, open)}</section><section class="section agent-section"><article class="card agent-panel agent-history"><div class="agent-panel-head"><div><h2>交互历史</h2><p>按时间查看 Main Agent、subagent 的进展以及你的回应；运行细节按需展开。</p></div><span class="count">最近 20 条</span></div><div class="agent-timeline">${agentTimelineHtml(activityHistory || [], questionHistory || [])}</div></article></section>`;
+      const historyCount = Math.min(20, (activityHistory || []).length + (questionHistory || []).length);
+      const session = `<article class="card agent-session"><div class="agent-session-head"><div class="agent-session-state"><span class="state-dot ${escapeHtml(summary.status || 'IDLE')}" aria-hidden="true"></span><div><h2 class="agent-session-title">${escapeHtml(summary.label || '当前项目的 Agent')}</h2><div class="agent-session-summary">${escapeHtml(agentMessageText(current?.message || summary.message || '当前无需你操作'))}</div></div></div><div class="agent-session-badge">${agentStatusBadge(summary.status || 'IDLE')}</div></div><div class="agent-session-meta"><span>运行环境：${escapeHtml(runtimeLabel(summary.runtime))}</span><span>Human 交互入口：Main Agent</span><span>正在执行的 subagent：${subagentCount}</span><span>${open.length ? `${open.length} 项等待你回答` : '当前无需回答'}</span></div></article>`;
+      const history = `<details class="card agent-readonly-details agent-history"><summary><span class="agent-readonly-copy"><strong>交互历史</strong><span>按时间查看 Main Agent、subagent 的进展以及你的回答。</span></span><span class="count">最近 ${historyCount} 条</span></summary><div class="agent-readonly-body"><div class="agent-timeline">${agentTimelineHtml(activityHistory || [], questionHistory || [])}</div></div></details>`;
+      return `${priority}<section class="section agent-section">${session}</section><section class="section agent-section"><div class="agent-execution-stack">${agentWorkStatusHtml(current, summary, open)}${subagentWorkStatusHtml(collaboration)}</div></section><section class="section agent-section">${history}</section>`;
     }
     function agentInteractionSummaryHtml(questions, activities) {
       const summary = agentSummary({activities:activities || [], agent_questions:questions || [], activity_history:activities || []});
@@ -919,7 +936,7 @@
     }
     function renderAgentInteractionPage() {
       const s = state.snapshot;
-      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>通过 Main Agent 统一交互，并查看各 subagent 的协同执行状态。</p></div></div>${agentInteractionHtml(s.project_agent, s.agent_collaboration, s.agent_questions || [], s.activities || [], s.activity_history || [], s.agent_question_history || s.agent_questions || [])}`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>需要回答的问题优先显示；通过 Main Agent 统一交互，并按需查看 subagent 工作状态。</p></div></div>${agentInteractionHtml(s.project_agent, s.agent_collaboration, s.agent_questions || [], s.activities || [], s.activity_history || [], s.agent_question_history || s.agent_questions || [])}`;
       bindNodeLinks();
       if (state.focusAgentQuestion) {
         const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === state.focusAgentQuestion);
@@ -955,7 +972,7 @@
           const data = Object.fromEntries(new FormData(event.target));
           data.id = form.dataset.agentQuestionForm;
           rememberReviewer(data.reviewer);
-          await post('/api/agent-questions/answer', data, '回答已保存，Agent 可继续执行');
+          await post('/api/agent-questions/answer', data, '回答已保存；正在等待 checkpoint 的 Main Agent 会继续执行');
         };
       });
     }

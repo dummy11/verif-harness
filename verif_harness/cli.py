@@ -426,7 +426,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="把 Agent 需要 Human 回答的工程问题登记到 Dashboard",
     )
     question_commands = agent_question.add_subparsers(dest="question_command", required=True)
-    question_ask = question_commands.add_parser("ask", help="登记问题和候选项；可绑定 Activity")
+    question_ask = question_commands.add_parser(
+        "ask",
+        help="登记问题；阻塞问题默认保持 checkpoint，直到 Dashboard/CLI 回答或等待超时",
+    )
     project_argument(question_ask)
     question_ask.add_argument("target", help="project、当前 Workstream 或具体工作节点")
     question_ask.add_argument("--prompt", required=True)
@@ -438,6 +441,14 @@ def build_parser() -> argparse.ArgumentParser:
     question_ask.add_argument("--activity")
     question_ask.add_argument("--recommended")
     question_ask.add_argument("--non-blocking", action="store_true")
+    question_ask.add_argument(
+        "--no-wait", action="store_true",
+        help="登记后立即返回；仅用于脚本编排，交互式 Main Agent 不应使用",
+    )
+    question_ask.add_argument(
+        "--wait-timeout", type=float, default=300.0,
+        help="阻塞问题本次最长等待秒数；超时返回 TIMEOUT，可用 await 继续等待（默认 300）",
+    )
     question_ask.add_argument(
         "--option", action="append", nargs=3, required=True,
         metavar=("ID", "LABEL", "DESCRIPTION"),
@@ -813,14 +824,20 @@ def main(arguments: list[str] | None = None) -> int:
                 emit({"human_actions": store.human_actions(args.status)})
         elif args.command == "agent-question":
             if args.question_command == "ask":
+                if args.wait_timeout < 0:
+                    raise HarnessError("agent-question ask wait timeout 不能小于 0")
                 options = [
                     {"id": item[0], "label": item[1], "description": item[2]}
                     for item in args.option
                 ]
-                emit(store.ask_agent_question(
+                question = store.ask_agent_question(
                     args.target, args.prompt, options, args.recommended,
                     args.context, args.actor, not args.non_blocking, args.activity,
-                ))
+                )
+                if args.non_blocking or args.no_wait:
+                    emit(question)
+                else:
+                    emit(store.await_agent_question(question["id"], args.wait_timeout))
             elif args.question_command == "answer":
                 emit(store.answer_agent_question(
                     args.question_id, args.option,

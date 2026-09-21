@@ -104,9 +104,15 @@ Workstream. Project lifecycle is separate.
   either entry must be visible from the other. The Agent may mirror the registered
   question in its current CLI conversation; if the Human answers there, persist
   that answer immediately with `agent-question answer` using the same question ID.
-  If the Main Agent must stop for Human
-  input, it must register the
-  question with `agent-question ask` before waiting. Use target `project` before
+  If the Main Agent must stop for Human input, it must register the question with
+  `agent-question ask` and keep that default blocking command active as the runtime
+  checkpoint. Interactive Main Agents must not use `--no-wait`. If the command
+  returns `TIMEOUT` while the question remains `OPEN`, immediately retry with
+  `agent-question await QUESTION_ID --timeout 300`; do not end the turn at the
+  native runtime prompt. A Dashboard answer updates persisted control state and
+  does not inject a prompt into an already idle Codex/Kimi session. If the runtime
+  moves the waiting command to a background task, keep that task active through
+  `WaitFor` or the runtime's equivalent. Use target `project` before
   a Workstream or node exists; otherwise use the most specific current Workstream
   or node. Include the choices, recommendation, context, and engineering impact.
   Native Codex/Kimi terminal selectors are not a substitute and must not be the

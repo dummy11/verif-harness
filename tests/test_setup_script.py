@@ -181,6 +181,13 @@ class SetupScriptTest(unittest.TestCase):
             "subagents: []",
             (ROOT / ".kimi-code/agents/verification-worker.md").read_text(encoding="utf-8"),
         )
+        kimi_main = (ROOT / ".kimi-code/agents/agent.md").read_text(encoding="utf-8")
+        self.assertIn("override: true", kimi_main)
+        self.assertIn("${base_prompt}", kimi_main)
+        self.assertIn("without `--no-wait`", kimi_main)
+        self.assertIn("agent-question await QUESTION_ID --timeout 300", kimi_main)
+        self.assertIn("300000 ms tool timeout", kimi_main)
+        self.assertIn("use `WaitFor`", kimi_main)
 
 
 if __name__ == "__main__":

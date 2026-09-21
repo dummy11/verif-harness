@@ -1354,11 +1354,17 @@ Agent 进程已经退出，也不能证明终端里没有尚未同步的操作�
 同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答问题所属的
 Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Agent CLI 对话回答；
 Agent 收到 CLI 回答后必须立即用 `verif-harness agent-question answer` 写回同一个 SQLite 问题记录。
+详情页把“需要你回答”放在首位并保持展开；Main Agent 的当前工作保持可见。只读的“subagent 工作状态”
+紧跟在 Main Agent 下方并默认折叠，“交互历史”也默认折叠；两者的折叠标题仍显示正在执行数量和记录数量，
+因此减少页面占用时不会隐藏是否需要 Human 回答。subagent 执行完成只表示分派工作结束，不代表验证通过，
+也不会自动生成验证证据或批准工作节点。
 任一入口提交后，另一个入口立即看到相同答案。使用网页时不需要进入服务器终端。远端 Dashboard 仍须按上一节建立
 安全的 SSH 端口转发。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
 `prefers-reduced-motion` 设置。
 
-原生 Codex/Kimi 终端选择器不会被网页自动截获。Agent 必须在停下前登记结构化问题：
+原生 Codex/Kimi 终端选择器不会被网页自动截获，Dashboard 也不会向已经回到原生提示符的
+idle 会话注入新 prompt。Agent 必须登记结构化问题，并让阻塞型 `ask` 保持当前 runtime turn
+的等待 checkpoint：
 
 ```text
 # Agent：VDOC 计划尚未建立时，先登记项目级 Activity 和项目级问题
@@ -1383,15 +1389,20 @@ verif-harness agent-question ask NODE \
   --recommended dpi \
   --activity ACTIVITY_ID
 
-# Agent：等待网页答案；超时后可用同一问题 ID 重试
-verif-harness agent-question await QUESTION_ID --timeout 60
+# Agent：上面的阻塞型 ask 默认已等待最多 300 秒并返回 checkpoint
+# 若返回 TIMEOUT 且问题仍为 OPEN，立即用同一问题 ID 继续等待
+verif-harness agent-question await QUESTION_ID --timeout 300
 
 # Human：也可以在 Agent CLI 回答同一个问题；Dashboard 会同步显示结果
 verif-harness agent-question answer QUESTION_ID --option OPTION_ID --reviewer NAME
 ```
 
-登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`。Human 在网页或 Agent CLI 提交答案后，该 Activity
-恢复 `RUNNING`，等待命令返回 `AgentQuestionCheckpoint/1`。答案只是一项工程输入：不会把节点改成
+登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`，并默认保持最多 300 秒的等待。Human 在网页或
+另一个 CLI 进程提交答案后，该 Activity 恢复 `RUNNING`，`ask` 返回 `AgentQuestionCheckpoint/1`，Main Agent
+在同一个 turn 中继续。`--no-wait` 只用于已有外部编排负责后续 `await` 的脚本，交互式 Main Agent 不应使用。
+如果一次等待超时但问题仍为 `OPEN`，Main Agent 必须立即继续 `await`，不得先结束 turn 回到 Codex/Kimi
+原生提示符。Kimi 若把长时间运行的 Bash 调用自动转为后台任务，Main Agent 必须继续 `WaitFor` 该任务；
+转为后台不代表 checkpoint 已完成。答案只是一项工程输入：不会把节点改成
 `VALID`，不会批准实施方案或文档交付，也不会生成证据、豁免或冻结结论。Agent 必须分析答案并通过
 相应的 plan、document、evidence 或 review 流程记录后续结果。
 
@@ -1908,18 +1919,20 @@ Workstream 或节点。阻塞问题可以再绑定同一范围的 Activity。
 verif-harness agent-question ask TARGET --prompt TEXT \
   --option ID LABEL DESCRIPTION --option ID LABEL DESCRIPTION \
   [--context TEXT] [--recommended ID] [--actor "Project Main Agent"] [--activity ACTIVITY_ID] \
-  [--non-blocking]
+  [--non-blocking] [--no-wait] [--wait-timeout SECONDS]
 verif-harness agent-question await QUESTION_ID [--timeout SECONDS]
 verif-harness agent-question list [--status open|answered|cancelled|superseded] [--target TARGET]
 verif-harness agent-question answer QUESTION_ID --option ID --reviewer NAME [--text TEXT]
 ```
 
-每个问题必须有 2 到 8 个唯一选项；Dashboard 还提供“其他”，选择它时必须填写说明。默认问题会
-进入等待人工列表；`--non-blocking` 只记录问题，不暂停 Activity。Human 的回答会持久化并解除最后一个
+每个问题必须有 2 到 8 个唯一选项；Dashboard 还提供“其他”，选择它时必须填写说明。默认阻塞问题会
+进入等待人工列表，并由 `ask` 保持最长 300 秒的 runtime checkpoint；`--wait-timeout` 可修改单次等待时长，
+超时后可继续 `await`。`--non-blocking` 只记录问题，不暂停 Activity；`--no-wait` 登记阻塞问题后立即返回，
+仅供有外部编排负责后续等待的脚本使用。Human 的回答会持久化并解除最后一个
 关联阻塞问题的 Activity 等待，但不会改变节点有效性或代替 `review`、`evidence`、`waive`、`freeze`。
 `ask` 只接受固定的 `Project Main Agent` actor，并拒绝绑定任何 subagent assignment 的 Activity；
 subagent 必须返回 `NEEDS_HUMAN` 给 Main，由 Main 判断是否真的需要提问。
-原生 Agent 终端中的临时选择器不会自动同步。凡是会让 Agent 停下等待 Human 的问题，都必须先用
+原生 Agent 终端中的临时选择器不会自动同步，Dashboard 也不能唤醒已经 idle 的 runtime 会话。凡是会让 Agent 停下等待 Human 的问题，都必须先用
 `ask` 登记；终端选择器不得作为唯一入口。subagent Activity 不能直接绑定问题，必须先向 Main Agent
 回报，再由 Main Agent 统一判断和登记。
 

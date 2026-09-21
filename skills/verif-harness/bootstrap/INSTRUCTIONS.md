@@ -86,7 +86,12 @@ and questions, and does not write project state.
    not already authorize the next step, start a project-level Activity, register a
    project-level `agent-question`, and let the Human answer from either Dashboard
    or `verif-harness agent-question answer`; both entries share the same persisted
-   question. Pre-bootstrap field collection remains in the current Agent conversation
+   question. Keep the default blocking `agent-question ask` active as the runtime
+   checkpoint; do not use `--no-wait` in an interactive Main Agent. If it returns
+   `TIMEOUT` while the question is still `OPEN`, immediately continue with
+   `agent-question await QUESTION_ID --timeout 300` instead of ending the turn at
+   the native prompt. Dashboard answers do not inject prompts into idle Codex/Kimi
+   sessions. Pre-bootstrap field collection remains in the current Agent conversation
    because the Dashboard and its project state do not exist yet.
 
 When DUT identity is complete, initial bootstrap also writes the lower-level capability

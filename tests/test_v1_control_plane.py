@@ -204,6 +204,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("Dashboard 或当前 Agent CLI 对话回答", instructions)
         self.assertIn("不得只使用未登记的原生终端", instructions)
         self.assertIn("不得让两个入口形成两套问题状态", instructions)
+        self.assertIn("交互式 Main Agent", instructions)
+        self.assertIn("`agent-question await QUESTION_ID --timeout 300`", instructions)
+        self.assertIn("`WaitFor` 或等价机制", instructions)
         self.assertIn("`activity start project`", instructions)
         self.assertIn("VDOC 文档路由尚未建立", instructions)
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
@@ -749,7 +752,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             "--context", "规格明确该场景必须以 acc_cmodel.c 为准",
             "--option", "dpi", "DPI 直连 cmodel", "scoreboard 通过 DPI 逐事务调用",
             "--option", "sv", "按规格重写", "不依赖 cmodel 源文件",
-            "--recommended", "dpi", "--activity", activity["id"],
+            "--recommended", "dpi", "--activity", activity["id"], "--no-wait",
         )
         self.assertEqual(question["status"], "OPEN")
         self.assertEqual(question["recommended_option"], "dpi")
@@ -783,6 +786,53 @@ class V1ControlPlaneTest(unittest.TestCase):
         node = self.run_cli("inspect", node_id)["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
 
+    def test_blocking_agent_question_ask_waits_for_dashboard_answer(self) -> None:
+        self.bootstrap()
+        activity = self.run_cli(
+            "activity", "start", "project", "--operation", "select-vdoc-route",
+        )
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+        waiter = subprocess.Popen(
+            [
+                sys.executable, str(CLI), "agent-question", "ask", "project",
+                "--prompt", "现在开始 VDOC 规划吗？",
+                "--option", "start", "开始", "生成并评审 DUT-specific 文档方案",
+                "--option", "later", "稍后", "保持当前 bootstrap 状态",
+                "--recommended", "start", "--activity", activity["id"],
+                "--wait-timeout", "5", "--project-root", str(self.root),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+        )
+        try:
+            deadline = time.monotonic() + 3
+            question = None
+            while time.monotonic() < deadline:
+                listed = self.run_cli("agent-question", "list", "--status", "open")
+                if listed["agent_questions"]:
+                    question = listed["agent_questions"][0]
+                    break
+                time.sleep(0.05)
+            self.assertIsNotNone(question, "阻塞问题应先持久化，再等待 Dashboard 回答")
+            self.assertIsNone(waiter.poll(), "默认 ask 不应在问题仍开放时返回到 runtime prompt")
+
+            self.run_cli(
+                "agent-question", "answer", question["id"], "--option", "start",
+                "--reviewer", "alice",
+            )
+            stdout, stderr = waiter.communicate(timeout=5)
+            self.assertEqual(waiter.returncode, 0, stdout + stderr)
+            checkpoint = json.loads(stdout)
+            self.assertEqual(checkpoint["schema"], "AgentQuestionCheckpoint/1")
+            self.assertEqual(checkpoint["status"], "ANSWERED")
+            self.assertTrue(checkpoint["resume"])
+            self.assertEqual(checkpoint["question"]["answer_option"], "start")
+        finally:
+            if waiter.poll() is None:
+                waiter.terminate()
+                waiter.communicate(timeout=5)
+
     def test_project_question_is_visible_before_any_workstream_exists(self) -> None:
         self.bootstrap()
         idle_snapshot = self.run_cli("dashboard", "--snapshot")
@@ -805,7 +855,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             "--context", "当前尚未创建 VDOC 工作流或工作节点",
             "--option", "default", "使用默认目录", "verif/docs/verification",
             "--option", "custom", "指定其他目录", "由 Human 填写目录",
-            "--recommended", "default", "--activity", activity["id"],
+            "--recommended", "default", "--activity", activity["id"], "--no-wait",
         )
         self.assertEqual(question["target_type"], "project")
         self.assertEqual(question["workstream"], "PROJECT")

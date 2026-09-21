@@ -46,6 +46,23 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 
 完整的单跳和双跳配置见[从本地浏览器访问远端 Dashboard](user_guide.md#从本地浏览器访问远端-dashboard)。
 
+## Dashboard 已回答，但 Kimi CLI 没有继续
+
+先看 Kimi 是否已经回到原生 `>` 提示符。如果是，说明当前 turn 已结束，没有正在等待 Dashboard
+答案的 runtime checkpoint。Dashboard 会把答案可靠写入项目 SQLite，但不会向 idle 的 Kimi 会话
+注入 prompt，因此旧会话不会自行“被唤醒”。
+
+当前会话的恢复方法是在 Kimi 的 `>` 输入：`继续，读取并处理 question:QUESTION_ID 的已回答结果`。
+Main Agent 应先读取该问题的持久化状态，再继续后续 plan、document、evidence 或 review 流程。
+
+新安装或刷新后的受管 Kimi Main Agent 会遵守新的 checkpoint 规则：阻塞型
+`verif-harness agent-question ask` 默认登记问题后等待最多 300 秒；Human 在 Dashboard 回答时，命令
+返回 `AgentQuestionCheckpoint/1` 并在同一个 turn 中继续。若返回 `TIMEOUT` 且问题仍为 `OPEN`，Main
+Agent 必须立即运行 `verif-harness agent-question await QUESTION_ID --timeout 300`。交互式 Main Agent
+不得使用 `--no-wait`，也不得在开放问题仍存在时先结束 turn。已有 Kimi 会话需重启后才会加载新的
+项目 Main Agent profile。Kimi 的前台 Bash 默认等待较短；如果等待命令被自动转成后台任务，受管
+profile 会要求 Main Agent 用 `WaitFor` 继续等待该任务，而不是把转后台误认为问题已经处理完成。
+
 ## Workstream 不能 freeze
 
 让 Agent 运行 `verif-harness closure evaluate --workstream NAME`，查看输出中的每一条
