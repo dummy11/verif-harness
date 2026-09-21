@@ -55,13 +55,12 @@ Dashboard 启动日志中的实际远端端口。不要把 Dashboard 改为监�
 当前会话的恢复方法是在 Kimi 的 `>` 输入：`继续，读取并处理 question:QUESTION_ID 的已回答结果`。
 Main Agent 应先读取该问题的持久化状态，再继续后续 plan、document、evidence 或 review 流程。
 
-新安装或刷新后的受管 Kimi Main Agent 会遵守新的 checkpoint 规则：阻塞型
-`verif-harness agent-question ask` 默认登记问题后等待最多 300 秒；Human 在 Dashboard 回答时，命令
-返回 `AgentQuestionCheckpoint/1` 并在同一个 turn 中继续。若返回 `TIMEOUT` 且问题仍为 `OPEN`，Main
-Agent 必须立即运行 `verif-harness agent-question await QUESTION_ID --timeout 300`。交互式 Main Agent
-不得使用 `--no-wait`，也不得在开放问题仍存在时先结束 turn。已有 Kimi 会话需重启后才会加载新的
-项目 Main Agent profile。Kimi 的前台 Bash 默认等待较短；如果等待命令被自动转成后台任务，受管
-profile 会要求 Main Agent 用 `WaitFor` 继续等待该任务，而不是把转后台误认为问题已经处理完成。
+新安装或刷新后的受管 Kimi Main Agent 会使用双入口 bridge：先以 `ask --no-wait` 登记并在 Kimi
+对话中显示完整问题，再把 `agent-question await QUESTION_ID --timeout 300` 作为 Bash 后台任务启动。
+普通输入框不会被等待命令占用；Human 可以直接在当前 Kimi 对话回答，也可以在 Dashboard 回答。
+对话答案由 Main Agent 用 `agent-question answer` 写回同一 ID，Dashboard 答案则使后台任务完成并通知
+Main Agent。等待 Human 时不应调用 `WaitFor`。已有 Kimi 会话需重启后才会加载新的项目 Main Agent
+profile；若仍看到前台 `Ran a command` 长时间等待，可按 `Ctrl+B` 将它移到后台，再在输入框回答。
 
 ## Workstream 不能 freeze
 

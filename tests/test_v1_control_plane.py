@@ -201,15 +201,19 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("不机械翻译英文，不自行创造术语", instructions)
         self.assertIn("不是 ASIC 验证工程师的用户也能理解", instructions)
         self.assertIn("计划建立前使用项目级目标 `project`", instructions)
-        self.assertIn("Dashboard 或当前 Agent CLI 对话回答", instructions)
+        self.assertIn("Dashboard 或当前 Agent 对话回答", instructions)
         self.assertIn("不得只使用未登记的原生终端", instructions)
         self.assertIn("不得让两个入口形成两套问题状态", instructions)
-        self.assertIn("交互式 Main Agent", instructions)
+        self.assertIn("当前 Agent 对话必须显示已登记问题", instructions)
+        self.assertIn("`agent-question ask --no-wait`", instructions)
         self.assertIn("`agent-question await QUESTION_ID --timeout 300`", instructions)
-        self.assertIn("`WaitFor` 或等价机制", instructions)
+        self.assertIn("等待负责人时不得前台执行 `await`", instructions)
+        self.assertIn("单独使用 `--no-wait`", instructions)
         self.assertIn("`activity start project`", instructions)
         self.assertIn("VDOC 文档路由尚未建立", instructions)
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
+        self.assertIn("不要直接显示协议角色名 Human", instructions)
+        self.assertIn("不能只说“等待计划评审”“空闲”或“未登记活动”", instructions)
         with sqlite3.connect(state / "model.sqlite3") as connection:
             version = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
             workstreams = connection.execute("SELECT COUNT(*) FROM workstreams").fetchone()[0]
@@ -621,6 +625,53 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("acceptance_criteria 必须是非空字符串数组", rejected.stderr)
 
+    def test_vdoc_project_proposal_requires_delivery_coverage_before_review(self) -> None:
+        self.bootstrap()
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{
+                "key": "dut-reset-plan", "title": "DUT reset 验证文档方案",
+                "role": "document-writing-plan", "parent_key": "verification-plan",
+                "document_key": "verification-plan", "required": True,
+                "statement": "在验证计划中明确 DUT reset 行为。",
+                "purpose": "为验证环境和检查器提供一致的 reset 契约。",
+                "scope": ["reset 极性、同步方式、保持和释放行为"],
+                "acceptance_criteria": ["每个 reset 域都有来源、预期行为和验证责任"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#reset"],
+                "work_content": ["列出 DUT reset 域和验证场景"],
+                "implementation_approach": ["从 DUT 顶层和已确认规格交叉核对"],
+                "deliverables": ["验证计划中的 reset 方案章节"],
+                "progress_measures": [{
+                    "id": "reset-domains-reviewed", "label": "已确认 reset 域",
+                    "unit": "域", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }],
+        }
+        proposal_path = self.root / "vdoc-writing-only.json"
+        proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+        rejected = self.invoke("plan", "VDOC", "--desired-file", str(proposal_path))
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("没有必需的文档交付节点", rejected.stderr)
+
+        legacy = self.run_cli("plan", "VDOC", "--desired", "legacy writing plan")
+        stored = legacy["desired_state"]
+        stored[0]["definition_origin"] = "project-proposal"
+        with sqlite3.connect(self.root / ".verif-harness/model.sqlite3") as connection:
+            connection.execute(
+                "UPDATE workstreams SET desired_json=? WHERE name='VDOC'",
+                (json.dumps(stored),),
+            )
+        closure = self.run_cli("closure", "--workstream", "VDOC")
+        self.assertEqual([item["kind"] for item in closure["actions"]], ["REFINE_DESIRED_STATE"])
+        blocked_review = self.invoke(
+            "review", "VDOC", "--verdict", "approve", "--reviewer", "alice",
+            "--reason", "should be rejected",
+        )
+        self.assertEqual(blocked_review.returncode, 2)
+        self.assertIn("文档工作分解不完整", blocked_review.stderr)
+
     def test_every_standard_desired_node_has_a_stored_evidence_contract(self) -> None:
         self.bootstrap()
         for workstream in ("VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
@@ -738,6 +789,50 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.run_cli("activity", "update", activity["id"], "--status", "COMPLETED")
         node = self.run_cli("inspect", node_id)["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
+
+    def test_split_agent_question_checkpoint_accepts_cli_answer_while_waiting(self) -> None:
+        self.bootstrap()
+        activity = self.run_cli(
+            "activity", "start", "project", "--operation", "select-vdoc-route",
+        )
+        question = self.run_cli(
+            "agent-question", "ask", "project",
+            "--prompt", "现在开始 VDOC 规划吗？",
+            "--option", "start", "开始", "生成并评审 DUT-specific 文档方案",
+            "--option", "later", "稍后", "保持当前 bootstrap 状态",
+            "--recommended", "start", "--activity", activity["id"], "--no-wait",
+        )
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+        waiter = subprocess.Popen(
+            [
+                sys.executable, str(CLI), "agent-question", "await", question["id"],
+                "--timeout", "5", "--project-root", str(self.root),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+        )
+        try:
+            time.sleep(0.2)
+            self.assertIsNone(waiter.poll(), "后台 checkpoint 应在普通 CLI 回答期间保持活动")
+            answered = self.run_cli(
+                "agent-question", "answer", question["id"], "--option", "start",
+                "--reviewer", "alice",
+            )
+            self.assertEqual(answered["status"], "ANSWERED")
+            stdout, stderr = waiter.communicate(timeout=5)
+            self.assertEqual(waiter.returncode, 0, stdout + stderr)
+            checkpoint = json.loads(stdout)
+            self.assertTrue(checkpoint["resume"])
+            self.assertEqual(checkpoint["question"]["answer_option"], "start")
+            self.assertEqual(
+                self.run_cli("dashboard", "--snapshot")["activities"][0]["status"],
+                "RUNNING",
+            )
+        finally:
+            if waiter.poll() is None:
+                waiter.terminate()
+                waiter.communicate(timeout=5)
 
     def test_agent_question_is_dashboard_visible_and_answer_resumes_activity(self) -> None:
         self.bootstrap()
@@ -906,6 +1001,24 @@ class V1ControlPlaneTest(unittest.TestCase):
                 }],
                 "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
                 "suggested_mode": "review", "evidence_claim": "document-review",
+            }, {
+                "key": "dut-reset-semantics", "title": "DUT reset 正文交付",
+                "role": "document-deliverable", "parent_key": "dut-reset-plan",
+                "document_key": "verification-plan", "required": True,
+                "statement": "验证计划正文已明确 DUT reset 行为和验证边界。",
+                "purpose": "独立验收 reset 工程语义。",
+                "scope": ["DUT reset 极性、同步方式、保持和释放行为"],
+                "acceptance_criteria": ["每个 reset 域都有来源、预期行为和验证责任"],
+                "source_refs": ["verification_plan.md#reset", "rtl/dut.sv"],
+                "work_content": ["正文中的 reset 域、时序和验证场景"],
+                "implementation_approach": ["对照当前正文与 DUT 顶层逐项验收"],
+                "deliverables": ["reset 正文语义的独立验收结论"],
+                "progress_measures": [{
+                    "id": "reset-semantics-accepted", "label": "已验收 reset 域",
+                    "unit": "域", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
             }],
         }
         proposal_path = self.root / "vdoc-review-proposal.json"
@@ -961,7 +1074,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             "--after-review", approved["review_id"], "--timeout", "0",
         )
         self.assertEqual(replay.returncode, 2)
-        self.assertIn("当前没有 HUMAN_REVIEW 检查点", replay.stderr)
+        self.assertIn("当前没有等待负责人评审的检查点", replay.stderr)
         modified = self.run_cli(
             "review", "VDOC", "--verdict", "modify", "--reviewer", "alice",
             "--reason", "仍需修改接口章节",
@@ -1011,7 +1124,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertTrue(all(not row["content_changed"] for row in status["documents"]))
         premature = self.invoke("docs", "review", "verification_plan.md", "--reviewer", "alice")
         self.assertEqual(premature.returncode, 2)
-        self.assertIn("approve 当前 VDOC desired-state revision", premature.stderr)
+        self.assertIn("负责人批准当前 VDOC 文档撰写方案", premature.stderr)
         self.assertEqual(readonly_source.read_bytes(), original)
         self.assertEqual(self.invoke("freeze", "VDOC").returncode, 2)
 
@@ -1034,7 +1147,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         rendered = self.invoke("docs", "render", "verification_plan.md")
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
         self.assertIn("### Revision Log", rendered.stdout)
-        self.assertIn("语义正文内容摘要发生变化", rendered.stdout)
+        self.assertIn("验证文档正文摘要发生变化", rendered.stdout)
 
     def test_missing_document_change_is_idempotent_and_restore_requires_review(self) -> None:
         self.bootstrap()
@@ -1081,7 +1194,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(self.run_cli("inspect", desired)["nodes"][0]["status"], "VALID")
         rendered = self.invoke("docs", "render", "verification_plan.md")
         self.assertIn("D-001", rendered.stdout)
-        self.assertIn("### Human Review Notes", rendered.stdout)
+        self.assertIn("### 负责人评审意见", rendered.stdout)
         self.assertIn("正文语义已确认", rendered.stdout)
         self.assertFalse((self.root / "verification/docs/verification/verification_plan.status.md").exists())
         written = self.run_cli(
@@ -1094,7 +1207,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             "verification/docs/verification/verification_plan.md",
         )
         self.assertEqual(refused.returncode, 2)
-        self.assertIn("不能覆盖工程语义文档", refused.stderr)
+        self.assertIn("不能覆盖验证文档", refused.stderr)
 
     def test_vdoc_freeze_snapshots_reviewed_semantic_documents(self) -> None:
         self.bootstrap()

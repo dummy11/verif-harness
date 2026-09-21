@@ -215,7 +215,7 @@ class EvidenceContractsTest(unittest.TestCase):
                                   "status": "Pending"}}],
         })
         self.assertFalse(summary["ready"])
-        self.assertIn("Human waiver", summary["blockers"][0])
+        self.assertIn("负责人例外评审", summary["blockers"][0])
 
 
 if __name__ == "__main__":

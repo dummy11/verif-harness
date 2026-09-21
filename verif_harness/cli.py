@@ -110,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    bootstrap = commands.add_parser("bootstrap", help="根据显式 DUT 输入建立最小 Verification Knowledge Model；不生成验证语义")
+    bootstrap = commands.add_parser("bootstrap", help="根据明确的 DUT 输入建立最小验证控制状态；不生成验证文档或验证内容")
     project_argument(bootstrap)
     bootstrap.add_argument("--project-name")
     bootstrap.add_argument("--runtime", choices=("auto", "codex", "kimi", "claude", "none"), default="auto")
@@ -153,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--dut-top-file", help="属于某个 --rtl-root 的 DUT top 文件")
     bootstrap.add_argument(
         "--refresh", action="store_true",
-        help="重新配置；未提供其他参数时只返回待 Human 确认的问题，不写入配置",
+        help="重新配置；未提供其他参数时只返回等待负责人确认的问题，不写入配置",
     )
     bootstrap_dashboard = bootstrap.add_mutually_exclusive_group()
     bootstrap_dashboard.add_argument(
@@ -208,11 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument("--document-root", help="VDOC 文档输出目录；由 Agent 在对话确认后传入")
     design.add_argument(
         "--desired-file",
-        help="Agent/Human 评审候选的 DesiredStateProposal/1 JSON；在模板汇总节点下追加项目级子节点",
+        help="供 Agent 和负责人评审的 DesiredStateProposal/1 JSON；在模板汇总节点下追加项目级子节点",
     )
     show = plan_commands.add_parser("show", help="显示当前 Workstream plan")
     project_argument(show); workstream_argument(show)
-    review = plan_commands.add_parser("review", help="记录 Human 对当前 revision 的判定")
+    review = plan_commands.add_parser("review", help="记录负责人对当前工作流方案版本的评审结论")
     project_argument(review); workstream_argument(review, required=False)
     review.add_argument("--verdict", choices=("approve", "reject", "modify", "clarify"), default="approve")
     review.add_argument("--reviewer"); review.add_argument("--reason")
@@ -285,16 +285,16 @@ def build_parser() -> argparse.ArgumentParser:
     changed.add_argument("--kind", choices=("auto", "add", "modify", "delete", "rename", "spec-change", "rtl-change"), default="auto")
     changed.add_argument("--revision")
 
-    docs = commands.add_parser("docs", help="管理语义文档索引并按需投影 SQLite 治理状态")
+    docs = commands.add_parser("docs", help="管理验证文档索引，并按需输出 SQLite 中记录的评审和状态")
     docs_commands = docs.add_subparsers(dest="docs_command", required=True)
-    docs_status = docs_commands.add_parser("status", help="查看一个或全部语义文档的治理状态")
+    docs_status = docs_commands.add_parser("status", help="查看一个或全部验证文档的评审和内容状态")
     project_argument(docs_status); docs_status.add_argument("document", nargs="?")
     docs_sync = docs_commands.add_parser("sync", help="重新计算正文摘要；变化会触发失效和重新评审")
     project_argument(docs_sync); docs_sync.add_argument("documents", nargs="*")
     docs_render = docs_commands.add_parser("render", help="按需生成状态、决策、评审和修订投影")
     project_argument(docs_render); docs_render.add_argument("document", nargs="?")
     docs_render.add_argument("--output", help="显式写入项目内独立投影文件；省略时输出到终端")
-    docs_review = docs_commands.add_parser("review", help="记录 Human 对当前语义正文 revision 的评审")
+    docs_review = docs_commands.add_parser("review", help="记录负责人对当前验证文档正文版本的评审")
     project_argument(docs_review); docs_review.add_argument("document")
     docs_review.add_argument("--verdict", choices=("approve", "reject", "modify", "clarify"), default="approve")
     docs_review.add_argument("--reviewer"); docs_review.add_argument("--notes")
@@ -307,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     docs_track.add_argument("--owner"); docs_track.add_argument("--review-trigger")
     docs_track.add_argument("--affects", action="append", default=[]); docs_track.add_argument("--anchor")
 
-    simple_waive = commands.add_parser("waive", help="记录 Human waiver")
+    simple_waive = commands.add_parser("waive", help="记录负责人接受例外的结论")
     project_argument(simple_waive)
     simple_waive.add_argument("node_id")
     simple_waive.add_argument("--reason", required=True)
@@ -397,9 +397,9 @@ def build_parser() -> argparse.ArgumentParser:
     agent_work_list.add_argument("--node")
     agent_work_list.add_argument("--active", action="store_true")
 
-    human_action = commands.add_parser("human-action", help="登记 Dashboard/对话中的 Human 意见或调整请求")
+    human_action = commands.add_parser("human-action", help="登记负责人在 Dashboard 或 Agent 对话中提出的意见和调整请求")
     human_commands = human_action.add_subparsers(dest="human_command", required=True)
-    human_add = human_commands.add_parser("add", help="添加节点或 Workstream 级 Human action")
+    human_add = human_commands.add_parser("add", help="为节点或验证工作流添加负责人意见")
     project_argument(human_add)
     human_add.add_argument("target")
     human_add.add_argument(
@@ -407,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     human_add.add_argument("--reviewer")
     human_add.add_argument("--reason", required=True)
-    human_resolve = human_commands.add_parser("resolve", help="解析 Human action；不直接修改节点有效性")
+    human_resolve = human_commands.add_parser("resolve", help="记录负责人意见的处理结果；不直接修改节点完成状态")
     project_argument(human_resolve)
     human_resolve.add_argument("action_id")
     human_resolve.add_argument("--reviewer")
@@ -415,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
     human_resolve.add_argument(
         "--status", choices=("RESOLVED", "SUPERSEDED"), type=str.upper, default="RESOLVED",
     )
-    human_list = human_commands.add_parser("list", help="查看 Human action")
+    human_list = human_commands.add_parser("list", help="查看负责人意见")
     project_argument(human_list)
     human_list.add_argument(
         "--status", choices=tuple(sorted(HUMAN_ACTION_STATUSES)), type=str.upper,
@@ -423,7 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     agent_question = commands.add_parser(
         "agent-question",
-        help="把 Agent 需要 Human 回答的工程问题登记到 Dashboard",
+        help="把 Agent 需要负责人回答的工程问题登记到 Dashboard",
     )
     question_commands = agent_question.add_subparsers(dest="question_command", required=True)
     question_ask = question_commands.add_parser(
@@ -436,14 +436,17 @@ def build_parser() -> argparse.ArgumentParser:
     question_ask.add_argument("--context", default="")
     question_ask.add_argument(
         "--actor", choices=(PROJECT_AGENT_ACTOR,), default=PROJECT_AGENT_ACTOR,
-        help="Human 问题只能由 Project Main Agent 登记",
+        help="需要负责人回答的问题只能由 Project Main Agent 登记",
     )
     question_ask.add_argument("--activity")
     question_ask.add_argument("--recommended")
     question_ask.add_argument("--non-blocking", action="store_true")
     question_ask.add_argument(
         "--no-wait", action="store_true",
-        help="登记后立即返回；仅用于脚本编排，交互式 Main Agent 不应使用",
+        help=(
+            "登记后立即返回；仅用于脚本编排，或立即展示问题并启动后台 await 的"
+            "受管 runtime bridge"
+        ),
     )
     question_ask.add_argument(
         "--wait-timeout", type=float, default=300.0,
@@ -475,7 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     await_human = commands.add_parser(
         "await-human",
-        help="等待 Dashboard/CLI 提交的当前 Workstream revision 正式评审",
+        help="等待负责人通过 Dashboard 或 CLI 提交当前工作流方案版本的正式评审",
     )
     project_argument(await_human)
     await_human.add_argument("workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
@@ -721,14 +724,14 @@ def main(arguments: list[str] | None = None) -> int:
                 reviewer = reviewer_identity(store.root, args.reviewer)
                 if args.verdict != "approve" and not args.reason:
                     raise HarnessError("reject/modify/clarify 必须提供 --reason")
-                reason = args.reason or "Human approved the current desired-state revision"
+                reason = args.reason or "负责人批准了当前工作流方案版本"
                 emit(store.review_workstream(workstream, args.verdict, reviewer, reason))
             elif args.final:
                 if args.workstream: raise HarnessError("--final 与 --workstream 不能同时使用")
-                emit(store.freeze_final(reviewer_identity(store.root, args.reviewer), args.reason or "Human approved final verification freeze"))
+                emit(store.freeze_final(reviewer_identity(store.root, args.reviewer), args.reason or "负责人同意保存最终验证基线"))
             else:
                 workstream = infer_workstream(store, args.workstream, "freeze")
-                emit(store.freeze_workstream(workstream, reviewer_identity(store.root, args.reviewer), args.reason or "Closure ready; Human requested immutable freeze"))
+                emit(store.freeze_workstream(workstream, reviewer_identity(store.root, args.reviewer), args.reason or "完成条件已满足，负责人要求保存当前工作流基线"))
         elif args.command == "inspect": emit(store.model(args.node_id))
         elif args.command == "trace": emit(store.trace(args.node_id))
         elif args.command == "impact": emit(store.impact(args.node_id))
@@ -765,7 +768,7 @@ def main(arguments: list[str] | None = None) -> int:
             elif args.docs_command == "review":
                 if args.verdict != "approve" and not args.notes:
                     raise HarnessError("reject/modify/clarify 必须提供 --notes")
-                notes = args.notes or "Human approved the current semantic document revision"
+                notes = args.notes or "负责人认可当前验证文档正文版本"
                 emit(store.review_document(args.document, args.verdict,
                                            reviewer_identity(store.root, args.reviewer), notes))
             else:

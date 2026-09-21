@@ -99,7 +99,7 @@ class MultiAgentControlTest(unittest.TestCase):
         self.assertEqual(snapshot["project_agent"]["waiting_subagent_count"], 1)
         self.assertEqual(snapshot["project_agent"]["status"], "RUNNING")
 
-        with self.assertRaisesRegex(HarnessError, "subagent Activity 不能直接绑定"):
+        with self.assertRaisesRegex(HarnessError, "subagent 的工作记录不能直接绑定"):
             self.store.ask_agent_question(
                 assignment["node_id"], "是否采用现有模型？",
                 [
@@ -204,11 +204,14 @@ class MultiAgentControlTest(unittest.TestCase):
         self.assertEqual(second["status"], "COMPLETED")
 
     def test_changed_closure_action_supersedes_old_assignment(self) -> None:
-        self.store.design_workstream("VDOC", None, [], [], [])
-        self.store.review_workstream("VDOC", "approve", "test-user", "approved")
+        self.store.design_workstream(
+            "VCHK", None, ["custom checking node"], [], [],
+            evidence_claims=["scoreboard"],
+        )
+        self.store.review_workstream("VCHK", "approve", "test-user", "approved again")
         action = next(
             item for item in self.store.agent_work_candidates()["actions"]
-            if item["workstream"] == "VDOC" and item["kind"] == "SATISFY_DESIRED_STATE"
+            if item["workstream"] == "VCHK" and item["kind"] == "SATISFY_DESIRED_STATE"
         )
         assignment = self.store.claim_agent_work(
             action["id"], "checker-1", "TestEngineer", "inspect-document-contract",

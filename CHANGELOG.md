@@ -17,9 +17,22 @@ Versioning.
 
 ### Changed
 
+- VDOC now rejects structured proposals whose required writing plans lack
+  independently reviewable delivery nodes, and routes already-stored incomplete
+  revisions back to Agent refinement instead of requesting Human approval.
 - Blocking `agent-question ask` now keeps a bounded runtime checkpoint by
   default, and the managed Kimi Main Agent profile prevents an open Dashboard
   question from being abandoned at an idle CLI prompt.
+- Kimi Human questions now use a paired foreground registration and background
+  checkpoint, keeping the normal CLI input available while Dashboard and the
+  Main Agent conversation answer the same persisted question.
+- Dashboard Agent interaction, project overview, pending-item lists, and VDOC
+  review pages now derive Human-facing state from the same typed pending set,
+  distinguishing Agent questions, plan approvals, delivery acceptance, and
+  document confirmations.
+- Work-node rows now always show a progress bar: numeric observations take
+  precedence, with review sections, delivery acceptance, or completion
+  criteria used as explicit non-numeric fallbacks.
 - Rebuilt the control plane around VPlan, VModel, VCheck, VClosure, and VReason.
 - Replaced frozen task execution and background workflow workers with a live
   Agent conversation plus short-lived deterministic commands.

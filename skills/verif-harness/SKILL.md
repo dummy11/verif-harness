@@ -25,6 +25,20 @@ Workstreams, not lifecycle steps. Each has a local `desired -> plan -> act ->
 observe -> evaluate -> replan` loop. Evidence or findings may reopen any
 Workstream. Project lifecycle is separate.
 
+## User-facing language
+
+- In Dashboard text, CLI explanations/errors, and direct Agent questions or
+  summaries, address the user as `你` or `负责人`. Do not expose the protocol
+  role name `Human` as primary interface text. Protocol commands, schema keys,
+  and audit fields may retain their stable names.
+- Say `验证文档` and `正文内容`; do not present internal abstractions such as
+  `语义文档集` or `语义交付` to the user.
+- Every status or question must identify who needs to do what to which DUT,
+  Workstream, node, or document. Do not emit vague labels such as `等待计划评审`,
+  `空闲`, or `未登记活动` without the concrete object and next action.
+- Keep standard ASIC verification terms when they are clearer, explain them on
+  first use, and do not mechanically translate or invent terminology.
+
 ## Core dispatch
 
 - `bootstrap`: inventory a project and create the minimal model shell. It does
@@ -101,18 +115,21 @@ Workstream. Project lifecycle is separate.
   are persistent control-plane input, not arbitrary chat-message injection into
   a running Agent. Dashboard and `verif-harness agent-question answer` are two
   interaction entries backed by the same persisted question state; an answer from
-  either entry must be visible from the other. The Agent may mirror the registered
-  question in its current CLI conversation; if the Human answers there, persist
+  either entry must be visible from the other. The Agent must mirror the registered
+  question ID, prompt, context, every option, recommendation, and impact in its
+  current CLI conversation; if the Human answers there, persist
   that answer immediately with `agent-question answer` using the same question ID.
-  If the Main Agent must stop for Human input, it must register the question with
-  `agent-question ask` and keep that default blocking command active as the runtime
-  checkpoint. Interactive Main Agents must not use `--no-wait`. If the command
-  returns `TIMEOUT` while the question remains `OPEN`, immediately retry with
-  `agent-question await QUESTION_ID --timeout 300`; do not end the turn at the
-  native runtime prompt. A Dashboard answer updates persisted control state and
-  does not inject a prompt into an already idle Codex/Kimi session. If the runtime
-  moves the waiting command to a background task, keep that task active through
-  `WaitFor` or the runtime's equivalent. Use target `project` before
+  The default `agent-question ask` keeps a foreground checkpoint for runtimes
+  without reliable completion-notifying background tasks. Kimi interactive sessions
+  instead use one paired bridge: register with `ask --no-wait`, display the
+  structured question, then immediately start `agent-question await QUESTION_ID
+  --timeout 300` as a Kimi Bash background task and return control to the normal
+  input box. Do not call `WaitFor` while Human input is pending. A bare `--no-wait`
+  without that background checkpoint is forbidden. On background `TIMEOUT`, check
+  that the question remains `OPEN` and launch another background await. A Dashboard
+  answer completes the active CLI background checkpoint; a CLI-conversation answer
+  updates the Dashboard through its live state stream. A Dashboard answer does not
+  inject a prompt into an idle session that has no active checkpoint. Use target `project` before
   a Workstream or node exists; otherwise use the most specific current Workstream
   or node. Include the choices, recommendation, context, and engineering impact.
   Native Codex/Kimi terminal selectors are not a substitute and must not be the

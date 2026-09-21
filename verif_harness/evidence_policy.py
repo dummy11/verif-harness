@@ -34,7 +34,7 @@ COVERAGE_DB = requirement("覆盖率数据库已导出并通过一致性检查",
 MANIFEST = requirement("回归测试清单已通过执行器检查", ("regression-manifest", "xverif"))
 ANALYSIS = requirement("结构化分析结果已保存", ("analysis-report", "xverif"), ("analysis-report", "wavepeek"))
 XVERIF_ANALYSIS = requirement("结构化分析结果由 xverif 生成", ("analysis-report", "xverif"))
-DOCUMENT = requirement("工程文档已经人工评审", ("document", "human-review"))
+DOCUMENT = requirement("验证文档已经负责人评审", ("document", "human-review"))
 CONFIG = requirement("运行配置已通过检查", ("configuration", "xverif"))
 
 

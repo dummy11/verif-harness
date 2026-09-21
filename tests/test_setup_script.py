@@ -184,10 +184,14 @@ class SetupScriptTest(unittest.TestCase):
         kimi_main = (ROOT / ".kimi-code/agents/agent.md").read_text(encoding="utf-8")
         self.assertIn("override: true", kimi_main)
         self.assertIn("${base_prompt}", kimi_main)
-        self.assertIn("without `--no-wait`", kimi_main)
+        self.assertIn("ask ... --no-wait", kimi_main)
         self.assertIn("agent-question await QUESTION_ID --timeout 300", kimi_main)
-        self.assertIn("300000 ms tool timeout", kimi_main)
-        self.assertIn("use `WaitFor`", kimi_main)
+        self.assertIn("run_in_background=true", kimi_main)
+        self.assertIn("Do not run that wait in the foreground", kimi_main)
+        self.assertIn("do not call\n   `WaitFor`", kimi_main)
+        self.assertIn("show the responsible user the returned question ID", kimi_main)
+        self.assertIn("address the user as `你` or `负责人`", kimi_main)
+        self.assertIn("immediately call `verif-harness agent-question answer`", kimi_main)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,14 @@ anchors, not a third public VDOC node type. A writing-plan node says what and ho
 the Agent proposes to write. A delivery node says which already-written semantic
 content the Human is accepting. Never reuse one content template for both.
 
+A structured DUT-specific proposal is incomplete when it contains writing-plan
+nodes but no independently reviewable delivery nodes. Every required writing
+plan must own at least one required delivery descendant, and every required
+delivery must trace back to a required writing plan for the same document. The
+Engine rejects new incomplete proposals and routes already-stored incomplete
+revisions back to Agent refinement; it must not ask the responsible person to
+approve the writing-plan nodes in such a revision.
+
 Do not create VDOC nodes with `project-goal`, `capability`,
 `closure-evidence`, `document-goal`, `document-section`, or
 `engineering-decision` roles. Document content review bound to the delivery

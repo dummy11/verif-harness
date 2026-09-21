@@ -613,7 +613,7 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
             elif status == "uncovered":
                 blockers.append(f"{item_id} 尚未覆盖")
             elif status == "excluded" and not _valid_waiver(item.get("waiver")):
-                blockers.append(f"{item_id} exclusion 缺少完整 Human waiver metadata")
+                blockers.append(f"{item_id} 的排除项缺少完整的负责人例外评审信息")
         facts = {**counts, "items": len(items)}
     return _finish(normalized, blockers, facts)
 
@@ -747,7 +747,7 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
             if disposition == "accepted-known-fail" and rerun_verdict not in {"FAIL", "ERROR", "TIMEOUT"}:
                 blockers.append(f"{test} known-fail 的 rerun verdict 非失败结果")
             if disposition == "accepted-known-fail" and not _text(item.get("waiver_ref"), f"{prefix}.waiver_ref"):
-                blockers.append(f"{test} known-fail 缺少 Human waiver reference")
+                blockers.append(f"{test} 的已知失败缺少负责人例外评审引用")
             normalized_failures.append({
                 "test": test, "original_seed": original_seed, "rerun_seed": rerun_seed,
                 "classification": classification, "disposition": disposition,

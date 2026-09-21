@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -19,6 +22,10 @@ from verif_harness.dashboard import (
     register_dashboard_project, stop_dashboard,
 )
 from verif_harness.store import HarnessError, ProjectStore
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CLI = ROOT / "scripts/verif_harness.py"
 
 
 class DashboardTest(unittest.TestCase):
@@ -63,6 +70,25 @@ class DashboardTest(unittest.TestCase):
         )
         with urllib.request.urlopen(request, timeout=3) as response:
             return json.loads(response.read())
+
+    @staticmethod
+    def read_snapshot_event(response: urllib.request.addinfourl) -> dict:
+        event = ""
+        data: list[str] = []
+        while True:
+            raw = response.readline()
+            if not raw:
+                raise AssertionError("Dashboard event stream closed before the next snapshot")
+            line = raw.decode("utf-8").rstrip("\r\n")
+            if not line:
+                if event == "snapshot" and data:
+                    return json.loads("\n".join(data))
+                event = ""
+                data = []
+            elif line.startswith("event:"):
+                event = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data.append(line.split(":", 1)[1].lstrip())
 
     def test_background_launcher_reuses_same_project_dashboard(self) -> None:
         port = self.server.server_address[1]
@@ -308,23 +334,34 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("无需你处理", html)
         self.assertIn("Dashboard 也没有收到 Agent 正在处理验证工作的记录", html)
         self.assertNotIn("项目级 Agent 当前空闲，没有已登记活动", html)
-        self.assertIn("Dashboard 和 Main Agent CLI 都可以回答", html)
-        self.assertIn("两个入口读写同一份问题与答案", html)
+        self.assertIn("Dashboard 和当前 Main Agent 对话都可以回答", html)
+        self.assertIn("两者读写同一个 question ID", html)
+        self.assertIn("Dashboard 会同步为已回答", html)
+        self.assertIn("CLI 后台 checkpoint 会结束并通知 Main Agent", html)
+        self.assertIn("WAITING_FOR_HUMAN:'等待你处理'", html)
+        self.assertIn("function pendingItemStatusLabel(item, targetNode)", html)
+        self.assertIn("return '待审批'", html)
+        self.assertIn("return '待验收'", html)
+        self.assertIn("return '待评审'", html)
+        self.assertIn("pendingItemStatusBadge(a, targetNode)", html)
         self.assertIn("s.project_agent", html)
         self.assertIn("s.agent_collaboration", html)
         self.assertIn("/api/agent-questions/answer", html)
         self.assertIn("通过 Main Agent 统一交互", html)
         self.assertNotIn("<h2>协同执行</h2>", html)
         self.assertIn("<strong>subagent 工作状态</strong>", html)
-        self.assertIn("Human 仍只需要与 Main Agent 交互", html)
+        self.assertIn("你只需要与 Main Agent 交互", html)
         self.assertIn("<strong>交互历史</strong>", html)
         self.assertIn("<h2>需要你回答</h2>", html)
+        self.assertIn("当前没有需要在这里回答的问题", html)
+        self.assertIn("这些不是 Agent 问题", html)
+        self.assertIn("查看待处理事项", html)
         self.assertIn("Agent 工作状态", html)
         self.assertIn("查看验证对象与范围", html)
         self.assertNotIn("上下文", html)
         hierarchy = html[
             html.index("return `${priority}<section"):
-            html.index("function agentInteractionSummaryHtml")
+            html.index("function renderAgentInteractionPage")
         ]
         self.assertLess(hierarchy.index("${priority}"), hierarchy.index("${agentWorkStatusHtml"))
         self.assertLess(hierarchy.index("${agentWorkStatusHtml"), hierarchy.index("${subagentWorkStatusHtml"))
@@ -350,6 +387,8 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('class="progress"', html)
         self.assertNotIn('class="status-strip', html)
         self.assertIn("function renderAgentInteractionPage()", html)
+        self.assertNotIn("function agentInteractionSummaryHtml", html)
+        self.assertNotIn("${agentInteractionSummaryHtml(", html)
         self.assertIn("function renderPendingItemsPage()", html)
         self.assertIn("function renderRiskChangesPage()", html)
         self.assertIn("function openWorkstreamTab(name)", html)
@@ -358,6 +397,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
         self.assertIn("个工作节点 · 点击名称查看详情", html)
+        self.assertIn("<div class=\"label\">需要你处理</div>", html)
+        self.assertIn("对应节点已在下方标出", html)
+        self.assertNotIn("<h2>等待负责人处理</h2>", html)
+        self.assertNotIn("humanRows(openHuman)", html)
         self.assertIn("要达到什么", html)
         self.assertIn("实际进度", html)
         self.assertIn("完成条件与当前依据", html)
@@ -366,8 +409,8 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("审批文档撰写方案", html)
         self.assertIn("调整文档", html)
         self.assertIn("请审批文档撰写方案", html)
-        self.assertIn("本次审批对象：工作流实施方案", html)
-        self.assertIn("这一步审批的是实施方案，不是实施内容", html)
+        self.assertIn("本次审批对象：${planName}", html)
+        self.assertIn("这一步审批的是${planName}，不是已经完成的内容", html)
         self.assertIn("基于当前 DUT 分解的方案节点", html)
         self.assertIn("不作为实施方案节点计数", html)
         self.assertIn("尚未根据当前 DUT", html)
@@ -378,24 +421,40 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("openNodePlanReviewTab", html)
         self.assertIn("data-plan-section-form", html)
         self.assertIn("提交本区块审批", html)
+        self.assertIn("planReviewStatusBadge(review.status)", html)
+        self.assertIn("本撰写方案仍待审批", html)
+        self.assertIn("当前没有额外工程问题；仍需审批本区块", html)
         self.assertIn("/api/reviews/node-plan-section", html)
-        self.assertIn("这条工作流何时算完成", html)
-        self.assertIn("VDOC Human–Agent–Engine 评审闭环与收敛", html)
+        self.assertNotIn("这条工作流何时算完成", html)
+        self.assertIn("VDOC 文档评审与收敛状态", html)
+        self.assertNotIn('<details class="detail-group" open><summary>VDOC 文档评审与收敛状态', html)
         self.assertIn("当前重新评审原因", html)
         self.assertIn("当前收敛条件", html)
-        self.assertIn("Agent 分析 → Engine 登记版本 → Human 评审", html)
+        self.assertIn("Agent 分析 → 系统登记版本 → 负责人评审", html)
         self.assertIn("所有必需文档交付节点均已批准（暂定不计）", html)
         self.assertIn("function vdocConvergenceHtml(w, openHuman)", html)
         self.assertIn("项目与验证对象", html)
         self.assertIn("function projectContextHtml(compact=false)", html)
         self.assertNotIn('<details class="detail-group" open><summary>项目与验证对象', html)
         self.assertIn("仅显示评审和意见记录中的身份", html)
-        self.assertIn("只校验与聚合，不代替 Human 审批", html)
+        self.assertIn("不代替负责人作工程判断", html)
+        self.assertIn("等待负责人审批文档撰写方案", html)
+        self.assertIn("等待负责人确认验证环境方案", html)
+        self.assertIn("本节点需要验收的正文内容", html)
+        self.assertNotIn("等待计划评审", html)
+        self.assertNotIn("Human 交互入口", html)
         self.assertIn("Testbench 目录（可选）", html)
         self.assertIn("参考模型（可选）", html)
         self.assertIn("验证脚本（可选）", html)
         self.assertIn("<th>节点名称</th><th>节点类型</th><th>状态 / 进度</th>", html)
         self.assertIn("function nodeProgressHtml(n)", html)
+        self.assertIn("function nodeProgressState(n)", html)
+        self.assertIn("方案审批：${approved}/${planSections.length} 个区块已通过", html)
+        self.assertIn("交付验收：${approved}/1 个节点已通过", html)
+        self.assertIn("完成条件：${satisfied}/${criteria.length} 项已满足", html)
+        self.assertIn('role="progressbar"', html)
+        self.assertIn('aria-valuenow="${progress.ratio}"', html)
+        self.assertNotIn("const bar = ratio === null ? ''", html)
         self.assertIn("点击名称查看详情", html)
         self.assertIn("'document-writing-plan':'文档撰写方案'", html)
         self.assertIn("'document-deliverable':'文档交付'", html)
@@ -436,6 +495,11 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(snapshot["waiting_for_human"][0]["target_type"], "workstream")
         self.assertEqual(snapshot["waiting_for_human"][0]["target"], "workstream:VCHK")
         self.assertEqual(snapshot["workstreams"][0]["waiting_for_human"], snapshot["waiting_for_human"])
+        self.assertEqual(snapshot["project_agent"]["open_question_count"], 0)
+        self.assertEqual(snapshot["project_agent"]["pending_review_count"], 1)
+        self.assertEqual(snapshot["project_agent"]["pending_confirmation_count"], 0)
+        self.assertIn("1 项评审", snapshot["project_agent"]["message"])
+        self.assertNotIn("回答 1 个问题", snapshot["project_agent"]["message"])
         self.assertEqual(snapshot["version"], self.store.dashboard_snapshot()["version"])
 
     def test_human_can_comment_and_review_without_waiting_for_closure(self) -> None:
@@ -484,10 +548,35 @@ class DashboardTest(unittest.TestCase):
             for item in waiting["waiting_for_human"]
         ))
 
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+        waiter = subprocess.Popen(
+            [
+                sys.executable, str(CLI), "agent-question", "await", question["id"],
+                "--timeout", "5", "--project-root", str(self.root),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment,
+        )
+
+        def stop_waiter() -> None:
+            if waiter.poll() is None:
+                waiter.terminate()
+                waiter.communicate(timeout=5)
+
+        self.addCleanup(stop_waiter)
+        time.sleep(0.2)
+        self.assertIsNone(waiter.poll(), "CLI 后台 checkpoint 应等待 Dashboard 回答")
+
         response = self.post("/api/agent-questions/answer", {
             "id": question["id"], "option": "dpi", "reviewer": "alice",
             "answer_text": "使用只读 cmodel，并记录版本",
         }, self.server.write_token)
+        stdout, stderr = waiter.communicate(timeout=5)
+        self.assertEqual(waiter.returncode, 0, stdout + stderr)
+        checkpoint = json.loads(stdout)
+        self.assertTrue(checkpoint["resume"])
+        self.assertEqual(checkpoint["question"]["answer_option"], "dpi")
         answered = response["result"]
         self.assertEqual(answered["status"], "ANSWERED")
         self.assertEqual(answered["answer_option"], "dpi")
@@ -504,6 +593,47 @@ class DashboardTest(unittest.TestCase):
                 "id": question["id"], "option": "sv", "reviewer": "bob",
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+    def test_cli_answer_is_pushed_to_dashboard_event_stream(self) -> None:
+        node_id = self.plan["desired_state"][0]["id"]
+        activity = self.store.create_activity(
+            node_id, "select-reference-model", "Agent", "正在分析候选方案",
+        )
+        question = self.store.ask_agent_question(
+            node_id, "参考模型策略选哪个？", [
+                {"id": "dpi", "label": "DPI 直连 cmodel", "description": "逐事务调用现有模型"},
+                {"id": "sv", "label": "按规格重写", "description": "在验证环境中自行实现"},
+            ], "dpi", "规格要求该场景以 acc_cmodel.c 为准", "Project Main Agent", True,
+            activity["id"],
+        )
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+
+        with self.get("/api/events") as events:
+            before = self.read_snapshot_event(events)
+            result = subprocess.run(
+                [
+                    sys.executable, str(CLI), "agent-question", "answer", question["id"],
+                    "--option", "dpi", "--reviewer", "alice",
+                    "--project-root", str(self.root),
+                ],
+                check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=environment,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            after = self.read_snapshot_event(events)
+
+        self.assertNotEqual(before["version"], after["version"])
+        answered = next(
+            item for item in after["agent_question_history"] if item["id"] == question["id"]
+        )
+        self.assertEqual(answered["status"], "ANSWERED")
+        self.assertEqual(after["activities"][0]["status"], "RUNNING")
+        self.assertFalse(any(
+            item["source"] == "agent-question" and item["question_id"] == question["id"]
+            for item in after["waiting_for_human"]
+        ))
 
     def test_vdoc_questions_are_waiting_and_document_can_be_reviewed_from_node(self) -> None:
         plan = self.store.design_workstream("VDOC", None, [], [], [])
@@ -529,10 +659,12 @@ class DashboardTest(unittest.TestCase):
         waiting = [item for item in snapshot["waiting_for_human"] if item["source"] == "document-item"]
         self.assertEqual(len(waiting), 1)
         self.assertEqual(waiting[0]["item_id"], "ACC-Q-01")
+        self.assertEqual(waiting[0]["item_kind"], "human-decision")
         vdoc = next(item for item in snapshot["workstreams"] if item["workstream"] == "VDOC")
         node = next(item for item in vdoc["nodes"] if item["id"] == document["desired_id"])
         self.assertEqual(node["document"]["path"], document["path"])
-        self.assertTrue(node["next_actions"])
+        self.assertEqual(node["role"], "document-catalog")
+        self.assertEqual(node["next_actions"], [])
         self.assertIn("负责人已确认", node["acceptance_criteria"][0])
 
         selector = urllib.parse.quote(document["id"], safe="")
@@ -672,7 +804,7 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(vdoc["progress"]["required"], 5)
         self.assertEqual(vdoc["exit_criteria"], [
             "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
-            "所有文档交付节点中的 Human 确认项、修改要求和阻塞问题均已关闭",
+            "所有文档交付节点中等待负责人确认的事项、修改要求和阻塞问题均已关闭",
         ])
         self.assertEqual(len(plan_nodes), 2)
         self.assertEqual(len(catalog_nodes), 8)
@@ -691,6 +823,19 @@ class DashboardTest(unittest.TestCase):
         first = plan_nodes[0]
         self.assertEqual(first["plan_review"]["status"], "PENDING")
         self.assertGreaterEqual(len(first["plan_review"]["sections"]), 3)
+        vdoc_pending_reviews = [
+            item for item in vdoc["waiting_for_human"] if item["source"] == "closure"
+        ]
+        all_pending_reviews = [
+            item for item in snapshot["waiting_for_human"] if item["source"] == "closure"
+        ]
+        self.assertEqual(len(vdoc_pending_reviews), 2)
+        self.assertEqual(snapshot["project_agent"]["open_question_count"], 0)
+        self.assertEqual(
+            snapshot["project_agent"]["pending_review_count"], len(all_pending_reviews),
+        )
+        self.assertIn("项评审", snapshot["project_agent"]["message"])
+        self.assertNotIn("个问题", snapshot["project_agent"]["message"])
 
         section = first["plan_review"]["sections"][0]["section"]
         changed = self.post("/api/reviews/node-plan-section", {
@@ -845,7 +990,7 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(reviewed["node_status"], "REVIEW_REQUIRED")
         refreshed = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]
         self.assertTrue(any(
-            item["status"] == "OPEN" and "Human MODIFY" in item["details"]
+            item["status"] == "OPEN" and "负责人对节点完成判断的结论为 MODIFY" in item["details"]
             for item in refreshed["findings"]
         ))
         self.assertNotEqual(

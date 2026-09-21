@@ -86,12 +86,16 @@ and questions, and does not write project state.
    not already authorize the next step, start a project-level Activity, register a
    project-level `agent-question`, and let the Human answer from either Dashboard
    or `verif-harness agent-question answer`; both entries share the same persisted
-   question. Keep the default blocking `agent-question ask` active as the runtime
-   checkpoint; do not use `--no-wait` in an interactive Main Agent. If it returns
-   `TIMEOUT` while the question is still `OPEN`, immediately continue with
-   `agent-question await QUESTION_ID --timeout 300` instead of ending the turn at
-   the native prompt. Dashboard answers do not inject prompts into idle Codex/Kimi
-   sessions. Pre-bootstrap field collection remains in the current Agent conversation
+   question. Show the question ID, prompt, all options, recommendation, and impact
+   in the current Agent conversation before waiting. In an interactive Kimi session,
+   use the paired bridge from the root Skill: `ask --no-wait`, display the returned
+   question, and immediately launch `agent-question await QUESTION_ID --timeout 300`
+   as a Kimi Bash background task. Do not foreground that await or call `WaitFor`
+   while Human input is pending. Other runtimes keep the default blocking `ask`
+   unless their managed profile provides an equivalent completion-notifying bridge.
+   A conversation answer updates the Dashboard live state; a Dashboard answer
+   completes the active CLI background checkpoint. Dashboard answers do not inject
+   prompts into idle sessions without an active checkpoint. Pre-bootstrap field collection remains in the current Agent conversation
    because the Dashboard and its project state do not exist yet.
 
 When DUT identity is complete, initial bootstrap also writes the lower-level capability

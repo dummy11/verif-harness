@@ -33,6 +33,14 @@ This repository contains public, reusable verification infrastructure.
 - 主要页面和操作必须让不是 ASIC 验证工程师的用户也能理解当前对象、状态、
   依据和下一步。内部编号、schema、digest、数据库状态码和工具字段放在详情或
   审计信息中，不作为主要界面语言。
+- 上述用词规则同样适用于 Dashboard、CLI 的帮助/标准输出/错误信息，以及
+  Agent 面向用户的提问、选项、状态摘要和结果说明。面向用户时使用“你”或
+  “负责人”，不要直接显示协议角色名 `Human`；使用“验证文档”“正文内容”
+  等可理解名称，不以“语义文档集”“语义交付”等内部抽象代替实际对象。
+  状态必须同时说明谁要对什么做什么，例如“等待负责人审批文档撰写方案”，
+  不得只显示“等待计划评审”“空闲”“未登记活动”等缺少对象或行动的信息。
+  CLI 命令名、JSON/schema 字段、数据库值和审计记录中的正式协议名称可以保留，
+  但首次展示时必须给出面向用户的解释，且不能直接作为主要交互文案。
 
 ## Required checks
 
@@ -49,3 +57,13 @@ make release-check
 ```
 
 Do not weaken the denylist or exclusion rules merely to make an audit pass.
+
+## Default delivery
+
+- 用户要求修改或实现本仓库内容时，相关检查通过后默认提交并推送到当前分支
+  已配置的 upstream；不需要用户再次说明“上传”。
+- 如果检查失败、远端存在非 fast-forward 冲突、工作区包含范围不明的改动、
+  可能包含敏感或专有内容，或者用户明确要求不要上传，则停止在提交或推送前，
+  说明具体阻塞并等待用户处理。
+- 默认交付不包含创建或合并 PR、打 tag、创建 release，也不代表负责人批准
+  验证结论或授权公开发布。

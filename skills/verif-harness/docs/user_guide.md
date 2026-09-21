@@ -5,6 +5,16 @@
 理解一次操作如何推动状态变化，请先读[工作机制](mechanism.md)；不熟悉的名词可查
 [术语表](glossary.md)。
 
+## 面向用户的用词
+
+本指南在解释控制协议时保留 `Human`、`Agent`、`Engine` 等正式角色名；其中 `Human`
+就是对验证范围、工程取舍和评审结论负责的人。Dashboard、CLI 的可读信息以及 Agent
+直接向用户提问时，不应把这些协议名当作主要界面文字：统一称“你”或“负责人”，并写清
+需要对哪个 DUT、工作流、节点或验证文档执行什么操作。例如显示“等待负责人审批文档撰写方案”，
+而不是“等待计划评审”；显示“验证文档”“正文内容”，而不是“语义文档集”“语义交付”。
+命令名、JSON/schema 字段、数据库状态码和审计记录可以保留内部名称，但必须与可理解的说明
+一起出现。
+
 ## 1. 两种入口
 
 ### 1.1 在 Agent 会话中使用（推荐）
@@ -68,7 +78,7 @@ verif-harness COMMAND
 scripts/managed-python scripts/verif_harness.py COMMAND
 ```
 
-CLI 输出字段固定的 JSON，便于 Agent 和 CI 读取；人工通常只需关注 `status`、`actions`、
+CLI 输出字段固定的 JSON，便于 Agent 和 CI 读取；负责人通常只需关注 `status`、`actions`、
 `questions_for_human`、`findings`、`evidence` 与 `baseline`。用户指南保留命令块是为了
 解释 Agent 实际执行了什么，以及方便 CI/高级诊断；它们不是要求 Human 在正常对话流程中
 手工输入。Human 也可以在终端直接调用 CLI，但直接调用表示调用者自行承担参数、项目范围
@@ -309,6 +319,7 @@ Dashboard 的文档交付分类还会展示正文版本、内容是否变化、�
 VDOC 对外只有两种节点类型：`document-writing-plan`（文档撰写方案）和
 `document-deliverable`（文档交付）。两者都必须用 `document_key` 明确归属一份文档；一份文档可以有多个方案节点和多个交付节点。方案节点描述准备怎样写，交付节点描述已经写出的、可独立验收的正文语义，二者不能复用同一内容模板。目标与范围、计划写入内容、待确认工程决定、输入依据、
 交付对象及依赖影响都是撰写方案节点内部可独立审批的区块，不再拆成其他节点类型。
+结构化 DUT proposal 中，每个必需撰写方案至少要有一个必需文档交付后代，每个必需交付节点也必须可回溯到同一文档的必需撰写方案。只有撰写方案、没有正文交付分解的新 proposal 会被 Engine 拒绝；历史上已登记的同类 revision 只显示“重新分解文档工作”，不再要求负责人审批这些不完整节点。
 文档交付节点支持“暂定接受”，但必须填写责任人和重新评审触发条件。暂定内容允许下游带风险开始工作，
 不计入文档通过、工作域完成或最终冻结；暂定语义变化后，依赖它的工作必须重新检查。
 工程语义继续写在 Markdown 正文中，不复制到 SQLite，也不会为每个标题或段落建立节点。只有需要
@@ -1352,8 +1363,10 @@ Agent 交互详情页始终显示“当前项目的 Agent”。没有需要 Huma
 进行中工作时，页面显示“无需你处理”，并明确说明 Dashboard 尚未收到正在处理验证工作的记录；这不表示
 Agent 进程已经退出，也不能证明终端里没有尚未同步的操作。页面
 同时显示 Agent/Activity 的 `RUNNING`、`WAITING_FOR_HUMAN` 等状态，以及每个待回答问题所属的
-Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Agent CLI 对话回答；
-Agent 收到 CLI 回答后必须立即用 `verif-harness agent-question answer` 写回同一个 SQLite 问题记录。
+Workstream、节点、选项和 Agent 推荐项。Human 可以直接在网页回答，也可以在当前 Main Agent 对话回答；
+Main Agent 必须先在对话中显示同一个 question ID、正文、全部选项和推荐项，收到回答后立即用
+`verif-harness agent-question answer` 写回同一个 SQLite 问题记录。写回后 Dashboard 的实时事件流会把
+该问题更新为“已回答”；反方向从 Dashboard 回答时，同一 ID 的 CLI 后台 `await` 会结束并通知 Main Agent。
 详情页把“需要你回答”放在首位并保持展开；Main Agent 的当前工作保持可见。只读的“subagent 工作状态”
 紧跟在 Main Agent 下方并默认折叠，“交互历史”也默认折叠；两者的折叠标题仍显示正在执行数量和记录数量，
 因此减少页面占用时不会隐藏是否需要 Human 回答。subagent 执行完成只表示分派工作结束，不代表验证通过，
@@ -1362,9 +1375,9 @@ Agent 收到 CLI 回答后必须立即用 `verif-harness agent-question answer` 
 安全的 SSH 端口转发。快速闪烁会造成干扰，因此等待状态只使用约 2 秒周期的缓慢呼吸状态灯，并遵守浏览器的
 `prefers-reduced-motion` 设置。
 
-原生 Codex/Kimi 终端选择器不会被网页自动截获，Dashboard 也不会向已经回到原生提示符的
-idle 会话注入新 prompt。Agent 必须登记结构化问题，并让阻塞型 `ask` 保持当前 runtime turn
-的等待 checkpoint：
+原生 Codex/Kimi 终端选择器不会被网页自动截获，Dashboard 也不会向没有活动 checkpoint、已经
+回到原生提示符的 idle 会话注入新 prompt。Agent 必须登记结构化问题。默认 CLI 提供前台阻塞
+checkpoint；Kimi 交互会话使用“前台登记 + 后台等待”的 bridge，使普通输入框仍可回答：
 
 ```text
 # Agent：VDOC 计划尚未建立时，先登记项目级 Activity 和项目级问题
@@ -1378,7 +1391,8 @@ verif-harness agent-question ask project \
   --option default "使用默认目录" "verif/docs/verification" \
   --option custom "指定其他目录" "由 Human 填写目录" \
   --recommended default \
-  --activity ACTIVITY_ID
+  --activity ACTIVITY_ID \
+  --no-wait
 
 # Agent：已有工作节点时，绑定最具体的节点 Activity 和问题
 verif-harness agent-question ask NODE \
@@ -1387,22 +1401,25 @@ verif-harness agent-question ask NODE \
   --option dpi "DPI 直连 cmodel" "逐事务调用现有只读模型" \
   --option sv "按规格重写" "在验证环境中独立实现" \
   --recommended dpi \
-  --activity ACTIVITY_ID
+  --activity ACTIVITY_ID \
+  --no-wait
 
-# Agent：上面的阻塞型 ask 默认已等待最多 300 秒并返回 checkpoint
-# 若返回 TIMEOUT 且问题仍为 OPEN，立即用同一问题 ID 继续等待
+# Kimi Main Agent：先把 ask 返回的 ID、正文、选项、推荐项和影响显示在对话中；
+# 然后把下面命令作为 Bash 后台任务启动，不要在前台运行或立即 WaitFor
 verif-harness agent-question await QUESTION_ID --timeout 300
 
-# Human：也可以在 Agent CLI 回答同一个问题；Dashboard 会同步显示结果
+# Human：也可从另一个 shell 直接回答；当前 Main Agent 对话中的普通回复
+# 由 Main Agent 转成同一条 answer 命令
 verif-harness agent-question answer QUESTION_ID --option OPTION_ID --reviewer NAME
 ```
 
-登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`，并默认保持最多 300 秒的等待。Human 在网页或
-另一个 CLI 进程提交答案后，该 Activity 恢复 `RUNNING`，`ask` 返回 `AgentQuestionCheckpoint/1`，Main Agent
-在同一个 turn 中继续。`--no-wait` 只用于已有外部编排负责后续 `await` 的脚本，交互式 Main Agent 不应使用。
-如果一次等待超时但问题仍为 `OPEN`，Main Agent 必须立即继续 `await`，不得先结束 turn 回到 Codex/Kimi
-原生提示符。Kimi 若把长时间运行的 Bash 调用自动转为后台任务，Main Agent 必须继续 `WaitFor` 该任务；
-转为后台不代表 checkpoint 已完成。答案只是一项工程输入：不会把节点改成
+登记阻塞问题会把绑定 Activity 置为 `WAITING_FOR_HUMAN`。默认阻塞型 `ask` 最多等待 300 秒；Kimi 的
+受管 profile 则用 `ask --no-wait` 先取得并展示问题，再立即把同一 ID 的 `await` 启动为后台任务。
+这时 Human 可在 Kimi 普通输入框回答，Main Agent 将答案写回；也可在 Dashboard 回答，后台任务完成后
+通知 Main Agent。Kimi 等待 Human 时不得前台运行 `await`，也不得调用 `WaitFor` 占用普通输入框。
+`--no-wait` 只有与这个后台 checkpoint 成对使用才有效，不能单独留下开放问题。如果后台等待返回
+`TIMEOUT` 且问题仍为 `OPEN`，Main Agent 重新启动同一 ID 的后台 `await`，不得创建重复问题。
+答案只是一项工程输入：不会把节点改成
 `VALID`，不会批准实施方案或文档交付，也不会生成证据、豁免或冻结结论。Agent 必须分析答案并通过
 相应的 plan、document、evidence 或 review 流程记录后续结果。
 
@@ -1928,7 +1945,7 @@ verif-harness agent-question answer QUESTION_ID --option ID --reviewer NAME [--t
 每个问题必须有 2 到 8 个唯一选项；Dashboard 还提供“其他”，选择它时必须填写说明。默认阻塞问题会
 进入等待人工列表，并由 `ask` 保持最长 300 秒的 runtime checkpoint；`--wait-timeout` 可修改单次等待时长，
 超时后可继续 `await`。`--non-blocking` 只记录问题，不暂停 Activity；`--no-wait` 登记阻塞问题后立即返回，
-仅供有外部编排负责后续等待的脚本使用。Human 的回答会持久化并解除最后一个
+仅供脚本编排或立即展示问题并启动后台 `await` 的受管 runtime bridge 使用。Human 的回答会持久化并解除最后一个
 关联阻塞问题的 Activity 等待，但不会改变节点有效性或代替 `review`、`evidence`、`waive`、`freeze`。
 `ask` 只接受固定的 `Project Main Agent` actor，并拒绝绑定任何 subagent assignment 的 Activity；
 subagent 必须返回 `NEEDS_HUMAN` 给 Main，由 Main 判断是否真的需要提问。

@@ -401,7 +401,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             reason = str(body.get("reason", "")).strip()
             digest = str(body.get("definition_digest", "")).strip()
             if not reviewer or not reason or not digest:
-                raise HarnessError("文档实施方案区块审批必须填写 reviewer、reason 和 definition_digest")
+                raise HarnessError("文档撰写方案区块审批必须填写评审人、理由和当前方案摘要")
             return store.review_node_plan_section(
                 str(body.get("node", "")), str(body.get("section", "")),
                 digest, verdict, reviewer, reason,
@@ -864,7 +864,7 @@ def serve_dashboard(
     base_url = dashboard_url(server)
     url = f"{base_url}?project={dashboard_project_id(store.root)}"
     print(f"verif-harness dashboard: {url}", flush=True)
-    print("只监听本机；按 Ctrl-C 停止。Human 写操作会记录 reviewer 和 reason。", flush=True)
+    print("只监听本机；按 Ctrl-C 停止。负责人提交的意见会记录评审人和理由。", flush=True)
     if open_browser:
         threading.Timer(0.2, webbrowser.open, args=(url,)).start()
     try:

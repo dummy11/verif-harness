@@ -106,12 +106,23 @@ reviews. It can move a registered Activity between `WAITING_FOR_HUMAN` and
 into an Agent session.
 
 A blocking `agent-question ask` is likewise a runtime checkpoint: it registers
-the question and waits up to 300 seconds by default. While the question remains
-open, the Main Agent retries bounded waits instead of ending its turn. The
-Dashboard only persists the answer and releases the checkpoint; it never writes
-directly into a Codex/Kimi terminal. If no checkpoint is active because an older
-runtime session is already idle, the Human must start another turn so Main can
-read the persisted question state and continue.
+the question and waits up to 300 seconds by default. A runtime with reliable
+background completion notification may split this into an atomic interaction
+bridge: foreground `ask --no-wait`, render the returned structured question in
+the Agent conversation, then run `agent-question await` as a background task.
+Kimi uses this split form so its normal input box remains available while the
+Dashboard and CLI conversation resolve the same SQLite record. A bare no-wait
+registration is invalid; every open blocking question must have a live watcher.
+An answer persisted by the Main Agent changes the next Dashboard snapshot and
+is pushed to an open Dashboard through its event stream. An answer persisted by
+the Dashboard completes that same CLI watcher, which lets the runtime resume
+from the recorded choice. These are two views of one state transition, not two
+independent question lifecycles.
+While the question remains open, a timed-out watcher is renewed without creating
+a duplicate question. The Dashboard only persists the answer and releases the
+checkpoint; it never writes directly into a Codex/Kimi terminal. If no checkpoint
+is active because an older runtime session is already idle, the Human must start
+another turn so Main can read the persisted question state and continue.
 
 Multi-agent execution remains a single-runtime, parent-owned control loop.
 Codex or Kimi owns native child contexts and scheduling; verif-harness does not

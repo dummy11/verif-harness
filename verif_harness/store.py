@@ -79,7 +79,7 @@ VALIDITY_DESCRIPTIONS = {
     Validity.PROVISIONAL.value: "负责人暂定接受；允许带风险推进但不能关闭",
     Validity.STALE.value: "内容变化后尚未重新检查",
     Validity.INVALID.value: "当前检查未通过",
-    Validity.REVIEW_REQUIRED.value: "需要人工复核",
+    Validity.REVIEW_REQUIRED.value: "等待负责人复核",
     Validity.REVALIDATION_REQUIRED.value: "需要重新验证",
     Validity.BLOCKED.value: "当前受阻",
     Validity.WAIVED.value: "负责人已接受例外",
@@ -102,7 +102,7 @@ VDOC_DOCUMENTS = {
 VDOC_PLAN_CONTENT = {
     "verification-workflow": [
         "定义文档编写、评审、修改、失效重验和冻结流程",
-        "明确 Human、Agent 与 Engine 的职责以及决定、问题和例外的记录方式",
+        "明确负责人、Agent 与规则检查工具的职责，以及决定、问题和例外的记录方式",
     ],
     "verification-plan": [
         "列出 DUT 验证范围、功能目标、主要风险和明确不纳入范围的内容",
@@ -155,7 +155,7 @@ WORKSTREAM_TEMPLATES: dict[str, dict[str, Any]] = {
         "closure_evidence": [],
         "exit": [
             "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
-            "所有文档交付节点中的 Human 确认项、修改要求和阻塞问题均已关闭",
+            "所有文档交付节点中等待负责人确认的事项、修改要求和阻塞问题均已关闭",
         ],
     },
     "VENV": {
@@ -329,7 +329,7 @@ ASIC_NODE_CONTENT: dict[tuple[str, str], tuple[list[str], list[str]]] = {
     ("VCOV", "coverage-model"): (["把 DUT 功能、状态、配置、错误和交互场景映射为 coverpoint/bin/cross", "定义采样事件、iff、illegal/ignore bin 和每项覆盖目标来源"], ["与验证点对应的功能覆盖模型"]),
     ("VCOV", "coverage-collection"): (["配置当前 DUT/testbench 的功能、代码和断言覆盖收集", "确认数据库、merge 范围、RTL 版本、配置和测试清单可追溯"], ["可重复生成和合并的覆盖率配置"]),
     ("VCOV", "coverage-collection-evidence"): (["收集当前 RTL 与验证配置对应的 coverage database", "核对 planned/mapped/hit 数量、数据库完整性和版本一致性"], ["当前版本的覆盖率数据库和导出报告"]),
-    ("VCOV", "hole-analysis-evidence"): (["逐项分析未命中的 DUT 功能、状态、bin、cross 和代码范围", "记录补测、不可达证明、模型修正或 Human waiver"], ["未覆盖项根因和关闭记录"]),
+    ("VCOV", "hole-analysis-evidence"): (["逐项分析未命中的 DUT 功能、状态、bin、cross 和代码范围", "记录补测、不可达证明、模型修正或负责人接受例外的结论"], ["未覆盖项根因和关闭记录"]),
     ("VCASE", "case-matrix"): (["将每个 DUT 验证点和必需场景映射到一个或多个 testcase", "关联激励、checker、coverage、配置和预期结果"], ["验证点到 testcase 的可追溯矩阵"]),
     ("VCASE", "case-implementation"): (["实现 testcase/vseq 配置、场景组合、结束条件和错误检查", "保证单个用例可独立运行并能定位对应 DUT 功能问题"], ["已注册且可独立执行的 testcase"]),
     ("VCASE", "targeted-evidence"): (["在当前 RTL 与 TB 版本上单独运行新增或修改的 testcase", "保存 seed、配置、结果、checker 活动和覆盖命中"], ["testcase 定向运行记录"]),
@@ -440,7 +440,7 @@ def desired_definition(
             "scope": [f"{filename} 中需要由验证团队评审的当前工程定义"],
             "work_content": list(VDOC_PLAN_CONTENT[key]),
             "deliverables": [f"当前项目的 {filename} 可评审正文"],
-            "role_description": "当前 DUT 的正式验证文档实施方案；内容必须绑定实际规格、接口、验证点和工程决定",
+            "role_description": "当前 DUT 的正式验证文档撰写方案；内容必须绑定实际规格、接口、验证点和工程决定",
         })
     return definition
 
@@ -704,36 +704,45 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- 主要页面和操作必须让不是 ASIC 验证工程师的用户也能理解当前对象、状态、",
         "  依据和下一步；内部编号、schema、digest、数据库状态码和工具字段只放在",
         "  详情或审计信息中。",
+        "- 同一规则适用于 Dashboard、CLI 输出以及 Agent 对话。面向用户时称“你”或",
+        "  “负责人”，不要直接显示协议角色名 Human；称“验证文档”“正文内容”，",
+        "  不用“语义文档集”“语义交付”等内部抽象。状态和问题必须写清谁要对哪个",
+        "  DUT、工作流、节点或文档做什么，不能只说“等待计划评审”“空闲”或“未登记活动”。",
+        "  CLI 命令名、schema 字段和状态码可保留，但必须同时解释其用户可见含义。",
         "",
-        "工程语义以列出的 Markdown 合同为准；SQLite 保存文档摘要、revision、review、",
-        "evidence、开放事项状态和失效关系，不保存或覆盖工程语义正文。",
+        "验证文档正文以列出的 Markdown 文件为准；SQLite 保存文档摘要、revision、review、",
+        "evidence、开放事项状态和失效关系，不保存或覆盖验证文档正文。",
         "所有 RTL 和 RTL specification 都是只读输入。禁止编辑、创建、覆盖、删除、",
         "重命名、格式化这些输入，也禁止向其中生成文件。验证产物必须放在 verification",
-        "输出根目录；发现输入缺陷时交由 Human 处理。",
+        "输出根目录；发现输入缺陷时交由负责人处理。",
         "",
         "### 交互与权限",
         "",
-        "- Human 在 Agent 对话中说明目标、回答工程问题，并明确决定 review、waiver、",
+        "- 负责人（内部协议角色 Human）在 Agent 对话中说明目标、回答工程问题，并明确决定 review、waiver、",
         "  freeze 等 gate。",
-        "- Agent 一旦因为需要 Human 输入而停下，必须先把问题、选项、推荐项和影响登记到",
+        "- Agent 一旦因为需要负责人输入而停下，必须先把问题、选项、推荐项和影响登记到",
         "  项目控制状态。计划建立前使用项目级目标 `project`；已有工作流或工作节点后绑定",
-        "  最具体的对象。Human 可在 Dashboard 或当前 Agent CLI 对话回答；CLI 中的答案必须由",
+        "  最具体的对象。负责人可在 Dashboard 或当前 Agent 对话回答；对话中的答案必须由",
         "  Agent 立即用 `agent-question answer` 写回同一问题。不得只使用未登记的原生终端",
         "  临时选择器，也不得让两个入口形成两套问题状态。",
-        "- 阻塞型 `agent-question ask` 默认保持 300 秒等待 checkpoint；交互式 Main Agent",
-        "  不得使用 `--no-wait`。若返回 `TIMEOUT` 且问题仍为 `OPEN`，必须立即用",
-        "  `agent-question await QUESTION_ID --timeout 300` 继续等待，不得先结束 turn 回到",
-        "  runtime 的原生输入提示符。Dashboard 答案是持久化状态，不会向已经 idle 的",
-        "  Codex/Kimi 会话注入 prompt。若 runtime 把等待命令转为后台任务，Main Agent 必须",
-        "  使用其 `WaitFor` 或等价机制继续等待该任务。",
+        "- 当前 Agent 对话必须显示已登记问题的 ID、正文、上下文、全部选项、推荐项和影响。",
+        "  Kimi 交互会话使用成对 checkpoint：先执行 `agent-question ask --no-wait` 并展示",
+        "  返回的问题，再立即把 `agent-question await QUESTION_ID --timeout 300` 启动为 Kimi",
+        "  Bash 后台任务，然后把普通输入框还给负责人；等待负责人时不得前台执行 `await` 或",
+        "  调用 `WaitFor`。负责人在对话中回答后，Main Agent 必须立即用 `agent-question answer`",
+        "  写回同一 ID；Dashboard 将实时同步为已回答。负责人在 Dashboard 回答后，同一 CLI",
+        "  后台 checkpoint 必须完成并通知 Main Agent。单独使用 `--no-wait` 而不建立后台",
+        "  checkpoint 属于错误。其他 runtime",
+        "  若没有等价的完成通知后台任务，则保留阻塞型 `ask`。Dashboard 答案是持久化状态，",
+        "  不会向没有活动 checkpoint 的 idle 会话注入 prompt。",
         "- Agent 开始非简单分析或后台子任务前必须登记 Activity。计划建立前使用",
-        "  `activity start project`，使 Human 不依赖 SSH 或终端也能看到真实运行状态。",
-        "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成 Human 授权。",
+        "  `activity start project`，使负责人不依赖 SSH 或终端也能看到真实运行状态。",
+        "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成负责人授权。",
         "- 多 Agent 协作只使用本项目已经选择的单一 runtime（Codex 或 Kimi）的原生",
         "  subagent 能力；verif-harness 不启动另一种 runtime，也不自建隐藏 worker。",
-        "- 当前项目的 Main Agent 是唯一 Human 交互入口和控制面写者。subagent 只执行",
+        "- 当前项目的 Main Agent 是唯一负责人交互入口和控制面写者。subagent 只执行",
         "  Main Agent 给出的有边界任务并返回结构化结果，不得直接调用 agent-question、",
-        "  review、waive、freeze、record 或 evidence，也不得直接向 Human 提问或审批 gate。",
+        "  review、waive、freeze、record 或 evidence，也不得直接向负责人提问或审批 gate。",
         "- Main Agent 分派前先用 `agent-work candidates` 读取可并行动作，再为每个 child",
         "  执行 `agent-work claim`。只并行彼此独立的节点；写任务必须声明互不重叠的",
         "  `--write-scope`。runtime 负责线程和上下文，SQLite claim 只负责项目级防重、",
@@ -744,7 +753,7 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  不受信任的 child 必须使用隔离 worktree 或更严格的 runtime sandbox。",
         "- subagent 缺少输入时向 Main Agent 返回 NEEDS_HUMAN 结构；Main Agent 先协调，",
         "  并用 `agent-work heartbeat --phase WAITING_FOR_PARENT` 记录。确需工程判断时，",
-        "  只有 Main Agent 才登记 agent-question。Human 回答后由 Main Agent决定续派。",
+        "  只有 Main Agent 才登记 agent-question。负责人回答后由 Main Agent 决定续派。",
         "- Main Agent 必须等待所分派的结果、复核实际文件和检查输出，再用",
         "  `agent-work finish` 关闭 assignment 并重新计算 closure。assignment/subagent 完成、多数",
         "  Agent 同意或 Activity COMPLETED 都不是 evidence，也不会把节点改成 VALID。",
@@ -752,8 +761,8 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  都不等于语义已批准或 evidence 已通过。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同。",
-        "- 文档状态、Revision Log、Review Trace 与 Human Review Notes 通过 `docs status`",
-        "  或 `docs render` 按需投影，不在工程语义正文中手工维护。",
+        "- 文档状态、修订记录、评审追踪与负责人评审意见通过 `docs status`",
+        "  或 `docs render` 按需投影，不在验证文档正文中手工维护。",
         "- 所需合同缺失或未解决时，返回 VDOC 或负责该目标的 Workstream；不得猜测后继续。",
         "- 本项目不采用 Stage 或 Spec Kit；不得创建 `spec/plan/tasks` 流水线或按阶段阻塞工作域。",
         "",
@@ -763,7 +772,7 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
     if document_root is None:
         lines.extend([
             "VDOC 文档路由尚未建立。执行实现类 capability 前，必须通过 `plan VDOC`",
-            "生成缺失模板，并由 Agent 与 Human 对话形成经过评审的工程语义文档集。",
+            "生成缺失模板，并由 Agent 与负责人逐项确认验证范围、检查方法、覆盖目标和完成标准。",
         ])
     else:
         lines.append(f"VDOC 文档根目录：`{document_root}`")
@@ -1346,9 +1355,9 @@ class ProjectStore:
     ) -> tuple[bool, dict[str, Any]]:
         path = self.root / relative
         if path.is_symlink():
-            raise HarnessError(f"拒绝跟随语义文档符号链接: {relative}")
+            raise HarnessError(f"拒绝跟随验证文档符号链接: {relative}")
         if not path.is_file():
-            raise HarnessError(f"语义文档不存在或不是文件: {relative}")
+            raise HarnessError(f"验证文档不存在或不是文件: {relative}")
         digest = self._digest(path)
         existing = connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
         changed = existing is not None and existing["digest"] != digest
@@ -1407,7 +1416,7 @@ class ProjectStore:
                     continue
                 candidate = output / contract["filename"]
                 if candidate.is_symlink():
-                    raise HarnessError(f"拒绝跟随语义文档符号链接: {candidate}")
+                    raise HarnessError(f"拒绝跟随验证文档符号链接: {candidate}")
                 relative = relative_path(self.root, candidate)
                 self._document_path_allowed(relative)
                 target = self.root / relative
@@ -1421,7 +1430,7 @@ class ProjectStore:
                 owners = ",".join(contract["maintained_by"])
                 changed, row = self._register_document(
                     connection, document_id, relative, desired["title"], desired["id"], owners,
-                    "由 VDOC 模板创建" if created else "登记已有语义文档",
+                    "由 VDOC 模板创建" if created else "登记已有验证文档",
                 )
                 row["materialized"] = created
                 results.append(row)
@@ -1554,7 +1563,7 @@ class ProjectStore:
                 "role_description": (
                     "当前 DUT 的文档撰写方案节点；目标、内容、工程决定、输入和交付区块分别审批"
                     if workstream == "VDOC" and role == "document-writing-plan" else
-                    "一份正式验证文档中的独立语义验收单元；与同一文档的其他交付节点分别审批"
+                    "一份正式验证文档中可独立验收的正文内容；与同一文档的其他交付节点分别审批"
                     if workstream == "VDOC" else
                     "项目级完成条件证据节点" if role == "closure-evidence"
                     else f"项目级 {role} 节点"
@@ -1585,6 +1594,12 @@ class ProjectStore:
                     raise HarnessError(
                         f"{item['key']} 的 document_key={item['document_key']} 与 parent_key 归属 {cursor} 不一致"
                     )
+        if workstream == "VDOC":
+            issues = self._vdoc_project_proposal_issues(normalized)
+            if issues:
+                raise HarnessError(
+                    "VDOC desired-state proposal 不能进入审批：" + "；".join(issues)
+                )
         return normalized, relative
 
     def design_workstream(
@@ -2488,13 +2503,13 @@ class ProjectStore:
         asked_by: str = PROJECT_AGENT_ACTOR, blocking: bool = True,
         activity_id: str | None = None,
     ) -> dict[str, Any]:
-        """Persist a Main-Agent question so Dashboard Human input survives sessions."""
+        """Persist a Main-Agent question so the responsible user's answer survives sessions."""
         self.require()
         if not prompt.strip() or not asked_by.strip():
             raise HarnessError("agent question prompt 和 asked_by 不能为空")
         if asked_by.strip() != PROJECT_AGENT_ACTOR:
             raise HarnessError(
-                f"只有 {PROJECT_AGENT_ACTOR} 可以登记 Human 问题；"
+                f"只有 {PROJECT_AGENT_ACTOR} 可以登记需要负责人回答的问题；"
                 "subagent 必须先向 Main Agent 回报"
             )
         normalized_options, recommended = self._question_options(options, recommended_option)
@@ -2543,7 +2558,7 @@ class ProjectStore:
                 ).fetchone()
                 if subagent_assignment is not None:
                     raise HarnessError(
-                        "subagent Activity 不能直接绑定 Human 问题；"
+                        "subagent 的工作记录不能直接绑定需要负责人回答的问题；"
                         "请先向 Main Agent 回报，再由 Main Agent 统一提问"
                     )
                 if activity["status"] in {"COMPLETED", "FAILED", "CANCELLED"}:
@@ -2570,7 +2585,7 @@ class ProjectStore:
                 connection.execute(
                     """UPDATE activities SET status='WAITING_FOR_HUMAN',message=?,updated_at=?
                        WHERE id=?""",
-                    (f"等待 Human 回答：{prompt.strip()}", timestamp, activity_id),
+                    (f"等待负责人回答：{prompt.strip()}", timestamp, activity_id),
                 )
         return self.agent_question(question_id)
 
@@ -2655,13 +2670,13 @@ class ProjectStore:
                 if (
                     activity is not None
                     and activity["status"] == "WAITING_FOR_HUMAN"
-                    and activity["message"].startswith("等待 Human 回答：")
+                    and activity["message"].startswith(("等待 Human 回答：", "等待负责人回答："))
                     and remaining == 0
                 ):
                     connection.execute(
                         """UPDATE activities SET status='RUNNING',message=?,updated_at=?
                            WHERE id=?""",
-                        (f"Human 已回答问题 {question_id}: {selected}", timestamp, activity_id),
+                        (f"负责人已回答问题 {question_id}: {selected}", timestamp, activity_id),
                     )
         return self.agent_question(question_id)
 
@@ -2693,6 +2708,15 @@ class ProjectStore:
         if not reviewer.strip() or not reason.strip():
             raise HarnessError("workstream review 必须提供 reviewer 和 reason")
         plan = self.workstream(workstream)
+        proposal_issues = (
+            self._vdoc_project_proposal_issues(plan["desired_state"])
+            if plan["workstream"] == "VDOC" else []
+        )
+        if verdict == "approve" and proposal_issues:
+            raise HarnessError(
+                "当前 VDOC 文档工作分解不完整，不能批量审批撰写方案："
+                + "；".join(proposal_issues)
+            )
         lifecycle = {"approve": "ACTIVE", "reject": "REVISE", "modify": "REVISE", "clarify": "REVISE"}[verdict]
         with self.connect() as connection:
             if plan["workstream"] == "VDOC" and verdict == "approve":
@@ -2707,7 +2731,7 @@ class ProjectStore:
                 ]
                 if blocked:
                     raise HarnessError(
-                        "VDOC 文档节点仍有待确认事项，不能批量批准实施方案: "
+                        "VDOC 文档节点仍有等待负责人确认的事项，不能批量批准文档撰写方案: "
                         + "、".join(blocked)
                     )
                 timestamp = now()
@@ -2789,6 +2813,79 @@ class ProjectStore:
             item for item in plan["desired_state"]
             if item.get("role") == "document-deliverable"
         ]
+
+    @staticmethod
+    def _vdoc_project_proposal_issues(
+        desired_state: list[dict[str, Any]],
+    ) -> list[str]:
+        """Find incomplete DUT-specific VDOC decompositions.
+
+        Template document catalogs and legacy ``--desired`` compatibility nodes
+        are intentionally outside this check.  A structured project proposal is
+        reviewable only when every required writing-plan node owns at least one
+        required semantic-delivery node, and every required delivery traces back
+        to a required writing plan.
+        """
+        public = [
+            item for item in desired_state
+            if item.get("definition_origin") == "project-proposal"
+            and item.get("role") in PROJECT_NODE_ROLES["VDOC"]
+        ]
+        if not public:
+            return []
+        required_plans = {
+            item["key"]: item for item in public
+            if item.get("required", True)
+            and item.get("role") == "document-writing-plan"
+        }
+        required_deliveries = [
+            item for item in public
+            if item.get("required", True)
+            and item.get("role") == "document-deliverable"
+        ]
+        issues: list[str] = []
+        if not required_plans:
+            issues.append("没有必需的文档撰写方案节点")
+        if not required_deliveries:
+            issues.append("没有必需的文档交付节点")
+        if not required_plans or not required_deliveries:
+            return issues
+
+        by_key = {item["key"]: item for item in public}
+
+        def owning_plan_key(delivery: dict[str, Any]) -> str | None:
+            cursor = str(delivery.get("parent_key") or "")
+            visited: set[str] = set()
+            while cursor and cursor not in visited:
+                if cursor in required_plans:
+                    return cursor
+                visited.add(cursor)
+                parent = by_key.get(cursor)
+                if parent is None:
+                    return None
+                cursor = str(parent.get("parent_key") or "")
+            return None
+
+        covered_plans: set[str] = set()
+        orphan_deliveries: list[str] = []
+        for delivery in required_deliveries:
+            owner = owning_plan_key(delivery)
+            if owner is None:
+                orphan_deliveries.append(delivery["key"])
+            else:
+                covered_plans.add(owner)
+        uncovered_plans = sorted(set(required_plans) - covered_plans)
+        if uncovered_plans:
+            issues.append(
+                "以下必需撰写方案没有可独立验收的正文交付节点: "
+                + ", ".join(uncovered_plans)
+            )
+        if orphan_deliveries:
+            issues.append(
+                "以下必需文档交付节点未归属必需撰写方案: "
+                + ", ".join(sorted(orphan_deliveries))
+            )
+        return issues
 
     @staticmethod
     def _vdoc_document_key(
@@ -2885,13 +2982,19 @@ class ProjectStore:
             raise HarnessError("node plan review 必须提供 reviewer 和 reason")
         state = self.node_plan_review_state(node_id)
         if state["workstream"] != "VDOC":
-            raise HarnessError("节点级实施方案审批当前只适用于 VDOC 项目方案节点")
+            raise HarnessError("节点级方案审批当前只适用于 VDOC 文档撰写方案节点")
         if state["definition_digest"] != definition_digest:
-            raise HarnessError("文档实施方案已变化；请刷新 Dashboard 后重新审批")
+            raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新审批")
         allowed_sections = {item["section"] for item in state["sections"]}
         if section not in allowed_sections:
-            raise HarnessError("未知或当前不需要审批的文档实施方案区块")
+            raise HarnessError("未知或当前不需要审批的文档撰写方案区块")
         plan = self.workstream("VDOC")
+        proposal_issues = self._vdoc_project_proposal_issues(plan["desired_state"])
+        if selected == "approve" and proposal_issues:
+            raise HarnessError(
+                "当前 VDOC 文档工作分解不完整，不能审批撰写方案："
+                + "；".join(proposal_issues)
+            )
         timestamp = now()
         with self.connect() as connection:
             if selected == "approve" and section == "human-confirmations":
@@ -2900,7 +3003,7 @@ class ProjectStore:
                     (node_id,),
                 ).fetchone()["count"]
                 if unresolved:
-                    raise HarnessError("该文档节点仍有待确认事项；请先处理后再批准实施方案")
+                    raise HarnessError("该文档节点仍有等待负责人确认的事项；请先处理后再批准文档撰写方案")
             review_id = f"plan-section-review:{uuid.uuid4().hex[:12]}"
             connection.execute(
                 "INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -2948,7 +3051,7 @@ class ProjectStore:
                         "INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
                         (f"review:{uuid.uuid4().hex[:12]}", "VDOC", plan["revision"],
                          "APPROVE", reviewer.strip(),
-                         "所有必需文档节点的当前实施方案均已由 Human 审批通过", timestamp),
+                         "所有必需文档撰写方案节点均已由负责人审批通过", timestamp),
                     )
         self.write_workstream_projection("VDOC")
         refreshed = self.node_plan_review_state(node_id)
@@ -3015,7 +3118,7 @@ class ProjectStore:
                 raise HarnessError("已结束的 Activity 不能进入人工检查点")
             activity = self.update_activity(
                 activity_id, "WAITING_FOR_HUMAN",
-                f"等待 {name} revision {selected_revision} 的正式 Human Review",
+                f"等待负责人评审 {name} 工作流版本 {selected_revision}",
             )
 
         def matching_review() -> dict[str, Any] | None:
@@ -3048,7 +3151,7 @@ class ProjectStore:
                 if activity_id:
                     activity = self.update_activity(
                         activity_id, "RUNNING",
-                        f"已收到 {name} revision {selected_revision} Human Review: {verdict}",
+                        f"已收到负责人对 {name} 工作流版本 {selected_revision} 的评审结论：{verdict}",
                     )
                 return {
                     "schema": "HumanCheckpoint/1",
@@ -3071,10 +3174,10 @@ class ProjectStore:
                 if activity_id:
                     self.update_activity(
                         activity_id, "RUNNING",
-                        f"{name} revision {selected_revision} 当前没有待处理 Human Review",
+                        f"{name} 工作流版本 {selected_revision} 当前没有等待负责人处理的评审",
                     )
                 raise HarnessError(
-                    f"{name} revision {selected_revision} 当前没有 HUMAN_REVIEW 检查点"
+                    f"{name} 工作流版本 {selected_revision} 当前没有等待负责人评审的检查点"
                 )
             elapsed = time.monotonic() - started
             if elapsed >= timeout:
@@ -3254,7 +3357,7 @@ class ProjectStore:
                 connection.execute(
                     "INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
                     (f"finding:{uuid.uuid4().hex[:12]}", node_id, "HIGH", "OPEN", None,
-                     f"Human {selected.upper()} Closure Assessment: {reason.strip()}", timestamp),
+                     f"负责人对节点完成判断的结论为 {selected.upper()}：{reason.strip()}", timestamp),
                 )
         self.write_model_projection()
         self.write_workstream_projection(assessment["workstream"])
@@ -3274,13 +3377,13 @@ class ProjectStore:
             ).fetchone()
             if exists is None:
                 if selector is not None:
-                    raise HarnessError(f"未知语义文档: {selector}；先执行 plan VDOC")
+                    raise HarnessError(f"未知验证文档: {selector}；先执行 plan VDOC")
                 return []
             rows = [dict(row) for row in connection.execute("SELECT * FROM documents ORDER BY path")]
             if selector is not None:
                 matches = [row for row in rows if selector in {row["id"], row["path"], Path(row["path"]).name}]
                 if not matches:
-                    raise HarnessError(f"未知语义文档: {selector}")
+                    raise HarnessError(f"未知验证文档: {selector}")
                 if len(matches) > 1:
                     raise HarnessError(f"文档选择不唯一，请使用完整路径或 ID: {selector}")
                 rows = matches
@@ -3442,7 +3545,7 @@ class ProjectStore:
             blockers = [item["id"] for item in pending_items]
             blockers.extend(item["id"] for item in pending_confirmations)
             raise HarnessError(
-                "交付节点仍有待 Human 确认的问题、工程决定或 Agent 分析事项（"
+                "交付节点仍有等待负责人确认的问题、工程决定或 Agent 分析事项（"
                 + "、".join(blockers) + "）；逐项处理后才能批准交付节点"
             )
         timestamp = now()
@@ -3524,15 +3627,15 @@ class ProjectStore:
         document = self.documents(selector)[0]
         path = self.root / document["path"]
         if path.is_symlink():
-            raise HarnessError(f"拒绝通过符号链接读取语义文档: {document['path']}")
+            raise HarnessError(f"拒绝通过符号链接读取验证文档: {document['path']}")
         if not path.is_file():
-            raise HarnessError(f"语义文档不存在: {document['path']}")
+            raise HarnessError(f"验证文档不存在: {document['path']}")
         if path.stat().st_size > 2 * 1024 * 1024:
-            raise HarnessError("Dashboard 只预览不超过 2 MiB 的语义文档")
+            raise HarnessError("Dashboard 只预览不超过 2 MiB 的验证文档")
         try:
             content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
-            raise HarnessError("Dashboard 只预览 UTF-8 语义文档") from exc
+            raise HarnessError("Dashboard 只预览 UTF-8 编码的验证文档") from exc
         return {"document": document, "content": content}
 
     def sync_documents(self, selectors: Iterable[str] = ()) -> dict[str, Any]:
@@ -3545,7 +3648,7 @@ class ProjectStore:
             unique = {row["id"]: row for row in selected}
             rows = [unique[key] for key in sorted(unique)]
         if not rows:
-            raise HarnessError("尚未登记语义文档；先执行 plan VDOC")
+            raise HarnessError("尚未登记验证文档；先执行 plan VDOC")
         try:
             plan = self.workstream("VDOC")
         except HarnessError:
@@ -3579,7 +3682,7 @@ class ProjectStore:
                     continue
                 observed_changed, result = self._register_document(
                     connection, row["id"], row["path"], row["title"], row["desired_id"],
-                    row["owner"], "语义正文内容摘要发生变化",
+                    row["owner"], "验证文档正文摘要发生变化",
                 )
                 if observed_changed:
                     changed.append((row["path"], result["semantic_revision"]))
@@ -3617,7 +3720,7 @@ class ProjectStore:
         document = self.documents(selector)[0]
         plan = self.workstream("VDOC")
         if plan["lifecycle"] not in {"ACTIVE", "SATISFIED", "PARTIALLY_STALE"}:
-            raise HarnessError("必须先由 Human approve 当前 VDOC desired-state revision，再评审文档正文")
+            raise HarnessError("必须先由负责人批准当前 VDOC 文档撰写方案，再评审文档正文")
         pending_items = [
             item for item in document["governance_items"]
             if item["kind"] in {"human-decision", "external-open-question"}
@@ -3712,15 +3815,15 @@ class ProjectStore:
     def render_document_state(self, selector: str | None = None) -> str:
         documents = self.documents(selector)
         if not documents:
-            raise HarnessError("尚未登记语义文档；先执行 plan VDOC")
+            raise HarnessError("尚未登记验证文档；先执行 plan VDOC")
 
         def cell(value: Any) -> str:
             return str(value if value not in {None, ""} else "—").replace("|", "\\|").replace("\n", " ")
 
         lines = ["# 验证文档治理状态", "",
-                 "> 本内容由 `.verif-harness/model.sqlite3` 按需投影；不要手工并入工程语义正文。"]
+                 "> 本内容由 `.verif-harness/model.sqlite3` 按需生成；不要手工并入验证文档正文。"]
         labels = {
-            "human-decision": "Human Decisions", "provisional": "Provisional Decisions",
+            "human-decision": "负责人决定", "provisional": "暂定决定",
             "assumption": "Assumptions", "external-open-question": "External Open Questions",
         }
         for document in documents:
@@ -3754,7 +3857,7 @@ class ProjectStore:
             )
             if not document["reviews"]:
                 lines.append("| — | — | 尚无评审 | — |")
-            lines.extend(["", "### Human Review Notes", ""])
+            lines.extend(["", "### 负责人评审意见", ""])
             notes = [item for item in document["reviews"] if item["notes"]]
             lines.extend(
                 f"- r{item['semantic_revision']} · {item['reviewer']} · {item['verdict']}：{item['notes']}"
@@ -3775,7 +3878,7 @@ class ProjectStore:
         relative = relative_path(self.root, output)
         self._document_path_allowed(relative)
         if any(row["path"] == relative for row in self.documents()):
-            raise HarnessError("治理状态投影不能覆盖工程语义文档")
+            raise HarnessError("状态汇总文件不能覆盖验证文档")
         atomic_text(self.root / relative, self.render_document_state(selector))
         return {"path": relative, "selector": selector, "source": ".verif-harness/model.sqlite3"}
 
@@ -3813,11 +3916,11 @@ class ProjectStore:
                 self.sync_documents()
                 unreviewed = [row["path"] for row in self.documents() if row["status"] != Validity.VALID.value]
                 if unreviewed:
-                    raise HarnessError("VDOC 存在尚未批准或内容已变化的语义文档: " + ", ".join(unreviewed))
+                    raise HarnessError("VDOC 存在尚未批准或内容已变化的验证文档: " + ", ".join(unreviewed))
         closure = self.evaluate_closure(name, persist=False)
         plan = self.workstream(name)
         if plan["lifecycle"] not in {"ACTIVE", "SATISFIED"}:
-            raise HarnessError("Workstream 必须先由 Human approve，才能 freeze")
+            raise HarnessError("必须先由负责人批准当前验证工作流方案，才能保存该工作流基线")
         if closure["actions"]:
             raise HarnessError("Workstream desired state 尚未满足；先处理 closure actions")
         payload = self._baseline_payload(name, reviewer, reason)
@@ -3832,7 +3935,7 @@ class ProjectStore:
             for document in payload.get("documents", []):
                 source = self.root / document["path"]
                 if self._digest(source) != document["digest"]:
-                    raise HarnessError(f"语义文档在 freeze 期间发生变化: {document['path']}")
+                    raise HarnessError(f"验证文档在保存基线期间发生变化: {document['path']}")
             atomic_text(target.parent / payload["document_governance_projection"], self.render_document_state())
             for document in payload.get("documents", []):
                 source = self.root / document["path"]
@@ -3883,7 +3986,7 @@ class ProjectStore:
         if not node_id.strip() or any(character.isspace() for character in node_id):
             raise HarnessError("node ID 不能为空或包含空白")
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
-            raise HarnessError("新 node 不能直接声明 VALID/PROVISIONAL/WAIVED；必须提供对应 evidence 或 Human review")
+            raise HarnessError("新节点不能直接声明 VALID/PROVISIONAL/WAIVED；必须提供对应验证证据或负责人评审记录")
         name = self.normalize_workstream(workstream) if workstream else None
         with self.connect() as connection:
             if connection.execute("SELECT 1 FROM nodes WHERE id=?", (node_id,)).fetchone() is not None:
@@ -3943,7 +4046,7 @@ class ProjectStore:
     def set_status(self, node_id: str, status: Validity) -> dict[str, Any]:
         self.require()
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
-            raise HarnessError("VALID 必须由 evidence 建立，PROVISIONAL/WAIVED 必须由 Human review 建立")
+            raise HarnessError("VALID（已通过）必须由验证证据建立；PROVISIONAL/WAIVED 必须由负责人评审建立")
         with self.connect() as connection:
             changed = connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
             if changed.rowcount != 1:
@@ -4225,7 +4328,7 @@ class ProjectStore:
                     "SELECT 1 FROM reviews WHERE id=? AND verdict='WAIVE'", (item.get("waiver_ref"),)
                 ).fetchone()
                 if waiver is None:
-                    blockers.append(f"{item['test']} 的 waiver_ref 不是 SQLite 中的 Human WAIVE review")
+                    blockers.append(f"{item['test']} 的 waiver_ref 不是 SQLite 中已登记的负责人例外评审")
         return blockers
 
     def _derive_fresh_evidence(
@@ -4551,11 +4654,22 @@ class ProjectStore:
         name = self.normalize_workstream(workstream)
         plan = self.workstream(name)
         actions: list[dict[str, Any]] = []
+        vdoc_proposal_issues = (
+            self._vdoc_project_proposal_issues(plan["desired_state"])
+            if name == "VDOC" else []
+        )
         connector = self.connect if persist else self.read_connect
         with connector() as connection:
             current_nodes = self._current_desired_nodes(connection)
             current_desired = {key: item["id"] for key, item in current_nodes.items()}
             for desired in plan["desired_state"]:
+                if name == "VDOC" and desired.get("role") == "document-catalog":
+                    continue
+                if (
+                    name == "VDOC" and vdoc_proposal_issues
+                    and desired.get("role") in PROJECT_NODE_ROLES["VDOC"]
+                ):
+                    continue
                 row = connection.execute("SELECT status FROM nodes WHERE id=?", (desired["id"],)).fetchone()
                 status = row["status"] if row else Validity.UNKNOWN.value
                 dependencies = [dict(item) for item in connection.execute(
@@ -4608,19 +4722,29 @@ class ProjectStore:
             for row in connection.execute("SELECT subject,severity,details FROM findings WHERE status='OPEN' AND subject IN (SELECT id FROM nodes WHERE workstream=?)", (name,)):
                 actions.append({"kind": "RESOLVE_FINDING", "target": row["subject"], "priority": 5,
                                 "executor": "reasoning", "suggested_mode": "reason", "reason": row["details"]})
+            if name == "VDOC" and vdoc_proposal_issues:
+                actions.append({
+                    "kind": "REFINE_DESIRED_STATE", "target": "workstream:VDOC",
+                    "priority": 1, "executor": "reasoning", "suggested_mode": "plan",
+                    "reason": (
+                        "当前 VDOC 文档工作分解不完整，请 Agent 按 DUT、接口、"
+                        "验证点和可独立验收的正文内容提交新 revision："
+                        + "；".join(vdoc_proposal_issues)
+                    ),
+                })
             if plan["lifecycle"] in {"REVIEW", "REVISE"}:
                 if name == "VDOC":
                     vdoc_plan_nodes = self._vdoc_writing_plan_desired(plan)
-                    if not vdoc_plan_nodes:
+                    if not vdoc_plan_nodes and not vdoc_proposal_issues:
                         actions.append({
                             "kind": "REFINE_DESIRED_STATE", "target": "workstream:VDOC",
                             "priority": 1, "executor": "reasoning", "suggested_mode": "plan",
                             "reason": (
                                 "请先根据当前 DUT、规格、接口和验证目标形成项目级 VDOC 方案节点；"
-                                "固定文档交付分类不作为实施方案节点"
+                                "固定文档交付分类不作为文档撰写方案节点"
                             ),
                         })
-                    for desired in vdoc_plan_nodes:
+                    for desired in ([] if vdoc_proposal_issues else vdoc_plan_nodes):
                         if not desired.get("required", True):
                             continue
                         review_state = self.node_plan_review_state(
@@ -4630,7 +4754,7 @@ class ProjectStore:
                             actions.append({
                                 "kind": "HUMAN_REVIEW", "target": desired["id"],
                                 "priority": 1, "executor": "human", "suggested_mode": "plan",
-                                "reason": "当前 DUT 的文档实施方案节点等待负责人审批",
+                                "reason": "当前 DUT 的文档撰写方案节点等待负责人审批",
                             })
                 else:
                     actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
@@ -5012,10 +5136,12 @@ class ProjectStore:
                     "source": "document-item",
                     "target": item.get("desired_id") or item["document_id"],
                     "target_type": "document-item",
-                    "action": (
-                        "需要作出工程决定" if item["kind"] == "human-decision"
-                        else "需要回答开放问题"
-                    ),
+                    "action": {
+                        "human-decision": "需要作出工程决定",
+                        "external-open-question": "需要回答文档问题",
+                        "provisional": "需要处理暂定事项",
+                        "assumption": "需要确认待验证假设",
+                    }.get(item["kind"], "需要处理文档事项"),
                     "status": "OPEN",
                     "reviewer": "待处理",
                     "reason": f"{item['title']}（{item['document_path']}，编号 {item['id']}）",
@@ -5023,6 +5149,7 @@ class ProjectStore:
                     "document_id": item["document_id"],
                     "document_path": item["document_path"],
                     "item_id": item["id"],
+                    "item_kind": item["kind"],
                 }
                 for item in pending_document_items
                 if plan["workstream"] == "VDOC"
@@ -5113,6 +5240,12 @@ class ProjectStore:
         blocking_question_count = sum(
             bool(item["blocking"]) for item in open_agent_questions
         )
+        pending_review_count = sum(
+            item.get("source") == "closure" for item in waiting_for_human
+        )
+        pending_confirmation_count = sum(
+            item.get("source") == "document-item" for item in waiting_for_human
+        )
         waiting_activity_count = sum(
             item["status"] == "WAITING_FOR_HUMAN" for item in active_agent_activities
         )
@@ -5140,10 +5273,26 @@ class ProjectStore:
             current_main_activities[0] if current_main_activities
             else main_activity_history[0] if main_activity_history else None
         )
-        if blocking_question_count or waiting_activity_count:
+        if blocking_question_count:
             project_agent_status = "WAITING_FOR_HUMAN"
             project_agent_message = (
-                f"需要你回答 {blocking_question_count or waiting_activity_count} 个问题；回答后 Agent 才会继续相关工作"
+                f"需要你回答 {blocking_question_count} 个问题；回答后 Agent 才会继续相关工作"
+            )
+        elif pending_review_count or pending_confirmation_count:
+            pending_parts = []
+            if pending_review_count:
+                pending_parts.append(f"{pending_review_count} 项评审")
+            if pending_confirmation_count:
+                pending_parts.append(f"{pending_confirmation_count} 项文档确认")
+            project_agent_status = "WAITING_FOR_HUMAN"
+            project_agent_message = (
+                f"需要你处理 {'、'.join(pending_parts)}；处理后 Agent 才会继续相关工作"
+            )
+        elif waiting_activity_count:
+            project_agent_status = "WAITING_FOR_HUMAN"
+            project_agent_message = (
+                f"Agent 有 {waiting_activity_count} 项工作等待负责人处理；"
+                "当前没有开放的 Agent 问题，请查看工作状态"
             )
         elif running_activity_count:
             project_agent_status = "RUNNING"
@@ -5154,7 +5303,7 @@ class ProjectStore:
             project_agent_status = "RUNNING"
             project_agent_message = (
                 f"有 {waiting_for_parent_count} 个 subagent 等待 Main Agent 协调；"
-                "当前尚未要求 Human 处理"
+                "当前不需要负责人处理"
             )
         elif pending_activity_count:
             project_agent_status = "PENDING"
@@ -5186,6 +5335,8 @@ class ProjectStore:
             "message": project_agent_message,
             "active_activity_count": len(active_agent_activities),
             "open_question_count": len(open_agent_questions),
+            "pending_review_count": pending_review_count,
+            "pending_confirmation_count": pending_confirmation_count,
             "latest_activity": latest_activity,
         }
 
@@ -5371,7 +5522,7 @@ class ProjectStore:
                          for item in documents)
         lines.extend(["", "## Exit Criteria", ""])
         lines.extend(f"- [ ] {item}" for item in plan["exit_criteria"])
-        lines.extend(["", "## Human Decisions", ""])
+        lines.extend(["", "## 负责人决定", ""])
         lines.extend(f"- {item}" for item in plan["decisions"])
         if not plan["decisions"]: lines.append("- 无")
         (directory / "plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
