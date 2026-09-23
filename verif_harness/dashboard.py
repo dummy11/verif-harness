@@ -437,11 +437,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 raise HarnessError(
                     "文档交付节点评审必须填写 reviewer、notes、definition_digest 和 document_digest"
                 )
+            change_items = body.get("change_items", [])
+            if not isinstance(change_items, list):
+                raise HarnessError("文档交付审批的 change_items 必须是数组")
             return store.review_document_delivery(
                 str(body.get("node", "")), definition_digest, document_digest,
                 verdict, reviewer, notes,
                 str(body.get("provisional_owner", "")),
                 str(body.get("review_trigger", "")),
+                change_items,
+            )
+        if path == "/api/reviews/agent-check":
+            checked_by = str(body.get("checked_by", "")).strip()
+            summary = str(body.get("summary", "")).strip()
+            if not checked_by or not summary:
+                raise HarnessError("Agent 检查必须填写 checked_by 和 summary")
+            return store.complete_review_agent_check(
+                str(body.get("review_id", "")), checked_by, summary,
             )
         if path == "/api/reviews/node-plan-section":
             verdict = str(body.get("verdict", ""))
@@ -452,9 +464,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             digest = str(body.get("definition_digest", "")).strip()
             if not reviewer or not reason or not digest:
                 raise HarnessError("文档撰写方案区块审批必须填写评审人、理由和当前方案摘要")
+            change_items = body.get("change_items", [])
+            if not isinstance(change_items, list):
+                raise HarnessError("文档撰写方案审批的 change_items 必须是数组")
             return store.review_node_plan_section(
                 str(body.get("node", "")), str(body.get("section", "")),
-                digest, verdict, reviewer, reason,
+                digest, verdict, reviewer, reason, change_items,
             )
         if path == "/api/reviews/node-closure":
             verdict = str(body.get("verdict", ""))
@@ -482,6 +497,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             target = str(body.get("target", ""))
             return store.freeze_final(reviewer, reason) if target.lower() == "final" else store.freeze_workstream(
                 target, reviewer, reason,
+            )
+        if path == "/api/workstreams/restart":
+            workstream = str(body.get("workstream", "")).upper()
+            if workstream != "VDOC":
+                raise HarnessError("Dashboard 当前只支持重新启动 VDOC 工作流")
+            return store.restart_vdoc_workflow(
+                str(body.get("reviewer", "")), str(body.get("reason", "")),
+                body.get("confirm") is True,
             )
         raise HarnessError(f"不支持的 Dashboard 写操作: {path}")
 

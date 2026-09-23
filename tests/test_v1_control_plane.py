@@ -132,10 +132,14 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
         store = ProjectStore(self.root)
         review_state = store.document_delivery_review_state(delivery["id"])
-        store.review_document_delivery(
+        review = store.review_document_delivery(
             delivery["id"], review_state["definition_digest"],
             review_state["document_digest"], "approve", "alice",
             "验证计划中的 DUT 范围正文已确认",
+        )
+        store.complete_review_agent_check(
+            review["review_id"], "Project Main Agent",
+            "已检查审批结论和当前正文，没有需要负责人继续确认的问题",
         )
         return plan
 
@@ -1338,10 +1342,14 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
         store = ProjectStore(self.root)
         review_state = store.document_delivery_review_state(delivery["id"])
-        store.review_document_delivery(
+        review = store.review_document_delivery(
             delivery["id"], review_state["definition_digest"],
             review_state["document_digest"], "approve", "alice",
             "验证计划中的 DUT 范围正文已确认",
+        )
+        store.complete_review_agent_check(
+            review["review_id"], "Project Main Agent",
+            "已检查审批结论和当前正文，没有需要负责人继续确认的问题",
         )
         frozen = self.run_cli("freeze", "VDOC", "--reviewer", "alice", "--reason", "reviewed documents")
         bundle = self.root / ".verif-harness" / Path(frozen["path"]).parent

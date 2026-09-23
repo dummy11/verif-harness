@@ -12,9 +12,13 @@ document catalogs and creates only missing templates in the project's verificati
 output directory. Those catalogs are navigation and dependency anchors, not a
 default eight-node proposal, and “eight documents, all required” is never a
 substitute for analysing the current DUT. Before asking the Human to approve a
-VDOC plan, derive a variable-size `DesiredStateProposal/1` from the DUT,
+VDOC plan, derive a `DesiredStateProposal/1` from the DUT,
 specification, interfaces, verification points, checking, coverage, scenarios,
-and unresolved decisions. The initial proposal must contain only DUT-specific
+and unresolved decisions. For N documents actually in scope, default to N public
+`document-writing-plan` nodes and, after authoring, N public
+`document-deliverable` nodes. Keep semantic sections and dependency units internal;
+split one document into multiple public nodes only for genuinely independent owners
+or approval gates. The initial proposal must contain only DUT-specific
 `document-writing-plan` nodes. Do not create or show `document-deliverable`
 nodes, write or modify formal document bodies, or run `docs sync` until every
 required writing-plan section has been approved and VDOC is `ACTIVE`. After
@@ -28,9 +32,9 @@ invalid nodes for Human approval.
 
 Existing documents are never overwritten. The CLI's desired-state/plan projections
 are not those deliverables; document governance state is rendered on demand from SQLite.
-The document body remains the editable semantic authority. A document may have
-multiple writing-plan and delivery nodes, while engineering topics, open questions,
-and decisions remain nested review content rather than one node per paragraph.
+The document body remains the editable semantic authority. Engineering topics,
+open questions, sections, and dependency units remain nested internal review
+content rather than one public node per paragraph.
 An early preview draft is allowed only when the user explicitly requests one;
 keep it outside formal document synchronization, evidence, and delivery nodes
 until the writing plan is approved.

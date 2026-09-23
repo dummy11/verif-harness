@@ -22,8 +22,12 @@ maintained_by). They are eight internal document catalogs, not eight fixed
 implementation-plan nodes, and they do not determine the project node count.
 Before plan approval, the Agent must derive a `DesiredStateProposal/1` from the
 current DUT, specification, interfaces, features, scenarios, checkers, coverage,
-testcases, and unresolved engineering decisions. Those project nodes are the
-VDOC implementation plan, so their count varies with the verification object.
+testcases, and unresolved engineering decisions. Let N be the number of documents
+actually in scope. By default, create N public writing-plan nodes first and, after
+approval and authoring, N public delivery nodes: one plan and one delivery per
+document. Split one document into multiple public nodes only when it genuinely has
+different owners or independent approval gates. N varies with the verification
+object and is not fixed at eight.
 `plan.md` under `.verif-harness/workstreams/vdoc/` remains the planning
 projection; the eight deliverables are separate engineering documents. `plan
 VDOC` creates only missing templates and registers their paths and digests; it
@@ -36,10 +40,10 @@ VDOC has exactly two public node types:
   and scope, planned content, Human engineering decisions,
   input/scope/deliverable contract, and dependency impact are reviewable
   sections inside the node, not additional node types;
-- `document-deliverable`: one independently reviewable semantic acceptance unit
-  inside exactly one Markdown document. Every node has an explicit
-  `document_key`; one document normally has multiple delivery nodes. It records
-  actual semantic content, document anchors/sources, acceptance criteria, Agent
+- `document-deliverable`: the public content-acceptance node for exactly one
+  Markdown document. Every node has an explicit `document_key`; the default is
+  one delivery node per in-scope document. It records actual semantic content,
+  document anchors/sources, acceptance criteria, Agent
   analysis, and any items that still require Human confirmation. Delivery nodes
   exist only after all required writing plans have been approved and the formal
   body has been written and synchronized.
@@ -48,6 +52,10 @@ The fixed `document-catalog` rows are internal containers and dependency
 anchors, not a third public VDOC node type. A writing-plan node says what and how
 the Agent proposes to write. A delivery node says which already-written semantic
 content the Human is accepting. Never reuse one content template for both.
+Within either public node, the Engine records hidden, digest-bound semantic units for
+sections, review change items, source anchors, and dependency impact. These units
+support fine-grained invalidation but are not separate Human tasks or approval
+targets; acceptance is always aggregated at the public node.
 
 VDOC is a serial two-phase lifecycle. The initial DUT-specific proposal contains
 only writing-plan nodes and is the only object presented for plan approval. It
@@ -134,13 +142,16 @@ Plan approval authorizes the Agent to write the desired scope; it does not
 certify document content. Until the delivery-only proposal is registered, the
 Dashboard reports that the Agent is authoring content and exposes no content
 review targets.
-Each delivery node is reviewed independently against the current document digest
-and semantic revision. Agent-analysis questions, assumptions, risks, and
-engineering decisions targeted at that delivery node must be resolved first.
-Only when every required delivery node of a document is approved does the Engine
-mark that document approved. Reviewing every required VDOC delivery node is
-therefore equivalent to reviewing all required document semantics. Do not use
-file existence or a bare template as passing evidence.
+Each delivery node is reviewed against the current document digest and semantic
+revision. Submitting the Human review creates a mandatory Main-Agent inspection
+checkpoint; it does not immediately mark the node accepted. The Main Agent reads
+`agent-review-check list --status PENDING`, checks the review, body, and dependency
+impact, and decides whether a node-bound `agent-question` is needed. After all
+questions are answered, the Agent re-analyses before completing the checkpoint
+with `agent-review-check complete`. A delivery node is approved only when the
+current body has a Human approval, its Agent checkpoint is complete, and it has
+no open Agent question. Only then may the Engine mark the document approved. Do
+not use file existence or a bare template as passing evidence.
 
 ## Human-Agent-Engine review loop and convergence
 
@@ -157,13 +168,18 @@ VDOC review is an iterative, revision-bound loop rather than a one-time approval
    formal body, synchronizes its digest, and registers a separate delivery-only
    proposal. The Human then reviews the semantic content represented by each
    delivery node and may approve, request modification, request clarification,
-   reject, or provisionally accept it under the rules below.
-5. A modification, clarification, rejection, changed DUT/specification, changed
+   reject, or provisionally accept it under the rules below. The Engine then
+   holds the node in Agent-checking state.
+5. The Main Agent always inspects the submitted review. If it needs responsible-
+   person confirmation, it creates a node-bound Agent question and the node enters
+   waiting-for-Human state. After the answer, the Agent rechecks. If no question is
+   needed, or all questions are resolved, it records the check as complete.
+6. A modification, clarification, rejection, changed DUT/specification, changed
    node definition, or changed document body returns the affected scope to the
    Agent. The Agent re-analyses the feedback and submits a new proposal or
    document revision; the Engine invalidates review conclusions that no longer
    match the current digests.
-6. The Human reviews the new revision. Steps 3-6 repeat until the current
+7. The Human reviews the new revision. Steps 3-7 repeat until the current
    revision satisfies every convergence condition.
 
 The Agent does not iterate unconditionally after an approval, and the Dashboard
@@ -178,8 +194,9 @@ revision:
 
 - every required `document-writing-plan` node has all required sections approved
   by the Human;
-- every required `document-deliverable` node is approved against the current
-  node-definition digest and current document digest;
+- every required `document-deliverable` node has a Human approval against the
+  current node-definition digest and current document digest, its corresponding
+  Main-Agent review check is complete, and it has no open Agent question;
 - every required document's delivery-node set covers all semantic content that
   must be accepted, and all those delivery nodes are approved;
 - no open Human confirmation, modification request, clarification request,

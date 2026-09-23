@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>verif-harness Dashboard UI 风格 Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #101215;
+      --sidebar: #1c1f23;
+      --topbar: #23262b;
+      --surface: #202328;
+      --surface-raised: #25292f;
+      --surface-soft: #2c3037;
+      --line: #3a3f47;
+      --line-soft: #2d3138;
+      --text: #f2f4f7;
+      --muted: #a6adb8;
+      --subtle: #777f8b;
+      --blue: #72a6ff;
+      --blue-soft: #303a4b;
+      --mint: #64b6a5;
+      --mint-soft: #263d39;
+      --amber: #eea51b;
+      --amber-soft: #44361d;
+      --coral: #e67973;
+      --coral-soft: #472b2c;
+      --shadow: 0 18px 46px rgba(0, 0, 0, .18);
+      --sidebar-width: 252px;
+      --topbar-height: 76px;
+    }
+
+    [data-theme="light"] {
+      color-scheme: light;
+      --canvas: #eef1f4;
+      --sidebar: #f8f9fa;
+      --topbar: #ffffff;
+      --surface: #ffffff;
+      --surface-raised: #f8f9fb;
+      --surface-soft: #eef1f5;
+      --line: #d7dce3;
+      --line-soft: #e7eaf0;
+      --text: #1f252d;
+      --muted: #66707c;
+      --subtle: #929aa5;
+      --blue: #376fc4;
+      --blue-soft: #e7eef9;
+      --mint: #348a79;
+      --mint-soft: #e0f1ed;
+      --amber: #a46600;
+      --amber-soft: #fff0cf;
+      --coral: #bd514b;
+      --coral-soft: #f9e5e3;
+      --shadow: 0 16px 42px rgba(31, 42, 55, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; background: var(--canvas); }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+      grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+      transition: grid-template-columns .18s ease;
+    }
+
+    .app-shell.sidebar-collapsed { grid-template-columns: 82px minmax(0, 1fr); }
+
+    .sidebar {
+      grid-row: 1 / -1;
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      border-right: 1px solid var(--line-soft);
+      background: var(--sidebar);
+    }
+
+    .brand {
+      height: var(--topbar-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      color: var(--blue);
+    }
+
+    .brand-mark svg { width: 31px; height: 31px; }
+
+    .brand-copy { min-width: 0; }
+    .brand-copy strong { display: block; font-size: 13px; letter-spacing: .035em; white-space: nowrap; }
+    .brand-copy small { display: block; margin-top: 1px; color: var(--subtle); font-size: 11px; }
+
+    .sidebar-collapse {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      margin-left: auto;
+      padding: 0;
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .sidebar-collapse:hover { color: var(--text); }
+
+    .nav {
+      display: grid;
+      gap: 5px;
+      padding: 22px 14px;
+    }
+
+    .nav-title {
+      padding: 0 12px 7px;
+      color: var(--subtle);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .nav-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 13px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      transition: color .15s ease, background .15s ease, border-color .15s ease;
+    }
+
+    .nav-item:hover { color: var(--text); background: var(--surface-raised); }
+
+    .nav-item.active {
+      border-color: color-mix(in srgb, var(--blue) 18%, transparent);
+      color: var(--text);
+      background: var(--surface-soft);
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .nav-icon {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      color: currentColor;
+    }
+
+    .nav-icon svg { width: 19px; height: 19px; }
+    .nav-item.active .nav-icon { color: var(--blue); }
+
+    .nav-count {
+      min-width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      margin-left: auto;
+      padding: 0 6px;
+      border-radius: 999px;
+      color: var(--amber);
+      background: var(--amber-soft);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .sidebar-context {
+      margin: auto 14px 16px;
+      padding: 15px;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--surface) 72%, transparent);
+    }
+
+    .sidebar-context-label { color: var(--subtle); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .sidebar-context strong { display: block; margin-top: 7px; font-size: 13px; }
+    .sidebar-context span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+
+    .app-shell.sidebar-collapsed .brand { justify-content: center; padding-inline: 12px; }
+    .app-shell.sidebar-collapsed .brand-mark { display: none; }
+    .app-shell.sidebar-collapsed .brand-copy,
+    .app-shell.sidebar-collapsed .nav-title,
+    .app-shell.sidebar-collapsed .nav-copy,
+    .app-shell.sidebar-collapsed .nav-count,
+    .app-shell.sidebar-collapsed .sidebar-context { display: none; }
+    .app-shell.sidebar-collapsed .sidebar-collapse { display: grid; margin: 0; }
+    .app-shell.sidebar-collapsed .nav-item { justify-content: center; padding-inline: 10px; }
+
+    .topbar {
+      grid-column: 2;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--topbar);
+    }
+
+    .refresh-button,
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .refresh-button:hover,
+    .icon-button:hover { border-color: var(--line); color: var(--text); background: var(--surface); }
+    .refresh-button svg,
+    .icon-button svg { width: 20px; height: 20px; }
+
+    .search {
+      position: relative;
+      width: min(660px, 48vw);
+    }
+
+    .search svg {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      width: 18px;
+      height: 18px;
+      color: var(--subtle);
+      transform: translateY(-50%);
+    }
+
+    .search input {
+      width: 100%;
+      height: 42px;
+      padding: 0 98px 0 42px;
+      border: 1px solid var(--line-soft);
+      border-radius: 11px;
+      outline: 0;
+      color: var(--text);
+      background: var(--surface-soft);
+    }
+
+    .search input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 15%, transparent); }
+
+    .search-key {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--subtle);
+      background: var(--surface);
+      font-size: 10px;
+      transform: translateY(-50%);
+    }
+
+    .topbar-actions { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+
+    .live-state {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 7px;
+      padding-left: 14px;
+      border-left: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--mint);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--mint) 14%, transparent);
+    }
+
+    .content {
+      grid-column: 2;
+      min-width: 0;
+      padding: 28px clamp(20px, 3vw, 42px) 54px;
+      background:
+        radial-gradient(circle at 78% 2%, color-mix(in srgb, var(--blue) 5%, transparent), transparent 32%),
+        var(--canvas);
+    }
+
+    .demo-banner {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .demo-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 9px;
+      border: 1px solid color-mix(in srgb, var(--blue) 32%, var(--line));
+      border-radius: 999px;
+      color: var(--blue);
+      background: var(--blue-soft);
+      font-weight: 800;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .breadcrumb { color: var(--subtle); font-size: 12px; }
+    .breadcrumb span { color: var(--muted); }
+
+    h1 {
+      margin: 7px 0 5px;
+      font-size: clamp(26px, 2.6vw, 36px);
+      line-height: 1.2;
+      letter-spacing: -.025em;
+    }
+
+    .page-subtitle { margin: 0; color: var(--muted); }
+
+    .page-actions { display: flex; gap: 9px; margin-left: auto; }
+
+    .button {
+      display: inline-flex;
+      min-height: 38px;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--text);
+      background: var(--surface);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .button:hover { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); }
+    .button.primary { border-color: #4d7fc9; color: #fff; background: #4d7fc9; }
+    .button svg { width: 16px; height: 16px; }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .project-status-card { overflow: hidden; }
+    .project-status-main { display: flex; align-items: flex-start; gap: 18px; padding: 19px 20px 17px; }
+    .project-status-copy { min-width: 0; }
+    .project-status-label { color: var(--subtle); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+    .project-status-card h2 { margin: 7px 0 0; font-size: 20px; line-height: 1.35; letter-spacing: -.015em; }
+    .project-status-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-left: auto; }
+    .project-status-facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+    .project-status-facts strong { color: var(--text); }
+    .project-status-next { padding: 12px 20px; border-top: 1px solid var(--line-soft); color: var(--muted); background: var(--surface-raised); font-size: 12px; }
+    .project-status-next strong { color: var(--text); }
+
+    .section { margin-top: 18px; }
+
+    .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .section-head h2 { margin: 0; font-size: 16px; }
+    .section-head span { color: var(--subtle); font-size: 12px; }
+    .section-head .button { min-height: 32px; margin-left: auto; padding-inline: 10px; font-size: 11px; }
+
+    .workflow-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+
+    .workflow-card {
+      min-height: 252px;
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+      transition: border-color .15s ease, transform .15s ease, background .15s ease;
+    }
+
+    .workflow-card:hover { border-color: color-mix(in srgb, var(--blue) 42%, var(--line)); background: var(--surface-raised); transform: translateY(-2px); }
+    .workflow-card[hidden] { display: none; }
+    .workflow-card-head { display: flex; align-items: flex-start; gap: 10px; }
+    .workflow-heading { min-width: 0; }
+    .workflow-heading strong { display: block; margin-top: 3px; font-size: 15px; }
+    .workflow-code { color: var(--blue); font-size: 10px; font-weight: 850; letter-spacing: .08em; }
+    .workflow-card-head .badge { margin-left: auto; }
+    .workflow-objective { min-height: 35px; margin: 9px 0 0; color: var(--muted); font-size: 11px; }
+
+    .workflow-meter {
+      --value: 0;
+      --meter-color: var(--blue);
+      position: relative;
+      width: 112px;
+      height: 112px;
+      display: grid;
+      place-items: center;
+      margin: 9px auto 3px;
+      border-radius: 50%;
+      background: conic-gradient(from 225deg, var(--meter-color) calc(var(--value) * 2.7deg), var(--surface-soft) 0deg 270deg, transparent 270deg);
+    }
+
+    .workflow-meter::before { content: ""; position: absolute; width: 80px; height: 80px; border-radius: 50%; background: var(--surface); }
+    .workflow-card:hover .workflow-meter::before { background: var(--surface-raised); }
+    .workflow-meter::after { content: ""; position: absolute; right: -2px; bottom: -2px; left: -2px; height: 40px; background: var(--surface); }
+    .workflow-card:hover .workflow-meter::after { background: var(--surface-raised); }
+    .workflow-meter strong { position: relative; z-index: 1; margin-top: -2px; font-size: 21px; letter-spacing: -.03em; }
+    .workflow-meter span { position: absolute; z-index: 2; bottom: 13px; color: var(--muted); font-size: 9px; }
+
+    .badge {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      font-size: 10px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.review { color: var(--amber); background: var(--amber-soft); }
+    .badge.active { color: var(--blue); background: var(--blue-soft); }
+    .badge.blocked { color: var(--coral); background: var(--coral-soft); }
+    .badge.satisfied { color: var(--mint); background: var(--mint-soft); }
+
+    .workflow-next { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 10px; }
+    .workflow-next div { min-width: 0; }
+    .workflow-next strong { display: block; margin-top: 2px; overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .workflow-next > span { margin-left: auto; color: var(--subtle); font-size: 18px; }
+
+    .prototype-note {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+      background: color-mix(in srgb, var(--surface) 54%, transparent);
+      font-size: 11px;
+    }
+
+    .prototype-note strong { color: var(--text); }
+
+    @media (max-width: 930px) {
+      :root { --sidebar-width: 82px; }
+      .brand { justify-content: center; padding-inline: 12px; }
+      .brand-copy, .sidebar-collapse, .nav-title, .nav-copy, .nav-count, .sidebar-context { display: none; }
+      .nav-item { justify-content: center; padding-inline: 10px; }
+      .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 720px) {
+      .app-shell { display: block; }
+      .sidebar { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line-soft); }
+      .brand { height: 58px; justify-content: flex-start; }
+      .brand-copy { display: block; }
+      .nav { display: flex; overflow-x: auto; padding: 8px; }
+      .nav-item { width: auto; flex: 0 0 auto; }
+      .nav-copy { display: block; }
+      .topbar { min-height: 62px; padding: 10px 12px; }
+      .refresh-button, .topbar-actions .icon-button:first-child, .live-state span { display: none; }
+      .search { width: 100%; }
+      .content { padding: 22px 14px 42px; }
+      .page-head { display: block; }
+      .page-actions { margin: 14px 0 0; }
+      .project-status-main { display: block; }
+      .project-status-badges { justify-content: flex-start; margin: 12px 0 0; }
+      .workflow-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+    <aside class="sidebar" aria-label="Dashboard 导航">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 2.5 29.5 10 16 17.5 2.5 10 16 2.5Z"/><path d="m2.5 10 13.5 7.5L29.5 10M2.5 16 16 23.5 29.5 16M2.5 22 16 29.5 29.5 22"/></svg>
+        </div>
+        <div class="brand-copy"><strong>VERIF HARNESS</strong><small>ASIC Verification Control</small></div>
+        <button class="sidebar-collapse" id="sidebar-collapse" type="button" title="收起侧边栏" aria-label="收起侧边栏">‹</button>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-title">验证项目</div>
+        <button class="nav-item active" type="button" data-demo-page="overview">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+          <span class="nav-copy">项目概览</span>
+        </button>
+        <button class="nav-item" type="button" data-demo-page="actions">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2.8 20h18.4L12 3Z"/><path d="M12 9v5M12 17.5v.2"/></svg></span>
+          <span class="nav-copy">需要你处理</span><span class="nav-count">3</span>
+        </button>
+        <button class="nav-item" type="button" data-demo-page="agent">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 9h8M8 13h5"/><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-4.5 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg></span>
+          <span class="nav-copy">Agent 交互</span>
+        </button>
+        <button class="nav-item" type="button" data-demo-page="risk">
+          <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V8M10 19V4M16 19v-7M22 19V9"/><path d="M2 19h21"/></svg></span>
+          <span class="nav-copy">风险与变更</span>
+        </button>
+
+        <div class="nav-title" style="margin-top: 16px">工作流</div>
+        <button class="nav-item" type="button" data-demo-page="vdoc"><span class="nav-icon" aria-hidden="true">D</span><span class="nav-copy">验证文档</span></button>
+        <button class="nav-item" type="button" data-demo-page="venv"><span class="nav-icon" aria-hidden="true">E</span><span class="nav-copy">验证环境</span></button>
+        <button class="nav-item" type="button" data-demo-page="vstim"><span class="nav-icon" aria-hidden="true">S</span><span class="nav-copy">验证激励</span></button>
+        <button class="nav-item" type="button" data-demo-page="vcheck"><span class="nav-icon" aria-hidden="true">C</span><span class="nav-copy">结果检查</span></button>
+      </nav>
+
+      <div class="sidebar-context">
+        <div class="sidebar-context-label">CURRENT DUT</div>
+        <strong>simple_fifo</strong>
+        <span>revision 4 · 本地示例</span>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <button class="refresh-button" type="button" title="刷新示例" aria-label="刷新示例">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7V3l-2.1 2.1A8 8 0 1 0 20 12"/></svg>
+      </button>
+      <label class="search">
+        <span class="sr-only">搜索</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+        <input id="demo-search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件">
+        <span class="search-key">⌘ K</span>
+      </label>
+      <div class="topbar-actions">
+        <button class="icon-button" type="button" title="示例通知" aria-label="示例通知">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>
+        </button>
+        <button class="icon-button" id="theme-toggle" type="button" title="切换明暗主题" aria-label="切换明暗主题">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <div class="live-state"><span class="live-dot"></span><span>状态已连接</span></div>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="demo-banner"><span class="demo-pill">UI 风格 Demo</span><span>仅演示视觉层级与布局，数据均为示例，不代表验证结论。</span></div>
+
+      <div class="page-head">
+        <div>
+          <div class="breadcrumb">验证项目 <span>/ simple_fifo</span></div>
+          <h1>simple_fifo 验证控制台</h1>
+          <p class="page-subtitle">查看当前项目状态、工作流进度与各工作流的下一步。</p>
+        </div>
+        <div class="page-actions">
+          <button class="button" type="button">查看项目详情</button>
+          <button class="button primary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            添加工作节点
+          </button>
+        </div>
+      </div>
+
+      <section class="card project-status-card" aria-label="当前项目状态">
+            <div class="project-status-main">
+              <div class="project-status-copy">
+                <div class="project-status-label">当前项目状态</div>
+                <h2>等待负责人审批 VDOC 文档撰写方案</h2>
+                <div class="project-status-facts"><span><strong>工作节点：</strong>18 / 42 已有结论</span><span><strong>支持材料：</strong>9 份匹配当前版本</span></div>
+              </div>
+              <div class="project-status-badges"><span class="badge">方案 revision 4</span><span class="badge review">等待你处理</span></div>
+            </div>
+            <div class="project-status-next"><strong>下一步：</strong>审批剩余 3 个必需方案区块；全部批准后，Agent 才能开始撰写正式正文。</div>
+      </section>
+
+      <section class="section">
+            <div class="section-head"><h2>验证工作流</h2><span>7 条 · 卡片进度只表示工作节点已有结论</span><button class="button" type="button">查看全部</button></div>
+            <div class="workflow-grid">
+              <article class="card workflow-card" data-searchable="VDOC 验证文档 审批 撰写方案">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VDOC</span><strong>验证文档</strong></div><span class="badge review">等待你审批</span></div>
+                <p class="workflow-objective">方案审批 → Agent 撰写正文 → 正文内容验收</p>
+                <div class="workflow-meter" style="--value: 63; --meter-color: var(--amber)" aria-label="VDOC 5/8 个方案区块已审批"><strong>63%</strong><span>5 / 8 区块</span></div>
+                <div class="workflow-next"><div>下一步<strong>审批 3 个方案区块</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VENV 验证环境 接口 时钟复位">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VENV</span><strong>验证环境</strong></div><span class="badge active">正在执行</span></div>
+                <p class="workflow-objective">接口、时钟复位、Testbench 组件与观测路径</p>
+                <div class="workflow-meter" style="--value: 75; --meter-color: var(--blue)" aria-label="VENV 6/8 个工作节点已有结论"><strong>75%</strong><span>6 / 8 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>检查 reset 释放次序</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VSTIM 验证激励 边界场景 ready valid backpressure">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VSTIM</span><strong>验证激励</strong></div><span class="badge active">正在执行</span></div>
+                <p class="workflow-objective">ready/valid 输入、边界条件与 backpressure 场景</p>
+                <div class="workflow-meter" style="--value: 57; --meter-color: var(--blue)" aria-label="VSTIM 4/7 个工作节点已有结论"><strong>57%</strong><span>4 / 7 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>补齐 backpressure 场景</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VCHK 结果检查 scoreboard assertion">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VCHK</span><strong>结果检查</strong></div><span class="badge blocked">材料已失效</span></div>
+                <p class="workflow-objective">scoreboard、断言与 checker 非空运行证明</p>
+                <div class="workflow-meter" style="--value: 43; --meter-color: var(--coral)" aria-label="VCHK 3/7 个工作节点已有结论"><strong>43%</strong><span>3 / 7 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>刷新 checker 运行结果</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VCOV 验证覆盖率 功能覆盖">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VCOV</span><strong>验证覆盖率</strong></div><span class="badge">等待前置工作</span></div>
+                <p class="workflow-objective">覆盖目标、采样实现与未覆盖项处理</p>
+                <div class="workflow-meter" style="--value: 0; --meter-color: var(--subtle)" aria-label="VCOV 0/6 个工作节点已有结论"><strong>0%</strong><span>0 / 6 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>等待 VSTIM 与 VCHK</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VCASE 测试用例 testcase 映射">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VCASE</span><strong>测试用例</strong></div><span class="badge active">正在执行</span></div>
+                <p class="workflow-objective">验证点、场景、checker 与 testcase 映射</p>
+                <div class="workflow-meter" style="--value: 60; --meter-color: var(--mint)" aria-label="VCASE 3/5 个工作节点已有结论"><strong>60%</strong><span>3 / 5 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>补齐异常场景用例</strong></div><span>›</span></div>
+              </article>
+              <article class="card workflow-card" data-searchable="VREG 回归验证 regression seed">
+                <div class="workflow-card-head"><div class="workflow-heading"><span class="workflow-code">VREG</span><strong>回归验证</strong></div><span class="badge">等待前置工作</span></div>
+                <p class="workflow-objective">回归配置、批次执行、失败分类与结果保留</p>
+                <div class="workflow-meter" style="--value: 25; --meter-color: var(--subtle)" aria-label="VREG 1/4 个工作节点已有结论"><strong>25%</strong><span>1 / 4 节点</span></div>
+                <div class="workflow-next"><div>下一步<strong>等待用例与检查机制</strong></div><span>›</span></div>
+              </article>
+            </div>
+      </section>
+
+      <div class="prototype-note"><strong>设计边界：</strong>这里借鉴参考图的深色中性底、固定侧栏、低对比卡片、细边框和多列卡片排布；信息内容仍然围绕 DUT、工作节点、负责人动作与验证证据，没有复制通用 IT 运维模块。</div>
+    </main>
+  </div>
+
+  <script>
+    const root = document.documentElement;
+    const shell = document.getElementById('app-shell');
+    const collapse = document.getElementById('sidebar-collapse');
+    const themeToggle = document.getElementById('theme-toggle');
+    const search = document.getElementById('demo-search');
+
+    collapse.addEventListener('click', () => {
+      const collapsed = shell.classList.toggle('sidebar-collapsed');
+      collapse.textContent = collapsed ? '›' : '‹';
+      collapse.title = collapsed ? '展开侧边栏' : '收起侧边栏';
+      collapse.setAttribute('aria-label', collapse.title);
+    });
+
+    themeToggle.addEventListener('click', () => {
+      root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    });
+
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(entry => entry.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    search.addEventListener('input', () => {
+      const query = search.value.trim().toLowerCase();
+      document.querySelectorAll('[data-searchable]').forEach(row => {
+        row.hidden = Boolean(query) && !row.dataset.searchable.toLowerCase().includes(query);
+      });
+    });
+
+    document.addEventListener('keydown', event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        search.focus();
+      }
+    });
+  </script>
+</body>
+</html>

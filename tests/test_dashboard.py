@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -502,9 +503,53 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("拒绝", stopped["message"])
         kill.assert_not_called()
 
+    def test_primary_navigation_routes_keep_project_and_reject_missing_project(self) -> None:
+        project_id = dashboard_project_id(self.store.root)
+        for route in ("", "pending-items=1", "agent-interaction=1", "risk-changes=1", "workstream=VCHK"):
+            query = f"project={project_id}" + (f"&{route}" if route else "")
+            with self.get(f"/?{query}") as response:
+                self.assertIn("验证项目看板", response.read().decode("utf-8"))
+        with self.get(f"/api/snapshot?project={project_id}") as response:
+            snapshot = json.load(response)
+        self.assertEqual(snapshot["dashboard_project_id"], project_id)
+        self.assertEqual([item["workstream"] for item in snapshot["workstreams"]], ["VCHK"])
+        with self.assertRaises(urllib.error.HTTPError) as missing:
+            self.get("/api/snapshot?project=missing-project")
+        self.assertEqual(missing.exception.code, 400)
+
     def test_html_is_local_layered_and_snapshot_is_detailed(self) -> None:
         with self.get("/") as response:
             html = response.read().decode("utf-8")
+        interactive_attributes = {
+            attribute
+            for tag in re.findall(r"<(?:button|article|form)\b[^>]*>", html)
+            for attribute in re.findall(r"\b(data-[a-z0-9-]+)(?==|[\s>])", tag)
+        }
+        bound_attributes = set(re.findall(
+            r"(?:querySelector(?:All)?|\$)\(['\"]\[(data-[a-z0-9-]+)\]",
+            html,
+        ))
+        self.assertEqual(
+            interactive_attributes - bound_attributes, set(),
+            "Dashboard 中每个交互入口都必须绑定真实处理函数",
+        )
+        referenced_api_paths = set(re.findall(r"['\"`](/api/[a-z0-9./_-]+)", html))
+        dashboard_source = (ROOT / "verif_harness/dashboard.py").read_text(encoding="utf-8")
+        implemented_api_paths = set(re.findall(
+            r"['\"](/api/[a-z0-9./_-]+)['\"]", dashboard_source,
+        ))
+        self.assertEqual(
+            referenced_api_paths - implemented_api_paths, set(),
+            "Dashboard 中每个 API 链接都必须由服务端实现",
+        )
+        written_query_keys = set(re.findall(r"searchParams\.set\('([^']+)'", html))
+        read_query_keys = set(re.findall(
+            r"(?:initialParams|params)\.(?:get|has)\('([^']+)'", html,
+        ))
+        self.assertEqual(
+            written_query_keys - read_query_keys - {"token"}, set(),
+            "Dashboard 写入的页面路由参数必须能被目标页面读取",
+        )
         self.assertIn("验证项目看板", html)
         self.assertIn('<html lang="zh-CN" data-theme="dark">', html)
         self.assertNotIn("验证项目总览", html)
@@ -516,8 +561,18 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("&token=${encodeURIComponent(token)}", html)
         self.assertIn("data.dashboard_project = state.project", html)
         self.assertIn("/api/registrations/remove", html)
-        self.assertNotIn('data-nav="overview"', html)
-        self.assertNotIn("state.agentInteraction", html)
+        for entry in ("overview", "pending", "agent", "risk"):
+            self.assertIn(f'data-nav="{entry}"', html)
+        self.assertIn('data-nav-workstream="${escapeHtml(w.workstream)}"', html)
+        self.assertIn("function navigatePrimary(view, selected=null)", html)
+        self.assertIn("button.onclick = () => navigatePrimary(button.dataset.nav)", html)
+        self.assertIn("navigatePrimary('workstream', button.dataset.navWorkstream)", html)
+        self.assertIn("url.searchParams.set('pending-items', '1')", html)
+        self.assertIn("url.searchParams.set('agent-interaction', '1')", html)
+        self.assertIn("url.searchParams.set('risk-changes', '1')", html)
+        self.assertIn("state.invalidRoute", html)
+        self.assertIn("返回当前项目概览", html)
+        self.assertIn("state.agentInteraction", html)
         self.assertNotIn("agent-focus", html)
         self.assertNotIn("overview-focus", html)
         self.assertIn('id="sidebar-toggle"', html)
@@ -530,10 +585,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("方案 ${escapeHtml(revisionLabel(w.revision))}", html)
         self.assertIn("已批准 ${approvedPlans} / ${writingPlans.length} 项", html)
         self.assertIn("全部批准后可以开始撰写正文，但不代表正文已经通过", html)
-        self.assertIn("function overviewPendingGroupsHtml", html)
-        self.assertIn('class="card overview-owner-panel"', html)
-        self.assertIn("function overviewAgentDetailsHtml", html)
-        self.assertIn('class="overview-agent-details"', html)
+        self.assertNotIn("function overviewPendingGroupsHtml", html)
+        self.assertNotIn('class="card overview-owner-panel"', html)
+        self.assertNotIn("function overviewAgentInteractionHtml", html)
+        self.assertNotIn('class="overview-agent-interaction"', html)
         overview = html[
             html.index("function renderOverview()"):
             html.index("function wsCard(w)")
@@ -542,16 +597,15 @@ class DashboardTest(unittest.TestCase):
             overview.index("${projectStatusCardHtml(s)}"),
             overview.index("<h2>验证工作流</h2>"),
         )
-        self.assertLess(
-            overview.index("<h2>验证工作流</h2>"),
-            overview.index('<aside class="overview-side">'),
-        )
+        self.assertNotIn('overview-side', overview)
+        self.assertNotIn('data-open-risk-changes', overview)
+        self.assertIn('grid workstream-grid', overview)
+        self.assertIn('grid-template-columns: repeat(3, minmax(0, 1fr))', html)
         self.assertNotIn('id="global-action"', html)
         self.assertNotIn("项目状态和评审记录保存在本地数据库中", html)
-        self.assertNotIn("Agent 交互", html)
+        self.assertIn("Agent 交互", html)
         self.assertIn("整个验证项目", html)
         self.assertIn("无需你处理", html)
-        self.assertIn("Dashboard 也没有收到 Agent 正在处理验证工作的记录", html)
         self.assertNotIn("项目级 Agent 当前空闲，没有已登记活动", html)
         self.assertIn("你也可以在当前主 Agent 对话中回答，两处会自动同步", html)
         self.assertIn("回答只用于继续当前工作", html)
@@ -561,38 +615,39 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("return '待验收'", html)
         self.assertIn("return '待评审'", html)
         self.assertIn("pendingItemStatusBadge(a, targetNode)", html)
-        self.assertIn("s.project_agent", html)
-        self.assertIn("s.agent_collaboration", html)
+        self.assertNotIn("s.project_agent", html)
+        self.assertNotIn("s.agent_collaboration", html)
         self.assertIn("/api/agent-questions/answer", html)
         self.assertIn("主 Agent 正在等待你的工程判断", html)
         self.assertNotIn("<h2>协同执行</h2>", html)
-        self.assertIn("<strong>子 Agent 工作状态</strong>", html)
-        self.assertIn("<strong>运行与回答记录</strong>", html)
-        self.assertIn("<h2>需要你回答</h2>", html)
-        self.assertIn("Agent 运行详情", html)
-        self.assertIn("主 Agent 工作状态", html)
-        self.assertIn("查看验证对象与范围", html)
+        self.assertNotIn("子 Agent 工作状态", html)
+        self.assertNotIn("运行与回答记录", html)
+        self.assertIn("<h2>等待你回答的问题</h2>", html)
+        self.assertIn("<h2>历史交互记录</h2>", html)
+        self.assertNotIn("Agent 运行详情", html)
+        self.assertNotIn("主 Agent 工作状态", html)
+        self.assertNotIn("查看验证对象与范围", html)
         self.assertNotIn("上下文", html)
+        agent_page = html[
+            html.index("function renderAgentInteractionPage()"):
+            html.index("function renderPendingItemsPage()")
+        ]
+        self.assertLess(agent_page.index("${questionSection}"), agent_page.index("${historySection}"))
+        self.assertNotIn("projectContextHtml", agent_page)
+        self.assertNotIn("activity_history", agent_page)
+        self.assertIn("agent_question_history", agent_page)
         pending_page = html[
             html.index("function renderPendingItemsPage()"):
             html.index("function renderRiskChangesPage()")
         ]
         self.assertLess(pending_page.index("${questionSection}"), pending_page.index("${otherSection}"))
-        self.assertLess(pending_page.index("${otherSection}"), pending_page.index("${runDetails}"))
-        run_details = html[
-            html.index("function agentRunDetailsHtml"):
-            html.index("function renderPendingItemsPage()")
-        ]
-        self.assertLess(run_details.index("${agentWorkStatusHtml"), run_details.index("${subagentWorkStatusHtml"))
-        self.assertLess(run_details.index("${subagentWorkStatusHtml"), run_details.index("${history}"))
-        self.assertIn('class="card agent-readonly-details agent-run-details"', html)
-        self.assertIn('class="card agent-readonly-details agent-subagents"', html)
-        self.assertIn('class="card agent-readonly-details agent-history"', html)
-        self.assertNotIn('class="card agent-readonly-details agent-run-details" open', html)
-        self.assertNotIn('class="card agent-readonly-details agent-subagents" open', html)
-        self.assertNotIn('class="card agent-readonly-details agent-history" open', html)
+        self.assertNotIn("runDetails", pending_page)
+        self.assertNotIn("function agentRunDetailsHtml", html)
+        self.assertNotIn("function agentWorkStatusHtml", html)
+        self.assertNotIn("function subagentWorkStatusHtml", html)
         self.assertIn("提交回答", html)
-        self.assertIn("按时间查看主 Agent、子 Agent 的进展", html)
+        self.assertIn("function agentInteractionHistoryHtml(questions)", html)
+        self.assertIn("还没有已完成的 Agent 问答记录", html)
         self.assertNotIn("<h2>最近 Agent 状态</h2>", html)
         self.assertNotIn("agent_question_history || s.agent_questions || [])}${projectContextHtml(true)", html)
         self.assertNotIn("function overviewMetrics", html)
@@ -601,21 +656,21 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("overviewTile(", html)
         self.assertNotIn("overview-action-grid", html)
         self.assertIn("<h2>验证工作流</h2>", html)
-        self.assertIn("data-open-risk-changes>风险与变更 ${risks.length}", html)
+        self.assertNotIn('data-open-risk-changes', html)
+        self.assertIn('data-nav="risk"', html)
         self.assertIn("function progressRing(value, label, small=false)", html)
         self.assertIn("@keyframes progress-breathe", html)
         self.assertIn('class="node-progress-bar"', html)
         self.assertNotIn('class="progress"', html)
         self.assertNotIn('class="status-strip', html)
-        self.assertNotIn("function renderAgentInteractionPage()", html)
-        self.assertIn("function agentRunDetailsHtml(", html)
+        self.assertIn("function renderAgentInteractionPage()", html)
         self.assertNotIn("function agentInteractionSummaryHtml", html)
         self.assertNotIn("${agentInteractionSummaryHtml(", html)
         self.assertIn("function renderPendingItemsPage()", html)
         self.assertIn("function renderRiskChangesPage()", html)
         self.assertIn("function openWorkstreamTab(name)", html)
-        self.assertNotIn("function openAgentInteractionTab", html)
-        self.assertIn("function openPendingItemsTab(questionId=null)", html)
+        self.assertIn("function openAgentInteractionTab(questionId=null)", html)
+        self.assertIn("function openPendingItemsTab()", html)
         self.assertIn("@keyframes waiting-breathe", html)
         self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
@@ -625,6 +680,7 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("humanRows(openHuman)", html)
         self.assertNotIn("是否需要负责人处理", html)
         self.assertIn("function workstreamStatusCardHtml(w)", html)
+        self.assertIn("waiting.length && w.workstream !== 'VDOC'", html)
         self.assertIn("function vdocPlanReviewState(workstream)", html)
         self.assertIn("REFINE_DESIRED_STATE:'由 Agent 完善当前 DUT 的工作节点'", html)
         self.assertIn("文档撰写方案尚未形成", html)
@@ -658,7 +714,15 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("review-plan-node", html)
         self.assertIn("openNodePlanReviewTab", html)
         self.assertIn("data-plan-section-form", html)
-        self.assertIn("提交这部分审批", html)
+        self.assertIn("function reviewOutcomeFieldsHtml", html)
+        self.assertIn("function collectReviewChangeItems", html)
+        self.assertIn("要求新增", html)
+        self.assertIn("要求删除", html)
+        self.assertIn("提交审批结论", html)
+        self.assertIn("提交正文验收结论", html)
+        self.assertIn("Agent 等待你回答", html)
+        self.assertIn('class="node-attention-link" data-agent-question=', html)
+        self.assertIn("前往 Agent 交互页面回答问题", html)
         self.assertIn("planReviewStatusBadge(review.status)", html)
         self.assertIn("本撰写方案仍待审批", html)
         self.assertIn("当前没有额外工程问题；仍需审批这部分内容", html)
@@ -739,6 +803,29 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("点击名称后在新标签页查看详情", html)
         self.assertIn('data-open-node="${escapeHtml(n.id)}"', html)
         self.assertIn("openNodeTab(button.dataset.openNode)", html)
+        self.assertIn('data-open-workstream="${escapeHtml(workstreamTarget)}"', html)
+        self.assertIn("openWorkstreamTab(button.dataset.openWorkstream)", html)
+        closure_rows = html[
+            html.index("function closureRows(items)"):
+            html.index("function bindNodeLinks()")
+        ]
+        self.assertIn("const targetNode = findNode(a.target)", closure_rows)
+        self.assertIn("match(/^workstream:([^:]+)/)", closure_rows)
+        self.assertIn("<span class=\"row-title\">", closure_rows)
+        self.assertIn("targetNode && ['node','document-item'].includes(a.target_type)", html)
+        for action_attribute in {
+            "data-agent-question", "data-agent-question-form",
+            "data-nav", "data-nav-workstream", "data-open-node",
+            "data-open-pending-items",
+            "data-open-workstream", "data-plan-section-form",
+            "data-review-delivery-node", "data-review-plan-node",
+            "data-review-workstream", "data-return-vdoc", "data-toggle-node",
+            "data-workstream",
+        }:
+            self.assertIn(
+                f"[{action_attribute}]", html,
+                f"{action_attribute} 必须绑定点击或提交处理函数",
+            )
         self.assertNotIn(
             '<button class="node-link" data-node="${escapeHtml(n.id)}">'
             '${escapeHtml(humanText(n.title))}</button>', html,
@@ -747,16 +834,18 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("button.dataset.node; renderDrawer", html)
         node_tab = html[
             html.index("function openNodeTab(nodeId)"):
-            html.index("function runtimeLabel")
+            html.index("function activityRows")
         ]
         self.assertIn("url.searchParams.set('workstream', node.workstream)", node_tab)
         self.assertIn("url.searchParams.set('node', nodeId)", node_tab)
         self.assertIn("window.open(url.toString(), '_blank', 'noopener')", node_tab)
         self.assertIn("'document-writing-plan':'文档撰写方案'", html)
         self.assertIn("'document-deliverable':'文档内容验收'", html)
+        self.assertIn("默认每份文档对应一个正文验收节点", html)
+        self.assertNotIn("这里验收本节点对应的正文内容，不是整份文档", html)
         self.assertIn("<h1>风险与变更</h1>", html)
         self.assertIn("需要重新检查的内容", html)
-        self.assertIn("选择文档、内容类型和调整方式", html)
+        self.assertIn("提交新增要求后，Agent 会分析它与当前 DUT、文档及已有节点的关系", html)
         self.assertIn("<h1>验收文档内容</h1>", html)
         self.assertIn("本次验收内容", html)
         self.assertIn("验收前需要你确认", html)
@@ -785,6 +874,34 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("function openReviewModal", html)
         self.assertNotIn("评审节点完成判断", html)
         self.assertIn("w.workstream === 'VDOC'", html)
+        render_workstream = html[
+            html.index("function renderWorkstream(w)"):
+            html.index("function nodeRows(nodes)")
+        ]
+        vdoc_branch = render_workstream[
+            render_workstream.index("if (w.workstream === 'VDOC') {"):
+            render_workstream.index("      const actions = w.closure.actions || [];")
+        ]
+        self.assertIn('id="add-vdoc-node">添加节点', vdoc_branch)
+        self.assertIn('id="delete-vdoc-node">删除节点', vdoc_branch)
+        self.assertIn('id="restart-vdoc-workflow">重新启动工作流', vdoc_branch)
+        self.assertIn("${workstreamStatusCardHtml(w)}", vdoc_branch)
+        self.assertIn("<h2>工作节点列表</h2>", vdoc_branch)
+        self.assertIn("['document-writing-plan','document-deliverable']", vdoc_branch)
+        self.assertNotIn("projectContextHtml", vdoc_branch)
+        self.assertNotIn("vdocReviewProgressHtml", vdoc_branch)
+        self.assertNotIn("Agent 当前工作", vdoc_branch)
+        self.assertNotIn("还要完成什么", vdoc_branch)
+        self.assertNotIn('id="review-ws"', vdoc_branch)
+        self.assertIn("function openVdocRevisionRequestTab(changeKind='add')", html)
+        self.assertIn("从下一版方案中移出", html)
+        self.assertIn("当前节点、审批、正文和历史记录都会保留", html)
+        self.assertIn("function openVdocRestartModal(w)", html)
+        self.assertIn("确认重新启动", html)
+        self.assertIn("当前节点的审批结论不计入新版本", html)
+        self.assertIn("已有验证文档、历史节点、审批、验收和支持材料都会保留", html)
+        self.assertIn("data.confirm = true", html)
+        self.assertIn("/api/workstreams/restart", html)
         self.assertNotIn("__VERIF_DASHBOARD_TOKEN__", html)
         self.assertNotIn("https://", html)
         with self.get("/api/snapshot") as response:
@@ -1016,6 +1133,141 @@ class DashboardTest(unittest.TestCase):
             self.post("/api/reviews/document", {
                 "document": document["id"], "verdict": "approve", "reviewer": "alice",
                 "notes": "试图忽略待回答问题",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
+
+    def test_vdoc_restart_requires_confirmation_and_preserves_audit_history(self) -> None:
+        self.design_minimal_vdoc()
+        snapshot = self.store.dashboard_snapshot()
+        vdoc = next(item for item in snapshot["workstreams"] if item["workstream"] == "VDOC")
+        plan_node = next(node for node in vdoc["nodes"] if node["plan_review"])
+        for section in plan_node["plan_review"]["sections"]:
+            self.store.review_node_plan_section(
+                plan_node["id"], section["section"],
+                plan_node["plan_review"]["definition_digest"],
+                "approve", "alice", "当前 DUT 的文档范围已经确认",
+            )
+        self.register_minimal_vdoc_delivery()
+        before = self.store.dashboard_snapshot()
+        before_vdoc = next(
+            item for item in before["workstreams"] if item["workstream"] == "VDOC"
+        )
+        delivery_node = next(
+            node for node in before_vdoc["nodes"]
+            if node["role"] == "document-deliverable"
+        )
+        action = self.store.add_human_action(
+            delivery_node["id"], "REQUEST_CHANGE", "alice",
+            "下一版需要重新确认接口范围",
+        )
+        activity = self.store.create_activity(
+            delivery_node["id"], "author-vdoc-content", "Agent",
+            "正在处理当前正文",
+        )
+        question = self.store.ask_agent_question(
+            delivery_node["id"], "是否保留当前接口范围？", [
+                {"id": "keep", "label": "保留", "description": "沿用当前接口范围"},
+                {"id": "revise", "label": "调整", "description": "重新分析接口范围"},
+            ], "revise", "重新启动前仍在等待负责人决定", activity_id=activity["id"],
+        )
+        evidence_path = self.root / "verification/restart-audit.txt"
+        evidence_path.parent.mkdir(parents=True, exist_ok=True)
+        evidence_path.write_text("preserved evidence\n", encoding="utf-8")
+        evidence = self.store.add_evidence(
+            delivery_node["id"], "document-review", str(evidence_path), "pass",
+            {"scope": "restart-preservation"}, contract_validated=True,
+        )
+        documents_before = {
+            item["id"]: {
+                "path": item["path"], "semantic_revision": item["semantic_revision"],
+                "digest": item["digest"], "content": (self.root / item["path"]).read_bytes(),
+            }
+            for item in self.store.documents()
+        }
+        old_revision = before_vdoc["revision"]
+        old_node_ids = {node["id"] for node in before_vdoc["nodes"]}
+
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/workstreams/restart", {
+                "workstream": "VDOC", "reviewer": "alice",
+                "reason": "重新确认文档范围",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
+        self.assertEqual(self.store.workstream("VDOC")["revision"], old_revision)
+
+        response = self.post("/api/workstreams/restart", {
+            "workstream": "VDOC", "reviewer": "alice",
+            "reason": "重新确认文档范围", "confirm": True,
+        }, self.server.write_token)
+        result = response["result"]
+        self.assertEqual(result["previous_revision"], old_revision)
+        self.assertEqual(result["current_revision"], old_revision + 1)
+        self.assertEqual(result["lifecycle"], "REVIEW")
+        restarted = next(
+            item for item in response["snapshot"]["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        self.assertEqual(restarted["plan_node_count"], 0)
+        self.assertEqual(restarted["delivery_node_count"], 0)
+        self.assertFalse(any(
+            node["role"] in {"document-writing-plan", "document-deliverable"}
+            for node in restarted["nodes"]
+        ))
+        self.assertTrue(any(
+            item["kind"] == "REFINE_DESIRED_STATE"
+            for item in restarted["closure"]["actions"]
+        ))
+
+        documents_after = {item["id"]: item for item in self.store.documents()}
+        self.assertEqual(set(documents_after), set(documents_before))
+        for document_id, expected in documents_before.items():
+            observed = documents_after[document_id]
+            self.assertEqual(observed["path"], expected["path"])
+            self.assertEqual(observed["semantic_revision"], expected["semantic_revision"])
+            self.assertEqual(observed["digest"], expected["digest"])
+            self.assertEqual((self.root / observed["path"]).read_bytes(), expected["content"])
+
+        model_nodes = {item["id"]: item for item in response["snapshot"]["model"]["nodes"]}
+        self.assertTrue(all(model_nodes[node_id]["status"] == "STALE" for node_id in old_node_ids))
+        self.assertTrue(all(model_nodes[node_id]["workstream"] is None for node_id in old_node_ids))
+        action_after = next(
+            item for item in response["snapshot"]["human_action_history"]
+            if item["id"] == action["id"]
+        )
+        question_after = next(
+            item for item in response["snapshot"]["agent_question_history"]
+            if item["id"] == question["id"]
+        )
+        activity_after = next(
+            item for item in response["snapshot"]["activity_history"]
+            if item["id"] == activity["id"]
+        )
+        self.assertEqual(action_after["status"], "SUPERSEDED")
+        self.assertEqual(question_after["status"], "SUPERSEDED")
+        self.assertEqual(activity_after["status"], "CANCELLED")
+        self.assertTrue(any(
+            item["id"] == evidence["id"]
+            for item in response["snapshot"]["model"]["evidence"]
+        ))
+        restart_event = next(
+            item for item in response["snapshot"]["events"]
+            if item["kind"] == "workstream-restart"
+        )
+        self.assertEqual(restart_event["payload"]["reviewer"], "alice")
+        self.assertEqual(restart_event["payload"]["reason"], "重新确认文档范围")
+        self.assertEqual(restart_event["payload"]["previous_revision"], old_revision)
+        self.assertEqual(restart_event["payload"]["current_revision"], old_revision + 1)
+        with self.store.read_connect() as connection:
+            preserved_reviews = connection.execute(
+                "SELECT COUNT(*) AS count FROM node_plan_section_reviews WHERE node_id=?",
+                (plan_node["id"],),
+            ).fetchone()["count"]
+        self.assertGreater(preserved_reviews, 0)
+
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/workstreams/restart", {
+                "workstream": "VCHK", "reviewer": "alice",
+                "reason": "不允许重启其他工作流", "confirm": True,
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
 
@@ -1256,11 +1508,22 @@ class DashboardTest(unittest.TestCase):
             "resolution": "sideband 纳入范围并按接口表验收", "status": "RESOLVED",
         }, self.server.write_token)
 
-        first_review = self.post("/api/reviews/document-delivery", {
+        first_submission = self.post("/api/reviews/document-delivery", {
             "node": refreshed_delivery[0]["id"],
             "definition_digest": refreshed_delivery[0]["delivery_review"]["definition_digest"],
             "document_digest": refreshed_delivery[0]["delivery_review"]["document_digest"],
             "verdict": "approve", "reviewer": "alice", "notes": "接口语义符合当前 DUT",
+        }, self.server.write_token)
+        pending_first = next(
+            node for item in first_submission["snapshot"]["workstreams"]
+            if item["workstream"] == "VDOC" for node in item["nodes"]
+            if node["id"] == refreshed_delivery[0]["id"]
+        )
+        self.assertEqual(pending_first["delivery_review"]["status"], "AGENT_CHECKING")
+        first_review = self.post("/api/reviews/agent-check", {
+            "review_id": first_submission["result"]["review_id"],
+            "checked_by": "Project Main Agent",
+            "summary": "已核对审批内容和当前正文，没有需要负责人继续确认的问题",
         }, self.server.write_token)["snapshot"]
         first_vdoc = next(item for item in first_review["workstreams"] if item["workstream"] == "VDOC")
         verification_catalog = next(
@@ -1271,11 +1534,16 @@ class DashboardTest(unittest.TestCase):
             node for node in first_vdoc["nodes"]
             if node["key"] == "dut-interface-boundary"
         )
-        second_review = self.post("/api/reviews/document-delivery", {
+        second_submission = self.post("/api/reviews/document-delivery", {
             "node": second["id"],
             "definition_digest": second["delivery_review"]["definition_digest"],
             "document_digest": second["delivery_review"]["document_digest"],
             "verdict": "approve", "reviewer": "alice", "notes": "验证边界明确",
+        }, self.server.write_token)
+        second_review = self.post("/api/reviews/agent-check", {
+            "review_id": second_submission["result"]["review_id"],
+            "checked_by": "Project Main Agent",
+            "summary": "已核对验收范围和依赖，没有需要负责人继续确认的问题",
         }, self.server.write_token)["snapshot"]
         second_vdoc = next(item for item in second_review["workstreams"] if item["workstream"] == "VDOC")
         verification_catalog = next(
@@ -1286,13 +1554,18 @@ class DashboardTest(unittest.TestCase):
         error_delivery = next(
             node for node in second_vdoc["nodes"] if node["key"] == "dut-error-semantics"
         )
-        provisional = self.post("/api/reviews/document-delivery", {
+        provisional_submission = self.post("/api/reviews/document-delivery", {
             "node": error_delivery["id"],
             "definition_digest": error_delivery["delivery_review"]["definition_digest"],
             "document_digest": error_delivery["delivery_review"]["document_digest"],
             "verdict": "provisional", "reviewer": "alice",
             "notes": "错误码定义尚未冻结，暂按当前规格推进",
             "provisional_owner": "bob", "review_trigger": "错误码规格冻结",
+        }, self.server.write_token)
+        provisional = self.post("/api/reviews/agent-check", {
+            "review_id": provisional_submission["result"]["review_id"],
+            "checked_by": "Project Main Agent",
+            "summary": "已检查暂定接受条件，当前不需要新增负责人问题",
         }, self.server.write_token)["snapshot"]
         provisional_vdoc = next(
             item for item in provisional["workstreams"] if item["workstream"] == "VDOC"
@@ -1323,6 +1596,247 @@ class DashboardTest(unittest.TestCase):
                 self.store.design_workstream(
                     "VDOC", None, [], [], [], desired_file=str(proposal_path),
                 )
+
+    def test_vdoc_review_changes_are_structured_and_agent_questions_block_approval(self) -> None:
+        self.design_minimal_vdoc()
+        snapshot = self.store.dashboard_snapshot()
+        vdoc = next(item for item in snapshot["workstreams"] if item["workstream"] == "VDOC")
+        plan_node = next(node for node in vdoc["nodes"] if node["plan_review"])
+        stored_plan_node = next(
+            node for node in self.store.workstream("VDOC")["desired_state"]
+            if node["id"] == plan_node["id"]
+        )
+        semantic_units = stored_plan_node["internal_semantic_units"]
+        self.assertGreater(len(semantic_units), 5)
+        self.assertTrue(all(not item["visible_to_human"] for item in semantic_units))
+        self.assertEqual(
+            {item["field"] for item in semantic_units},
+            {
+                "scope", "work_content", "acceptance_criteria", "source_refs",
+                "deliverables", "quality_checks",
+            },
+        )
+        self.assertNotIn("internal_semantic_units", plan_node)
+        section = plan_node["plan_review"]["sections"][0]["section"]
+        changes = [
+            {
+                "operation": "add",
+                "target": "复位章节",
+                "instruction": "补充异步复位释放时序和对应检查方法",
+            },
+            {
+                "operation": "delete",
+                "target": "与当前 DUT 无关的通用总线描述",
+                "instruction": "删除不属于本次验证范围的模板内容",
+            },
+        ]
+        response = self.post("/api/reviews/node-plan-section", {
+            "node": plan_node["id"], "section": section,
+            "definition_digest": plan_node["plan_review"]["definition_digest"],
+            "verdict": "modify", "reviewer": "alice",
+            "reason": "按当前 DUT 范围调整撰写方案",
+            "change_items": changes,
+        }, self.server.write_token)
+        result = response["result"]
+        self.assertEqual(result["change_items"], changes)
+        self.assertEqual(result["agent_follow_up"]["status"], "CHECK_REQUIRED")
+        self.assertFalse(result["agent_follow_up"]["waiting_for_human"])
+
+        plan_state = self.store.node_plan_review_state(plan_node["id"])
+        recorded = next(
+            item for item in plan_state["reviews"]
+            if item["id"] == result["review_id"]
+        )
+        self.assertEqual(recorded["change_items"], changes)
+        event = next(
+            item for item in self.store.dashboard_snapshot()["events"]
+            if item["id"] == result["event_id"]
+        )
+        self.assertEqual(event["kind"], "review-submitted")
+        self.assertEqual(event["payload"]["agent_follow_up"], "CHECK_REQUIRED")
+        self.assertEqual(event["payload"]["change_items"], changes)
+
+        refreshed = self.store.node_plan_review_state(plan_node["id"])
+        for item in refreshed["sections"]:
+            self.store.review_node_plan_section(
+                plan_node["id"], item["section"], refreshed["definition_digest"],
+                "approve", "alice", "当前 DUT 的撰写范围已经确认",
+            )
+        self.register_minimal_vdoc_delivery()
+        content_snapshot = self.store.dashboard_snapshot()
+        content_vdoc = next(
+            item for item in content_snapshot["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        delivery = next(
+            node for node in content_vdoc["nodes"]
+            if node["role"] == "document-deliverable"
+        )
+        delivery_changes = [{
+            "operation": "modify",
+            "target": "DUT 接口范围表",
+            "instruction": "为 sideband 信号补充方向、位宽和检查责任",
+        }]
+        delivery_response = self.post("/api/reviews/document-delivery", {
+            "node": delivery["id"],
+            "definition_digest": delivery["delivery_review"]["definition_digest"],
+            "document_digest": delivery["delivery_review"]["document_digest"],
+            "verdict": "modify", "reviewer": "alice",
+            "notes": "接口表仍缺少 sideband 细节",
+            "change_items": delivery_changes,
+        }, self.server.write_token)["result"]
+        self.assertEqual(delivery_response["change_items"], delivery_changes)
+        self.assertEqual(
+            delivery_response["delivery_review"]["status"], "AGENT_CHECKING",
+        )
+        self.assertEqual(
+            self.store.review_agent_checks("PENDING")[0]["review_id"],
+            delivery_response["review_id"],
+        )
+        submitted_snapshot = self.store.dashboard_snapshot()
+        submitted_vdoc = next(
+            item for item in submitted_snapshot["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        submitted_node = next(
+            node for node in submitted_vdoc["nodes"] if node["id"] == delivery["id"]
+        )
+        self.assertEqual(submitted_node["status"], "REVIEW_REQUIRED")
+        self.assertEqual(submitted_node["delivery_review"]["status"], "AGENT_CHECKING")
+        self.assertEqual(submitted_snapshot["project_agent"]["status"], "RUNNING")
+        self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
+        self.assertEqual(self.store.model(delivery["id"])["nodes"][0]["status"], "REVIEW_REQUIRED")
+        self.assertTrue(any(
+            item["kind"] == "CHECK_DOCUMENT_REVIEW"
+            and item["target"] == delivery["id"]
+            for item in self.store.evaluate_closure("VDOC", persist=False)["actions"]
+        ))
+        delivery_state = self.store.document_delivery_review_state(delivery["id"])
+        recorded_delivery = next(
+            item for item in delivery_state["reviews"]
+            if item["id"] == delivery_response["review_id"]
+        )
+        self.assertEqual(recorded_delivery["change_items"], delivery_changes)
+
+        question = self.store.ask_agent_question(
+            delivery["id"], "sideband 信号是否纳入本次交付验收？", [
+                {
+                    "id": "include", "label": "纳入",
+                    "description": "本版正文补全并验收 sideband 信号",
+                },
+                {
+                    "id": "exclude", "label": "不纳入",
+                    "description": "记录排除理由并从本次交付移除",
+                },
+            ], "include", "Agent 检查审批意见时发现范围需要负责人确认",
+        )
+        self.assertEqual(
+            self.store.document_delivery_review_state(delivery["id"])["status"],
+            "WAITING_FOR_HUMAN",
+        )
+        waiting_snapshot = self.store.dashboard_snapshot()
+        self.assertEqual(waiting_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(self.store.review_agent_checks("WAITING_FOR_HUMAN")[0]["review_id"], delivery_response["review_id"])
+        self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
+        with self.assertRaises(urllib.error.HTTPError) as captured:
+            self.post("/api/reviews/document-delivery", {
+                "node": delivery["id"],
+                "definition_digest": delivery_state["definition_digest"],
+                "document_digest": delivery_state["document_digest"],
+                "verdict": "approve", "reviewer": "alice",
+                "notes": "尝试在问题未回答时批准",
+            }, self.server.write_token)
+        self.assertEqual(captured.exception.code, 400)
+
+        self.post("/api/agent-questions/answer", {
+            "id": question["id"], "option": "include", "reviewer": "alice",
+            "answer_text": "纳入本版交付范围",
+        }, self.server.write_token)
+        self.assertEqual(
+            self.store.review_agent_checks("PENDING")[0]["review_id"],
+            delivery_response["review_id"],
+        )
+        answered_snapshot = self.store.dashboard_snapshot()
+        self.assertEqual(answered_snapshot["project_agent"]["status"], "RUNNING")
+        self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
+        checked_modify = self.post("/api/reviews/agent-check", {
+            "review_id": delivery_response["review_id"],
+            "checked_by": "Project Main Agent",
+            "summary": "负责人已确认 sideband 范围，修改要求已经完整",
+        }, self.server.write_token)["result"]
+        self.assertEqual(checked_modify["delivery_review"]["status"], "CHANGES_REQUESTED")
+
+        approval_submission = self.post("/api/reviews/document-delivery", {
+            "node": delivery["id"],
+            "definition_digest": delivery_state["definition_digest"],
+            "document_digest": delivery_state["document_digest"],
+            "verdict": "approve", "reviewer": "alice",
+            "notes": "问题已回答，正文范围和内容均确认",
+        }, self.server.write_token)["result"]
+        self.assertEqual(approval_submission["verdict"], "APPROVE")
+        self.assertEqual(
+            approval_submission["delivery_review"]["status"], "AGENT_CHECKING",
+        )
+        self.assertEqual(
+            approval_submission["document"]["effective_status"], "REVIEW_REQUIRED",
+        )
+        final_question = self.store.ask_agent_question(
+            delivery["id"], "是否确认当前正文已经包含 sideband 检查责任？", [
+                {
+                    "id": "confirmed", "label": "确认",
+                    "description": "当前正文已包含该检查责任",
+                },
+                {
+                    "id": "missing", "label": "仍缺少",
+                    "description": "正文还要继续修改",
+                },
+            ], "confirmed", "Agent 检查验收通过结论时发现需要最终确认",
+        )
+        self.assertEqual(
+            self.store.document_delivery_review_state(delivery["id"])["status"],
+            "WAITING_FOR_HUMAN",
+        )
+        self.store.answer_agent_question(
+            final_question["id"], "confirmed", "alice", "正文已经补全",
+        )
+        approved = self.post("/api/reviews/agent-check", {
+            "review_id": approval_submission["review_id"],
+            "checked_by": "Project Main Agent",
+            "summary": "已检查审批结论和当前正文，所有问题均已解决",
+        }, self.server.write_token)["result"]
+        self.assertEqual(approved["delivery_review"]["status"], "APPROVED")
+        self.assertEqual(approved["document"]["effective_status"], "VALID")
+        final_snapshot = self.store.dashboard_snapshot()
+        final_vdoc = next(
+            item for item in final_snapshot["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        final_node = next(
+            node for node in final_vdoc["nodes"] if node["id"] == delivery["id"]
+        )
+        self.assertEqual(final_node["status"], "VALID")
+        self.assertEqual(final_node["delivery_review"]["status"], "APPROVED")
+        self.assertEqual(final_vdoc["lifecycle"], "SATISFIED")
+        self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "SATISFIED")
+        self.assertEqual(self.store.model(delivery["id"])["nodes"][0]["status"], "VALID")
+        self.assertEqual(
+            next(
+                item for item in self.store.review_agent_checks("COMPLETED")
+                if item["review_id"] == approval_submission["review_id"]
+            )["status"],
+            "COMPLETED",
+        )
+        cli_status = self.store.status()
+        cli_vdoc = next(
+            item for item in cli_status["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        cli_closure = next(
+            item for item in cli_status["closures"]
+            if item["workstream"] == "VDOC"
+        )
+        self.assertEqual(cli_vdoc["lifecycle"], "SATISFIED")
+        self.assertTrue(cli_closure["ready"])
 
     def test_human_can_review_current_node_closure_assessment(self) -> None:
         node = self.store.dashboard_snapshot()["workstreams"][0]["nodes"][0]

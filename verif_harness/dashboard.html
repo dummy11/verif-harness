@@ -13,17 +13,19 @@
       --green: #147a4b; --green-bg: #eaf8f1; --red: #b4232f; --red-bg: #fff0f1;
       --yellow: #8a5a00; --yellow-bg: #fff7df; --orange: #b54708; --orange-bg: #fff2e8;
       --blue: #175cd3; --blue-bg: #eaf2ff; --purple: #6941c6; --purple-bg: #f3efff;
-      --gray: #596579; --gray-bg: #eef1f5; --shadow: 0 12px 34px rgba(30, 48, 78, .08);
+      --gray: #596579; --gray-bg: #eef1f5; --shadow: 0 16px 42px rgba(31, 42, 55, .08);
+      --sidebar-bg: #f8f9fa; --topbar-bg: #ffffff;
       --radius: 14px;
     }
     [data-theme="dark"] {
       color-scheme: dark;
-      --bg: #0d1523; --panel: #141f30; --panel-2: #182538; --text: #edf3fb;
-      --muted: #a1afc2; --line: #2b3b52; --brand: #79b5ff; --brand-2: #173252;
-      --green: #74d6a6; --green-bg: #173b2c; --red: #ff9ca5; --red-bg: #48242a;
-      --yellow: #ffd37a; --yellow-bg: #46391d; --orange: #ffad73; --orange-bg: #482e1c;
-      --blue: #8bc0ff; --blue-bg: #1b3658; --purple: #c4adff; --purple-bg: #352958;
-      --gray: #b4c0d0; --gray-bg: #2a3545; --shadow: 0 12px 34px rgba(0, 0, 0, .28);
+      --bg: #101215; --panel: #202328; --panel-2: #292d34; --text: #f2f4f7;
+      --muted: #a6adb8; --line: #3a3f47; --brand: #72a6ff; --brand-2: #303a4b;
+      --green: #64b6a5; --green-bg: #263d39; --red: #e67973; --red-bg: #472b2c;
+      --yellow: #eead35; --yellow-bg: #44361d; --orange: #eea064; --orange-bg: #463222;
+      --blue: #84adff; --blue-bg: #303a4b; --purple: #c4adff; --purple-bg: #352958;
+      --gray: #a6adb8; --gray-bg: #30343b; --shadow: 0 18px 46px rgba(0, 0, 0, .18);
+      --sidebar-bg: #1c1f23; --topbar-bg: #23262b;
     }
     * { box-sizing: border-box; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -31,13 +33,14 @@
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
     code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .topbar { position: sticky; top: 0; z-index: 20; height: 68px; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(12px); }
-    .brand { display: flex; align-items: center; gap: 11px; min-width: 260px; }
-    .logo { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; color: white; font-weight: 800; background: linear-gradient(145deg, #0d4f9f, #2f80ed); box-shadow: 0 7px 18px rgba(25, 95, 184, .25); transition: transform .15s ease, box-shadow .15s ease; }
-    .logo:hover { transform: translateY(-1px); box-shadow: 0 9px 22px rgba(25, 95, 184, .34); }
+    .topbar { position: sticky; top: 0; z-index: 20; height: 76px; display: flex; align-items: center; gap: 16px; padding: 0 24px 0 0; border-bottom: 1px solid var(--line); background: var(--topbar-bg); }
+    .brand { width: 252px; height: 100%; display: flex; flex: 0 0 252px; align-items: center; gap: 11px; min-width: 0; padding: 0 20px; border-right: 1px solid var(--line); background: var(--sidebar-bg); }
+    .logo { width: 36px; height: 36px; display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 10px; color: var(--brand); background: transparent; transition: transform .15s ease; }
+    .logo svg { width: 31px; height: 31px; }
+    .logo:hover { transform: translateY(-1px); }
     .logo:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 3px; }
-    .brand strong { display: block; font-size: 15px; }
-    .brand small { color: var(--muted); }
+    .brand strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+    .brand small { display: block; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .project-controls { display: flex; align-items: center; gap: 7px; }
     .project-switcher { min-width: 210px; max-width: 320px; padding: 9px 34px 9px 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--text); background: var(--panel-2); }
     .project-unregister { white-space: nowrap; }
@@ -49,26 +52,31 @@
     .dot.live { background: #22a663; box-shadow: 0 0 0 4px rgba(34,166,99,.12); }
     .dot.offline { background: #e5484d; }
     .icon-btn { border: 1px solid var(--line); color: var(--text); background: var(--panel); border-radius: 9px; padding: 8px 10px; }
-    .layout { min-height: calc(100vh - 68px); display: grid; grid-template-columns: 238px minmax(0, 1fr); }
-    .sidebar { border-right: 1px solid var(--line); background: var(--panel); padding: 22px 14px; }
+    .layout { min-height: calc(100vh - 76px); display: grid; grid-template-columns: 252px minmax(0, 1fr); }
+    .sidebar { border-right: 1px solid var(--line); background: var(--sidebar-bg); padding: 22px 14px; }
     .sidebar-head { display: flex; align-items: center; min-height: 29px; margin-bottom: 4px; }
-    .nav-label { padding: 0 10px 8px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .nav-label { padding: 0 12px 8px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .nav-label.workstream-label { margin-top: 18px; }
     .sidebar-toggle { width: 28px; height: 28px; display: grid; place-items: center; margin: -5px 4px 0 auto; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; }
     .sidebar-toggle:hover { color: var(--text); background: var(--panel-2); }
-    .nav-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border: 0; border-radius: 9px; color: var(--text); background: transparent; text-align: left; }
+    .nav-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; text-align: left; }
     .nav-item:hover { background: var(--panel-2); }
-    .nav-item.active { color: var(--brand); background: var(--brand-2); font-weight: 700; }
-    .nav-item .nav-code { width: 52px; font-weight: 800; }
+    .nav-item.active { border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); color: var(--text); background: var(--brand-2); box-shadow: inset 3px 0 0 var(--brand); font-weight: 700; }
+    .nav-glyph { width: 25px; flex: 0 0 auto; color: var(--brand); font-size: 19px; line-height: 1; text-align: center; }
+    .nav-count { min-width: 22px; display: grid; place-items: center; margin-left: auto; padding: 2px 6px; border-radius: 99px; color: var(--yellow); background: var(--yellow-bg); font-size: 11px; font-weight: 800; }
+    .nav-item .nav-code { width: 52px; color: var(--brand); font-size: 12px; font-weight: 800; }
     .nav-item .nav-state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
     @media (min-width: 761px) {
       .layout.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+      body.sidebar-collapsed .brand { width: 76px; flex-basis: 76px; justify-content: center; padding-inline: 10px; }
+      body.sidebar-collapsed .brand > div { display: none; }
       .layout.sidebar-collapsed .sidebar { padding-inline: 9px; }
       .layout.sidebar-collapsed .sidebar-head { justify-content: center; }
       .layout.sidebar-collapsed .nav-label { display: none; }
       .layout.sidebar-collapsed .sidebar-toggle { margin-inline: auto; }
       .layout.sidebar-collapsed .nav-item { justify-content: center; padding-inline: 6px; }
       .layout.sidebar-collapsed .nav-item .nav-code { width: auto; font-size: 12px; text-align: center; }
-      .layout.sidebar-collapsed .nav-name, .layout.sidebar-collapsed .nav-state { display: none; }
+      .layout.sidebar-collapsed .nav-name, .layout.sidebar-collapsed .nav-state, .layout.sidebar-collapsed .nav-count { display: none; }
     }
     .sidebar-foot { margin-top: 26px; padding: 14px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
     main { min-width: 0; padding: 28px clamp(18px, 3vw, 42px) 64px; }
@@ -92,49 +100,20 @@
     .section-head h2 { margin: 0; font-size: 17px; }
     .section-head .count { color: var(--muted); }
     .section-head .spacer { margin-left: auto; }
-    .workstream-grid { grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); }
-    .ws-card { padding: 18px; transition: transform .15s ease, border-color .15s ease; }
-    .ws-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
-    .overview-shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(310px, 380px); gap: 20px; align-items: start; }
-    .overview-main, .overview-side { min-width: 0; }
-    .project-status-card { padding: 18px 20px; }
-    .project-status-label { margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    .workstream-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .ws-card { min-width: 0; min-height: 270px; display: flex; flex-direction: column; padding: 18px; cursor: pointer; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+    .ws-card:hover, .ws-card:focus-visible { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); background: var(--panel-2); outline: none; }
+    .overview-main { min-width: 0; }
+    .project-status-card { overflow: hidden; padding: 18px 20px 0; }
+    .project-status-label { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; }
     .project-status-head { display: flex; align-items: center; gap: 12px; }
     .project-status-head h1, .project-status-head h2 { margin: 0; font-size: 21px; line-height: 1.3; }
     .project-status-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-left: auto; }
     .project-status-progress { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; color: var(--muted); font-size: 13px; }
     .project-status-progress strong { color: var(--text); }
-    .project-status-next { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); }
+    .project-status-next { margin: 14px -20px 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); background: var(--panel-2); }
     .project-status-next strong { color: var(--text); }
     .status-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-    .overview-owner-panel { position: sticky; top: 88px; overflow: hidden; }
-    .owner-panel-head { display: flex; align-items: center; gap: 10px; padding: 16px 17px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
-    .owner-panel-head h2 { margin: 0; font-size: 17px; }
-    .owner-panel-head .owner-count { margin-left: auto; }
-    .owner-count { display: grid; min-width: 28px; height: 28px; place-items: center; padding: 0 8px; border-radius: 99px; color: var(--yellow); background: var(--yellow-bg); font-weight: 780; }
-    .owner-panel-list { display: grid; gap: 10px; padding: 12px; }
-    .owner-group { padding: 13px; border: 1px solid color-mix(in srgb, var(--yellow) 38%, var(--line)); border-radius: 11px; background: var(--panel); }
-    .owner-group-head { display: flex; align-items: center; gap: 9px; }
-    .owner-group-head strong { min-width: 0; }
-    .owner-group-head .owner-count { margin-left: auto; }
-    .owner-group-detail { margin-top: 5px; color: var(--muted); font-size: 12px; }
-    .owner-group .btn { margin-top: 11px; }
-    .owner-panel-empty { padding: 22px 16px; color: var(--muted); text-align: center; }
-    .overview-agent-details { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--panel); }
-    .overview-agent-details > summary { display: flex; align-items: center; gap: 10px; padding: 14px 17px; list-style: none; }
-    .overview-agent-details > summary::-webkit-details-marker { display: none; }
-    .overview-agent-details > summary::before { content: '›'; color: var(--muted); font-size: 20px; line-height: 1; transition: transform .16s ease; }
-    .overview-agent-details[open] > summary::before { transform: rotate(90deg); }
-    .overview-agent-summary { min-width: 0; }
-    .overview-agent-summary strong, .overview-agent-summary span { display: block; }
-    .overview-agent-summary span { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-    .overview-agent-details > summary .badge { margin-left: auto; }
-    .overview-agent-body { padding: 13px 17px 16px; border-top: 1px solid var(--line); }
-    .overview-agent-line { color: var(--muted); font-size: 12px; }
-    .overview-agent-line + .overview-agent-line { margin-top: 7px; }
-    .overview-agent-line strong { color: var(--text); }
-    .overview-agent-body .btn { margin-top: 12px; }
-    .overview-risk-link { margin-left: auto; }
     .state-dot { width: 13px; height: 13px; border: 3px solid var(--panel); border-radius: 50%; background: var(--gray); box-shadow: 0 0 0 2px var(--gray-bg); }
     .state-dot.RUNNING { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
     .state-dot.WAITING_FOR_PARENT { background: var(--purple); box-shadow: 0 0 0 2px var(--purple-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
@@ -142,12 +121,20 @@
     .state-dot.FAILED { background: var(--red); box-shadow: 0 0 0 2px var(--red-bg); }
     .state-dot.COMPLETED { background: var(--green); box-shadow: 0 0 0 2px var(--green-bg); }
     @keyframes waiting-breathe { 50% { opacity: .35; } }
-    .ws-title { display: flex; align-items: center; gap: 10px; }
-    .ws-title strong { font-size: 16px; }
-    .ws-title .revision { margin-left: auto; color: var(--muted); font-size: 12px; }
-    .ws-objective { min-height: 42px; margin: 10px 0; color: var(--muted); }
-    .ws-progress { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-    .ws-progress-text { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .ws-title { display: flex; align-items: flex-start; gap: 10px; }
+    .ws-title-copy { min-width: 0; }
+    .ws-title-copy small { display: block; color: var(--brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+    .ws-title-copy strong { display: block; margin-top: 2px; font-size: 16px; }
+    .ws-title .badge { margin-left: auto; }
+    .ws-objective { min-height: 36px; margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+    .ws-meter { --meter-color: var(--brand); position: relative; width: 112px; height: 112px; display: grid; place-items: center; margin: 9px auto 4px; border-radius: 50%; background: conic-gradient(from 225deg, var(--meter-color) calc(var(--value) * 2.7deg), var(--gray-bg) 0deg 270deg, transparent 270deg); }
+    .ws-meter::before { content: ''; position: absolute; width: 80px; height: 80px; border-radius: 50%; background: var(--panel); }
+    .ws-meter::after { content: ''; position: absolute; right: -2px; bottom: -2px; left: -2px; height: 40px; background: var(--panel); }
+    .ws-card:hover .ws-meter::before, .ws-card:hover .ws-meter::after, .ws-card:focus-visible .ws-meter::before, .ws-card:focus-visible .ws-meter::after { background: var(--panel-2); }
+    .ws-meter strong { position: relative; z-index: 1; margin-top: -2px; font-size: 21px; }
+    .ws-meter span { position: absolute; z-index: 2; bottom: 13px; color: var(--muted); font-size: 10px; }
+    .ws-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .ws-foot span:last-child { margin-left: auto; white-space: nowrap; }
     .progress-ring { --progress: 0; position: relative; flex: 0 0 auto; width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--blue) calc(var(--progress) * 1%), var(--gray-bg) 0); animation: progress-breathe 2.2s ease-in-out infinite; }
     .progress-ring::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: var(--panel); }
     .progress-ring span { position: relative; color: var(--text); font-size: 12px; font-weight: 800; }
@@ -296,6 +283,7 @@
     .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
     .node-progress-text { margin-top: 6px; color: var(--muted); font-size: 12px; }
     .node-attention { margin-top: 6px; color: var(--amber); font-size: 12px; font-weight: 700; }
+    .node-attention-link { padding: 0; border: 0; color: var(--amber); background: transparent; font: inherit; font-weight: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .node-link { border: 0; padding: 0; color: var(--brand); background: transparent; text-align: left; font-weight: 700; }
     .tree-toggle { width: 22px; margin-left: -24px; border: 0; color: var(--muted); background: transparent; }
     .node-statement { max-width: 540px; margin-top: 4px; color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -360,19 +348,23 @@
     .field label { display: block; margin-bottom: 5px; font-weight: 700; }
     .field input, .field select, .field textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--panel-2); }
     .field textarea { min-height: 100px; resize: vertical; }
+    .review-change-list { display: grid; gap: 10px; margin-top: 10px; }
+    .review-change-item { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .review-change-item .field:first-child { margin-top: 0; }
+    .review-impact-preview { margin-top: 13px; color: var(--muted); font-size: 13px; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 80; max-width: 420px; padding: 12px 15px; border-radius: 10px; color: white; background: #173252; box-shadow: var(--shadow); opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s; }
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
-    @media (max-width: 1180px) { .overview-shell { grid-template-columns: 1fr; } .overview-owner-panel { position: static; } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .topbar { padding: 0 12px; gap: 8px; } .brand { min-width: 0; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><button class="logo" id="home" type="button" title="返回首页" aria-label="返回首页">VH</button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
+    <div class="brand"><button class="logo" id="home" type="button" title="返回首页" aria-label="返回首页"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M16 2.5 29.5 10 16 17.5 2.5 10 16 2.5Z"/><path d="m2.5 10 13.5 7.5L29.5 10M2.5 16 16 23.5 29.5 16M2.5 22 16 29.5 29.5 22"/></svg></button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
     <div class="project-controls"><label class="sr-only" for="project-switcher">切换项目</label><select id="project-switcher" class="project-switcher" aria-label="切换项目"><option>正在读取项目…</option></select><button id="project-unregister" class="icon-btn project-unregister" type="button" title="仅从 Dashboard 注销当前项目">注销项目</button></div>
     <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件"></div>
     <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
@@ -395,7 +387,8 @@
       project: initialParams.get('project'),
       stream: null,
       workstream: initialParams.get('workstream'),
-      pendingItems: initialParams.has('pending-items') || initialParams.has('agent-interaction') || initialParams.has('agent-question'),
+      pendingItems: initialParams.has('pending-items'),
+      agentInteraction: initialParams.has('agent-interaction') || initialParams.has('agent-question'),
       riskChanges: initialParams.has('risk-changes'),
       focusAgentQuestion: initialParams.get('agent-question'),
       reviewWorkstream: initialParams.get('review-workstream'),
@@ -403,6 +396,7 @@
       reviewDeliveryNode: initialParams.get('review-delivery-node'),
       reviseVdocPlan: initialParams.has('revise-vdoc-plan'),
       node: initialParams.get('node'),
+      invalidRoute: null,
       connected: false,
       query: '',
       collapsedNodes: new Set(),
@@ -413,7 +407,7 @@
       VALID:'已通过检查', UNKNOWN:'尚无完成材料', INVALID:'检查未通过', STALE:'内容变化后尚未重新检查',
       REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'等待负责人复核', PROVISIONAL:'暂定接受', BLOCKED:'当前受阻', WAIVED:'已接受例外',
       REVIEW:'等待负责人评审方案', REVISE:'方案需要修改', ACTIVE:'正在执行验证工作', SATISFIED:'完成条件已满足', BASELINED:'当前基线已保存',
-      RUNNING:'正在执行', PENDING:'等待执行', WAITING_FOR_HUMAN:'等待负责人决定', WAITING_FOR_PARENT:'等待主 Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
+      RUNNING:'正在执行', PENDING:'等待执行', AGENT_CHECKING:'Agent 正在检查审批', WAITING_FOR_HUMAN:'等待负责人决定', WAITING_FOR_PARENT:'等待主 Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
       OPEN:'待回答', ANSWERED:'已回答', RESOLVED:'已处理', CLOSED:'已满足', NOT_SATISFIED:'尚未满足', STALE_REVISION:'不是当前版本',
       SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查',
       APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改'
@@ -588,7 +582,7 @@
       PENDING:'待审批', APPROVED:'已审批通过', CHANGES_REQUESTED:'需要修改'
     };
     const DELIVERY_REVIEW_STATUS_LABELS = {
-      PENDING:'待验收', APPROVED:'已验收通过', PROVISIONAL:'暂定接受', CHANGES_REQUESTED:'需要修改'
+      PENDING:'待验收', AGENT_CHECKING:'Agent 正在检查审批', WAITING_FOR_HUMAN:'Agent 等待你回答', APPROVED:'已验收通过', PROVISIONAL:'暂定接受', CHANGES_REQUESTED:'需要修改'
     };
     const planReviewStatusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="方案审批状态：${escapeHtml(value)}">${escapeHtml(PLAN_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value)}</span>`;
     const deliveryReviewStatusLabel = value => DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
@@ -692,10 +686,17 @@
       $('#project-name').textContent = snapshot.project.name;
       const revision = snapshot.project.baseline_revision ? `代码版本 ${snapshot.project.baseline_revision.slice(0, 9)}` : '未记录代码版本';
       $('#project-meta').textContent = `${revision} · ${shortTime(snapshot.generated_at)}`;
-      if (state.workstream && !workstream(state.workstream)) state.workstream = null;
-      if (state.reviewWorkstream && !workstream(state.reviewWorkstream)) state.reviewWorkstream = null;
-      if (state.reviewPlanNode && !findNode(state.reviewPlanNode)) state.reviewPlanNode = null;
-      if (state.reviewDeliveryNode && !findNode(state.reviewDeliveryNode)) state.reviewDeliveryNode = null;
+      state.invalidRoute = state.workstream && !workstream(state.workstream)
+        ? `当前项目中找不到工作流 ${state.workstream}；它可能已被新的方案版本取代。`
+        : state.reviewWorkstream && !workstream(state.reviewWorkstream)
+          ? `当前项目中找不到待评审的工作流 ${state.reviewWorkstream}。`
+          : state.node && (!findNode(state.node) || (state.workstream && findNode(state.node).workstream !== state.workstream))
+            ? `当前项目或当前工作流中找不到工作节点 ${state.node}；请检查方案版本。`
+            : state.reviewPlanNode && !findNode(state.reviewPlanNode)
+              ? `当前项目中找不到待审批的文档撰写方案节点 ${state.reviewPlanNode}。`
+              : state.reviewDeliveryNode && !findNode(state.reviewDeliveryNode)
+                ? `当前项目中找不到待验收的文档交付节点 ${state.reviewDeliveryNode}。`
+                : null;
       render();
     }
     function renderProjectSwitcher() {
@@ -706,10 +707,10 @@
       $('#project-unregister').disabled = !state.project;
     }
     function resetProjectView() {
-      state.workstream = null; state.pendingItems = false;
+      state.workstream = null; state.pendingItems = false; state.agentInteraction = false;
       state.riskChanges = false; state.focusAgentQuestion = null; state.reviewWorkstream = null;
       state.reviewPlanNode = null; state.reviewDeliveryNode = null; state.reviseVdocPlan = false;
-      state.node = null; state.query = ''; $('#search').value = '';
+      state.node = null; state.invalidRoute = null; state.query = ''; $('#search').value = '';
       $('#drawer-backdrop').classList.remove('open'); $('#modal-backdrop').classList.remove('open');
     }
     function connectProjectStream(projectId) {
@@ -746,64 +747,72 @@
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || response.statusText);
         state.projects = body.projects || [];
-        const selected = state.projects.some(project => project.id === state.project)
-          ? state.project : body.default_project;
+        if (state.project && !state.projects.some(project => project.id === state.project)) throw new Error(`所选项目 ${state.project} 未注册或无权访问；请从已注册项目重新打开 Dashboard`);
+        const selected = state.project || body.default_project;
         if (!selected) throw new Error('当前 Dashboard 没有已注册项目');
         await selectProject(selected, false);
       } catch (error) {
-        $('#main').innerHTML = '<div class="empty">当前没有可打开的验证项目</div>';
+        const fallback = state.projects[0];
+        $('#main').innerHTML = `<div class="card empty"><strong>无法打开所选项目</strong><p>${escapeHtml(String(error))}</p>${fallback ? '<button class="btn" id="open-default-project" type="button">打开已注册项目</button>' : ''}</div>`;
+        if (fallback) $('#open-default-project').onclick = () => selectProject(fallback.id, true).catch(nextError => toast(`打开项目失败：${nextError}`, true));
         toast(`读取状态失败：${error}`, true);
       }
     }
     function renderSidebar() {
       const items = state.snapshot?.workstreams || [];
+      const pending = humanPendingItems(state.snapshot).length;
+      const risks = riskItems(state.snapshot).length;
+      const questions = (state.snapshot?.agent_questions || []).filter(question => question.status === 'OPEN').length;
       const collapsed = $('#layout').classList.contains('sidebar-collapsed');
-      $('#sidebar').innerHTML = `<div class="sidebar-head"><div class="nav-label">工作流</div><button class="sidebar-toggle" id="sidebar-toggle" type="button" title="${collapsed ? '展开侧栏' : '折叠侧栏'}" aria-label="${collapsed ? '展开侧栏' : '折叠侧栏'}" aria-expanded="${collapsed ? 'false' : 'true'}">${collapsed ? '›' : '‹'}</button></div>
-        ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream ? 'active' : ''}" data-nav="${escapeHtml(w.workstream)}">
+      const primary = state.pendingItems ? 'pending' : state.agentInteraction ? 'agent' : state.riskChanges ? 'risk' : !state.workstream && !state.reviewWorkstream && !state.reviewPlanNode && !state.reviewDeliveryNode && !state.reviseVdocPlan ? 'overview' : '';
+      $('#sidebar').innerHTML = `<div class="sidebar-head"><div class="nav-label">验证项目</div><button class="sidebar-toggle" id="sidebar-toggle" type="button" title="${collapsed ? '展开侧栏' : '折叠侧栏'}" aria-label="${collapsed ? '展开侧栏' : '折叠侧栏'}" aria-expanded="${collapsed ? 'false' : 'true'}">${collapsed ? '›' : '‹'}</button></div>
+        <button class="nav-item ${primary === 'overview' ? 'active' : ''}" data-nav="overview" type="button" title="项目概览"><span class="nav-glyph" aria-hidden="true">▦</span><span class="nav-name">项目概览</span></button>
+        <button class="nav-item ${primary === 'pending' ? 'active' : ''}" data-nav="pending" type="button" title="需要你处理"><span class="nav-glyph" aria-hidden="true">◇</span><span class="nav-name">需要你处理</span>${pending ? `<span class="nav-count">${pending}</span>` : ''}</button>
+        <button class="nav-item ${primary === 'agent' ? 'active' : ''}" data-nav="agent" type="button" title="Agent 交互"><span class="nav-glyph" aria-hidden="true">▤</span><span class="nav-name">Agent 交互</span>${questions ? `<span class="nav-count">${questions}</span>` : ''}</button>
+        <button class="nav-item ${primary === 'risk' ? 'active' : ''}" data-nav="risk" type="button" title="风险与变更"><span class="nav-glyph" aria-hidden="true">△</span><span class="nav-name">风险与变更</span>${risks ? `<span class="nav-count">${risks}</span>` : ''}</button>
+        <div class="nav-label workstream-label">工作流</div>
+        ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream && !primary ? 'active' : ''}" data-nav-workstream="${escapeHtml(w.workstream)}" type="button" title="${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}">
           <span class="nav-code">${escapeHtml(w.workstream)}</span><span class="nav-name">${escapeHtml(workstreamLabel(w.workstream))}</span><span class="nav-state ${escapeHtml(w.lifecycle)}"></span>
         </button>`).join('')}
         `;
       $('#sidebar-toggle').onclick = () => {
         $('#layout').classList.toggle('sidebar-collapsed');
+        document.body.classList.toggle('sidebar-collapsed', $('#layout').classList.contains('sidebar-collapsed'));
         localStorage.setItem('verif-sidebar', $('#layout').classList.contains('sidebar-collapsed') ? 'collapsed' : 'expanded');
         renderSidebar();
       };
-      document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => {
-        const selected = button.dataset.nav === 'overview' ? null : button.dataset.nav;
-        if (state.reviewPlanNode) leaveNodePlanReview(selected || 'VDOC', false);
-        else if (state.reviewDeliveryNode) leaveDocumentDeliveryReview(selected || 'VDOC', false);
-        else if (state.reviseVdocPlan) leaveVdocRevisionRequest(selected || 'VDOC', false);
-        else if (state.reviewWorkstream) leaveWorkstreamReview(selected, false);
-        else {
-          state.pendingItems = false; state.riskChanges = false;
-          state.workstream = selected;
-          const url = standaloneUrl();
-          if (selected) url.searchParams.set('workstream', selected);
-          window.history.replaceState({}, '', url);
-        }
-        state.node = null;
-        render();
-      });
+      document.querySelectorAll('[data-nav]').forEach(button => button.onclick = () => navigatePrimary(button.dataset.nav));
+      document.querySelectorAll('[data-nav-workstream]').forEach(button => button.onclick = () => navigatePrimary('workstream', button.dataset.navWorkstream));
     }
-    function openOverview() {
-      state.workstream = null;
-      state.pendingItems = false;
-      state.riskChanges = false;
-      state.reviewWorkstream = null;
-      state.reviewPlanNode = null;
-      state.reviewDeliveryNode = null;
-      state.reviseVdocPlan = false;
-      state.node = null;
-      window.history.replaceState({}, '', standaloneUrl());
+    function navigatePrimary(view, selected=null) {
+      if (view === 'workstream' && !workstream(selected)) { toast(`找不到当前项目的工作流 ${selected}`, true); return; }
+      state.workstream = view === 'workstream' ? selected : null;
+      state.pendingItems = view === 'pending'; state.agentInteraction = view === 'agent'; state.riskChanges = view === 'risk';
+      state.focusAgentQuestion = null; state.reviewWorkstream = null; state.reviewPlanNode = null;
+      state.reviewDeliveryNode = null; state.reviseVdocPlan = false; state.node = null;
+      state.invalidRoute = null;
+      $('#drawer-backdrop').classList.remove('open'); $('#modal-backdrop').classList.remove('open');
+      const url = standaloneUrl();
+      if (state.workstream) url.searchParams.set('workstream', state.workstream);
+      if (state.pendingItems) url.searchParams.set('pending-items', '1');
+      if (state.agentInteraction) url.searchParams.set('agent-interaction', '1');
+      if (state.riskChanges) url.searchParams.set('risk-changes', '1');
+      window.history.replaceState({}, '', url);
       render();
     }
+    function openOverview() { navigatePrimary('overview'); }
     function render() {
       if (!state.snapshot) return;
       renderSidebar();
-      if (state.reviewDeliveryNode) renderDocumentDeliveryReview(findNode(state.reviewDeliveryNode));
+      if (state.invalidRoute) {
+        $('#main').innerHTML = `<div class="card empty"><strong>无法打开这个入口</strong><p>${escapeHtml(state.invalidRoute)}</p><button class="btn" id="return-overview" type="button">返回当前项目概览</button></div>`;
+        $('#return-overview').onclick = openOverview;
+      }
+      else if (state.reviewDeliveryNode) renderDocumentDeliveryReview(findNode(state.reviewDeliveryNode));
       else if (state.reviseVdocPlan) renderVdocRevisionRequest();
       else if (state.reviewPlanNode) renderNodePlanReview(findNode(state.reviewPlanNode));
       else if (state.reviewWorkstream) renderWorkstreamReview(workstream(state.reviewWorkstream));
+      else if (state.agentInteraction) renderAgentInteractionPage();
       else if (state.pendingItems) renderPendingItemsPage();
       else if (state.riskChanges) renderRiskChangesPage();
       else if (state.workstream) renderWorkstream(workstream(state.workstream));
@@ -841,22 +850,6 @@
     function pendingItemStatusBadge(item, targetNode) {
       const label = pendingItemStatusLabel(item, targetNode);
       return `<span class="badge ${escapeHtml(item.status)}" title="事项状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`;
-    }
-    function agentSummary(snapshot=state.snapshot) {
-      if (snapshot.project_agent) return {status:snapshot.project_agent.status, text:snapshot.project_agent.message};
-      const active = (snapshot.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
-      const open = (snapshot.agent_questions || []).filter(q => q.status === 'OPEN');
-      const pending = humanPendingItems(snapshot);
-      const pendingCounts = pendingItemCounts(pending);
-      const latest = (snapshot.activity_history || [])[0];
-      if (open.length) return {status:'WAITING_FOR_HUMAN', text:`需要你回答 ${open.length} 个问题；回答后 Agent 才会继续相关工作`};
-      if (pendingCounts.reviews || pendingCounts.confirmations) return {status:'WAITING_FOR_HUMAN', text:`需要你处理 ${pendingItemSummary(pending)}；处理后 Agent 才会继续相关工作`};
-      if (active.some(a => a.status === 'WAITING_FOR_HUMAN')) return {status:'WAITING_FOR_HUMAN', text:`Agent 有 ${active.filter(a => a.status === 'WAITING_FOR_HUMAN').length} 项工作等待负责人处理；当前没有开放的 Agent 问题`};
-      if (active.some(a => a.status === 'RUNNING')) return {status:'RUNNING', text:`Agent 正在处理 ${active.filter(a => a.status === 'RUNNING').length} 项验证工作，当前无需你操作`};
-      if (active.length) return {status:'PENDING', text:`有 ${active.length} 项验证工作等待 Agent 开始处理，当前无需你操作`};
-      if (latest?.status === 'FAILED') return {status:'FAILED', text:`Agent 最近一项工作失败：${latest.operation}；请查看失败原因`};
-      if (latest?.status === 'COMPLETED') return {status:'COMPLETED', text:`现在没有需要你回答的问题；Agent 最近完成：${latest.operation}`};
-      return {status:'IDLE', text:'现在没有需要你回答的问题；Dashboard 也没有收到 Agent 正在处理验证工作的记录'};
     }
     function riskItems(snapshot=state.snapshot) {
       const risks = [], riskStatuses = new Set(['INVALID','BLOCKED','STALE','REVALIDATION_REQUIRED','PROVISIONAL']);
@@ -903,13 +896,13 @@
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT 继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
       const next = pendingCount
-        ? `在右侧处理这条工作流的 ${pendingCount} 项待办；处理后 Agent 才会继续相关工作。`
+        ? `从侧边栏“需要你处理”查看这条工作流的 ${pendingCount} 项待办；处理后 Agent 才会继续相关工作。`
         : vdocPlan.needsRefinement
           ? '由 Agent 根据当前 DUT、规格、接口和验证目标形成可审批的文档工作节点；完成后再由负责人审批。'
           : planReviewActive && changedPlans
             ? `Agent 先按评审意见修改 ${changedPlans} 项方案；修改后由负责人重新审批。`
             : planReviewActive
-              ? '在右侧逐项审批。全部批准后可以开始撰写正文，但不代表正文已经通过。'
+              ? '从侧边栏“需要你处理”逐项审批。全部批准后可以开始撰写正文，但不代表正文已经通过。'
             : w.closure?.ready
               ? '这条工作流的完成条件已经满足；继续检查其他工作流。'
               : firstAction
@@ -917,65 +910,37 @@
                 : '继续按工作节点推进当前验证工作。';
       return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>${escapeHtml(title)}</h1><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span>${workstreamStatusBadge(w)}</div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div></section>`;
     }
-    function pendingItemGroupInfo(item) {
-      const targetNode = findNode(item.target);
-      const workstreamName = targetNode?.workstream || item.workstream || (item.target_type === 'workstream' ? String(item.target || '').replace(/^workstream:/, '') : null);
-      const targetWorkstream = workstreamName ? workstream(workstreamName) : null;
-      const scope = targetWorkstream ? `${targetWorkstream.workstream} · ${workstreamLabel(targetWorkstream.workstream)}` : '整个验证项目';
-      if (item.source === 'agent-question') return {key:'agent-question', title:'回答 Agent 问题', detail:`${scope} · 主 Agent 等待你的工程判断`, action:'回答问题', questionId:item.question_id};
-      if (targetNode?.role === 'document-writing-plan') return {key:`plan:${workstreamName || 'VDOC'}`, title:'审批文档撰写方案', detail:`${workstreamName || 'VDOC'} · 方案 ${revisionLabel(targetWorkstream?.revision)}`, action:'查看方案'};
-      if (targetNode?.role === 'document-deliverable') return {key:`delivery:${workstreamName || 'VDOC'}`, title:'验收文档交付内容', detail:`${workstreamName || 'VDOC'} · 当前正文内容`, action:'查看内容'};
-      if (item.source === 'document-item') return {key:'document-items', title:'处理文档中的问题和决定', detail:'VDOC · 文档内容尚有待确认事项', action:'查看并处理'};
-      if (item.source === 'closure' && targetWorkstream) return {key:`workstream:${workstreamName}`, title:`评审 ${workstreamName} 工作方案`, detail:scope, action:'查看方案'};
-      return {key:'other', title:'处理待确认事项', detail:scope, action:'查看并处理'};
-    }
-    function overviewPendingGroupsHtml(items) {
-      if (!items.length) return '<div class="owner-panel-empty">当前没有需要你处理的事项</div>';
-      const groups = new Map();
-      items.forEach(item => {
-        const info = pendingItemGroupInfo(item);
-        if (!groups.has(info.key)) groups.set(info.key, {...info, items:[]});
-        groups.get(info.key).items.push(item);
-      });
-      return `<div class="owner-panel-list">${[...groups.values()].map(group => {
-        const questionId = group.items.length === 1 ? group.questionId : null;
-        return `<article class="owner-group"><div class="owner-group-head"><strong>${escapeHtml(group.title)}</strong><span class="owner-count">${group.items.length}</span></div><div class="owner-group-detail">${escapeHtml(group.detail)}</div><button class="btn small" type="button" data-open-pending-items${questionId ? ` data-question-id="${escapeHtml(questionId)}"` : ''}>${escapeHtml(group.action)}</button></article>`;
-      }).join('')}</div>`;
-    }
-    function overviewAgentDetailsHtml(snapshot=state.snapshot) {
-      const summary = agentSummary(snapshot);
-      const status = summary.status || 'IDLE';
-      const message = humanText(agentMessageText(summary.message || summary.text || '当前没有正在处理的验证工作'));
-      const activeSubagents = snapshot.agent_collaboration?.active_subagents || [];
-      const recentSubagents = snapshot.agent_collaboration?.recent_subagents || [];
-      const questionHistory = snapshot.agent_question_history || snapshot.agent_questions || [];
-      const historyCount = (snapshot.activity_history || []).length + questionHistory.length;
-      return `<details class="overview-agent-details"><summary><span class="overview-agent-summary"><strong>Agent 运行详情</strong><span>${escapeHtml(message)}</span></span>${agentStatusBadge(status)}</summary><div class="overview-agent-body"><div class="overview-agent-line"><strong>主 Agent：</strong>${escapeHtml(message)}</div><div class="overview-agent-line"><strong>子 Agent：</strong>${activeSubagents.length} 个正在执行${recentSubagents.length ? `，${recentSubagents.length} 个最近结束` : ''}</div><div class="overview-agent-line"><strong>运行与回答记录：</strong>${historyCount} 条</div><button class="btn small" type="button" data-open-pending-items>查看完整运行详情</button></div></details>`;
-    }
     function renderOverview() {
-      const s = state.snapshot, pending = humanPendingItems(s), risks = riskItems(s);
-      $('#main').innerHTML = `<div class="overview-shell"><div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span><button class="btn small overview-risk-link" type="button" data-open-risk-changes>风险与变更 ${risks.length}</button></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>${projectContextHtml()}</div><aside class="overview-side"><section class="card overview-owner-panel" aria-label="需要你处理"><div class="owner-panel-head"><h2>需要你处理</h2><span class="owner-count">${pending.length}</span></div>${overviewPendingGroupsHtml(pending)}${overviewAgentDetailsHtml(s)}</section></aside></div>`;
-      bindOverviewEntries(); bindWorkstreamCards(); bindNodeLinks();
+      const s = state.snapshot;
+      $('#main').innerHTML = `<div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>${projectContextHtml()}</div>`;
+      bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
       const p = percent(w.progress);
-      return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}"><div class="ws-title"><strong>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</strong>${workstreamStatusBadge(w)}<span class="revision">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div>
-        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-progress">${progressRing(p, `${w.workstream} 工作节点完成度 ${p}%`)}<div class="ws-progress-text">${w.progress.satisfied}/${w.progress.required} 个工作节点已有明确完成结论<br>只按工作节点数量计算，不代表整体验证质量</div></div>
-        <div class="chips">${Object.entries(w.progress.counts).map(([k,v]) => `<span class="badge ${escapeHtml(k)}">${v} ${escapeHtml(STATUS_LABELS[k] || k)}</span>`).join('')}</div></article>`;
+      const next = humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length
+        ? '等待你处理这条工作流的待办'
+        : w.closure?.ready ? '当前完成条件已满足' : (w.closure?.actions || [])[0]
+          ? actionLabel(w.closure.actions[0].kind) : '继续按工作节点推进';
+      return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}"><div class="ws-title"><div class="ws-title-copy"><small>${escapeHtml(w.workstream)}</small><strong>${escapeHtml(workstreamLabel(w.workstream))}</strong></div>${workstreamStatusBadge(w)}</div>
+        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter" style="--value:${p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--brand)'}" role="img" aria-label="${escapeHtml(w.workstream)} 当前版本已有 ${w.progress.satisfied} / ${w.progress.required} 个工作节点达到完成结论"><strong>${p}%</strong><span>工作节点</span></div>
+        <div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${w.progress.satisfied}/${w.progress.required} 个节点已有结论；不代表验证质量</div><span aria-hidden="true">↗</span></div></article>`;
     }
     function bindOverviewEntries() {
-      document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab(button.dataset.questionId || null));
-      document.querySelectorAll('[data-open-risk-changes]').forEach(button => button.onclick = () => openRiskChangesTab());
+      document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab());
     }
-    function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => card.onclick = () => openWorkstreamTab(card.dataset.workstream)); }
+    function bindWorkstreamCards() { document.querySelectorAll('[data-workstream]').forEach(card => { card.onclick = () => openWorkstreamTab(card.dataset.workstream); card.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.click(); } }; }); }
     function standaloneUrl() {
       const url = new URL(window.location.origin + window.location.pathname);
       if (state.project) url.searchParams.set('project', state.project);
       url.searchParams.set('token', token);
       return url;
     }
-    function openPendingItemsTab(questionId=null) {
+    function openPendingItemsTab() {
       const url = standaloneUrl(); url.searchParams.set('pending-items', '1');
+      window.open(url.toString(), '_blank', 'noopener');
+    }
+    function openAgentInteractionTab(questionId=null) {
+      const url = standaloneUrl(); url.searchParams.set('agent-interaction', '1');
       if (questionId) url.searchParams.set('agent-question', questionId);
       window.open(url.toString(), '_blank', 'noopener');
     }
@@ -995,20 +960,6 @@
       url.searchParams.set('workstream', node.workstream);
       url.searchParams.set('node', nodeId);
       window.open(url.toString(), '_blank', 'noopener');
-    }
-    function runtimeLabel(value) {
-      const labels = {codex:'Codex', kimi:'Kimi', claude:'Claude', none:'未指定', unselected:'未指定'};
-      return labels[String(value || '').toLowerCase()] || value || '未指定';
-    }
-    function agentMessageText(value) {
-      const text = String(value || '');
-      const answered = text.match(/^(?:Human|负责人) 已回答问题 (.+): ([^:]+)$/);
-      if (answered) {
-        const question = (state.snapshot?.agent_question_history || []).find(item => item.id === answered[1]);
-        const option = (question?.options || []).find(item => item.id === answered[2]);
-        return question ? `你已回答：${question.prompt} · ${option?.label || answered[2]}` : '你已回答，Agent 已继续执行';
-      }
-      return text.replace(/^等待 (?:Human|负责人) 回答：?/, '需要你回答：');
     }
     function activityRows(items) {
       if (!items.length) return '<div class="empty">当前没有正在进行的 Agent 工作</div>';
@@ -1030,18 +981,6 @@
       };
       return {label:'整个验证项目', html:'整个验证项目'};
     }
-    function agentActivityEvent(a) {
-      const labels = {
-        PENDING:'Agent 准备执行', RUNNING:'Agent 正在执行', WAITING_FOR_HUMAN:'Agent 暂停等待你的回应',
-        WAITING_FOR_PARENT:'子 Agent 正在等待主 Agent 协调',
-        COMPLETED:'Agent 完成了一项工作', FAILED:'Agent 执行失败', CANCELLED:'Agent 工作已取消',
-      };
-      const target = agentTarget(a);
-      const progress = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null;
-      const tone = a.status === 'FAILED' ? 'failed' : a.status === 'COMPLETED' ? 'completed' : '';
-      const detail = a.log_path ? `<details><summary>查看运行记录</summary><div class="detail-group-body">日志：<span class="mono">${escapeHtml(a.log_path)}</span></div></details>` : '';
-      return `<article class="agent-event ${tone}"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${escapeHtml(labels[a.status] || 'Agent 更新')}</strong>${statusBadge(a.status)}<time>${shortTime(a.updated_at || a.created_at)}</time></div><div class="agent-event-message"><strong>${escapeHtml(a.operation)}</strong>${a.message ? ` · ${escapeHtml(agentMessageText(a.message))}` : ''}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(a.actor || 'Agent')}</div>${progress === null ? '' : `<div class="agent-event-progress" title="${progress}%"><span style="width:${progress}%"></span></div><div class="row-meta">${a.progress_current}/${a.progress_total} · ${progress}%</div>`}${detail}</div></article>`;
-    }
     function agentQuestionEvent(q) {
       const target = agentTarget(q);
       const selected = (q.options || []).find(option => option.id === q.answer_option);
@@ -1050,12 +989,13 @@
         : '等待你的回答；回答后主 Agent 才会继续协调相关工作';
       return `<article class="agent-event question"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${q.status === 'ANSWERED' ? '你已回应主 Agent' : '主 Agent 需要你的决定'}</strong>${statusBadge(q.status)}<time>${shortTime(q.answered_at || q.created_at)}</time></div><div class="agent-event-message">${escapeHtml(humanText(q.prompt))}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(answer)}</div>${q.context ? `<details><summary>查看提问背景</summary><div class="detail-group-body">${escapeHtml(humanText(q.context))}</div></details>` : ''}</div></article>`;
     }
-    function agentTimelineHtml(activities, questions) {
-      const events = [
-        ...(activities || []).map(item => ({time:item.updated_at || item.created_at, html:agentActivityEvent(item)})),
-        ...(questions || []).map(item => ({time:item.answered_at || item.created_at, html:agentQuestionEvent(item)})),
-      ].sort((left, right) => new Date(right.time || 0) - new Date(left.time || 0)).slice(0, 20);
-      return events.length ? events.map(item => item.html).join('') : '<div class="empty">还没有协作记录。Agent 开始工作后，这里会显示关键动作、问题和结果。</div>';
+    function agentInteractionHistoryHtml(questions) {
+      const events = (questions || [])
+        .filter(item => item.status === 'ANSWERED')
+        .map(item => ({time:item.answered_at || item.created_at, html:agentQuestionEvent(item)}))
+        .sort((left, right) => new Date(right.time || 0) - new Date(left.time || 0))
+        .slice(0, 20);
+      return events.length ? events.map(item => item.html).join('') : '<div class="empty">还没有已完成的 Agent 问答记录</div>';
     }
     function agentQuestionCardsHtml(questions) {
       if (!questions.length) return '<div class="empty">Agent 当前没有等待你的问题</div>';
@@ -1068,84 +1008,22 @@
         return `<article class="agent-question-card"><div class="agent-question-head"><span class="agent-question-kicker">主 Agent 需要你决定</span>${statusBadge(q.status)}</div><h3>${escapeHtml(humanText(q.prompt))}</h3><div class="agent-event-meta">影响范围：${target.html} · ${shortTime(q.created_at)}${recommended ? ` · 推荐 ${escapeHtml(humanText(recommended.label))}` : ''}</div>${q.context ? `<div class="agent-question-context"><strong>为什么现在需要你：</strong>${escapeHtml(humanText(q.context))}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><fieldset class="agent-options"><legend>选择处理方式</legend>${options}<label class="agent-option"><input type="radio" name="option" value="other" required><span class="agent-option-copy"><span class="agent-option-title">其他</span><span class="agent-option-description">提供不同的约束、方案或处理边界</span></span></label></fieldset><div class="agent-response-row"><div class="field"><label for="${escapeHtml(reviewerId)}">回答人</label><input id="${escapeHtml(reviewerId)}" name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label for="${escapeHtml(answerId)}">补充说明</label><textarea id="${escapeHtml(answerId)}" name="answer_text" placeholder="可选；选择“其他”时必填"></textarea></div></div><button class="btn primary agent-submit" type="submit">提交回答</button></form></article>`;
       }).join('');
     }
-    function subagentCardHtml(agent) {
-      const target = agentTarget(agent);
-      const progress = agent.progress_total ? Math.round((agent.progress_current || 0) * 100 / agent.progress_total) : null;
-      const scope = (agent.write_scope || []).length
-        ? `写入范围：${agent.write_scope.map(item => escapeHtml(item)).join('、')}`
-        : '只读执行';
-      return `<article class="subagent-card"><div class="subagent-head"><div><strong>${escapeHtml(agent.id)}</strong><div class="row-meta">${escapeHtml(agent.role)} · ${escapeHtml(runtimeLabel(agent.runtime))}</div></div>${statusBadge(agent.status)}</div><div class="subagent-operation">${escapeHtml(agent.operation || '未登记当前操作')}</div>${agent.message ? `<div class="subagent-message">${escapeHtml(agentMessageText(agent.message))}</div>` : ''}<div class="subagent-meta"><span>${target.html}</span><span>${escapeHtml(scope)}</span><span>最近状态同步 ${shortTime(agent.heartbeat_at)}</span>${progress === null ? '' : `<span>${agent.progress_current || 0}/${agent.progress_total} · ${progress}%</span>`}</div></article>`;
-    }
-    function subagentWorkStatusHtml(collaboration) {
-      const active = collaboration?.active_subagents || [];
-      const recent = collaboration?.recent_subagents || [];
-      const activeBody = active.length
-        ? `<div class="agent-collaboration-grid">${active.map(subagentCardHtml).join('')}</div>`
-        : '<div class="empty">当前没有正在执行的子 Agent。主 Agent 分派工作后，这里会显示其负责的验证对象、工作状态和最近同步时间。</div>';
-      const recentBody = recent.length
-        ? `<details class="subagent-history"><summary>最近结束的子 Agent（${recent.length}）</summary><div class="agent-collaboration-grid">${recent.map(subagentCardHtml).join('')}</div></details>`
-        : '';
-      const summary = active.length
-        ? `正在执行 ${active.length} 个${recent.length ? ` · 最近结束 ${recent.length} 个` : ''}`
-        : recent.length ? `当前未执行 · 最近结束 ${recent.length} 个` : '当前没有正在执行的工作';
-      return `<details class="card agent-readonly-details agent-subagents"><summary><span class="agent-readonly-copy"><strong>子 Agent 工作状态</strong><span>查看主 Agent 分派出去的验证工作。</span></span><span class="count">${summary}</span></summary><div class="agent-readonly-body">${activeBody}${recentBody}<div class="agent-side-note"><strong>这里显示的是执行状态，不是验证结论。</strong> 子 Agent 完成工作不会自动表示验证通过，也不会自动确认工作节点。</div></div></details>`;
-    }
-    function agentWorkStatusHtml(current, summary, openQuestions, pendingItems) {
-      const project = state.snapshot?.project || {}, dut = project.dut || {};
-      const target = agentTarget(current);
-      const workstreamName = current?.workstream && current.workstream !== 'PROJECT' ? current.workstream : null;
-      const revision = project.baseline_revision ? project.baseline_revision.slice(0, 12) : '未记录';
-      const status = current?.status || summary?.status || 'IDLE';
-      const progress = current?.progress_total ? Math.round((current.progress_current || 0) * 100 / current.progress_total) : null;
-      const next = openQuestions.length
-        ? `等待你完成上方 ${openQuestions.length} 项回应，然后继续当前工作。`
-        : pendingItems.length
-          ? `当前等待你处理：${pendingItemSummary(pendingItems)}。完成后 Agent 才会继续相关工作。`
-        : status === 'WAITING_FOR_HUMAN'
-          ? '当前工作正在等待负责人处理，但没有开放的 Agent 问题；请查看上方需要处理的事项。'
-        : status === 'RUNNING'
-          ? 'Agent 正在继续执行，当前无需你操作。'
-          : status === 'WAITING_FOR_PARENT'
-            ? '子 Agent 正在等待主 Agent 协调；当前不需要你处理。'
-          : status === 'PENDING'
-            ? '工作已进入队列，等待 Agent 开始执行。'
-            : status === 'FAILED'
-              ? '执行遇到问题，请在协作记录中查看失败原因。'
-              : status === 'COMPLETED'
-                ? '当前工作已完成，等待下一项工作。'
-                : '当前无需你操作。Agent 开始新的验证工作后，这里会显示进展。';
-      const progressHtml = progress === null ? '' : `<div class="agent-work-progress"><div class="agent-work-progress-head"><span>当前进度</span><span>${current.progress_current || 0}/${current.progress_total} · ${progress}%</span></div><div class="agent-work-progress-bar" title="${progress}%"><span style="width:${progress}%"></span></div></div>`;
-      const visibilityNote = current ? '' : '<p class="row-meta">这里只显示 Agent 已同步到 Dashboard 的工作；终端中尚未同步的操作不会自动出现在这里。</p>';
-      return `<article class="card agent-work-status"><div class="agent-work-status-head"><h2>主 Agent 工作状态</h2>${agentStatusBadge(status)}</div><div class="agent-work-status-grid"><div><div class="agent-work-focus"><span class="agent-question-kicker">当前正在处理</span><strong>${escapeHtml(current?.operation || '目前没有正在处理的验证工作')}</strong><p>${escapeHtml(agentMessageText(current?.message || summary?.message || '当前无需你操作'))}</p>${visibilityNote}</div>${progressHtml}</div><div><div class="agent-work-next"><strong>接下来：</strong>${escapeHtml(next)}</div><details class="agent-context-details"><summary>查看验证对象与范围</summary><div class="detail-group-body"><dl class="agent-context-list"><dt>验证对象</dt><dd>${escapeHtml(dut.top_module || '未登记 DUT')}</dd><dt>作用范围</dt><dd>${target.html}</dd><dt>工作流</dt><dd>${workstreamName ? `${escapeHtml(workstreamName)} · ${escapeHtml(workstreamLabel(workstreamName))}` : '整个验证项目'}</dd><dt>代码基线</dt><dd class="mono">${escapeHtml(revision)}</dd><dt>最近更新</dt><dd>${shortTime(current?.updated_at || current?.created_at)}</dd></dl></div></details></div></div></article>`;
-    }
-    function agentRunDetailsHtml(projectAgent, collaboration, questions, activeActivities, activityHistory, questionHistory, waitingItems) {
-      const active = (activeActivities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
-      const open = (questions || []).filter(q => q.status === 'OPEN');
-      const otherPending = humanPendingItems({waiting_for_human:waitingItems || []}).filter(item => item.source !== 'agent-question');
-      const summary = projectAgent || {label:'当前项目的 Agent', runtime:'unselected', ...agentSummary({activities:activeActivities || [], agent_questions:questions || [], activity_history:activityHistory || [], waiting_for_human:waitingItems || []})};
-      const subagentActivityIds = new Set(
-        collaboration?.assignment_activity_ids || [
-          ...(collaboration?.active_subagents || []),
-          ...(collaboration?.recent_subagents || []),
-        ].map(item => item.activity_id)
-      );
-      const mainActive = active.filter(item => !subagentActivityIds.has(item.id));
-      const latestMainHistory = (activityHistory || []).find(
-        item => !subagentActivityIds.has(item.id)
-      );
-      const current = mainActive[0] || ((collaboration?.active_subagents || []).length ? {
-        status: summary.status,
-        operation: `协调 ${collaboration.active_subagents.length} 个子 Agent`,
-        message: summary.message,
-        node_id: 'project',
-        workstream: 'PROJECT',
-        updated_at: (collaboration.active_subagents || [])[0]?.updated_at,
-      } : summary.latest_activity || latestMainHistory || null);
-      const historyCount = Math.min(20, (activityHistory || []).length + (questionHistory || []).length);
-      const history = `<details class="card agent-readonly-details agent-history"><summary><span class="agent-readonly-copy"><strong>运行与回答记录</strong><span>按时间查看主 Agent、子 Agent 的进展以及你的回答。</span></span><span class="count">最近 ${historyCount} 条</span></summary><div class="agent-readonly-body"><div class="agent-timeline">${agentTimelineHtml(activityHistory || [], questionHistory || [])}</div></div></details>`;
-      const status = current?.status || summary.status || 'IDLE';
-      const statusText = agentMessageText(current?.message || summary.message || '当前没有正在处理的验证工作');
-      return `<details class="card agent-readonly-details agent-run-details"><summary><span class="agent-readonly-copy"><strong>Agent 运行详情</strong><span>${escapeHtml(statusText)}</span></span><span class="count">${agentStatusBadge(status)}</span></summary><div class="agent-readonly-body"><div class="agent-execution-stack">${agentWorkStatusHtml(current, summary, open, otherPending)}${subagentWorkStatusHtml(collaboration)}${history}</div></div></details>`;
+    function renderAgentInteractionPage() {
+      const s = state.snapshot;
+      const questions = (s.agent_questions || []).filter(question => question.status === 'OPEN');
+      const history = s.agent_question_history || s.agent_questions || [];
+      const questionSection = questions.length
+        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>等待你回答的问题</h2><p>主 Agent 正在等待你的工程判断；提交回答后会继续相关工作。</p></div><span class="badge WAITING_FOR_HUMAN">${questions.length} 项待回答</span></div><div class="agent-question-list">${agentQuestionCardsHtml(questions)}</div><div class="agent-side-note"><strong>你也可以在当前主 Agent 对话中回答，两处会自动同步。</strong> 回答只用于继续当前工作，不会自动确认工作节点或验证结论。</div></article></section>`
+        : '<section class="section agent-section"><div class="card agent-priority-clear"><div class="agent-priority-clear-copy"><strong>当前没有等待你回答的问题</strong><span>主 Agent 提出新的工程问题后，会在这里显示回答框。</span></div><span class="badge IDLE">无需你处理</span></div></section>';
+      const answeredCount = history.filter(question => question.status === 'ANSWERED').length;
+      const historySection = `<section class="section agent-section"><div class="section-head"><h2>历史交互记录</h2><span class="count">最近 ${Math.min(20, answeredCount)} 条</span></div><div class="card agent-panel"><div class="agent-timeline">${agentInteractionHistoryHtml(history)}</div></div></section>`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>这里只处理主 Agent 等待你回答的问题，并保留已经完成的问答记录。</p></div></div>${questionSection}${historySection}`;
+      bindNodeLinks();
+      if (state.focusAgentQuestion) {
+        const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === state.focusAgentQuestion);
+        if (form) { form.scrollIntoView({behavior:'smooth', block:'center'}); form.querySelector('input')?.focus(); }
+        state.focusAgentQuestion = null;
+      }
     }
     function renderPendingItemsPage() {
       const s = state.snapshot;
@@ -1159,8 +1037,7 @@
         ? `<section class="section"><div class="section-head"><h2>审批、验收与确认</h2><span class="count">${otherItems.length} 项</span></div><div class="card list-card attention">${humanRows(otherItems)}</div></section>`
         : '';
       const empty = items.length ? '' : '<section class="section"><div class="card empty">当前没有需要你处理的事项</div></section>';
-      const runDetails = agentRunDetailsHtml(s.project_agent, s.agent_collaboration, s.agent_questions || [], s.activities || [], s.activity_history || [], s.agent_question_history || s.agent_questions || [], s.waiting_for_human || []);
-      $('#main').innerHTML = `<div class="page-head"><div><h1>需要你处理</h1><p>这里只列出现在需要你回答、审批、验收或确认的事项；Agent 和工具自行执行的工作不会进入这里。</p></div></div>${projectContextHtml(true)}${questionSection}${otherSection}${empty}<section class="section agent-section">${runDetails}</section>`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>需要你处理</h1><p>这里只列出现在需要你回答、审批、验收或确认的事项；Agent 和工具自行执行的工作不会进入这里。</p></div></div>${projectContextHtml(true)}${questionSection}${otherSection}${empty}`;
       bindNodeLinks();
       if (state.focusAgentQuestion) {
         const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === state.focusAgentQuestion);
@@ -1215,11 +1092,11 @@
             ? `<button class="node-link" data-review-plan-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
           : deliveryNodeReview
             ? `<button class="node-link" data-review-delivery-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
-          : a.target && ['node','document-item'].includes(a.target_type)
-            ? `<button class="node-link" data-open-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
+          : targetNode && ['node','document-item'].includes(a.target_type)
+            ? `<button class="node-link" data-open-node="${escapeHtml(targetNode.id)}">${escapeHtml(title)}</button>`
             : `<div class="row-title">${escapeHtml(title)}</div>`;
         const context = a.source === 'agent-question'
-          ? '请在“需要你处理”中回答'
+          ? '请在“Agent 交互”中回答'
           : a.source === 'closure' && targetNode?.role === 'document-writing-plan'
           ? '文档撰写方案等待审批'
           : a.source === 'closure' && targetNode?.role === 'document-deliverable'
@@ -1293,6 +1170,8 @@
       return null;
     }
     function nodeAttentionText(n) {
+      const openAgentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
+      if (openAgentQuestions.length) return `Agent 等待你回答 ${openAgentQuestions.length} 个问题`;
       if (n.plan_review && n.plan_review.status !== 'APPROVED') {
         const parentWorkstream = workstream(n.workstream);
         if (parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement) {
@@ -1300,6 +1179,7 @@
         }
         return '等待负责人审批文档撰写方案';
       }
+      if (n.delivery_review?.status === 'AGENT_CHECKING') return 'Agent 正在检查你提交的验收结论';
       if (n.delivery_review?.status === 'PROVISIONAL') return '暂定内容允许带风险推进，但不能完成关闭';
       if (n.delivery_review && n.delivery_review.status !== 'APPROVED') return '等待负责人验收文档内容';
       const human = humanNeed(n);
@@ -1364,7 +1244,11 @@
       const progress = nodeProgressState(n);
       const bar = `<div class="node-progress-bar" role="progressbar" aria-label="${escapeHtml(progress.metric)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.ratio}" title="${escapeHtml(progress.basis)} · ${progress.ratio}%"><span style="width:${progress.ratio}%"></span></div>`;
       const attention = nodeAttentionText(n);
-      return `<div class="node-progress-cell">${statusBadge(status)}${bar}<div class="node-progress-text">${escapeHtml(progress.metric)} · ${escapeHtml(progress.basis)}</div>${attention ? `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>` : ''}</div>`;
+      const openQuestion = (n.agent_questions || []).find(item => item.status === 'OPEN');
+      const attentionHtml = !attention ? '' : openQuestion
+        ? `<div class="node-attention">⚠ <button class="node-attention-link" data-agent-question="${escapeHtml(openQuestion.id)}" title="前往 Agent 交互页面回答问题">${escapeHtml(attention)}</button></div>`
+        : `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>`;
+      return `<div class="node-progress-cell">${statusBadge(status)}${bar}<div class="node-progress-text">${escapeHtml(progress.metric)} · ${escapeHtml(progress.basis)}</div>${attentionHtml}</div>`;
     }
     function progressHtml(n) {
       const measures = n.progress_measures || [];
@@ -1389,6 +1273,8 @@
     function humanNeed(n) {
       const criteria = n.closure_assessment?.acceptance_results || [];
       const pendingDocumentItems = (n.document?.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status));
+      const openAgentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
+      if (openAgentQuestions.length) return `Agent 等待你回答 ${openAgentQuestions.length} 个问题`;
       if (pendingDocumentItems.length) return `需要处理文档中的 ${pendingDocumentItems.length} 个问题或决定`;
       if ((n.activities || []).some(item => item.status === 'WAITING_FOR_HUMAN')) return '当前工作正在等待负责人决定';
       if (criteria.some(item => item.status === 'HUMAN_REVIEW_REQUIRED')) return '有完成条件需要负责人阅读内容后确认';
@@ -1412,7 +1298,9 @@
       const openDocumentItems = [...seenDocuments.values()].flatMap(document => document.governance_items || [])
         .filter(item => ['PENDING','ACTIVE'].includes(item.status));
       const blockingFindings = requiredNodes.flatMap(n => n.findings || []).filter(item => item.status === 'OPEN');
-      const openConfirmations = openNodeInputs.length + openDocumentItems.length + blockingFindings.length;
+      const openAgentQuestions = requiredNodes.flatMap(n => n.agent_questions || []).filter(item => item.status === 'OPEN');
+      const openConfirmations = openNodeInputs.length + openDocumentItems.length + blockingFindings.length + openAgentQuestions.length;
+      const agentChecking = deliveries.filter(n => n.delivery_review?.status === 'AGENT_CHECKING');
       const currentBindings = plansApproved && deliveriesApproved && changedDocuments.length === 0
         && writingPlans.every(n => (n.plan_review?.sections || []).every(section => section.current_review?.revision === w.revision))
         && deliveries.every(n => n.delivery_review?.current_review?.revision === w.revision);
@@ -1432,6 +1320,10 @@
           ? '等待负责人审批文档撰写方案'
           : contentAuthoring
             ? 'Agent 正在按已批准方案撰写正文'
+          : openAgentQuestions.length
+            ? 'Agent 等待你回答文档验收问题'
+          : agentChecking.length
+            ? 'Agent 正在检查你提交的文档验收结论'
           : !deliveriesApproved
             ? '等待负责人验收文档内容'
             : !engineClosed
@@ -1488,30 +1380,42 @@
             : firstAction
               ? `继续处理“${actionLabel(firstAction.kind)}”。${humanText(firstAction.reason || '')}`
               : '继续按工作节点推进当前验证工作。';
-      const action = waiting.length ? '<button class="btn primary" type="button" data-open-pending-items>打开需要你处理</button>' : '';
-      return `<section class="card project-status-card" aria-label="当前工作流状态"><div class="project-status-label">当前工作流状态</div><div class="project-status-head"><h2>${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
+      const action = waiting.length && w.workstream !== 'VDOC'
+        ? '<button class="btn primary" type="button" data-open-pending-items>打开需要你处理</button>'
+        : '';
+      const statusTitle = w.workstream === 'VDOC' ? '当前项目状态' : '当前工作流状态';
+      return `<section class="card project-status-card" aria-label="${statusTitle}"><div class="project-status-label">${statusTitle}</div><div class="project-status-head"><h2>${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
     }
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
+      if (w.workstream === 'VDOC') {
+        const nodes = w.nodes.filter(n => ['document-writing-plan','document-deliverable'].includes(n.role));
+        const rows = nodes.length
+          ? nodeRows(nodes)
+          : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+        $('#main').innerHTML = `<div class="page-head"><div><h1>VDOC · ${escapeHtml(workstreamLabel('VDOC'))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn primary" id="add-vdoc-node">添加节点</button><button class="btn" id="delete-vdoc-node">删除节点</button><button class="btn danger" id="restart-vdoc-workflow">重新启动工作流</button></div></div>
+          ${workstreamStatusCardHtml(w)}
+          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称后在新标签页查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+        $('#add-vdoc-node').onclick = () => openVdocRevisionRequestTab('add');
+        $('#delete-vdoc-node').onclick = () => openVdocRevisionRequestTab('remove');
+        $('#restart-vdoc-workflow').onclick = () => openVdocRestartModal(w);
+        bindOverviewEntries(); bindNodeLinks();
+        return;
+      }
       const actions = w.closure.actions || [];
       const active = w.activities.filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status));
-      const planNodes = w.workstream === 'VDOC'
-        ? w.nodes.filter(n => ['document-writing-plan','document-deliverable'].includes(n.role))
-        : w.nodes.filter(n => n.definition_origin !== 'template');
+      const planNodes = w.nodes.filter(n => n.definition_origin !== 'template');
       const catalogNodes = w.nodes.filter(n => !planNodes.some(item => item.id === n.id));
       const concreteNodes = planNodes.length;
       const planRows = concreteNodes
         ? nodeRows(planNodes)
         : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
-      const catalogLabel = w.workstream === 'VDOC' ? '正式文档目录' : '工作流固定分类';
+      const catalogLabel = '工作流固定分类';
       const catalog = catalogNodes.length
         ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
         : '';
       const granularityNotice = concreteNodes ? '' : `<div class="notice"><strong>尚未按当前 DUT 形成工作节点。</strong><div style="margin-top:6px">下一步：由 Agent ${escapeHtml(WORKSTREAM_NODE_GUIDANCE[w.workstream] || '根据当前验证目标继续拆分。')}</div><div class="row-meta" style="margin-top:6px">节点数量由当前 DUT 的接口、时钟域、功能、场景、检查、覆盖和回归对象决定，不采用固定模板。</div></div>`;
-      const vdocPlan = vdocPlanReviewState(w);
-      const headerActions = w.workstream === 'VDOC'
-        ? `<button class="btn" id="revise-vdoc-plan">调整文档</button>${vdocPlan.needsRefinement ? '' : '<button class="btn primary" id="review-ws">审批文档撰写方案</button>'}`
-        : '<button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button>';
+      const headerActions = '<button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button>';
       $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions">${headerActions}</div></div>
         ${projectContextHtml(true)}
         ${workstreamStatusCardHtml(w)}
@@ -1520,7 +1424,6 @@
         <section class="section"><details class="detail-group"><summary>Agent 当前工作 <span class="row-meta">${active.length ? `${active.length} 项正在处理` : '当前没有正在处理的工作'}</span></summary><div class="detail-group-body card list-card">${activityRows(active)}</div></details></section>
         <section class="section"><div class="section-head"><h2>还要完成什么</h2><span class="count">系统列出下一步，不代替负责人决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
       if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
-      if ($('#revise-vdoc-plan')) $('#revise-vdoc-plan').onclick = openVdocRevisionRequestTab;
       if ($('#review-ws')) $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
       bindOverviewEntries(); bindNodeLinks();
     }
@@ -1543,14 +1446,21 @@
     function closureRows(items) {
       if (!items.length) return '<div class="empty">当前没有未完成项</div>';
       return items.map(a => {
-        const link = a.kind === 'HUMAN_REVIEW' && a.target.startsWith('workstream:')
-          ? `<button class="node-link" data-review-workstream="${escapeHtml(a.target.replace(/^workstream:/, ''))}">${escapeHtml(actionLabel(a.kind))}</button>`
-          : `<button class="node-link" data-open-node="${escapeHtml(a.target)}">${escapeHtml(actionLabel(a.kind))}</button>`;
+        const workstreamTarget = String(a.target || '').match(/^workstream:([^:]+)/)?.[1] || '';
+        const targetNode = findNode(a.target);
+        const link = a.kind === 'HUMAN_REVIEW' && workstreamTarget
+          ? `<button class="node-link" data-review-workstream="${escapeHtml(workstreamTarget)}">${escapeHtml(actionLabel(a.kind))}</button>`
+          : targetNode
+            ? `<button class="node-link" data-open-node="${escapeHtml(targetNode.id)}">${escapeHtml(actionLabel(a.kind))}</button>`
+            : workstreamTarget
+              ? `<button class="node-link" data-open-workstream="${escapeHtml(workstreamTarget)}">${escapeHtml(actionLabel(a.kind))}</button>`
+              : `<span class="row-title">${escapeHtml(actionLabel(a.kind))}</span>`;
         return `<div class="list-row"><div>${link}<div class="row-meta">${escapeHtml(humanText(a.reason))}${a.blocked_by?.length ? ` · 有 ${a.blocked_by.length} 项依赖的工作尚未完成` : ''}</div></div><span class="badge ${a.executor === 'human' ? 'WAITING_FOR_HUMAN' : 'PENDING'}">${escapeHtml(a.executor === 'human' ? '负责人处理' : a.executor === 'reasoning' ? '需要 Agent 分析' : '系统可以自动处理')}</span></div>`;
       }).join('');
     }
     function bindNodeLinks() {
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
+      document.querySelectorAll('[data-open-workstream]').forEach(button => button.onclick = event => { event.stopPropagation(); openWorkstreamTab(button.dataset.openWorkstream); });
       document.querySelectorAll('[data-review-workstream]').forEach(button => button.onclick = event => {
         event.stopPropagation();
         openWorkstreamReviewTab(button.dataset.reviewWorkstream);
@@ -1566,7 +1476,7 @@
       document.querySelectorAll('[data-agent-question]').forEach(button => button.onclick = event => {
         event.stopPropagation();
         const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === button.dataset.agentQuestion);
-        if (!form) { openPendingItemsTab(button.dataset.agentQuestion); return; }
+        if (!form) { openAgentInteractionTab(button.dataset.agentQuestion); return; }
         form.scrollIntoView({behavior:'smooth', block:'center'});
         form.querySelector('input')?.focus();
       });
@@ -1580,6 +1490,7 @@
       url.searchParams.delete('review-plan-node');
       url.searchParams.delete('review-delivery-node');
       url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.delete('change-kind');
       url.searchParams.set('review-workstream', name);
       window.open(url.toString(), '_blank', 'noopener');
     }
@@ -1591,6 +1502,7 @@
       url.searchParams.delete('review-workstream');
       url.searchParams.delete('review-delivery-node');
       url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.delete('change-kind');
       url.searchParams.set('review-plan-node', nodeId);
       window.open(url.toString(), '_blank', 'noopener');
     }
@@ -1606,6 +1518,7 @@
       url.searchParams.set('document-key', node.document_key);
       url.searchParams.set('node-type', 'document-deliverable');
       url.searchParams.set('node-id', nodeId);
+      url.searchParams.set('change-kind', 'modify');
       window.open(url.toString(), '_blank', 'noopener');
     }
 
@@ -1616,11 +1529,13 @@
       url.searchParams.delete('review-workstream');
       url.searchParams.delete('review-plan-node');
       url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.delete('change-kind');
       url.searchParams.set('review-delivery-node', nodeId);
       window.open(url.toString(), '_blank', 'noopener');
     }
 
-    function openVdocRevisionRequestTab() {
+    function openVdocRevisionRequestTab(changeKind='add') {
+      if (!['add','remove'].includes(changeKind)) { toast('不支持的工作节点操作', true); return; }
       const url = new URL(window.location.href);
       url.searchParams.delete('review-workstream');
       url.searchParams.delete('review-plan-node');
@@ -1629,6 +1544,7 @@
       url.searchParams.delete('node-type');
       url.searchParams.delete('node-id');
       url.searchParams.set('revise-vdoc-plan', '1');
+      url.searchParams.set('change-kind', changeKind);
       window.open(url.toString(), '_blank', 'noopener');
     }
 
@@ -1660,6 +1576,7 @@
       url.searchParams.delete('document-key');
       url.searchParams.delete('node-type');
       url.searchParams.delete('node-id');
+      url.searchParams.delete('change-kind');
       window.history.replaceState({}, '', url);
       if (renderNow) render();
     }
@@ -1672,6 +1589,7 @@
       url.searchParams.delete('review-plan-node');
       url.searchParams.delete('review-delivery-node');
       url.searchParams.delete('revise-vdoc-plan');
+      url.searchParams.delete('change-kind');
       window.history.replaceState({}, '', url);
       if (renderNow) render();
     }
@@ -1758,13 +1676,78 @@
       return (n.plan_review?.sections || []).find(item => item.section === section);
     }
 
+    function reviewChangeItemHtml(defaultTarget='') {
+      return `<div class="review-change-item" data-review-change-item><div class="field"><label>变更动作</label><select data-change-operation><option value="add">要求新增</option><option value="modify" selected>要求修改</option><option value="delete">要求删除</option></select></div><div class="field"><label>影响范围</label><input data-change-target value="${escapeHtml(defaultTarget)}" placeholder="章节、表格、验证点或计划范围" required></div><div class="field"><label>具体要求</label><textarea data-change-instruction placeholder="说明需要怎样调整，以及判断完成的标准" required></textarea></div><div class="modal-actions"><button class="btn small" type="button" data-remove-review-change>移除此项</button></div></div>`;
+    }
+
+    function reviewOutcomeFieldsHtml(defaultTarget='', allowProvisional=false) {
+      return `<div data-review-change-fields hidden><div class="field"><label>新增、修改或删除要求</label><div class="row-meta">这些要求只形成审批意见；Agent 分析后再生成新方案或文档版本。</div><div class="review-change-list" data-review-change-list>${reviewChangeItemHtml(defaultTarget)}</div><button class="btn small" type="button" data-add-review-change style="margin-top:10px">再添加一项要求</button></div></div>${allowProvisional ? '<div data-review-provisional-fields hidden><div class="field"><label>暂定事项负责人</label><input name="provisional_owner" placeholder="负责处理暂定事项的人"></div><div class="field"><label>何时重新验收</label><textarea name="review_trigger" placeholder="例如：规格确认、接口确认或参考模型结果可用"></textarea></div></div>' : ''}<div class="review-impact-preview" data-review-impact-preview>提交后会保存当前版本的审批记录；Agent 将在下一检查点核对结论和依赖影响。</div>`;
+    }
+
+    function bindReviewOutcomeFields(form, defaultTarget='') {
+      const verdict = form.querySelector('[name="verdict"]');
+      const changeFields = form.querySelector('[data-review-change-fields]');
+      const provisionalFields = form.querySelector('[data-review-provisional-fields]');
+      const impact = form.querySelector('[data-review-impact-preview]');
+      const bindRemove = () => form.querySelectorAll('[data-remove-review-change]').forEach(button => {
+        button.onclick = () => {
+          const items = form.querySelectorAll('[data-review-change-item]');
+          if (items.length === 1) {
+            items[0].querySelector('[data-change-instruction]').value = '';
+            return;
+          }
+          button.closest('[data-review-change-item]').remove();
+        };
+      });
+      const refresh = () => {
+        const selected = verdict.value;
+        if (changeFields) changeFields.hidden = selected !== 'modify';
+        if (provisionalFields) provisionalFields.hidden = selected !== 'provisional';
+        form.querySelectorAll('[data-change-target],[data-change-instruction]').forEach(input => input.required = selected === 'modify');
+        form.querySelectorAll('[name="provisional_owner"],[name="review_trigger"]').forEach(input => input.required = selected === 'provisional');
+        impact.textContent = selected === 'approve'
+          ? '通过只认可当前版本，不修改方案或正文；Agent 将检查下一步是否可以继续。'
+          : selected === 'modify'
+            ? '提交后生成结构化变更要求；Agent 将分析建议、版本变化和受影响的下游工作。'
+            : selected === 'clarify'
+              ? '提交后等待 Agent 给出说明；只有出现新的负责人问题时，节点才进入“等待你回答”。'
+              : selected === 'provisional'
+                ? '相关工作可以带条件继续，但本节点不计为正式完成。'
+                : '当前版本不会继续作为已接受依据；Agent 将检查返工或重新规划范围。';
+      };
+      const add = form.querySelector('[data-add-review-change]');
+      if (add) add.onclick = () => {
+        form.querySelector('[data-review-change-list]').insertAdjacentHTML('beforeend', reviewChangeItemHtml(defaultTarget));
+        bindRemove();
+        refresh();
+      };
+      verdict.onchange = refresh;
+      bindRemove();
+      refresh();
+    }
+
+    function collectReviewChangeItems(form) {
+      if (form.querySelector('[name="verdict"]').value !== 'modify') return [];
+      return [...form.querySelectorAll('[data-review-change-item]')].map(item => ({
+        operation: item.querySelector('[data-change-operation]').value,
+        target: item.querySelector('[data-change-target]').value.trim(),
+        instruction: item.querySelector('[data-change-instruction]').value.trim(),
+      }));
+    }
+
+    function reviewChangeHistoryHtml(items) {
+      if (!(items || []).length) return '';
+      const labels = {add:'要求新增', modify:'要求修改', delete:'要求删除'};
+      return `<ul>${items.map(item => `<li><strong>${escapeHtml(labels[item.operation] || item.operation)}</strong> ${escapeHtml(item.target)}：${escapeHtml(item.instruction)}</li>`).join('')}</ul>`;
+    }
+
     function planSectionReviewHtml(n, section, title, content, canApprove=true) {
       const review = planSectionState(n, section);
       if (!review) return '';
       const approve = canApprove ? `<option value="approve">批准“${escapeHtml(title)}”</option>` : '';
-      const history = (review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '批准' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '不同意')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.reason)} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">这部分尚未审批</div>';
+      const history = (review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '批准' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '不同意')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.reason)} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}</div></div>`).join('') || '<div class="empty">这部分尚未审批</div>';
       const blocked = canApprove ? '' : '<div class="notice"><strong>这部分暂时不能批准。</strong> 仍有待确认事项需要先处理。</div>';
-      return `<section class="section"><div class="section-head"><h2>${escapeHtml(title)}</h2>${planReviewStatusBadge(review.status)}</div>${blocked}<div class="card">${content}</div><div class="card" style="padding:20px;margin-top:10px;max-width:760px"><form data-plan-section-form="${escapeHtml(section)}"><div class="field"><label>这部分的审批结论</label><select name="verdict">${approve}<option value="modify">要求修改这部分</option><option value="clarify">要求进一步说明</option><option value="reject">不同意这部分方案</option></select></div><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批意见</label><textarea name="reason" placeholder="说明认可的内容，或明确需要修改、说明的部分" required></textarea></div><div class="modal-actions"><button class="btn primary">提交这部分审批</button></div></form></div><details class="detail-group"><summary>查看这部分审批历史</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
+      return `<section class="section"><div class="section-head"><h2>${escapeHtml(title)}</h2>${planReviewStatusBadge(review.status)}</div>${blocked}<div class="card">${content}</div><div class="card" style="padding:20px;margin-top:10px;max-width:760px"><form data-plan-section-form="${escapeHtml(section)}"><div class="field"><label>审批结论</label><select name="verdict">${approve}<option value="modify">要求修改</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前方案</option></select></div>${reviewOutcomeFieldsHtml(title)}<div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批内容</label><textarea name="reason" placeholder="说明认可的内容，或明确需要修改、说明的部分" required></textarea></div><div class="modal-actions"><button class="btn primary">提交审批结论</button></div></form></div><details class="detail-group"><summary>查看审批记录</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
     }
 
     function renderNodePlanReview(n) {
@@ -1780,12 +1763,14 @@
         return;
       }
       const pending = (n.human_actions || []).filter(item => item.status === 'OPEN');
-      const confirmations = pending.map(item => `<div class="list-row"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div>${statusBadge(item.status)}</div>`).join('') || '<div class="empty">当前没有额外工程问题；仍需审批这部分内容。</div>';
+      const agentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
+      const confirmationActions = pending.map(item => `<div class="list-row"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div>${statusBadge(item.status)}</div>`).join('');
+      const confirmations = `${agentQuestions.length ? `<div class="agent-question-list">${agentQuestionCardsHtml(agentQuestions)}</div>` : ''}${confirmationActions || (!agentQuestions.length ? '<div class="empty">当前没有额外工程问题；仍需审批这部分内容。</div>' : '')}`;
       const outgoing = (n.outgoing || []).map(e => `<li>${escapeHtml(relationLabel(e.relation))}：${escapeHtml(humanText(findNode(e.target)?.title || e.target))}</li>`).join('');
       const incoming = (n.incoming || []).map(e => `<li>${escapeHtml(humanText(findNode(e.source)?.title || e.source))} · ${escapeHtml(incomingRelationLabel(e.relation))}</li>`).join('');
       const confirmationSection = planSectionReviewHtml(
         n, 'human-confirmations', '额外待确认的工程问题',
-        `<div class="list-card attention">${confirmations}</div>`, pending.length === 0,
+        `<div class="list-card attention">${confirmations}</div>`, pending.length === 0 && agentQuestions.length === 0,
       );
       const contentSection = planSectionReviewHtml(
         n, 'planned-content', '计划写入的具体内容',
@@ -1805,15 +1790,19 @@
         ${confirmationSection}${contentSection}${inputsSection}${dependencySection}
         <section class="section"><div class="notice"><strong>本方案何时通过：</strong>上面每一项都必须针对当前方案版本批准；任一项要求修改、要求说明或不同意，本方案均不能通过。</div></section>`;
       $('[data-return-vdoc]').onclick = () => leaveNodePlanReview('VDOC');
+      bindNodeLinks();
       document.querySelectorAll('[data-plan-section-form]').forEach(form => {
+        const sectionTitle = form.closest('section')?.querySelector('h2')?.textContent || '当前文档撰写方案';
+        bindReviewOutcomeFields(form, sectionTitle);
         form.onsubmit = async event => {
           event.preventDefault();
           const data = Object.fromEntries(new FormData(event.target));
+          data.change_items = collectReviewChangeItems(form);
           data.node = n.id;
           data.section = form.dataset.planSectionForm;
           data.definition_digest = n.plan_review.definition_digest;
           rememberReviewer(data.reviewer);
-          await post('/api/reviews/node-plan-section', data, '文档撰写方案审批已保存');
+          await post('/api/reviews/node-plan-section', data, '审批结论已保存；等待 Agent 检查并给出建议');
         };
       });
     }
@@ -1827,40 +1816,57 @@
       const initialDocument = params.get('document-key') || documents[0]?.key || '';
       const initialType = params.get('node-type') || 'document-writing-plan';
       const initialNode = params.get('node-id') || '';
-      const options = documents.map(n => `<option value="${escapeHtml(n.key)}" ${n.key === initialDocument ? 'selected' : ''}>${escapeHtml(humanText(n.title))}</option>`).join('');
-      $('#main').innerHTML = `<div class="page-head"><div><h1>调整文档</h1><p>选择文档、内容类型和调整方式；Agent 会生成更新后的文档方案和变更说明。</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
-        <section class="section"><div class="notice"><strong>这里提交的是调整请求，不会直接改动当前方案。</strong> Agent 分析后会生成新方案版本；选择移除时，内容会从下一版方案中移出，历史记录仍会保留。</div><div class="card" style="padding:20px;max-width:820px"><form id="vdoc-revision-form"><div class="field"><label>1. 调整哪一个文档</label><select name="document_key" id="revision-document" required>${options}</select></div><div class="field"><label>2. 调整哪类内容</label><select name="node_type" id="revision-node-type"><option value="document-writing-plan" ${initialType === 'document-writing-plan' ? 'selected' : ''}>文档撰写方案</option><option value="document-deliverable" ${initialType === 'document-deliverable' ? 'selected' : ''}>文档验收内容</option></select></div><div class="field"><label>3. 怎样调整</label><select name="change_kind" id="revision-change-kind"><option value="add">增加内容</option><option value="modify" ${initialNode ? 'selected' : ''}>修改内容</option><option value="remove">下一版移除</option></select></div><div class="field"><label>现有内容（修改或移除时选择）</label><select name="node_id" id="revision-node"></select></div><div class="field"><label>4. 具体调整要求</label><textarea name="reason" placeholder="说明要增加、修改或移出的内容、原因、验收范围和预期影响" required></textarea></div><div class="field"><label>提出人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="modal-actions"><button type="button" class="btn" data-return-vdoc>取消</button><button class="btn primary">提交调整请求</button></div></form></div></section>`;
-      const refreshNodeOptions = () => {
-        const documentKey = $('#revision-document').value;
-        const nodeType = $('#revision-node-type').value;
-        const candidates = (w.nodes || []).filter(n => n.document_key === documentKey && n.role === nodeType);
-        $('#revision-node').innerHTML = `<option value="">请选择现有内容</option>${candidates.map(n => `<option value="${escapeHtml(n.id)}" ${n.id === initialNode ? 'selected' : ''}>${escapeHtml(humanText(n.title))}</option>`).join('')}`;
-      };
-      $('#revision-document').onchange = refreshNodeOptions;
-      $('#revision-node-type').onchange = refreshNodeOptions;
-      refreshNodeOptions();
+      const requestedKind = params.get('change-kind') || (initialNode ? 'modify' : 'add');
+      const changeKind = ['add','remove','modify'].includes(requestedKind) ? requestedKind : 'add';
+      const existingNodes = (w.nodes || []).filter(n => ['document-writing-plan','document-deliverable'].includes(n.role));
+      const documentOptions = documents.map(n => `<option value="${escapeHtml(n.key)}" ${n.key === initialDocument ? 'selected' : ''}>${escapeHtml(humanText(n.title))}</option>`).join('');
+      const nodeOptions = existingNodes.map(n => `<option value="${escapeHtml(n.id)}" ${n.id === initialNode ? 'selected' : ''}>${escapeHtml(humanText(n.title))} · ${escapeHtml(roleLabel(n.role))}</option>`).join('');
+      const title = changeKind === 'add' ? '添加工作节点' : changeKind === 'remove' ? '删除工作节点' : '调整文档内容';
+      const description = changeKind === 'add'
+        ? '提交新增要求后，Agent 会分析它与当前 DUT、文档及已有节点的关系，并形成下一版文档撰写方案。'
+        : changeKind === 'remove'
+          ? '选择要移出的节点并说明原因；该节点只会从下一版方案中移出。'
+          : '针对当前文档内容提交修改要求；Agent 会形成更新后的方案和变更说明。';
+      const notice = changeKind === 'remove'
+        ? '<strong>删除节点不会直接删除数据库记录或文档。</strong> 这是下一版移除请求；当前节点、审批、正文和历史记录都会保留。'
+        : '<strong>这里提交的是变更请求，不会直接创建或修改工作节点。</strong> Agent 分析后形成新方案版本，仍需按节点审批。';
+      const operationFields = changeKind === 'add'
+        ? `<input type="hidden" name="change_kind" value="add"><div class="field"><label>1. 添加到哪一份验证文档</label><select name="document_key" required>${documentOptions}</select></div><div class="field"><label>2. 节点类型</label><select name="node_type"><option value="document-writing-plan">文档撰写方案</option><option value="document-deliverable">文档内容验收</option></select></div>`
+        : `<input type="hidden" name="change_kind" value="${escapeHtml(changeKind)}"><div class="field"><label>1. ${changeKind === 'remove' ? '要从下一版移出的节点' : '要调整的节点'}</label><select name="node_id" required><option value="">请选择工作节点</option>${nodeOptions}</select>${existingNodes.length ? '' : '<div class="row-meta">当前没有可操作的文档工作节点</div>'}</div>`;
+      const reasonLabel = changeKind === 'add' ? '3. 新节点要求' : '2. 原因和处理要求';
+      const reasonPlaceholder = changeKind === 'add'
+        ? '说明要验证或撰写什么、对应的 DUT/接口/验证点、预期交付内容和验收范围'
+        : changeKind === 'remove'
+          ? '说明为什么下一版不再需要该节点，以及对关联文档、节点和审批的影响'
+          : '说明需要修改的正文、原因、验收范围和预期影响';
+      const submitLabel = changeKind === 'add' ? '提交添加请求' : changeKind === 'remove' ? '提交删除请求' : '提交修改请求';
+      $('#main').innerHTML = `<div class="page-head"><div><h1>${title}</h1><p>${description}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
+        <section class="section"><div class="notice">${notice}</div><div class="card" style="padding:20px;max-width:820px"><form id="vdoc-revision-form">${operationFields}<div class="field"><label>${reasonLabel}</label><textarea name="reason" placeholder="${reasonPlaceholder}" required></textarea></div><div class="field"><label>提出人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="modal-actions"><button type="button" class="btn" data-return-vdoc>取消</button><button class="btn ${changeKind === 'remove' ? 'danger' : 'primary'}" ${changeKind !== 'add' && !existingNodes.length ? 'disabled' : ''}>${submitLabel}</button></div></form></div></section>`;
       document.querySelectorAll('[data-return-vdoc]').forEach(button => button.onclick = () => leaveVdocRevisionRequest('VDOC'));
       $('#vdoc-revision-form').onsubmit = async event => {
         event.preventDefault();
         const values = Object.fromEntries(new FormData(event.target));
-        const selected = documents.find(n => n.key === values.document_key);
-        if (values.change_kind !== 'add' && !values.node_id) {
-          toast('修改或移除时必须选择一项现有内容', true);
+        const sourceNode = values.node_id ? findNode(values.node_id) : null;
+        if (values.change_kind !== 'add' && !sourceNode) {
+          toast('必须选择一项现有工作节点', true);
           return;
         }
+        const documentKey = values.document_key || sourceNode?.document_key || '';
+        const nodeType = values.node_type || sourceNode?.role || '';
+        const selected = documents.find(n => n.key === documentKey);
         rememberReviewer(values.reviewer);
         await post('/api/human-actions', {
           target: values.node_id || 'VDOC', action: 'REQUEST_CHANGE', reviewer: values.reviewer,
           reason: values.reason,
           payload: {
             request_type: 'vdoc-node-revision',
-            document_key: values.document_key,
+            document_key: documentKey,
             document_path: selected?.document?.path || '',
-            node_type: values.node_type,
+            node_type: nodeType,
             source_node_id: values.node_id || null,
             change_kind: values.change_kind,
           },
-        }, '文档调整请求已保存', () => leaveVdocRevisionRequest('VDOC', false));
+        }, values.change_kind === 'add' ? '添加节点请求已保存' : values.change_kind === 'remove' ? '删除节点请求已保存；当前节点和历史仍保留' : '文档修改请求已保存', () => leaveVdocRevisionRequest('VDOC', false));
       };
     }
 
@@ -1879,18 +1885,28 @@
         const current = body.document;
         const pending = (current.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status) && ['human-decision','external-open-question'].includes(item.kind));
         const confirmations = (n.human_actions || []).filter(item => item.status === 'OPEN');
-        const approveOption = pending.length || confirmations.length ? '' : '<option value="approve">验收通过</option>';
-        const history = (n.delivery_review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '验收通过' : item.verdict === 'PROVISIONAL' ? '暂定接受' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '不同意')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes)}${item.provisional ? ` · 负责人：${escapeHtml(item.provisional.owner)} · 再次验收条件：${escapeHtml(item.provisional.review_trigger)}` : ''} · 正文版本 ${item.semantic_revision} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">这部分正文尚未验收</div>';
-        const pendingNotice = pending.length || confirmations.length ? `<div class="notice"><strong>暂时不能批准。</strong> 仍有 ${pending.length + confirmations.length} 个问题、工程决定或 Agent 分析事项需要负责人逐项处理。</div>` : '';
+        const agentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
+        const pendingCount = pending.length + confirmations.length + agentQuestions.length;
+        const reviewLocked = ['AGENT_CHECKING','WAITING_FOR_HUMAN'].includes(n.delivery_review.status);
+        const approveOption = pendingCount ? '' : '<option value="approve">验收通过</option>';
+        const history = (n.delivery_review.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '验收通过' : item.verdict === 'PROVISIONAL' ? '暂定接受' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '不同意')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes)}${item.provisional ? ` · 负责人：${escapeHtml(item.provisional.owner)} · 再次验收条件：${escapeHtml(item.provisional.review_trigger)}` : ''} · 正文版本 ${item.semantic_revision} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}</div></div>`).join('') || '<div class="empty">这部分正文尚未验收</div>';
+        const pendingNotice = pendingCount ? `<div class="notice"><strong>暂时不能批准。</strong> 仍有 ${pendingCount} 个问题、工程决定或 Agent 分析事项需要负责人逐项处理。</div>` : '';
+        const agentCheckNotice = n.delivery_review.status === 'AGENT_CHECKING'
+          ? '<div class="notice"><strong>Agent 正在检查你刚提交的审批。</strong> Agent 会自行判断是否需要继续提问；检查完成前节点不会变为“已验收通过”。</div>'
+          : n.delivery_review.status === 'WAITING_FOR_HUMAN'
+            ? '<div class="notice"><strong>Agent 检查后需要你确认。</strong> 请先回答下面的问题；回答后 Agent 会再次检查。</div>'
+            : '';
         const confirmationRows = confirmations.map(item => `<div class="card" style="padding:18px;margin-bottom:10px"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · 提出人：${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div><form data-delivery-confirmation="${escapeHtml(item.id)}" style="margin-top:14px"><div class="field"><label>处理结论</label><select name="verdict"><option value="approve">确认该事项已经处理</option><option value="modify">要求修改相关正文或分析</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前处理方式</option></select></div><div class="field"><label>处理人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>处理意见</label><textarea name="resolution" required></textarea></div><button class="btn primary">提交本事项意见</button></form></div>`).join('') || '<div class="card empty">当前没有需要你确认的事项</div>';
-        $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档内容</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-adjust-delivery>调整文档内容</button><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
-          <div class="notice"><strong>本次只验收该工作节点对应的正文内容，不是整份文档。</strong> 同一文档的其他内容仍需独立验收；所有计划要求完成的内容通过后，所属文档才会通过。</div>${pendingNotice}
+        $('#main').innerHTML = `<div class="page-head"><div><h1>验收文档内容</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-view-delivery-document>查看对应文档</button><button class="btn" data-adjust-delivery>调整文档内容</button><button class="btn" data-return-vdoc>返回 VDOC</button></div></div>
+          <div class="notice"><strong>本次只验收该工作节点对应的正文内容，不是整份文档。</strong> 同一文档的其他内容仍需独立验收；所有计划要求完成的内容通过后，所属文档才会通过。</div>${agentCheckNotice}${pendingNotice}
           <section class="section"><div class="section-head"><h2>本次验收内容</h2>${deliveryReviewStatusBadge(n.delivery_review.status)}</div><div class="card"><dl class="kv"><dt>验收内容</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(current.title))}</dd><dt>正文版本</dt><dd>${current.semantic_revision}</dd></dl><details><summary>查看文档内部信息</summary><div class="detail-group-body"><dl class="kv"><dt>工作节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(current.path)}</dd><dt>文档标识</dt><dd class="mono">${escapeHtml(n.document_key)}</dd></dl></div></details><strong>本次需要验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>Agent 检查说明</strong><ul>${planListHtml([n.statement, ...(n.quality_checks || [])].filter(Boolean))}</ul></div></section>
-          <section class="section"><div class="section-head"><h2>验收前需要你确认</h2><span class="count">${confirmations.length} 项待处理</span></div>${confirmationRows}</section>
-          <section class="section"><div class="section-head"><h2>所属文档正文</h2></div><pre class="document-preview">${escapeHtml(body.content)}</pre></section>
-          <section class="section"><div class="section-head"><h2>提交验收结论</h2></div><div class="card" style="padding:20px;max-width:820px"><form id="delivery-review-form"><div class="field"><label>验收结论</label><select name="verdict" id="delivery-verdict">${approveOption}<option value="provisional">暂定接受，允许相关工作继续</option><option value="modify">要求修改本次对应内容</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前内容</option></select></div><div class="notice"><strong>暂定不等于通过。</strong> 它只允许相关工作继续，不计入文档完成。</div><div class="field"><label>暂定事项负责人（选择“暂定接受”时必填）</label><input name="provisional_owner" placeholder="负责处理暂定事项的人"></div><div class="field"><label>何时重新验收（选择“暂定接受”时必填）</label><textarea name="review_trigger" placeholder="例如：规格确认、接口确认、参考模型结果可用"></textarea></div><div class="field"><label>验收人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>验收意见</label><textarea name="notes" placeholder="只针对本次验收范围给出意见" required></textarea></div><div class="modal-actions"><button class="btn primary">提交验收</button></div></form></div><details class="detail-group"><summary>查看验收记录</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
+          <section class="section"><div class="section-head"><h2>验收前需要你确认</h2><span class="count">${pendingCount} 项待处理</span></div>${agentQuestions.length ? `<div class="agent-question-list">${agentQuestionCardsHtml(agentQuestions)}</div>` : ''}${confirmationRows}</section>
+          <section class="section" id="delivery-document-body"><div class="section-head"><h2>所属文档正文</h2></div><pre class="document-preview">${escapeHtml(body.content)}</pre></section>
+          <section class="section"><div class="section-head"><h2>提交验收结论</h2></div><div class="card" style="padding:20px;max-width:820px"><form id="delivery-review-form"><div class="field"><label>验收结论</label><select name="verdict" id="delivery-verdict">${approveOption}<option value="provisional">暂定接受，允许相关工作继续</option><option value="modify">要求修改</option><option value="clarify">要求进一步说明</option><option value="reject">不同意当前内容</option></select></div><div class="notice"><strong>暂定不等于通过。</strong> 它只允许相关工作继续，不计入文档完成。</div>${reviewOutcomeFieldsHtml(n.title, true)}<div class="field"><label>验收人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批内容</label><textarea name="notes" placeholder="说明认可的内容，或明确需要新增、修改、删除、澄清的内容" required></textarea></div><div class="modal-actions"><button class="btn primary" ${reviewLocked ? 'disabled title="等待 Agent 完成本轮检查"' : ''}>提交正文验收结论</button></div></form></div><details class="detail-group"><summary>查看审批记录</summary><div class="detail-group-body card list-card">${history}</div></details></section>`;
         $('[data-return-vdoc]').onclick = () => leaveDocumentDeliveryReview('VDOC');
+        $('[data-view-delivery-document]').onclick = () => $('#delivery-document-body').scrollIntoView({behavior:'smooth', block:'start'});
         $('[data-adjust-delivery]').onclick = () => openDocumentDeliveryRevisionTab(n.id);
+        bindNodeLinks();
         document.querySelectorAll('[data-delivery-confirmation]').forEach(form => {
           form.onsubmit = async event => {
             event.preventDefault();
@@ -1915,12 +1931,14 @@
         $('#delivery-review-form').onsubmit = async event => {
           event.preventDefault();
           const data = Object.fromEntries(new FormData(event.target));
+          data.change_items = collectReviewChangeItems(event.target);
           data.node = n.id;
           data.definition_digest = n.delivery_review.definition_digest;
           data.document_digest = n.delivery_review.document_digest;
           rememberReviewer(data.reviewer);
-          await post('/api/reviews/document-delivery', data, '文档内容验收已保存');
+          await post('/api/reviews/document-delivery', data, '验收结论已保存；等待 Agent 检查并给出建议');
         };
+        bindReviewOutcomeFields($('#delivery-review-form'), n.title);
       } catch (error) {
         toast(`读取文档失败：${error}`, true);
       }
@@ -1980,7 +1998,7 @@
         return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计正文交付</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记方案质量检查')}</ul></div></section>`;
       }
       if (n.role === 'document-deliverable') {
-        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>这里验收本节点对应的正文内容，不是整份文档。</strong> 同一文档的其他正文内容仍需独立验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>默认每份文档对应一个正文验收节点。</strong> 只有已批准的撰写方案明确拆分时，才按独立正文内容分别验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;
       }
       if (n.role === 'document-catalog') {
         const document = n.document || {};
@@ -1997,7 +2015,7 @@
       const planReviewAvailable = Boolean(n.plan_review)
         && !(parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement);
       const genericNotice = n.role === 'document-deliverable'
-        ? `<div class="notice"><strong>这是所属文档中一项独立验收的正文内容。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}。验收这项内容不等于整份文档已经通过。</div>`
+        ? `<div class="notice"><strong>这是所属文档的正文验收节点。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}。默认验收整份文档；只有已批准方案明确拆分时才按独立内容验收。</div>`
         : n.role === 'document-writing-plan'
           ? `<div class="notice"><strong>这是文档撰写方案，不是文档正文。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}。</div>`
         : n.document
@@ -2028,6 +2046,17 @@
     function closeDrawer() { state.node = null; $('#drawer-backdrop').classList.remove('open'); }
     function openModal(html) { $('#modal').innerHTML = html; $('#modal-backdrop').classList.add('open'); document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = closeModal); }
     function closeModal() { $('#modal-backdrop').classList.remove('open'); }
+    function openVdocRestartModal(w) {
+      openModal(`<h2>重新启动 VDOC 工作流？</h2><p><strong>当前方案 ${escapeHtml(revisionLabel(w.revision))} 将停止继续评审，并创建一个新的方案版本。</strong></p><div class="notice"><strong>重新启动后的影响：</strong><ul><li>当前节点的审批结论不计入新版本；</li><li>工作流回到由 Agent 形成文档撰写方案的阶段；</li><li>在新方案重新审批通过前，不会显示正文内容验收节点；</li><li>已有验证文档、历史节点、审批、验收和支持材料都会保留。</li></ul></div><form id="vdoc-restart-form"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>重新启动原因</label><textarea name="reason" placeholder="说明为什么需要重新形成文档撰写方案，以及本次要重新确认的范围" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn danger">确认重新启动</button></div></form>`);
+      $('#vdoc-restart-form').onsubmit = async event => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(event.target));
+        data.workstream = 'VDOC';
+        data.confirm = true;
+        rememberReviewer(data.reviewer);
+        await post('/api/workstreams/restart', data, 'VDOC 已重新启动；等待 Agent 形成新的文档撰写方案');
+      };
+    }
     function openProjectUnregisterModal() {
       const project = state.projects.find(item => item.id === state.project);
       if (!project) { toast('当前项目未注册', true); return; }
@@ -2105,7 +2134,7 @@
     $('#project-unregister').onclick = openProjectUnregisterModal;
     $('#home').onclick = openOverview;
     $('#theme').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? '' : 'dark'; localStorage.setItem('verif-theme', dark ? 'light' : 'dark'); };
-    if (localStorage.getItem('verif-sidebar') === 'collapsed') $('#layout').classList.add('sidebar-collapsed');
+    if (localStorage.getItem('verif-sidebar') === 'collapsed') { $('#layout').classList.add('sidebar-collapsed'); document.body.classList.add('sidebar-collapsed'); }
     if (localStorage.getItem('verif-theme') === 'light') document.documentElement.dataset.theme = '';
     initialLoad();
   </script>

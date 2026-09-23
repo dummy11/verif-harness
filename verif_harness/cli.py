@@ -104,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness dashboard --open-browser
   verif-harness agent-work candidates
   verif-harness agent-question ask NODE --prompt TEXT --option ID LABEL DESCRIPTION
+  verif-harness agent-review-check list --status PENDING
   verif-harness await-human VDOC
 
 完整操作与参数见 skills/verif-harness/docs/user_guide.md。""",
@@ -478,6 +479,28 @@ def build_parser() -> argparse.ArgumentParser:
     project_argument(question_await)
     question_await.add_argument("question_id")
     question_await.add_argument("--timeout", type=float, default=60.0)
+
+    agent_review_check = commands.add_parser(
+        "agent-review-check",
+        help="检查负责人提交的正文验收结论，并决定是否需要继续向负责人提问",
+    )
+    review_check_commands = agent_review_check.add_subparsers(
+        dest="review_check_command", required=True,
+    )
+    review_check_list = review_check_commands.add_parser(
+        "list", help="列出等待 Agent 检查、等待负责人回答或已完成的审批检查",
+    )
+    project_argument(review_check_list)
+    review_check_list.add_argument(
+        "--status", choices=("PENDING", "WAITING_FOR_HUMAN", "COMPLETED"),
+        type=str.upper,
+    )
+    review_check_complete = review_check_commands.add_parser(
+        "complete", help="确认 Agent 已检查且当前没有未解决的问题",
+    )
+    project_argument(review_check_complete)
+    review_check_complete.add_argument("review_id")
+    review_check_complete.add_argument("--summary", required=True)
 
     await_human = commands.add_parser(
         "await-human",
@@ -938,6 +961,13 @@ def main(arguments: list[str] | None = None) -> int:
                 emit(store.await_agent_question(args.question_id, args.timeout))
             else:
                 emit({"agent_questions": store.agent_questions(args.status, args.target)})
+        elif args.command == "agent-review-check":
+            if args.review_check_command == "complete":
+                emit(store.complete_review_agent_check(
+                    args.review_id, PROJECT_AGENT_ACTOR, args.summary,
+                ))
+            else:
+                emit({"agent_review_checks": store.review_agent_checks(args.status)})
         elif args.command == "await-human":
             emit(store.await_human_review(
                 args.workstream, args.revision, args.after_review,

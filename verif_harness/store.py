@@ -444,6 +444,37 @@ def desired_definition(
         })
     return definition
 
+
+def vdoc_internal_semantic_units(
+    key: str, role: str, fields: dict[str, list[str]],
+) -> tuple[list[dict[str, Any]], str]:
+    """Create stable, non-Human-facing units for fine-grained VDOC comparison."""
+    units: list[dict[str, Any]] = []
+    for field in (
+        "scope", "work_content", "acceptance_criteria", "source_refs",
+        "deliverables", "quality_checks",
+    ):
+        for index, content in enumerate(fields[field], 1):
+            unit_id = f"semantic:{key}:{field}:{index}"
+            digest = hashlib.sha256(json_text({
+                "node_key": key,
+                "role": role,
+                "field": field,
+                "content": content,
+            }).encode("utf-8")).hexdigest()
+            units.append({
+                "id": unit_id,
+                "field": field,
+                "sequence": index,
+                "digest": digest,
+                "content": content,
+                "visible_to_human": False,
+            })
+    manifest_digest = hashlib.sha256(json_text([
+        {"id": item["id"], "digest": item["digest"]} for item in units
+    ]).encode("utf-8")).hexdigest()
+    return units, manifest_digest
+
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
 DEFAULT_DEPENDENCIES: tuple[tuple[tuple[str, str], tuple[str, str]], ...] = (
@@ -770,6 +801,12 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- 只有用户明确要求提前试写时，才可在方案批准前生成“未批准预览草稿”；",
         "  该草稿不得同步为正文语义版本，不得创建内容验收节点，也不得作为任何",
         "  完成、证据或下游实现授权。",
+        "- 负责人提交文档交付节点的验收结论后，Main Agent 必须读取",
+        "  `agent-review-check list --status PENDING` 并检查当前审批、正文和依赖影响。",
+        "  Agent 自行判断是否需要负责人确认：需要时用绑定该交付节点的",
+        "  `agent-question ask` 提问；不需要或所有问题回答并重新分析后，用",
+        "  `agent-review-check complete REVIEW_ID --summary ...` 完成本轮检查。",
+        "  未完成 Agent 检查或仍有开放问题时，节点不得显示为正文验收通过。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同；VDOC 仅在",
         "  文档撰写方案已进入 `ACTIVE` 后执行 `docs sync`。",
@@ -1041,6 +1078,16 @@ CREATE TABLE IF NOT EXISTS document_delivery_reviews (
 );
 CREATE TABLE IF NOT EXISTS document_delivery_provisionals (
   review_id TEXT PRIMARY KEY, owner TEXT NOT NULL, review_trigger TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS review_change_items (
+  review_id TEXT NOT NULL, sequence INTEGER NOT NULL, operation TEXT NOT NULL,
+  target TEXT NOT NULL, instruction TEXT NOT NULL,
+  PRIMARY KEY (review_id, sequence)
+);
+CREATE TABLE IF NOT EXISTS review_agent_checks (
+  review_id TEXT PRIMARY KEY, node_id TEXT NOT NULL, status TEXT NOT NULL,
+  checked_by TEXT, summary TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, checked_at TEXT
 );
 """
 
@@ -1556,6 +1603,12 @@ class ProjectStore:
             required = item.get("required", True)
             if not isinstance(required, bool):
                 raise HarnessError(f"{prefix}.required 必须是 boolean")
+            internal_units: list[dict[str, Any]] = []
+            semantic_manifest_digest = None
+            if workstream == "VDOC":
+                internal_units, semantic_manifest_digest = vdoc_internal_semantic_units(
+                    key, role, lists,
+                )
             normalized.append({
                 "key": key, "title": values["title"], "statement": values["statement"],
                 "purpose": values["purpose"], "scope": lists["scope"],
@@ -1574,10 +1627,14 @@ class ProjectStore:
                 ),
                 "required": required, "definition_origin": "project-proposal",
                 "definition_status": "REVIEW_CANDIDATE",
+                **({
+                    "internal_semantic_units": internal_units,
+                    "semantic_manifest_digest": semantic_manifest_digest,
+                } if workstream == "VDOC" else {}),
                 "role_description": (
                     "当前 DUT 的文档撰写方案节点；目标、内容、工程决定、输入和交付区块分别审批"
                     if workstream == "VDOC" and role == "document-writing-plan" else
-                    "一份正式验证文档中可独立验收的正文内容；与同一文档的其他交付节点分别审批"
+                    "一份正式验证文档的公开正文验收节点；章节和依赖影响由内部语义单元定位"
                     if workstream == "VDOC" else
                     "项目级完成条件证据节点" if role == "closure-evidence"
                     else f"项目级 {role} 节点"
@@ -1717,7 +1774,8 @@ class ProjectStore:
                         "source_refs", "work_content", "implementation_approach",
                         "deliverables", "progress_measures", "quality_checks",
                         "definition_origin", "definition_status", "role_description",
-                    )
+                        "internal_semantic_units", "semantic_manifest_digest",
+                    ) if field in spec
                 },
             }
             delivery_rows.append(row)
@@ -1926,7 +1984,8 @@ class ProjectStore:
                             "source_refs", "work_content", "implementation_approach",
                             "deliverables", "progress_measures", "quality_checks",
                             "definition_origin", "definition_status", "role_description",
-                        )
+                            "internal_semantic_units", "semantic_manifest_digest",
+                        ) if field in spec
                     })
                 else:
                     row.update(desired_definition(
@@ -1995,6 +2054,88 @@ class ProjectStore:
                 f"{name} 当前只有汇总模板节点；请让 Agent 从已评审文档形成项目级 DesiredStateProposal/1 后重新 plan"
             )
         result["auto_closure"] = self.evaluate_closure(name)
+        return result
+
+    def restart_vdoc_workflow(
+        self, reviewer: str, reason: str, confirm: bool = False,
+    ) -> dict[str, Any]:
+        """Start a new VDOC revision without deleting documents or history."""
+        self.require()
+        if not confirm:
+            raise HarnessError("重新启动 VDOC 工作流必须再次确认")
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("重新启动 VDOC 工作流必须填写操作人和原因")
+        previous = self.workstream("VDOC")
+        previous_revision = int(previous["revision"])
+        previous_node_ids = [item["id"] for item in previous["desired_state"]]
+        preserved_documents = [
+            {
+                "id": item["id"], "path": item["path"],
+                "semantic_revision": item["semantic_revision"],
+                "digest": item["digest"],
+            }
+            for item in self.documents()
+        ]
+
+        restarted = self.design_workstream(
+            "VDOC", previous["objective"], [], previous["exit_criteria"],
+            previous["decisions"],
+        )
+        current_revision = int(restarted["revision"])
+        timestamp = now()
+        targets = ["VDOC", *previous_node_ids]
+        placeholders = ",".join("?" for _ in targets)
+        resolution = (
+            f"负责人重新启动 VDOC：revision {previous_revision} 已由 "
+            f"revision {current_revision} 取代"
+        )
+        event_id = f"event:{uuid.uuid4().hex[:12]}"
+        with self.connect() as connection:
+            connection.execute(
+                f"""UPDATE human_actions
+                    SET status='SUPERSEDED',resolved_by=?,resolution=?,updated_at=?
+                    WHERE status='OPEN' AND target IN ({placeholders})""",
+                (reviewer.strip(), resolution, timestamp, *targets),
+            )
+            connection.execute(
+                f"""UPDATE agent_questions
+                    SET status='SUPERSEDED',updated_at=?
+                    WHERE status='OPEN' AND target IN ({placeholders})""",
+                (timestamp, *targets),
+            )
+            connection.execute(
+                """UPDATE activities
+                   SET status='CANCELLED',message=?,updated_at=?,ended_at=?
+                   WHERE workstream='VDOC'
+                     AND status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT')""",
+                (resolution, timestamp, timestamp),
+            )
+            self._refresh_agent_assignments(connection)
+            connection.execute(
+                "INSERT INTO events VALUES(?,?,?,?,?,?)",
+                (
+                    event_id, "workstream-restart", "workstream:VDOC",
+                    f"{previous_revision}->{current_revision}",
+                    json_text({
+                        "reviewer": reviewer.strip(), "reason": reason.strip(),
+                        "previous_revision": previous_revision,
+                        "current_revision": current_revision,
+                        "preserved_document_count": len(preserved_documents),
+                    }), timestamp,
+                ),
+            )
+        self.write_model_projection()
+        self.write_workstream_projection("VDOC")
+        result = self.workstream("VDOC")
+        result.update({
+            "event_id": event_id,
+            "previous_revision": previous_revision,
+            "current_revision": current_revision,
+            "reviewer": reviewer.strip(),
+            "reason": reason.strip(),
+            "preserved_documents": preserved_documents,
+            "auto_closure": self.evaluate_closure("VDOC"),
+        })
         return result
 
     def workstream(self, workstream: str) -> dict[str, Any]:
@@ -2785,12 +2926,25 @@ class ProjectStore:
                  "OPEN", int(blocking), PROJECT_AGENT_ACTOR, activity_id,
                  None, None, None, timestamp, timestamp, None),
             )
+            if node_id and question_workstream == "VDOC":
+                connection.execute(
+                    """UPDATE review_agent_checks SET status='WAITING_FOR_HUMAN',
+                       updated_at=? WHERE review_id=(
+                         SELECT id FROM document_delivery_reviews
+                         WHERE node_id=? ORDER BY rowid DESC LIMIT 1
+                       )""",
+                    (timestamp, node_id),
+                )
             if activity_id and blocking:
                 connection.execute(
                     """UPDATE activities SET status='WAITING_FOR_HUMAN',message=?,updated_at=?
                        WHERE id=?""",
                     (f"等待负责人回答：{prompt.strip()}", timestamp, activity_id),
                 )
+        if node_id and question_workstream == "VDOC":
+            self._refresh_vdoc_delivery_acceptance(node_id)
+            self.write_model_projection()
+            self.evaluate_closure("VDOC")
         return self.agent_question(question_id)
 
     def agent_question(self, question_id: str) -> dict[str, Any]:
@@ -2882,6 +3036,29 @@ class ProjectStore:
                            WHERE id=?""",
                         (f"负责人已回答问题 {question_id}: {selected}", timestamp, activity_id),
                     )
+            node_id = row["node_id"]
+            question_workstream = row["workstream"]
+            if node_id and question_workstream == "VDOC":
+                remaining_for_node = connection.execute(
+                    """SELECT COUNT(*) count FROM agent_questions
+                       WHERE target=? AND status='OPEN'""",
+                    (node_id,),
+                ).fetchone()["count"]
+                connection.execute(
+                    """UPDATE review_agent_checks SET status=?,updated_at=?
+                       WHERE review_id=(
+                         SELECT id FROM document_delivery_reviews
+                         WHERE node_id=? ORDER BY rowid DESC LIMIT 1
+                       )""",
+                    (
+                        "WAITING_FOR_HUMAN" if remaining_for_node else "PENDING",
+                        timestamp, node_id,
+                    ),
+                )
+        if node_id and question_workstream == "VDOC":
+            self._refresh_vdoc_delivery_acceptance(node_id)
+            self.write_model_projection()
+            self.evaluate_closure("VDOC")
         return self.agent_question(question_id)
 
     def await_agent_question(self, question_id: str, timeout: float = 60.0) -> dict[str, Any]:
@@ -3157,6 +3334,118 @@ class ProjectStore:
     def _vdoc_plan_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
         return ProjectStore._vdoc_writing_plan_desired(plan)
 
+    @staticmethod
+    def _normalize_review_change_items(
+        verdict: str, items: Iterable[dict[str, Any]] | None,
+        *, default_target: str, default_instruction: str,
+    ) -> list[dict[str, str]]:
+        """Normalize structured add/modify/delete requests attached to a review."""
+        selected = verdict.lower()
+        normalized: list[dict[str, str]] = []
+        for index, item in enumerate(items or []):
+            if not isinstance(item, dict):
+                raise HarnessError(f"审批变更项 {index + 1} 必须是 object")
+            operation = str(item.get("operation", "")).strip().lower()
+            target = str(item.get("target", "")).strip()
+            instruction = str(item.get("instruction", "")).strip()
+            if operation not in {"add", "modify", "delete"}:
+                raise HarnessError("审批变更动作必须是 add/modify/delete")
+            if not target or not instruction:
+                raise HarnessError("审批变更项必须填写影响范围和具体要求")
+            normalized.append({
+                "operation": operation,
+                "target": target,
+                "instruction": instruction,
+            })
+        if selected == "modify" and not normalized:
+            normalized.append({
+                "operation": "modify",
+                "target": default_target,
+                "instruction": default_instruction,
+            })
+        if selected != "modify" and normalized:
+            raise HarnessError("只有“要求修改”结论可以提交新增、修改或删除要求")
+        return normalized
+
+    @staticmethod
+    def _review_change_items(
+        connection: sqlite3.Connection, review_ids: Iterable[str],
+    ) -> dict[str, list[dict[str, str]]]:
+        identifiers = list(review_ids)
+        if not identifiers:
+            return {}
+        placeholders = ",".join("?" for _ in identifiers)
+        result: dict[str, list[dict[str, str]]] = {}
+        for row in connection.execute(
+            f"""SELECT review_id,operation,target,instruction
+                FROM review_change_items
+                WHERE review_id IN ({placeholders})
+                ORDER BY review_id,sequence""",
+            identifiers,
+        ):
+            result.setdefault(row["review_id"], []).append({
+                "operation": row["operation"],
+                "target": row["target"],
+                "instruction": row["instruction"],
+            })
+        return result
+
+    @staticmethod
+    def _store_review_change_items(
+        connection: sqlite3.Connection, review_id: str,
+        items: Iterable[dict[str, str]],
+    ) -> None:
+        for sequence, item in enumerate(items, 1):
+            connection.execute(
+                "INSERT INTO review_change_items VALUES(?,?,?,?,?)",
+                (
+                    review_id, sequence, item["operation"], item["target"],
+                    item["instruction"],
+                ),
+            )
+
+    @staticmethod
+    def _record_review_submitted_event(
+        connection: sqlite3.Connection, review_id: str, node_id: str,
+        verdict: str, reviewer: str, change_items: list[dict[str, str]],
+        timestamp: str, *, requires_agent_check: bool = False,
+    ) -> str:
+        """Record a checkpoint for Agent analysis without claiming it already ran."""
+        event_id = f"event:{uuid.uuid4().hex[:12]}"
+        if requires_agent_check:
+            connection.execute(
+                "INSERT INTO review_agent_checks VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    review_id, node_id, "PENDING", None, "", timestamp,
+                    timestamp, None,
+                ),
+            )
+        connection.execute(
+            "INSERT INTO events VALUES(?,?,?,?,?,?)",
+            (
+                event_id, "review-submitted", node_id, None,
+                json_text({
+                    "review_id": review_id,
+                    "verdict": verdict.upper(),
+                    "reviewer": reviewer,
+                    "change_items": change_items,
+                    "agent_follow_up": "CHECK_REQUIRED",
+                }), timestamp,
+            ),
+        )
+        return event_id
+
+    @staticmethod
+    def _review_agent_check(
+        connection: sqlite3.Connection, review_id: str | None,
+    ) -> dict[str, Any] | None:
+        if not review_id:
+            return None
+        row = connection.execute(
+            "SELECT * FROM review_agent_checks WHERE review_id=?", (review_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
     def node_plan_review_state(
         self, node_id: str, plan: dict[str, Any] | None = None,
         desired: dict[str, Any] | None = None,
@@ -3181,7 +3470,12 @@ class ProjectStore:
                    FROM node_plan_section_reviews WHERE node_id=? ORDER BY rowid""",
                 (node_id,),
             )]
+            change_items = self._review_change_items(
+                connection, (row["id"] for row in rows),
+            )
             required_sections = self._node_plan_sections(connection, node_id)
+        for row in rows:
+            row["change_items"] = change_items.get(row["id"], [])
         section_states: list[dict[str, Any]] = []
         for section in required_sections:
             section_rows = [row for row in rows if row["section"] == section]
@@ -3220,12 +3514,18 @@ class ProjectStore:
     def review_node_plan_section(
         self, node_id: str, section: str, definition_digest: str, verdict: str,
         reviewer: str, reason: str,
+        change_items: Iterable[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         selected = verdict.lower()
         if selected not in {"approve", "reject", "modify", "clarify"}:
             raise HarnessError("node plan section verdict 必须是 approve/reject/modify/clarify")
         if not reviewer.strip() or not reason.strip():
             raise HarnessError("node plan review 必须提供 reviewer 和 reason")
+        normalized_changes = self._normalize_review_change_items(
+            selected, change_items,
+            default_target=section,
+            default_instruction=reason.strip(),
+        )
         state = self.node_plan_review_state(node_id)
         if state["workstream"] != "VDOC":
             raise HarnessError("节点级方案审批当前只适用于 VDOC 文档撰写方案节点")
@@ -3244,17 +3544,29 @@ class ProjectStore:
         timestamp = now()
         with self.connect() as connection:
             if selected == "approve" and section == "human-confirmations":
-                unresolved = connection.execute(
+                unresolved_actions = connection.execute(
                     "SELECT COUNT(*) count FROM human_actions WHERE target=? AND status='OPEN'",
                     (node_id,),
                 ).fetchone()["count"]
-                if unresolved:
-                    raise HarnessError("该文档节点仍有等待负责人确认的事项；请先处理后再批准文档撰写方案")
+                unresolved_questions = connection.execute(
+                    "SELECT COUNT(*) count FROM agent_questions WHERE target=? AND status='OPEN'",
+                    (node_id,),
+                ).fetchone()["count"]
+                if unresolved_actions or unresolved_questions:
+                    raise HarnessError(
+                        "该文档节点仍有等待负责人确认的事项或 Agent 问题；"
+                        "请先处理后再批准文档撰写方案"
+                    )
             review_id = f"plan-section-review:{uuid.uuid4().hex[:12]}"
             connection.execute(
                 "INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (review_id, node_id, "VDOC", plan["revision"], definition_digest,
                  section, selected.upper(), reviewer.strip(), reason.strip(), timestamp),
+            )
+            self._store_review_change_items(connection, review_id, normalized_changes)
+            event_id = self._record_review_submitted_event(
+                connection, review_id, node_id, selected, reviewer.strip(),
+                normalized_changes, timestamp,
             )
             required = [
                 item for item in self._vdoc_plan_desired(plan)
@@ -3317,6 +3629,13 @@ class ProjectStore:
             "verdict": selected.upper(),
             "reviewer": reviewer.strip(),
             "reason": reason.strip(),
+            "change_items": normalized_changes,
+            "event_id": event_id,
+            "agent_follow_up": {
+                "status": "CHECK_REQUIRED",
+                "waiting_for_human": False,
+                "message": "审批结论已保存；Agent 将在下一检查点分析意见和依赖影响",
+            },
             "plan_review": refreshed,
             "lifecycle": self.workstream("VDOC")["lifecycle"],
             "auto_closure": self.evaluate_closure("VDOC"),
@@ -3717,13 +4036,29 @@ class ProjectStore:
                    FROM document_delivery_reviews WHERE node_id=? ORDER BY rowid""",
                 (node_id,),
             )]
+            change_items = self._review_change_items(
+                connection, (row["id"] for row in rows),
+            )
             provisional_details = {
                 row["review_id"]: dict(row) for row in connection.execute(
                     "SELECT review_id,owner,review_trigger FROM document_delivery_provisionals"
                 )
             }
+            agent_checks = {
+                row["review_id"]: dict(row) for row in connection.execute(
+                    "SELECT * FROM review_agent_checks WHERE node_id=?",
+                    (node_id,),
+                )
+            }
+            open_agent_questions = [dict(row) for row in connection.execute(
+                """SELECT id,prompt,context,created_at FROM agent_questions
+                   WHERE target=? AND status='OPEN' ORDER BY created_at""",
+                (node_id,),
+            )]
         for row in rows:
             row["provisional"] = provisional_details.get(row["id"])
+            row["change_items"] = change_items.get(row["id"], [])
+            row["agent_check"] = agent_checks.get(row["id"])
         current = next((row for row in reversed(rows) if (
             row["revision"] == plan["revision"]
             and row["definition_digest"] == definition_digest
@@ -3733,11 +4068,17 @@ class ProjectStore:
         )), None)
         status = "PENDING"
         if current is not None:
-            status = (
-                "APPROVED" if current["verdict"] == "APPROVE"
-                else "PROVISIONAL" if current["verdict"] == "PROVISIONAL"
-                else "CHANGES_REQUESTED"
-            )
+            check = current.get("agent_check")
+            if open_agent_questions:
+                status = "WAITING_FOR_HUMAN"
+            elif check is not None and check["status"] != "COMPLETED":
+                status = "AGENT_CHECKING"
+            else:
+                status = (
+                    "APPROVED" if current["verdict"] == "APPROVE"
+                    else "PROVISIONAL" if current["verdict"] == "PROVISIONAL"
+                    else "CHANGES_REQUESTED"
+                )
         if not document["exists"] or document["content_changed"]:
             status = "PENDING"
             current = None
@@ -3754,18 +4095,189 @@ class ProjectStore:
             "status": status,
             "current_review": current,
             "reviews": rows,
+            "agent_check": current.get("agent_check") if current is not None else None,
+            "open_agent_questions": open_agent_questions,
         }
+
+    def _refresh_vdoc_delivery_acceptance(self, node_id: str) -> None:
+        """Recompute delivery acceptance from review, Agent check, and open questions."""
+        plan = self.workstream("VDOC")
+        desired = next(
+            (item for item in plan["desired_state"] if item["id"] == node_id), None,
+        )
+        if desired is None or desired.get("role") != "document-deliverable":
+            return
+        document_key = self._vdoc_document_key(plan, desired)
+        if document_key is None:
+            return
+        document = self.documents(f"document:vdoc:{document_key}")[0]
+        related = [
+            item for item in self._vdoc_delivery_desired(plan)
+            if item.get("required", True)
+            and self._vdoc_document_key(plan, item) == document_key
+        ]
+        timestamp = now()
+        all_approved = bool(related)
+        all_usable = bool(related)
+        has_provisional = False
+        with self.connect() as connection:
+            for item in related:
+                digest = self._node_plan_digest(plan, item)
+                latest = connection.execute(
+                    """SELECT id,verdict FROM document_delivery_reviews
+                       WHERE node_id=? AND revision=? AND definition_digest=?
+                         AND document_id=? AND semantic_revision=? AND document_digest=?
+                       ORDER BY rowid DESC LIMIT 1""",
+                    (
+                        item["id"], plan["revision"], digest, document["id"],
+                        document["semantic_revision"], document["digest"],
+                    ),
+                ).fetchone()
+                open_questions = connection.execute(
+                    """SELECT COUNT(*) count FROM agent_questions
+                       WHERE target=? AND status='OPEN'""",
+                    (item["id"],),
+                ).fetchone()["count"]
+                check = self._review_agent_check(
+                    connection, latest["id"] if latest is not None else None,
+                )
+                agent_checked = check is None or check["status"] == "COMPLETED"
+                eligible = latest is not None and not open_questions and agent_checked
+                item_status = (
+                    Validity.VALID.value
+                    if eligible and latest["verdict"] == "APPROVE"
+                    else Validity.PROVISIONAL.value
+                    if eligible and latest["verdict"] == "PROVISIONAL"
+                    else Validity.REVIEW_REQUIRED.value
+                )
+                connection.execute(
+                    "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                    (item_status, timestamp, item["id"]),
+                )
+                if item_status not in {Validity.VALID.value, Validity.PROVISIONAL.value}:
+                    all_usable = False
+                if item_status == Validity.PROVISIONAL.value:
+                    has_provisional = True
+                if item_status != Validity.VALID.value:
+                    all_approved = False
+            document_status = (
+                Validity.VALID.value if all_approved
+                else Validity.PROVISIONAL.value if all_usable and has_provisional
+                else Validity.REVIEW_REQUIRED.value
+            )
+            connection.execute(
+                "UPDATE documents SET status=?,updated_at=? WHERE id=?",
+                (document_status, timestamp, document["id"]),
+            )
+            connection.execute(
+                "UPDATE nodes SET status=?,updated_at=? WHERE id IN (?,?,?)",
+                (
+                    document_status, timestamp, document["id"],
+                    document["desired_id"], f"file:{document['path']}",
+                ),
+            )
+
+    def complete_review_agent_check(
+        self, review_id: str, checked_by: str, summary: str,
+    ) -> dict[str, Any]:
+        """Record that the Main Agent inspected one submitted delivery review."""
+        self.ensure_dashboard_schema()
+        if not checked_by.strip() or not summary.strip():
+            raise HarnessError("Agent 检查必须提供 checked_by 和 summary")
+        if checked_by.strip() != PROJECT_AGENT_ACTOR:
+            raise HarnessError(
+                f"正文验收检查只能由 {PROJECT_AGENT_ACTOR} 完成；负责人不能代替 Agent 检查"
+            )
+        timestamp = now()
+        open_question_ids: list[str] = []
+        with self.connect() as connection:
+            check = connection.execute(
+                "SELECT * FROM review_agent_checks WHERE review_id=?", (review_id,),
+            ).fetchone()
+            if check is None:
+                raise HarnessError(f"未知或无需 Agent 检查的审批记录: {review_id}")
+            open_questions = connection.execute(
+                """SELECT id FROM agent_questions
+                   WHERE target=? AND status='OPEN' ORDER BY created_at""",
+                (check["node_id"],),
+            ).fetchall()
+            if open_questions:
+                open_question_ids = [item["id"] for item in open_questions]
+                connection.execute(
+                    """UPDATE review_agent_checks SET status='WAITING_FOR_HUMAN',
+                       checked_by=?,summary=?,updated_at=? WHERE review_id=?""",
+                    (checked_by.strip(), summary.strip(), timestamp, review_id),
+                )
+            else:
+                connection.execute(
+                    """UPDATE review_agent_checks SET status='COMPLETED',checked_by=?,summary=?,
+                       updated_at=?,checked_at=? WHERE review_id=?""",
+                    (
+                        checked_by.strip(), summary.strip(), timestamp, timestamp, review_id,
+                    ),
+                )
+            node_id = check["node_id"]
+        self._refresh_vdoc_delivery_acceptance(node_id)
+        self.write_model_projection()
+        closure = self.evaluate_closure("VDOC")
+        if open_question_ids:
+            raise HarnessError(
+                "Agent 已提出等待负责人回答的问题（"
+                + "、".join(open_question_ids)
+                + "）；全部解决并重新检查后才能完成"
+            )
+        state = self.document_delivery_review_state(node_id)
+        return {
+            "review_id": review_id,
+            "node_id": node_id,
+            "agent_check": state["agent_check"],
+            "delivery_review": state,
+            "document": self.documents(state["document_id"])[0],
+            "auto_closure": closure,
+        }
+
+    def review_agent_checks(self, status: str | None = None) -> list[dict[str, Any]]:
+        """List durable Agent checkpoints created by submitted delivery reviews."""
+        self.ensure_dashboard_schema()
+        selected = status.upper() if status else None
+        if selected and selected not in {"PENDING", "WAITING_FOR_HUMAN", "COMPLETED"}:
+            raise HarnessError(
+                "Agent 审批检查状态必须是 PENDING/WAITING_FOR_HUMAN/COMPLETED"
+            )
+        where = " WHERE c.status=?" if selected else ""
+        values: tuple[Any, ...] = (selected,) if selected else ()
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT c.*,r.verdict,r.reviewer,r.notes,r.document_id,
+                          r.semantic_revision,r.document_digest
+                   FROM review_agent_checks c
+                   JOIN document_delivery_reviews r ON r.id=c.review_id"""
+                + where + " ORDER BY c.created_at DESC",
+                values,
+            )]
+            change_items = self._review_change_items(
+                connection, (row["review_id"] for row in rows),
+            )
+        for row in rows:
+            row["change_items"] = change_items.get(row["review_id"], [])
+        return rows
 
     def review_document_delivery(
         self, node_id: str, definition_digest: str, document_digest: str,
         verdict: str, reviewer: str, notes: str,
         provisional_owner: str = "", review_trigger: str = "",
+        change_items: Iterable[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         selected = verdict.lower()
         if selected not in {"approve", "provisional", "reject", "modify", "clarify"}:
             raise HarnessError("document delivery verdict 必须是 approve/provisional/reject/modify/clarify")
         if not reviewer.strip() or not notes.strip():
             raise HarnessError("文档交付节点评审必须提供 reviewer 和 notes")
+        normalized_changes = self._normalize_review_change_items(
+            selected, change_items,
+            default_target="当前文档交付范围",
+            default_instruction=notes.strip(),
+        )
         if selected == "provisional" and (
             not provisional_owner.strip() or not review_trigger.strip()
         ):
@@ -3786,6 +4298,15 @@ class ProjectStore:
             raise HarnessError("文档交付节点定义已变化；请刷新 Dashboard 后重新审批")
         if state["document_digest"] != document_digest:
             raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
+        if (
+            state["current_review"] is not None
+            and state["agent_check"] is not None
+            and state["agent_check"]["status"] != "COMPLETED"
+        ):
+            raise HarnessError(
+                "上一份正文验收结论仍在等待 Agent 检查或负责人回答；"
+                "完成本轮检查后才能提交新的验收结论"
+            )
         document = self.documents(document_id)[0]
         pending_items = [
             item for item in document["governance_items"]
@@ -3798,9 +4319,17 @@ class ProjectStore:
                    WHERE target=? AND status='OPEN' ORDER BY created_at""",
                 (node_id,),
             )]
-        if selected == "approve" and (pending_items or pending_confirmations):
+            pending_questions = [dict(row) for row in connection.execute(
+                """SELECT id,prompt,context,created_at FROM agent_questions
+                   WHERE target=? AND status='OPEN' ORDER BY created_at""",
+                (node_id,),
+            )]
+        if selected == "approve" and (
+            pending_items or pending_confirmations or pending_questions
+        ):
             blockers = [item["id"] for item in pending_items]
             blockers.extend(item["id"] for item in pending_confirmations)
+            blockers.extend(item["id"] for item in pending_questions)
             raise HarnessError(
                 "交付节点仍有等待负责人确认的问题、工程决定或 Agent 分析事项（"
                 + "、".join(blockers) + "）；逐项处理后才能批准交付节点"
@@ -3819,6 +4348,7 @@ class ProjectStore:
                  document["id"], document["semantic_revision"], document["digest"],
                  selected.upper(), reviewer.strip(), notes.strip(), timestamp),
             )
+            self._store_review_change_items(connection, review_id, normalized_changes)
             if selected == "provisional":
                 connection.execute(
                     "INSERT INTO document_delivery_provisionals VALUES(?,?,?)",
@@ -3866,17 +4396,29 @@ class ProjectStore:
                 (document_status, timestamp, document["id"], document["desired_id"],
                  f"file:{document['path']}"),
             )
+            event_id = self._record_review_submitted_event(
+                connection, review_id, node_id, selected, reviewer.strip(),
+                normalized_changes, timestamp, requires_agent_check=True,
+            )
+        self._refresh_vdoc_delivery_acceptance(node_id)
         self.write_model_projection()
-        self.write_workstream_projection("VDOC")
+        closure = self.evaluate_closure("VDOC")
         return {
             "review_id": review_id,
             "node_id": node_id,
             "verdict": selected.upper(),
             "reviewer": reviewer.strip(),
             "notes": notes.strip(),
+            "change_items": normalized_changes,
+            "event_id": event_id,
+            "agent_follow_up": {
+                "status": "AGENT_CHECKING",
+                "waiting_for_human": False,
+                "message": "验收结论已保存；Agent 必须检查后才能形成验收状态",
+            },
             "delivery_review": self.document_delivery_review_state(node_id),
             "document": self.documents(document_id)[0],
-            "auto_closure": self.evaluate_closure("VDOC"),
+            "auto_closure": closure,
         }
 
     def document_content(self, selector: str) -> dict[str, Any]:
@@ -4963,6 +5505,14 @@ class ProjectStore:
                     if dependent == (name, desired["key"])
                 ]
                 missing_dependencies = [item for item in expected_dependencies if item not in current_desired]
+                delivery_agent_check = None
+                if name == "VDOC" and desired.get("role") == "document-deliverable":
+                    delivery_agent_check = connection.execute(
+                        """SELECT c.status,c.review_id FROM review_agent_checks c
+                           JOIN document_delivery_reviews r ON r.id=c.review_id
+                           WHERE r.node_id=? ORDER BY r.rowid DESC LIMIT 1""",
+                        (desired["id"],),
+                    ).fetchone()
                 if desired.get("required", True) and missing_dependencies:
                     actions.append({
                         "kind": "PLAN_PREREQUISITE", "target": desired["id"], "priority": 3,
@@ -4976,6 +5526,23 @@ class ProjectStore:
                         "executor": "deterministic", "suggested_mode": "closure",
                         "reason": "请先完成下方列出的前置目标",
                         "blocked_by": [item["id"] for item in blockers],
+                    })
+                elif (
+                    desired.get("required", True)
+                    and delivery_agent_check is not None
+                    and delivery_agent_check["status"] == "PENDING"
+                ):
+                    actions.append({
+                        "kind": "CHECK_DOCUMENT_REVIEW",
+                        "target": desired["id"],
+                        "priority": 3,
+                        "executor": "reasoning",
+                        "suggested_mode": "review",
+                        "reason": (
+                            "负责人已提交正文验收结论；Main Agent 必须检查审批、"
+                            "当前正文和依赖影响，并判断是否需要继续提问"
+                        ),
+                        "review_id": delivery_agent_check["review_id"],
                     })
                 elif desired.get("required", True) and status not in {Validity.VALID.value, Validity.WAIVED.value}:
                     if status in {Validity.STALE.value, Validity.REVALIDATION_REQUIRED.value}:
@@ -5196,6 +5763,7 @@ class ProjectStore:
         activities = self.activities()
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
+        agent_review_checks = self.review_agent_checks()
         documents = self.documents()
         documents_by_desired = {
             item["desired_id"]: item for item in documents if item.get("desired_id")
@@ -5550,6 +6118,12 @@ class ProjectStore:
             item for item in agent_assignment_history
             if item["node_id"] in current_desired_ids
         ]
+        current_agent_review_checks = [
+            item for item in agent_review_checks if item["node_id"] in current_desired_ids
+        ]
+        pending_agent_review_checks = [
+            item for item in current_agent_review_checks if item["status"] == "PENDING"
+        ]
 
         # The project Agent is a persistent control-plane actor, not an Activity row.
         # Activities describe bounded work and may legitimately be empty while the
@@ -5603,6 +6177,12 @@ class ProjectStore:
             project_agent_status = "WAITING_FOR_HUMAN"
             project_agent_message = (
                 f"需要你回答 {blocking_question_count} 个问题；回答后 Agent 才会继续相关工作"
+            )
+        elif pending_agent_review_checks:
+            project_agent_status = "RUNNING"
+            project_agent_message = (
+                f"Agent 正在检查 {len(pending_agent_review_checks)} 项已提交的文档验收结论，"
+                "检查后自行判断是否需要你回答问题"
             )
         elif pending_review_count or pending_confirmation_count:
             pending_parts = []
@@ -5663,6 +6243,7 @@ class ProjectStore:
             "open_question_count": len(open_agent_questions),
             "pending_review_count": pending_review_count,
             "pending_confirmation_count": pending_confirmation_count,
+            "pending_agent_review_check_count": len(pending_agent_review_checks),
             "latest_activity": latest_activity,
         }
 
@@ -5751,6 +6332,7 @@ class ProjectStore:
             "human_action_history": human_actions,
             "agent_questions": current_agent_questions,
             "agent_question_history": agent_questions,
+            "agent_review_checks": current_agent_review_checks,
             "waiting_for_human": waiting_for_human,
             "reviews": reviews,
             "baselines": baselines,
