@@ -656,6 +656,8 @@
         .replace(/\bblocker\b|\bfinding\b/g, '待处理问题')
         .replaceAll('Project Main Agent', '主 Agent')
         .replaceAll('subagent', '子 Agent')
+        .replaceAll('document-writing-plan', '文档撰写方案节点')
+        .replaceAll('document-deliverable', '正文内容验收节点')
         .replaceAll('必需' + '节点', '计划要求完成的节点')
         .replaceAll('必须' + '节点', '计划要求完成的节点')
         .replaceAll('必需接口', '计划要求检查的接口')
@@ -877,9 +879,42 @@
         right.pending - left.pending || right.lifecycle - left.lifecycle || left.index - right.index
       )[0]?.item || null;
     }
+    function activeProjectActivity(snapshot=state.snapshot) {
+      const activeStatuses = new Set(['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT']);
+      return (snapshot.activities || []).find(item =>
+        item.node_id === 'project' && activeStatuses.has(item.status)
+      ) || null;
+    }
+    function projectPlanningState(snapshot=state.snapshot) {
+      const activity = activeProjectActivity(snapshot);
+      if (!activity) return null;
+      const description = `${activity.operation || ''} ${activity.message || ''}`;
+      const isVdoc = /\bVDOC\b|文档撰写方案/.test(description);
+      const waiting = activity.status === 'WAITING_FOR_HUMAN';
+      return {
+        activity,
+        isVdoc,
+        title: isVdoc
+          ? (waiting ? 'VDOC 规划等待负责人处理' : 'VDOC 文档撰写方案编制中')
+          : (waiting ? '验证工作规划等待负责人处理' : 'Agent 正在规划验证工作'),
+        formal: isVdoc
+          ? '正式状态：尚未形成可审批的文档撰写方案'
+          : '正式状态：尚未建立可执行的验证工作流',
+        actual: `实际进度：${humanText(activity.message || activity.operation || 'Agent 已开始分析当前验证对象')}`,
+        next: waiting
+          ? '从侧边栏“需要你处理”回答当前问题；回答后 Agent 继续形成验证工作方案。'
+          : isVdoc
+            ? '等待 Agent 完成 DUT、规格、接口和验证目标分析并提交文档撰写方案；提交后由负责人逐节点审批。'
+            : '等待 Agent 完成当前验证对象分析并提交工作流方案；提交后再按节点推进。',
+      };
+    }
     function projectStatusCardHtml(snapshot=state.snapshot) {
       const w = currentProjectWorkstream(snapshot);
-      if (!w) return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>尚未规划验证工作</h1></div><div class="project-status-next"><strong>下一步：</strong>根据当前 DUT、接口、功能和验证目标建立验证工作流及工作节点。</div></section>`;
+      if (!w) {
+        const planning = projectPlanningState(snapshot);
+        if (!planning) return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>尚未规划验证工作</h1></div><div class="project-status-next"><strong>下一步：</strong>根据当前 DUT、接口、功能和验证目标建立验证工作流及工作节点。</div></section>`;
+        return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>${escapeHtml(planning.title)}</h1><div class="project-status-badges">${statusBadge(planning.activity.status)}</div></div><div class="project-status-progress"><strong>${escapeHtml(planning.formal)}</strong><span>${escapeHtml(planning.actual)}</span></div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(planning.next)}</div></section>`;
+      }
       const vdocPlan = vdocPlanReviewState(w);
       const writingPlans = vdocPlan.plans;
       const approvedPlans = vdocPlan.approved;
@@ -912,7 +947,16 @@
     }
     function renderOverview() {
       const s = state.snapshot;
-      $('#main').innerHTML = `<div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${s.workstreams.length} 条工作流 · 点击后在新标签页打开</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || '<div class="card empty">尚未规划工作流</div>'}</div></section>${projectContextHtml()}</div>`;
+      const planning = projectPlanningState(s);
+      const workstreamCount = s.workstreams.length
+        ? `${s.workstreams.length} 条工作流 · 点击后在新标签页打开`
+        : planning
+          ? '0 条已登记工作流 · Agent 已开始形成方案'
+          : '0 条工作流';
+      const emptyWorkstreams = planning
+        ? `<div class="card empty"><strong>${planning.isVdoc ? 'VDOC 文档撰写方案正在编制' : '验证工作方案正在编制'}</strong><p>Agent 提交可审批方案后，这里才会出现正式工作流和工作节点。</p></div>`
+        : '<div class="card empty">尚未规划工作流</div>';
+      $('#main').innerHTML = `<div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${escapeHtml(workstreamCount)}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || emptyWorkstreams}</div></section>${projectContextHtml()}</div>`;
       bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
