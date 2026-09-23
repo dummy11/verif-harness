@@ -311,6 +311,14 @@
     .detail-block { margin-top: 18px; }
     .detail-block h3 { margin: 0 0 8px; font-size: 14px; }
     .detail-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .role-node-panel { padding: 15px; border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; background: color-mix(in srgb, var(--brand-2) 34%, var(--panel)); }
+    .role-node-panel > h3 { font-size: 16px; }
+    .role-node-panel > .notice { margin-bottom: 10px; }
+    .role-node-panel[data-node-role="document-writing-plan"], .role-node-panel[data-node-role="document-deliverable"], .role-node-panel[data-node-role="document-catalog"] { border-left-color: var(--purple); }
+    .role-node-panel[data-node-role="stimulus-feature"], .role-node-panel[data-node-role="stimulus-scenario"], .role-node-panel[data-node-role="testcase"], .role-node-panel[data-node-role="case-mapping"] { border-left-color: var(--green); }
+    .role-node-panel[data-node-role="checking-goal"], .role-node-panel[data-node-role="checker"], .role-node-panel[data-node-role="reference-path"], .role-node-panel[data-node-role="assertion-group"] { border-left-color: var(--yellow); }
+    .role-node-panel[data-node-role="coverage-goal"], .role-node-panel[data-node-role="coverage-scope"] { border-left-color: var(--purple); }
+    .role-node-panel[data-node-role="regression-profile"], .role-node-panel[data-node-role="regression-run-set"], .role-node-panel[data-node-role="failure-group"] { border-left-color: var(--orange); }
     .node-status-card { margin-top: 12px; padding: 16px; }
     .node-status-goal { color: var(--text); font-size: 15px; font-weight: 700; }
     .node-status-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 14px; }
@@ -424,10 +432,51 @@
       'coverage-goal':'覆盖目标', 'coverage-scope':'覆盖范围', 'case-mapping':'功能与用例对应关系', testcase:'测试用例',
       'regression-profile':'回归配置', 'regression-run-set':'回归批次', 'failure-group':'失败分组'
     };
+    const BASE_NODE_ROLE_PROFILE = {
+      panelTitle:'节点工作内容', purposeLabel:'目标', scopeTitle:'验证范围', workTitle:'需要完成的工作',
+      approachTitle:'实现与检查方式', deliverableTitle:'预期交付', sourceTitle:'输入依据', qualityTitle:'质量检查',
+      criteriaTitle:'完成条件与当前判断', progressTitle:'实际进度', evidenceTitle:'完成这项工作需要什么材料',
+      notice:'内容必须绑定当前 DUT、已评审计划和实际验证对象。'
+    };
+    const WORKSTREAM_NODE_PROFILES = {
+      VDOC:{criteriaTitle:'方案审批或正文验收条件',progressTitle:'审批与验收进度',evidenceTitle:'审批或验收所需材料',notice:'文档方案、正文内容和验收结论必须保持分离。'},
+      VENV:{approachTitle:'搭建、接入与结构检查方式',deliverableTitle:'环境接入产物',sourceTitle:'DUT 接口与 Testbench 架构依据',qualityTitle:'连通、构建与可运行检查',criteriaTitle:'环境可用条件与当前判断',progressTitle:'环境搭建与接入进度',evidenceTitle:'环境接入和运行材料',notice:'只描述当前 DUT 的接口、时钟复位、组件连接和观测链路。'},
+      VSTIM:{approachTitle:'激励生成、驱动与到达检查方式',deliverableTitle:'激励与场景产物',sourceTitle:'验证点、协议与场景依据',qualityTitle:'可达、边界与可重放检查',criteriaTitle:'场景可达条件与当前判断',progressTitle:'激励实现与场景到达进度',evidenceTitle:'场景到达与可重放材料',notice:'必须说明输入怎样生成、怎样送入 DUT，以及目标场景是否真实发生。'},
+      VCHK:{approachTitle:'检查实现、接入与有效性证明',deliverableTitle:'检查机制与判定结果',sourceTitle:'预期结果、协议与比较规则依据',qualityTitle:'非空运行、差异与 vacuity 检查',criteriaTitle:'检查有效性条件与当前判断',progressTitle:'检查机制实现与运行进度',evidenceTitle:'检查机制有效性材料',notice:'必须说明检查什么、怎样判定，以及 checker、参考模型或断言是否在真实运行中生效。'},
+      VCOV:{approachTitle:'采样、收集、合并与补洞方式',deliverableTitle:'覆盖模型、数据库与补洞结论',sourceTitle:'验证点与覆盖计划依据',qualityTitle:'映射、命中、排除与数据库一致性检查',criteriaTitle:'覆盖目标完成条件与当前判断',progressTitle:'覆盖实现、采集与补洞进度',evidenceTitle:'覆盖采样和数据库材料',notice:'必须区分覆盖目标、采样实现、数据库结果和未覆盖项处理。'},
+      VCASE:{approachTitle:'用例组合、配置与定向运行方式',deliverableTitle:'用例、映射与运行结果',sourceTitle:'验证点、场景与检查机制依据',qualityTitle:'独立运行、定位与结果检查',criteriaTitle:'用例完成条件与当前判断',progressTitle:'用例映射、实现与运行进度',evidenceTitle:'用例实现和定向运行材料',notice:'必须把验证点、场景、checker、coverage 和可执行 testcase 对应起来。'},
+      VREG:{approachTitle:'批量执行、重跑、分类与结果保留方式',deliverableTitle:'回归清单、结果与失败处理记录',sourceTitle:'用例清单、配置与准入规则依据',qualityTitle:'版本、seed、隔离、重跑与结果新鲜度检查',criteriaTitle:'回归完成条件与当前判断',progressTitle:'回归执行与失败处理进度',evidenceTitle:'回归清单、结果与失败分析材料',notice:'必须保留当前 RTL/TB、testcase、seed、配置、逐项结果和失败处理链路。'}
+    };
+    const NODE_ROLE_PROFILES = {
+      'capability':{panelTitle:'验证能力分解',purposeLabel:'能力目标',scopeTitle:'待分解的 DUT 验证对象',workTitle:'需要形成的具体节点'},
+      'closure-evidence':{panelTitle:'运行结果与支持材料范围',purposeLabel:'要证明的结论',scopeTitle:'需要证明的验证对象',workTitle:'需要执行和核对的运行'},
+      'project-goal':{panelTitle:'验证目标与退出边界',purposeLabel:'目标作用',scopeTitle:'目标覆盖的验证对象',workTitle:'目标下必须完成的工作'},
+      'environment-component':{panelTitle:'Testbench 组件与连接',purposeLabel:'组件责任',scopeTitle:'组件、配置与职责边界',workTitle:'需要实例化、连接和配置的内容'},
+      'interface':{panelTitle:'DUT 接口接入',purposeLabel:'接入目标',scopeTitle:'接口、端口与协议信号',workTitle:'驱动、监测、modport 与信号映射'},
+      'clock-reset-domain':{panelTitle:'时钟与复位域',purposeLabel:'启动与复位目标',scopeTitle:'时钟域、复位极性与释放次序',workTitle:'时钟复位生成、同步与稳定性检查'},
+      'observation-path':{panelTitle:'DUT 观测路径',purposeLabel:'观测目标',scopeTitle:'输入、输出、握手、状态与错误路径',workTitle:'monitor、transaction trace 与 waveform 观测'},
+      'stimulus-feature':{panelTitle:'功能激励',purposeLabel:'要驱动的功能',scopeTitle:'输入事务、合法值与协议行为',workTitle:'sequence、item、driver 与约束实现'},
+      'stimulus-scenario':{panelTitle:'场景与边界激励',purposeLabel:'要触发的场景',scopeTitle:'边界、异常、并发、流控与状态转换',workTitle:'场景组合、错误注入与到达检查'},
+      'checking-goal':{panelTitle:'结果检查目标',purposeLabel:'要发现的问题',scopeTitle:'结果、顺序、时间、异常与允许误差',workTitle:'判定规则与检查责任分解'},
+      'checker':{panelTitle:'Checker / Scoreboard',purposeLabel:'比对目标',scopeTitle:'expected、actual、对齐与复位清空',workTitle:'匹配、比较、差异报告与队列处理'},
+      'reference-path':{panelTitle:'参考结果路径',purposeLabel:'参考结果用途',scopeTitle:'模型输入输出、格式、状态、延迟与 mask',workTitle:'参考模型适配、调用与结果对齐'},
+      'assertion-group':{panelTitle:'断言与规则检查',purposeLabel:'要检查的性质',scopeTitle:'协议、时序、稳定性、互斥与错误响应',workTitle:'SVA、bind、attempt 与 vacuity 检查'},
+      'coverage-goal':{panelTitle:'功能覆盖目标',purposeLabel:'要衡量的验证目标',scopeTitle:'功能、状态、配置、错误与交互场景',workTitle:'coverpoint、bin、cross 与目标映射'},
+      'coverage-scope':{panelTitle:'覆盖采集与范围',purposeLabel:'采集目标',scopeTitle:'功能、代码、断言覆盖与数据库范围',workTitle:'采样、收集、合并、排除与补洞处理'},
+      'case-mapping':{panelTitle:'验证点与用例映射',purposeLabel:'映射目标',scopeTitle:'验证点、场景、checker、coverage 与 testcase',workTitle:'建立并核对双向可追溯关系'},
+      'testcase':{panelTitle:'Testcase 定义与运行',purposeLabel:'用例验证目标',scopeTitle:'场景组合、配置、结束条件与预期检查',workTitle:'test / vseq 实现、注册与定向运行'},
+      'regression-profile':{panelTitle:'回归配置与执行策略',purposeLabel:'回归使用目标',scopeTitle:'smoke、daily、full 的用例、seed、timeout 与资源',workTitle:'准入、隔离、重跑、已知失败与保留策略'},
+      'regression-run-set':{panelTitle:'回归批次与逐项结果',purposeLabel:'本批次验证目标',scopeTitle:'当前批次的 testcase、seed、配置与代码版本',workTitle:'批量执行、结果收集与工件索引'},
+      'failure-group':{panelTitle:'失败分组与复现分析',purposeLabel:'需要解释的失败现象',scopeTitle:'失败签名、首错、相关 checker、波形与影响用例',workTitle:'同 seed 重跑、归类、定位与处理结论'}
+    };
     const ACTION_LABELS = {
       PLAN_PREREQUISITE:'先补齐依赖的计划', WAIT_FOR_DEPENDENCY:'等待依赖的工作完成', REVALIDATE:'重新检查',
       REPAIR_OR_REPLAN:'修复问题或调整计划', SATISFY_DESIRED_STATE:'补齐这项工作',
-      EXIT_CRITERION_BLOCKED:'处理未满足的完成条件', RESOLVE_FINDING:'处理待解决问题', HUMAN_REVIEW:'等待负责人评审当前计划'
+      EXIT_CRITERION_BLOCKED:'处理未满足的完成条件', RESOLVE_FINDING:'处理待解决问题',
+      REFINE_DESIRED_STATE:'由 Agent 完善当前 DUT 的工作节点',
+      AUTHOR_DOCUMENT_CONTENT:'Agent 按已批准方案撰写正文',
+      REFINE_DOCUMENT_DELIVERIES:'Agent 完善正文内容验收范围',
+      HUMAN_REVIEW:'等待负责人评审当前计划'
     };
     const WORKSTREAM_LABELS = {
       VDOC:'验证文档', VENV:'验证环境', VSTIM:'验证激励', VCHK:'结果检查',
@@ -526,13 +575,13 @@
       wavepeek:'由 WavePeek 检查波形或输入输出记录'
     };
     const WORKSTREAM_NODE_GUIDANCE = {
-      VDOC:'后续需要按文档中的具体内容继续细分，例如验证点、接口约定、检查方法、待回答问题和关键决定。',
-      VENV:'后续需要按具体接口、时钟复位、环境组件、编译入口或观察路径继续细分。',
-      VSTIM:'后续需要按具体输入功能或场景继续细分，并展示数据如何生成、送入设计以及能否重复运行。',
-      VCHK:'后续需要按具体检查目标、结果比对程序、参考结果来源或自动检查规则继续细分。',
-      VCOV:'后续需要按具体功能或代码范围继续细分，并展示覆盖率、未覆盖项和排除理由。',
-      VCASE:'后续需要按具体测试用例，或功能与用例的对应关系继续细分，并展示实际运行结果。',
-      VREG:'后续需要按批量测试配置、一次具体运行或同类失败继续细分，并展示用例、随机种子、结果和处理进展。'
+      VDOC:'根据当前 DUT、规格和已有验证文档，按接口约定、验证点、检查方法以及待确认问题和关键决定继续拆分。',
+      VENV:'根据具体接口、时钟复位、环境组件、编译入口和观察路径继续拆分。',
+      VSTIM:'根据具体输入功能和场景继续拆分，并说明数据如何生成、送入设计以及能否重复运行。',
+      VCHK:'根据具体检查目标、结果比对程序、参考结果来源和自动检查规则继续拆分。',
+      VCOV:'根据具体功能和代码范围继续拆分，并说明覆盖率、未覆盖项和排除理由。',
+      VCASE:'根据具体测试用例及功能与用例的对应关系继续拆分，并说明实际运行结果。',
+      VREG:'根据批量测试配置、具体运行和同类失败继续拆分，并说明用例、随机种子、结果和处理进展。'
     };
     const statusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="系统值：${escapeHtml(value)}">${escapeHtml(STATUS_LABELS[value] || value)}</span>`;
     const PLAN_REVIEW_STATUS_LABELS = {
@@ -544,8 +593,31 @@
     const planReviewStatusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="方案审批状态：${escapeHtml(value)}">${escapeHtml(PLAN_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value)}</span>`;
     const deliveryReviewStatusLabel = value => DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
     const deliveryReviewStatusBadge = value => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${escapeHtml(deliveryReviewStatusLabel(value))}</span>`;
+    function vdocPlanReviewState(workstream) {
+      const plans = workstream?.workstream === 'VDOC'
+        ? (workstream.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required)
+        : [];
+      const refinementAction = (workstream?.closure?.actions || []).find(action => action.kind === 'REFINE_DESIRED_STATE');
+      const approved = plans.filter(node => node.plan_review?.status === 'APPROVED').length;
+      const changesRequested = plans.filter(node => node.plan_review?.status === 'CHANGES_REQUESTED').length;
+      const needsRefinement = workstream?.workstream === 'VDOC' && (plans.length === 0 || Boolean(refinementAction));
+      return {
+        plans, approved, changesRequested, refinementAction, needsRefinement,
+        reviewPending: !needsRefinement && plans.length > 0 && approved < plans.length,
+      };
+    }
     const workstreamStatusLabel = (workstream) => {
       const value = workstream.lifecycle;
+      if (workstream.workstream === 'VDOC') {
+        const planState = vdocPlanReviewState(workstream);
+        if (planState.needsRefinement) {
+          return planState.plans.length
+            ? '等待 Agent 完善文档撰写方案'
+            : '文档撰写方案尚未形成';
+        }
+        if (planState.changesRequested) return '等待 Agent 修改文档撰写方案';
+        if (planState.reviewPending) return '等待负责人审批文档撰写方案';
+      }
       return WORKSTREAM_STATE_LABELS[workstream.workstream]?.[value] || STATUS_LABELS[value] || value;
     };
     const workstreamStatusBadge = (workstream) => `<span class="badge ${escapeHtml(workstream.lifecycle)}" title="系统值：${escapeHtml(workstream.lifecycle)}">${escapeHtml(workstreamStatusLabel(workstream))}</span>`;
@@ -815,24 +887,29 @@
     function projectStatusCardHtml(snapshot=state.snapshot) {
       const w = currentProjectWorkstream(snapshot);
       if (!w) return `<section class="card project-status-card" aria-label="当前项目状态"><div class="project-status-label">当前项目状态</div><div class="project-status-head"><h1>尚未规划验证工作</h1></div><div class="project-status-next"><strong>下一步：</strong>根据当前 DUT、接口、功能和验证目标建立验证工作流及工作节点。</div></section>`;
-      const writingPlans = (w.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required);
-      const approvedPlans = writingPlans.filter(node => node.plan_review?.status === 'APPROVED').length;
-      const changedPlans = writingPlans.filter(node => node.plan_review?.status === 'CHANGES_REQUESTED').length;
-      const planReviewActive = w.workstream === 'VDOC' && writingPlans.length > 0 && approvedPlans < writingPlans.length;
+      const vdocPlan = vdocPlanReviewState(w);
+      const writingPlans = vdocPlan.plans;
+      const approvedPlans = vdocPlan.approved;
+      const changedPlans = vdocPlan.changesRequested;
+      const planReviewActive = vdocPlan.reviewPending;
       const pendingCount = humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length;
       const title = planReviewActive ? 'VDOC · 文档撰写方案' : `${w.workstream} · ${workstreamLabel(w.workstream)}`;
-      const progress = planReviewActive
+      const progress = vdocPlan.needsRefinement
+        ? `<strong>${writingPlans.length ? '文档撰写方案还不完整' : '文档撰写方案尚未形成'}</strong><span>当前没有可供负责人审批的完整方案</span>`
+        : planReviewActive
         ? `<strong>已批准 ${approvedPlans} / ${writingPlans.length} 项</strong><span>${changedPlans ? `${changedPlans} 项需要修改，` : ''}还有 ${writingPlans.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
           ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>还有 ${Math.max(0, w.progress.required - w.progress.satisfied)} 个工作节点尚未完成</span>`
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT 继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
-      const next = planReviewActive && changedPlans
-        ? `Agent 先按评审意见修改 ${changedPlans} 项方案；修改后由负责人重新审批。`
-        : planReviewActive
-          ? '在右侧逐项审批。全部批准后可以开始撰写正文，但不代表正文已经通过。'
-          : pendingCount
-            ? `在右侧处理这条工作流的 ${pendingCount} 项待办；处理后 Agent 才会继续相关工作。`
+      const next = pendingCount
+        ? `在右侧处理这条工作流的 ${pendingCount} 项待办；处理后 Agent 才会继续相关工作。`
+        : vdocPlan.needsRefinement
+          ? '由 Agent 根据当前 DUT、规格、接口和验证目标形成可审批的文档工作节点；完成后再由负责人审批。'
+          : planReviewActive && changedPlans
+            ? `Agent 先按评审意见修改 ${changedPlans} 项方案；修改后由负责人重新审批。`
+            : planReviewActive
+              ? '在右侧逐项审批。全部批准后可以开始撰写正文，但不代表正文已经通过。'
             : w.closure?.ready
               ? '这条工作流的完成条件已经满足；继续检查其他工作流。'
               : firstAction
@@ -1157,7 +1234,7 @@
     }
     function evidenceRows(items) {
       if (!items.length) return '<div class="empty">尚未收到支持材料</div>';
-      return items.map(e => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(e.subject)}">${escapeHtml(artifactLabel(e.kind))}</button><div class="row-meta">${escapeHtml(e.source)} · ${shortTime(e.created_at)}</div></div>${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')}</div>`).join('');
+      return items.map(e => `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(e.subject)}">${escapeHtml(artifactLabel(e.kind))}</button><div class="row-meta">${escapeHtml(e.source)} · ${shortTime(e.created_at)}</div></div>${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')}</div>`).join('');
     }
     function projectContextHtml(compact=false) {
       const s = state.snapshot, project = s.project || {}, dut = project.dut || {};
@@ -1216,7 +1293,13 @@
       return null;
     }
     function nodeAttentionText(n) {
-      if (n.plan_review && n.plan_review.status !== 'APPROVED') return '等待负责人审批文档撰写方案';
+      if (n.plan_review && n.plan_review.status !== 'APPROVED') {
+        const parentWorkstream = workstream(n.workstream);
+        if (parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement) {
+          return '等待 Agent 完善文档撰写方案';
+        }
+        return '等待负责人审批文档撰写方案';
+      }
       if (n.delivery_review?.status === 'PROVISIONAL') return '暂定内容允许带风险推进，但不能完成关闭';
       if (n.delivery_review && n.delivery_review.status !== 'APPROVED') return '等待负责人验收文档内容';
       const human = humanNeed(n);
@@ -1318,6 +1401,8 @@
       const requiredNodes = [...writingPlans, ...deliveries];
       const plansApproved = writingPlans.length > 0 && writingPlans.every(n => n.plan_review?.status === 'APPROVED');
       const deliveriesApproved = deliveries.length > 0 && deliveries.every(n => n.delivery_review?.status === 'APPROVED');
+      const contentAuthoring = plansApproved && deliveries.length === 0
+        && (w.closure?.actions || []).some(item => item.kind === 'AUTHOR_DOCUMENT_CONTENT');
       const provisional = deliveries.filter(n => n.delivery_review?.status === 'PROVISIONAL');
       const changedDocuments = [...new Set(requiredNodes.filter(n => n.document?.content_changed).map(n => n.document?.path).filter(Boolean))];
       const openNodeInputs = requiredNodes.flatMap(n => n.human_actions || []).filter(item => item.status === 'OPEN');
@@ -1332,20 +1417,31 @@
         && writingPlans.every(n => (n.plan_review?.sections || []).every(section => section.current_review?.revision === w.revision))
         && deliveries.every(n => n.delivery_review?.current_review?.revision === w.revision);
       const engineClosed = Boolean(w.closure?.ready);
+      const planState = vdocPlanReviewState(w);
       const needsAgent = changeRequests.length > 0
         || changedDocuments.length > 0
         || writingPlans.some(n => n.plan_review?.status === 'CHANGES_REQUESTED')
         || deliveries.some(n => n.delivery_review?.status === 'CHANGES_REQUESTED');
-      const phase = needsAgent
+      const phase = planState.needsRefinement
+        ? writingPlans.length
+          ? '等待 Agent 完善可审批的文档撰写方案'
+          : '等待 Agent 形成当前 DUT 的文档撰写方案'
+        : needsAgent
         ? '等待 Agent 根据评审意见或内容变化重新分析'
         : !plansApproved
           ? '等待负责人审批文档撰写方案'
+          : contentAuthoring
+            ? 'Agent 正在按已批准方案撰写正文'
           : !deliveriesApproved
             ? '等待负责人验收文档内容'
             : !engineClosed
               ? '等待系统检查依赖和完成条件'
               : '当前方案和文档内容已完成审批与验收，系统检查通过';
       const reasons = [];
+      if (planState.needsRefinement) reasons.push(writingPlans.length
+        ? '当前文档工作节点结构不完整，不能进入负责人审批'
+        : '尚未根据当前 DUT、规格、接口和验证目标形成文档工作节点');
+      if (contentAuthoring) reasons.push('文档撰写方案已批准；Agent 尚未完成正文撰写、版本同步和内容验收节点登记');
       if (changeRequests.length) reasons.push(`${changeRequests.length} 项负责人提出的修改或说明请求等待 Agent 处理`);
       if (changedDocuments.length) reasons.push(`${changedDocuments.length} 份文档正文已变化，旧验收不再适用于当前内容`);
       if (provisional.length) reasons.push(`${provisional.length} 项正文内容仍为暂定接受`);
@@ -1358,7 +1454,7 @@
         ['审批和验收对应当前方案与正文', currentBindings],
         ['依赖和完成条件已检查', engineClosed],
       ];
-      return `<section class="section"><details class="detail-group"><summary>文档审批与验收进展 <span class="row-meta">${escapeHtml(phase)}</span></summary><div class="detail-group-body"><div class="card metric"><div class="label">当前状态 · 方案 ${escapeHtml(revisionLabel(w.revision))}</div><div class="value" style="font-size:18px">${escapeHtml(phase)}</div><div class="hint">负责人审批方案 → Agent 撰写或修改 → 负责人验收正文 → 系统检查完成条件</div></div><div class="notice" style="margin-top:12px"><strong>这里只汇总同一套审批和验收进度，不会创建另一套规则。</strong> Dashboard 记录意见和结论；Agent 根据反馈修改；verif-harness 检查版本、依赖和完成条件，但不代替负责人作工程判断。</div><div class="grid two-col"><div><strong>为什么还没完成</strong><ul class="exit-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div><strong>完成前还要满足</strong><div class="card list-card" style="margin-top:8px">${checklist.map(([label, satisfied]) => `<div class="list-row"><div>${escapeHtml(label)}</div>${statusBadge(satisfied ? 'VALID' : 'NOT_SATISFIED')}</div>`).join('')}</div></div></div><div class="row-meta" style="margin-top:12px">完整规范：skills/verif-harness/vplan/vdoc.md · 用户操作说明：skills/verif-harness/docs/user_guide.md</div></div></details></section>`;
+      return `<section class="section"><details class="detail-group"><summary>文档审批与验收进展 <span class="row-meta">${escapeHtml(phase)}</span></summary><div class="detail-group-body"><div class="card metric"><div class="label">当前状态 · 方案 ${escapeHtml(revisionLabel(w.revision))}</div><div class="value" style="font-size:18px">${escapeHtml(phase)}</div><div class="hint">Agent 形成 DUT 级方案 → 负责人审批方案 → Agent 撰写或修改 → 负责人验收正文 → 系统检查完成条件</div></div><div class="notice" style="margin-top:12px"><strong>这里只汇总同一套审批和验收进度，不会创建另一套规则。</strong> Dashboard 记录意见和结论；Agent 根据反馈修改；verif-harness 检查版本、依赖和完成条件，但不代替负责人作工程判断。</div><div class="grid two-col"><div><strong>为什么还没完成</strong><ul class="exit-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></div><div><strong>完成前还要满足</strong><div class="card list-card" style="margin-top:8px">${checklist.map(([label, satisfied]) => `<div class="list-row"><div>${escapeHtml(label)}</div>${statusBadge(satisfied ? 'VALID' : 'NOT_SATISFIED')}</div>`).join('')}</div></div></div><div class="row-meta" style="margin-top:12px">完整规范：skills/verif-harness/vplan/vdoc.md · 用户操作说明：skills/verif-harness/docs/user_guide.md</div></div></details></section>`;
     }
     function criteriaTableHtml(n) {
       const assessment = n.closure_assessment || {};
@@ -1369,12 +1465,13 @@
     }
     function workstreamStatusCardHtml(w) {
       const waiting = humanPendingItems({waiting_for_human:w.waiting_for_human || []});
-      const planNodes = w.workstream === 'VDOC'
-        ? (w.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required)
-        : [];
-      const approvedPlans = planNodes.filter(node => node.plan_review?.status === 'APPROVED').length;
-      const reviewingPlans = planNodes.length > 0 && approvedPlans < planNodes.length;
-      const progress = reviewingPlans
+      const vdocPlan = vdocPlanReviewState(w);
+      const planNodes = vdocPlan.plans;
+      const approvedPlans = vdocPlan.approved;
+      const reviewingPlans = vdocPlan.reviewPending;
+      const progress = vdocPlan.needsRefinement
+        ? `<strong>${planNodes.length ? '文档撰写方案还不完整' : '文档撰写方案尚未形成'}</strong><span>当前没有可供负责人审批的完整方案</span>`
+        : reviewingPlans
         ? `<strong>已批准 ${approvedPlans} / ${planNodes.length} 项文档撰写方案</strong><span>还有 ${planNodes.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
           ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>还有 ${Math.max(0, w.progress.required - w.progress.satisfied)} 个工作节点尚未完成</span>`
@@ -1382,8 +1479,10 @@
       const firstAction = (w.closure?.actions || [])[0];
       const next = waiting.length
         ? `到“需要你处理”完成这条工作流的 ${waiting.length} 项待办；完成后 Agent 才会继续相关工作。`
-        : reviewingPlans
-          ? '逐项审批文档撰写方案；全部批准后可以开始撰写正文，但不代表正文已经通过。'
+        : vdocPlan.needsRefinement
+          ? '由 Agent 根据当前 DUT、规格、接口和验证目标形成可审批的文档工作节点；完成后再由负责人审批。'
+          : reviewingPlans
+            ? '逐项审批文档撰写方案；全部批准后可以开始撰写正文，但不代表正文已经通过。'
           : w.closure?.ready
             ? '这条工作流的完成条件已经满足；继续检查受影响的工作流或保存当前基线。'
             : firstAction
@@ -1406,22 +1505,23 @@
         : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
       const catalogLabel = w.workstream === 'VDOC' ? '正式文档目录' : '工作流固定分类';
       const catalog = catalogNodes.length
-        ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
+        ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
         : '';
-      const granularityNotice = concreteNodes ? '' : `<div class="notice"><strong>当前只有固定分类，还没有按本项目 DUT 分解出实施节点。</strong> ${escapeHtml(WORKSTREAM_NODE_GUIDANCE[w.workstream] || '')} 节点数量必须由 DUT 接口、时钟域、功能、场景、检查、覆盖和回归对象决定。</div>`;
+      const granularityNotice = concreteNodes ? '' : `<div class="notice"><strong>尚未按当前 DUT 形成工作节点。</strong><div style="margin-top:6px">下一步：由 Agent ${escapeHtml(WORKSTREAM_NODE_GUIDANCE[w.workstream] || '根据当前验证目标继续拆分。')}</div><div class="row-meta" style="margin-top:6px">节点数量由当前 DUT 的接口、时钟域、功能、场景、检查、覆盖和回归对象决定，不采用固定模板。</div></div>`;
+      const vdocPlan = vdocPlanReviewState(w);
       const headerActions = w.workstream === 'VDOC'
-        ? '<button class="btn" id="revise-vdoc-plan">调整文档</button><button class="btn primary" id="review-ws">审批文档撰写方案</button>'
+        ? `<button class="btn" id="revise-vdoc-plan">调整文档</button>${vdocPlan.needsRefinement ? '' : '<button class="btn primary" id="review-ws">审批文档撰写方案</button>'}`
         : '<button class="btn" id="human-action">提交意见</button><button class="btn primary" id="review-ws">评审/要求修改</button>';
       $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions">${headerActions}</div></div>
         ${projectContextHtml(true)}
         ${workstreamStatusCardHtml(w)}
         ${vdocReviewProgressHtml(w)}
-        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
+        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称后在新标签页查看详情</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
         <section class="section"><details class="detail-group"><summary>Agent 当前工作 <span class="row-meta">${active.length ? `${active.length} 项正在处理` : '当前没有正在处理的工作'}</span></summary><div class="detail-group-body card list-card">${activityRows(active)}</div></details></section>
         <section class="section"><div class="section-head"><h2>还要完成什么</h2><span class="count">系统列出下一步，不代替负责人决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
       if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
       if ($('#revise-vdoc-plan')) $('#revise-vdoc-plan').onclick = openVdocRevisionRequestTab;
-      $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
+      if ($('#review-ws')) $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
       bindOverviewEntries(); bindNodeLinks();
     }
     function nodeRows(nodes) {
@@ -1437,7 +1537,7 @@
       return filtered.map(([n, depth]) => {
         const children = byParent.get(n.id) || [];
         const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) ? '▸' : '▾'}</button>` : '';
-        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td></tr>`;
+        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td></tr>`;
       }).join('');
     }
     function closureRows(items) {
@@ -1445,12 +1545,11 @@
       return items.map(a => {
         const link = a.kind === 'HUMAN_REVIEW' && a.target.startsWith('workstream:')
           ? `<button class="node-link" data-review-workstream="${escapeHtml(a.target.replace(/^workstream:/, ''))}">${escapeHtml(actionLabel(a.kind))}</button>`
-          : `<button class="node-link" data-node="${escapeHtml(a.target)}">${escapeHtml(actionLabel(a.kind))}</button>`;
+          : `<button class="node-link" data-open-node="${escapeHtml(a.target)}">${escapeHtml(actionLabel(a.kind))}</button>`;
         return `<div class="list-row"><div>${link}<div class="row-meta">${escapeHtml(humanText(a.reason))}${a.blocked_by?.length ? ` · 有 ${a.blocked_by.length} 项依赖的工作尚未完成` : ''}</div></div><span class="badge ${a.executor === 'human' ? 'WAITING_FOR_HUMAN' : 'PENDING'}">${escapeHtml(a.executor === 'human' ? '负责人处理' : a.executor === 'reasoning' ? '需要 Agent 分析' : '系统可以自动处理')}</span></div>`;
       }).join('');
     }
     function bindNodeLinks() {
-      document.querySelectorAll('[data-node]').forEach(button => button.onclick = event => { event.stopPropagation(); state.node = button.dataset.node; renderDrawer(state.node); });
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
       document.querySelectorAll('[data-review-workstream]').forEach(button => button.onclick = event => {
         event.stopPropagation();
@@ -1589,11 +1688,12 @@
       const planNodes = w.workstream === 'VDOC'
         ? (w.nodes || []).filter(n => n.plan_review)
         : (w.nodes || []).filter(n => n.definition_origin !== 'template');
+      const vdocPlan = vdocPlanReviewState(w);
       const nodes = planNodes.map(n => {
         const document = n.document?.path ? `<details><summary>查看对应文档信息</summary><div class="detail-group-body"><strong>${escapeHtml(humanText(n.document.title || n.document_key || '当前文档'))}</strong><div class="row-meta mono">${escapeHtml(n.document.path)}</div></div></details>` : '';
         const planReview = n.plan_review;
         const reviewStatus = planReview ? statusBadge(planReview.status) : '';
-        const reviewAction = w.workstream === 'VDOC' && n.plan_review
+        const reviewAction = w.workstream === 'VDOC' && n.plan_review && !vdocPlan.needsRefinement
           ? `<button class="btn primary" data-review-plan-node="${escapeHtml(n.id)}">在新标签页审批本节点方案</button>`
           : '';
         const details = w.workstream === 'VDOC'
@@ -1605,11 +1705,19 @@
         ? (w.nodes || []).filter(n => n.document).map(n => `<li><span class="mono">${escapeHtml(n.document.path)}</span> · ${escapeHtml(humanText(n.title))}</li>`).join('')
         : '';
       const vdocNotice = w.workstream === 'VDOC'
-        ? 'VDOC 的文档撰写方案需要逐项审批。请打开每个方案节点处理；全部批准后才可以开始正文工作。'
+        ? vdocPlan.needsRefinement
+          ? '当前还没有可供审批的完整方案。Agent 需要先根据当前 DUT、规格、接口和验证目标完善文档工作节点。'
+          : 'VDOC 的文档撰写方案需要逐项审批。请打开每个方案节点处理；全部批准后才可以开始正文工作。'
         : '批准后仅表示允许 Agent 按下列目标、工作节点、交付内容和完成条件开始工作。';
       const planName = w.workstream === 'VDOC' ? '文档撰写方案' : `${workstreamLabel(w.workstream)}方案`;
       const catalogNote = w.workstream === 'VDOC' ? '不作为文档撰写方案节点计数' : '不作为方案工作节点计数';
-      return `<section class="section"><div class="section-head"><h2>本次审批对象：${planName}</h2><span class="count">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div><div class="notice"><strong>这一步审批的是${planName}，不是已经完成的内容。</strong> ${escapeHtml(vdocNotice)} 不表示文档正文、实现结果、仿真结果或工作节点已经通过验收。</div><div class="card"><dl class="kv"><dt>工作流</dt><dd>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</dd><dt>总体目标</dt><dd>${escapeHtml(humanText(w.objective || '未登记总体目标'))}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(w.revision))}</dd></dl></div><div class="section-head"><h2>这份方案包含的工作节点</h2><span class="count">${planNodes.length} 项</span></div>${nodes}${documentOutputs ? `<details class="detail-group"><summary>查看文档交付分类（${catalogNote}）</summary><div class="detail-group-body card"><ul>${documentOutputs}</ul></div></details>` : ''}<div class="section-head"><h2>这份方案何时完成</h2></div><div class="card"><ul class="exit-list">${planListHtml(w.exit_criteria, '尚未登记完成条件')}</ul></div></section>`;
+      const objectHeading = w.workstream === 'VDOC' && vdocPlan.needsRefinement
+        ? '当前方案状态'
+        : `本次审批对象：${planName}`;
+      const boundary = w.workstream === 'VDOC' && vdocPlan.needsRefinement
+        ? '当前不能审批，也不表示八个固定文档目录已经成为方案节点。'
+        : `这一步审批的是${planName}，不是已经完成的内容。`;
+      return `<section class="section"><div class="section-head"><h2>${escapeHtml(objectHeading)}</h2><span class="count">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div><div class="notice"><strong>${escapeHtml(boundary)}</strong> ${escapeHtml(vdocNotice)} 不表示文档正文、实现结果、仿真结果或工作节点已经通过验收。</div><div class="card"><dl class="kv"><dt>工作流</dt><dd>${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}</dd><dt>总体目标</dt><dd>${escapeHtml(humanText(w.objective || '未登记总体目标'))}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(w.revision))}</dd></dl></div><div class="section-head"><h2>这份方案包含的工作节点</h2><span class="count">${planNodes.length} 项</span></div>${nodes}${documentOutputs ? `<details class="detail-group"><summary>查看文档交付分类（${catalogNote}）</summary><div class="detail-group-body card"><ul>${documentOutputs}</ul></div></details>` : ''}<div class="section-head"><h2>这份方案何时完成</h2></div><div class="card"><ul class="exit-list">${planListHtml(w.exit_criteria, '尚未登记完成条件')}</ul></div></section>`;
     }
 
     function bindWorkstreamReviewForm(w, formId) {
@@ -1628,17 +1736,22 @@
       if (!w) { state.reviewWorkstream = null; return renderOverview(); }
       state.workstream = w.workstream;
       const hasPlanNodes = (w.plan_node_count || 0) > 0;
-      const reviewSection = !hasPlanNodes
+      const vdocPlan = vdocPlanReviewState(w);
+      const canReviewPlan = hasPlanNodes && !(w.workstream === 'VDOC' && vdocPlan.needsRefinement);
+      const reviewSection = !canReviewPlan
         ? `<section class="section"><div class="notice"><strong>当前不能审批。</strong> Agent 需要先根据 DUT RTL、规格、接口和验证点形成方案工作节点；固定验证分类不作为工作节点。</div></section>`
         : w.workstream === 'VDOC'
           ? `<section class="section"><div class="notice"><strong>文档撰写方案需要逐项审批。</strong> 请打开每个方案节点处理；全部批准后才可以开始正文工作。</div></section>`
           : `<section class="section"><div class="section-head"><h2>提交方案审批</h2></div><div class="card" style="padding:20px;max-width:760px">${workstreamReviewForm(w, 'review-page-form')}</div></section>`;
       const title = w.workstream === 'VDOC'
-        ? '审批 VDOC · 验证文档撰写方案'
+        ? canReviewPlan ? '审批 VDOC · 验证文档撰写方案' : 'VDOC · 文档撰写方案尚未形成'
         : `审批 ${w.workstream} · ${workstreamLabel(w.workstream)}方案`;
-      $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(title)}</h1><p>请先核对下方方案内容，再决定批准、要求修改、要求说明或不同意。</p></div></div>${workstreamPlanSnapshotHtml(w)}${reviewSection}`;
+      const lead = canReviewPlan
+        ? '请先核对下方方案内容，再决定批准、要求修改、要求说明或不同意。'
+        : '当前没有可供负责人审批的完整方案；请先由 Agent 完成当前 DUT 的文档工作分解。';
+      $('#main').innerHTML = `<div class="page-head"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(lead)}</p></div></div>${workstreamPlanSnapshotHtml(w)}${reviewSection}`;
       bindNodeLinks();
-      if (w.workstream !== 'VDOC' && hasPlanNodes) bindWorkstreamReviewForm(w, 'review-page-form');
+      if (w.workstream !== 'VDOC' && canReviewPlan) bindWorkstreamReviewForm(w, 'review-page-form');
     }
 
     function planSectionState(n, section) {
@@ -1660,6 +1773,12 @@
         return renderWorkstreamReview(workstream('VDOC'));
       }
       state.workstream = 'VDOC';
+      const parentWorkstream = workstream('VDOC');
+      if (vdocPlanReviewState(parentWorkstream).needsRefinement) {
+        $('#main').innerHTML = `<div class="page-head"><div><h1>当前文档撰写方案不能审批</h1><p>${escapeHtml(humanText(n.title))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC 方案</button></div></div><section class="section"><div class="notice"><strong>当前方案节点尚未形成完整的 DUT 级文档工作分解。</strong> Agent 需要先补齐文档撰写方案本身；正文交付节点必须等方案全部批准后再单独登记。</div></section>`;
+        $('[data-return-vdoc]').onclick = () => leaveNodePlanReview('VDOC');
+        return;
+      }
       const pending = (n.human_actions || []).filter(item => item.status === 'OPEN');
       const confirmations = pending.map(item => `<div class="list-row"><div><strong>${escapeHtml(humanActionLabel(item.action))}</strong><div class="row-meta">${escapeHtml(item.reason)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}</div></div>${statusBadge(item.status)}</div>`).join('') || '<div class="empty">当前没有额外工程问题；仍需审批这部分内容。</div>';
       const outgoing = (n.outgoing || []).map(e => `<li>${escapeHtml(relationLabel(e.relation))}：${escapeHtml(humanText(findNode(e.target)?.title || e.target))}</li>`).join('');
@@ -1844,18 +1963,39 @@
       const deliveries = (document.delivery_nodes || []).map(item => {
         const node = findNode(item.id);
         const state = node?.delivery_review?.status || 'PENDING';
-        return `<div class="list-row"><div><button class="node-link" data-node="${escapeHtml(item.id)}">${escapeHtml(humanText(item.title))}</button><div class="row-meta">${item.required ? '计划要求完成' : '补充内容'}</div></div>${deliveryReviewStatusBadge(state)}</div>`;
+        return `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(item.id)}">${escapeHtml(humanText(item.title))}</button><div class="row-meta">${item.required ? '计划要求完成' : '补充内容'}</div></div>${deliveryReviewStatusBadge(state)}</div>`;
       }).join('') || '<div class="empty">这份文档尚未分解出独立验收内容</div>';
       return `<div class="detail-card"><dl class="kv"><dt>文档</dt><dd>${escapeHtml(humanText(document.title || '当前验证文档'))}</dd><dt>正文版本</dt><dd>${document.semantic_revision}</dd><dt>正文状态</dt><dd>${statusBadge(document.effective_status)}</dd><dt>验收工作节点</dt><dd>${(document.delivery_nodes || []).length} 个</dd><dt>待回答问题</dt><dd>${pending.length}</dd><dt>内容是否变化</dt><dd>${document.content_changed ? '是，需要重新同步和评审' : '否'}</dd></dl><details><summary>查看文档内部信息</summary><div class="detail-group-body"><dl class="kv"><dt>文档路径</dt><dd class="mono">${escapeHtml(document.path)}</dd><dt>文档标识</dt><dd class="mono">${escapeHtml(document.document_key)}</dd></dl></div></details></div><strong>该文档的正文验收工作节点</strong><div class="card list-card">${deliveries}</div><strong>文档中的问题和决定</strong><div class="card list-card">${items}</div><details class="detail-group"><summary>查看整篇正文评审记录</summary><div class="detail-group-body card list-card">${reviews}</div></details>`;
+    }
+    function nodeRoleProfile(n) {
+      return {
+        ...BASE_NODE_ROLE_PROFILE,
+        ...(WORKSTREAM_NODE_PROFILES[n.workstream] || {}),
+        ...(NODE_ROLE_PROFILES[n.role] || {}),
+      };
+    }
+    function nodeRolePanelHtml(n) {
+      const profile = nodeRoleProfile(n);
+      if (n.role === 'document-writing-plan') {
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计正文交付</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记方案质量检查')}</ul></div></section>`;
+      }
+      if (n.role === 'document-deliverable') {
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>这里验收本节点对应的正文内容，不是整份文档。</strong> 同一文档的其他正文内容仍需独立验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;
+      }
+      if (n.role === 'document-catalog') {
+        const document = n.document || {};
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正式文档目录与验收范围</h3><div class="notice"><strong>目录只组织正文和验收节点，本身不代表文档内容已经通过。</strong></div><div class="detail-card"><dl class="kv"><dt>文档</dt><dd>${escapeHtml(humanText(document.title || n.title || '未登记'))}</dd><dt>正文版本</dt><dd>${document.semantic_revision || '未登记'}</dd><dt>正文状态</dt><dd>${statusBadge(document.effective_status || n.status)}</dd><dt>独立验收内容</dt><dd>${(document.delivery_nodes || []).length} 项</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(document.path || '未登记')}</dd></dl></div></section>`;
+      }
+      const roleDescription = humanText(n.role_description || '');
+      return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role || 'unknown')}"><h3>${escapeHtml(profile.panelTitle)}</h3><div class="notice"><strong>${escapeHtml(profile.notice)}</strong>${roleDescription ? ` ${escapeHtml(roleDescription)}` : ''}</div><div class="detail-card"><dl class="kv"><dt>${escapeHtml(profile.purposeLabel)}</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>上一级验证目标</dt><dd>${escapeHtml(humanText(findNode(n.parent_id)?.title || '无'))}</dd><dt>最近更新</dt><dd>${shortTime(n.updated_at)}</dd></dl><strong>${escapeHtml(profile.scopeTitle)}</strong><ul>${planListHtml(n.scope)}</ul><strong>${escapeHtml(profile.workTitle)}</strong><ul>${planListHtml(n.work_content)}</ul><strong>${escapeHtml(profile.approachTitle)}</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>${escapeHtml(profile.deliverableTitle)}</strong><ul>${planListHtml(n.deliverables)}</ul><strong>${escapeHtml(profile.sourceTitle)}</strong><ul>${planListHtml(n.source_refs)}</ul><strong>${escapeHtml(profile.qualityTitle)}</strong><ul>${planListHtml(n.quality_checks, '尚未登记质量检查')}</ul></div></section>`;
     }
     function renderDrawer(id) {
       const n = findNode(id); if (!n) { toast(`找不到节点 ${id}`, true); return; }
       const assessment = n.closure_assessment || {}, action = nextAction(n);
-      const roleSpecificContent = n.role === 'document-writing-plan'
-        ? `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计交付</strong><ul>${planListHtml(n.deliverables)}</ul></div>`
-        : n.role === 'document-deliverable'
-          ? `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd></dl><strong>本节点需要验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul></div>`
-          : `<div class="detail-card"><dl class="kv"><dt>用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>上一级目标</dt><dd>${escapeHtml(humanText(findNode(n.parent_id)?.title || '无'))}</dd><dt>最近更新</dt><dd>${shortTime(n.updated_at)}</dd></dl><strong>工作范围</strong><ul>${planListHtml(n.scope)}</ul><strong>具体工作</strong><ul>${planListHtml(n.work_content)}</ul><strong>实现方式</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>交付内容</strong><ul>${planListHtml(n.deliverables)}</ul><strong>依据来源</strong><ul>${planListHtml(n.source_refs)}</ul></div>`;
+      const parentWorkstream = workstream(n.workstream);
+      const presentation = nodeRoleProfile(n);
+      const planReviewAvailable = Boolean(n.plan_review)
+        && !(parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement);
       const genericNotice = n.role === 'document-deliverable'
         ? `<div class="notice"><strong>这是所属文档中一项独立验收的正文内容。</strong> 所属文档：${escapeHtml(humanText(n.document?.title || n.document_key))}。验收这项内容不等于整份文档已经通过。</div>`
         : n.role === 'document-writing-plan'
@@ -1866,12 +2006,12 @@
       $('#drawer-backdrop').classList.add('open');
       $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(roleLabel(n.role))} · ${escapeHtml(n.workstream || '未归属工作流')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">✕</button></div>
         ${genericNotice}<section class="card node-status-card" aria-label="当前工作节点状态"><div class="project-status-label">当前工作节点状态</div><div class="node-status-goal">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div><div class="node-status-facts"><div class="node-status-fact"><span>当前判断</span><strong>${statusBadge(assessment.conclusion || n.status)}</strong><small>${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</small></div><div class="node-status-fact"><span>实际进度</span><strong>${escapeHtml(progressBrief(n))}</strong></div><div class="node-status-fact"><span>当前主要问题</span><strong>${escapeHtml(mainBlocker(n))}</strong></div></div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(action.label)}。${escapeHtml(action.reason)}</div></section>
-        <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${n.plan_review ? '<button class="btn primary" id="node-plan-review-tab">在新标签页审批文档撰写方案</button>' : ''}${n.delivery_review ? '<button class="btn" id="document-delivery-revision-tab">调整文档内容</button><button class="btn primary" id="document-delivery-review-tab">在新标签页验收文档内容</button>' : ''}${n.role === 'document-catalog' && n.document ? '<button class="btn" id="document-review">查看整篇文档评审</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">确认工作节点判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
-        <section class="detail-block"><h3>完成条件与当前判断</h3>${criteriaTableHtml(n)}</section>
-        <section class="detail-block"><h3>实际进度</h3>${progressHtml(n)}</section>
+        <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${planReviewAvailable ? '<button class="btn primary" id="node-plan-review-tab">在新标签页审批文档撰写方案</button>' : ''}${n.delivery_review ? '<button class="btn" id="document-delivery-revision-tab">调整文档内容</button><button class="btn primary" id="document-delivery-review-tab">在新标签页验收文档内容</button>' : ''}${n.role === 'document-catalog' && n.document ? '<button class="btn" id="document-review">查看整篇文档评审</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">确认工作节点判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
+        ${nodeRolePanelHtml(n)}
+        <section class="detail-block"><h3>${escapeHtml(presentation.criteriaTitle)}</h3>${criteriaTableHtml(n)}</section>
+        <section class="detail-block"><h3>${escapeHtml(presentation.progressTitle)}</h3>${progressHtml(n)}</section>
         ${n.document ? `<details class="detail-group" open><summary>文档正文、问题和评审状态</summary><div class="detail-group-body">${documentNodeHtml(n.document)}</div></details>` : ''}
-        <details class="detail-group"><summary>${n.role === 'document-writing-plan' ? '文档撰写方案内容' : n.role === 'document-deliverable' ? '文档内容交付范围' : '具体工作、实现方式和交付物'}</summary><div class="detail-group-body">${roleSpecificContent}</div></details>
-        <details class="detail-group" open><summary>完成这项工作需要什么材料</summary><div class="detail-group-body">${evidenceContractHtml(n.evidence_contract, n.evidence || [])}</div></details>
+        <details class="detail-group" open><summary>${escapeHtml(presentation.evidenceTitle)}</summary><div class="detail-group-body">${evidenceContractHtml(n.evidence_contract, n.evidence || [])}</div></details>
         <details class="detail-group"><summary>为什么得到这个判断</summary><div class="detail-group-body">${closureAssessmentHtml(n.closure_assessment)}</div></details>
         <details class="detail-group"><summary>需要先完成的工作、会受影响的工作和当前进展</summary><div class="detail-group-body"><div class="detail-card"><strong>这项工作开始前需要完成</strong><ul>${(n.outgoing || []).map(e => `<li>${escapeHtml(relationLabel(e.relation))}：${escapeHtml(humanText(findNode(e.target)?.title || e.target))}</li>`).join('') || '<li>无</li>'}</ul><strong>这项工作变化后需要重新检查</strong><ul>${(n.incoming || []).map(e => `<li>${escapeHtml(humanText(findNode(e.source)?.title || e.source))} · ${escapeHtml(incomingRelationLabel(e.relation))}</li>`).join('') || '<li>无</li>'}</ul></div><div class="card list-card" style="margin-top:10px">${activityRows((n.activities || []).filter(a => ['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT'].includes(a.status)))}</div></div></details>
         <details class="detail-group"><summary>问题和支持材料记录</summary><div class="detail-group-body"><div class="card list-card">${(n.findings || []).map(f => `<div class="list-row"><div><div class="row-title">${escapeHtml(severityLabel(f.severity))} · ${escapeHtml(humanText(f.details))}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(f.id)}</pre></details></div>${statusBadge(f.status)}</div>`).join('') || '<div class="empty">没有待处理问题</div>'}</div>${(n.evidence || []).slice().reverse().map(e => `<details><summary>${escapeHtml(artifactLabel(e.kind))} · ${statusBadge(e.verdict === 'PASS' ? 'VALID' : 'INVALID')} · ${shortTime(e.created_at)}</summary><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre></details>`).join('') || '<div class="detail-card empty">尚无支持材料</div>'}</div></details>`;

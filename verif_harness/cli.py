@@ -847,7 +847,7 @@ def main(arguments: list[str] | None = None) -> int:
             if args.docs_command == "status":
                 emit({"documents": store.documents(args.document)})
             elif args.docs_command == "sync":
-                emit(store.sync_documents(args.documents))
+                emit(store.sync_documents(args.documents, require_active=True))
             elif args.docs_command == "render":
                 if args.output:
                     emit(store.write_document_state_projection(args.output, args.document))

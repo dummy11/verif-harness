@@ -40,20 +40,28 @@ VDOC has exactly two public node types:
   inside exactly one Markdown document. Every node has an explicit
   `document_key`; one document normally has multiple delivery nodes. It records
   actual semantic content, document anchors/sources, acceptance criteria, Agent
-  analysis, and any items that still require Human confirmation.
+  analysis, and any items that still require Human confirmation. Delivery nodes
+  exist only after all required writing plans have been approved and the formal
+  body has been written and synchronized.
 
 The fixed `document-catalog` rows are internal containers and dependency
 anchors, not a third public VDOC node type. A writing-plan node says what and how
 the Agent proposes to write. A delivery node says which already-written semantic
 content the Human is accepting. Never reuse one content template for both.
 
-A structured DUT-specific proposal is incomplete when it contains writing-plan
-nodes but no independently reviewable delivery nodes. Every required writing
-plan must own at least one required delivery descendant, and every required
-delivery must trace back to a required writing plan for the same document. The
-Engine rejects new incomplete proposals and routes already-stored incomplete
-revisions back to Agent refinement; it must not ask the responsible person to
-approve the writing-plan nodes in such a revision.
+VDOC is a serial two-phase lifecycle. The initial DUT-specific proposal contains
+only writing-plan nodes and is the only object presented for plan approval. It
+is invalid to mix writing-plan and delivery nodes in one proposal. Before every
+required plan section is approved and VDOC becomes `ACTIVE`, the Agent must not
+write or modify the formal document body, run `docs sync`, create delivery
+nodes, or ask the responsible person to accept body content. After approval,
+the Agent writes the formal body, runs `docs sync`, and submits a separate
+delivery-only proposal without changing the approved plan revision. At that
+point every required writing plan must own at least one required delivery
+descendant, and every required delivery must trace back to a required writing
+plan for the same document. An early preview draft is permitted only on an
+explicit user request and must remain outside formal synchronization, evidence,
+and delivery-node registration until plan approval.
 
 Do not create VDOC nodes with `project-goal`, `capability`,
 `closure-evidence`, `document-goal`, `document-section`, or
@@ -77,19 +85,22 @@ closure-evidence node.
    only within authorized verification output paths, never blindly overwrite.
    A template named reference_model_spec.md does not make an existing read-only
    input of the same name writable; choose a separate output path in that case.
-3. Start with scope and feature decomposition, then fill the relevant topical
-   drafts as the user needs them. Ask only unresolved engineering decisions in
-   the live conversation. Persist explicit answers with decision references;
-   leave unresolved items visible with their affected goals. No guessed thresholds,
+3. Start with scope and feature decomposition and create only the DUT-specific
+   writing-plan proposal. Ask only unresolved engineering decisions in the live
+   conversation. Persist explicit answers with decision references; leave
+   unresolved items visible with their affected goals. No guessed thresholds,
    fake source references, pre-approved waivers, or invented simulator evidence.
-4. Populate useful current content and label drafts. Base document governance on
-   `verification_workflow.md`: document-first work, separate plan/content Human
-   reviews, explicit decision types, evidence-backed validity, and incremental
-   invalidation. Do not introduce Stage gates, Spec Kit authority, monolithic
-   tasks, or a detached worker. Do not demand that all eight
-   documents be complete before other Workstreams can start. An inapplicable topic
-   needs a reason and an agreed alternative, not silently omitted requirements.
-   The optional waiver manifest is not a default required VDOC deliverable.
+   Wait for all required plan sections to be approved before formal body work.
+4. After VDOC becomes `ACTIVE`, populate the approved formal content, run
+   `docs sync`, and register delivery-only nodes for independent body review.
+   Base document governance on `verification_workflow.md`: document-first work,
+   separate plan/content Human reviews, explicit decision types,
+   evidence-backed validity, and incremental invalidation. Do not introduce
+   Stage gates, Spec Kit authority, monolithic tasks, or a detached worker. Do
+   not demand that all eight documents be complete before other Workstreams can
+   start. An inapplicable topic needs a reason and an agreed alternative, not
+   silently omitted requirements. The optional waiver manifest is not a default
+   required VDOC deliverable.
 5. Keep each document concise: current design, source references, tables and open
    questions. Markdown is authoritative for engineering semantics. Use the
    knowledge model for document digest/revision, decision lifecycle,
@@ -101,9 +112,11 @@ closure-evidence node.
 
 The Engine registers each default output and its digest against an internal
 document catalog. Public writing-plan and delivery nodes both carry an explicit
-`document_key`. After editing semantic content, run `docs sync [DOCUMENT]`; the
-Engine increments the semantic revision when the digest changes and propagates
-invalidation through the registered relations.
+`document_key`. Only after plan approval, edit semantic content and run `docs
+sync [DOCUMENT]`; the Engine increments the semantic revision when the digest
+changes and propagates invalidation through the registered relations. Then
+submit the separate delivery-only proposal. Registering those delivery nodes is
+an in-revision expansion of the approved plan, not a new plan revision.
 Custom `--desired` plans replace the default catalog: establish explicit mappings
 for their actual goals, rather than guessing which custom node a document satisfies.
 Cross-workstream consumers need explicit dependency edges as applicable.
@@ -117,7 +130,10 @@ must be approved before the VDOC plan becomes ACTIVE. The eight document
 catalogs remain available for navigation, but are not plan or delivery nodes. A
 pure-CLI `review VDOC` is only a batch recording surface after the Human has
 explicitly reviewed those sections.
-Plan approval authorizes desired scope; it does not certify document content.
+Plan approval authorizes the Agent to write the desired scope; it does not
+certify document content. Until the delivery-only proposal is registered, the
+Dashboard reports that the Agent is authoring content and exposes no content
+review targets.
 Each delivery node is reviewed independently against the current document digest
 and semantic revision. Agent-analysis questions, assumptions, risks, and
 engineering decisions targeted at that delivery node must be resolved first.
@@ -131,22 +147,23 @@ file existence or a bare template as passing evidence.
 VDOC review is an iterative, revision-bound loop rather than a one-time approval:
 
 1. The Agent analyses the current DUT, specifications, existing documents, and
-   unresolved feedback, then proposes or updates writing-plan nodes or document
-   delivery content.
-2. The Engine validates the proposal schema and document mapping, records the
-   workstream revision, node-definition digest, document semantic revision, and
-   document digest, and exposes the current review targets. This registration is
-   not an engineering approval.
-3. The Human independently reviews the required writing-plan sections or the
-   semantic content represented by each delivery node. The Human may approve,
-   request modification, request clarification, reject, or provisionally accept
-   a delivery node under the rules below.
-4. A modification, clarification, rejection, changed DUT/specification, changed
+   unresolved feedback, then proposes or updates writing-plan nodes only.
+2. The Engine validates the plan proposal and document mapping, records the
+   workstream revision and node-definition digests, and exposes only the plan
+   review targets. This registration is not an engineering approval.
+3. The Human independently reviews every required writing-plan section. The
+   Human may approve, request modification, request clarification, or reject it.
+4. Only after all required plans are approved, the Agent writes or revises the
+   formal body, synchronizes its digest, and registers a separate delivery-only
+   proposal. The Human then reviews the semantic content represented by each
+   delivery node and may approve, request modification, request clarification,
+   reject, or provisionally accept it under the rules below.
+5. A modification, clarification, rejection, changed DUT/specification, changed
    node definition, or changed document body returns the affected scope to the
    Agent. The Agent re-analyses the feedback and submits a new proposal or
    document revision; the Engine invalidates review conclusions that no longer
    match the current digests.
-5. The Human reviews the new revision. Steps 3-5 repeat until the current
+6. The Human reviews the new revision. Steps 3-6 repeat until the current
    revision satisfies every convergence condition.
 
 The Agent does not iterate unconditionally after an approval, and the Dashboard

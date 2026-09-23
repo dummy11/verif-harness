@@ -93,6 +93,74 @@ class DashboardTest(unittest.TestCase):
             elif line.startswith("data:"):
                 data.append(line.split(":", 1)[1].lstrip())
 
+    def design_minimal_vdoc(self) -> dict:
+        def node(
+            key: str, title: str, role: str, parent_key: str, statement: str,
+        ) -> dict:
+            return {
+                "key": key, "title": title, "role": role,
+                "parent_key": parent_key, "document_key": "verification-plan",
+                "required": True, "statement": statement,
+                "purpose": "明确当前 DUT 的验证范围并支持独立评审。",
+                "scope": ["当前 DUT 的接口与验证边界"],
+                "acceptance_criteria": ["范围、依据和验证责任均明确"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#dut-scope"],
+                "work_content": ["当前 DUT 的接口、范围和验证责任"],
+                "implementation_approach": ["对照 DUT 顶层和验证计划逐项核对"],
+                "deliverables": ["验证计划中的 DUT 范围说明"],
+                "progress_measures": [{
+                    "id": f"{key}-reviewed", "label": "已确认范围",
+                    "unit": "项", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["没有遗漏必需接口或验证责任"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }
+
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [
+                node(
+                    "dut-scope-plan", "DUT 验证范围撰写方案",
+                    "document-writing-plan", "verification-plan",
+                    "验证计划将明确当前 DUT 的接口和验证边界。",
+                ),
+            ],
+        }
+        path = self.root / "minimal-vdoc-plan.json"
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        return self.store.design_workstream(
+            "VDOC", None, [], [], [], desired_file=str(path),
+        )
+
+    def register_minimal_vdoc_delivery(self) -> dict:
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{
+                "key": "dut-scope-content", "title": "DUT 验证范围正文",
+                "role": "document-deliverable", "parent_key": "dut-scope-plan",
+                "document_key": "verification-plan", "required": True,
+                "statement": "验证计划正文已经明确当前 DUT 的接口和验证边界。",
+                "purpose": "明确当前 DUT 的验证范围并支持独立评审。",
+                "scope": ["当前 DUT 的接口与验证边界"],
+                "acceptance_criteria": ["范围、依据和验证责任均明确"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#dut-scope"],
+                "work_content": ["当前 DUT 的接口、范围和验证责任"],
+                "implementation_approach": ["对照 DUT 顶层和验证计划逐项核对"],
+                "deliverables": ["验证计划中的 DUT 范围说明"],
+                "progress_measures": [{
+                    "id": "dut-scope-content-reviewed", "label": "已确认范围",
+                    "unit": "项", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["没有遗漏必需接口或验证责任"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }],
+        }
+        path = self.root / "minimal-vdoc-delivery.json"
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        return self.store.design_workstream(
+            "VDOC", None, [], [], [], desired_file=str(path),
+        )
+
     def test_background_launcher_reuses_same_project_dashboard(self) -> None:
         port = self.server.server_address[1]
         result = ensure_dashboard_running(self.store, "127.0.0.1", port)
@@ -551,12 +619,19 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("@keyframes waiting-breathe", html)
         self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
-        self.assertIn("个工作节点 · 点击名称查看详情", html)
+        self.assertIn("个工作节点 · 点击名称后在新标签页查看详情", html)
         self.assertNotIn("<div class=\"label\">需要你处理</div>", html)
         self.assertNotIn("<h2>等待负责人处理</h2>", html)
         self.assertNotIn("humanRows(openHuman)", html)
         self.assertNotIn("是否需要负责人处理", html)
         self.assertIn("function workstreamStatusCardHtml(w)", html)
+        self.assertIn("function vdocPlanReviewState(workstream)", html)
+        self.assertIn("REFINE_DESIRED_STATE:'由 Agent 完善当前 DUT 的工作节点'", html)
+        self.assertIn("文档撰写方案尚未形成", html)
+        self.assertIn("当前没有可供负责人审批的完整方案", html)
+        self.assertIn("Agent 形成 DUT 级方案 → 负责人审批方案", html)
+        self.assertIn("if ($('#review-ws'))", html)
+        self.assertNotIn("当前只有固定分类，还没有按本项目 DUT 分解出实施节点", html)
         self.assertIn("当前工作流状态", html)
         self.assertNotIn('class="grid summary-grid"', html)
         self.assertNotIn("当前阶段", html)
@@ -608,7 +683,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("不代替负责人作工程判断", html)
         self.assertIn("等待负责人审批文档撰写方案", html)
         self.assertIn("等待负责人确认验证环境方案", html)
-        self.assertIn("本节点需要验收的正文内容", html)
+        self.assertIn("本节点验收的正文内容", html)
         self.assertNotIn("等待计划评审", html)
         self.assertNotIn("Human 交互入口", html)
         self.assertNotIn("必需节点", html)
@@ -620,13 +695,63 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("<th>节点名称</th><th>节点类型</th><th>状态 / 进度</th>", html)
         self.assertIn("function nodeProgressHtml(n)", html)
         self.assertIn("function nodeProgressState(n)", html)
+        self.assertIn("const WORKSTREAM_NODE_PROFILES = {", html)
+        self.assertIn("const NODE_ROLE_PROFILES = {", html)
+        self.assertIn("function nodeRolePanelHtml(n)", html)
+        self.assertIn('data-node-role="${escapeHtml(n.role || \'unknown\')}"', html)
+        for role, title in {
+            "capability": "验证能力分解",
+            "closure-evidence": "运行结果与支持材料范围",
+            "project-goal": "验证目标与退出边界",
+            "environment-component": "Testbench 组件与连接",
+            "interface": "DUT 接口接入",
+            "clock-reset-domain": "时钟与复位域",
+            "observation-path": "DUT 观测路径",
+            "stimulus-feature": "功能激励",
+            "stimulus-scenario": "场景与边界激励",
+            "checking-goal": "结果检查目标",
+            "checker": "Checker / Scoreboard",
+            "reference-path": "参考结果路径",
+            "assertion-group": "断言与规则检查",
+            "coverage-goal": "功能覆盖目标",
+            "coverage-scope": "覆盖采集与范围",
+            "case-mapping": "验证点与用例映射",
+            "testcase": "Testcase 定义与运行",
+            "regression-profile": "回归配置与执行策略",
+            "regression-run-set": "回归批次与逐项结果",
+            "failure-group": "失败分组与复现分析",
+        }.items():
+            self.assertIn(f"'{role}':{{panelTitle:'{title}'", html)
+        self.assertIn("方案审批或正文验收条件", html)
+        self.assertIn("环境可用条件与当前判断", html)
+        self.assertIn("场景可达条件与当前判断", html)
+        self.assertIn("检查有效性条件与当前判断", html)
+        self.assertIn("覆盖目标完成条件与当前判断", html)
+        self.assertIn("用例完成条件与当前判断", html)
+        self.assertIn("回归完成条件与当前判断", html)
+        self.assertNotIn("具体工作、实现方式和交付物", html)
         self.assertIn("方案审批：${approved}/${planSections.length} 项已通过", html)
         self.assertIn("内容验收：${approved}/1 项已通过", html)
         self.assertIn("完成条件：${satisfied}/${criteria.length} 项已满足", html)
         self.assertIn('role="progressbar"', html)
         self.assertIn('aria-valuenow="${progress.ratio}"', html)
         self.assertNotIn("const bar = ratio === null ? ''", html)
-        self.assertIn("点击名称查看详情", html)
+        self.assertIn("点击名称后在新标签页查看详情", html)
+        self.assertIn('data-open-node="${escapeHtml(n.id)}"', html)
+        self.assertIn("openNodeTab(button.dataset.openNode)", html)
+        self.assertNotIn(
+            '<button class="node-link" data-node="${escapeHtml(n.id)}">'
+            '${escapeHtml(humanText(n.title))}</button>', html,
+        )
+        self.assertNotIn('class="node-link" data-node=', html)
+        self.assertNotIn("button.dataset.node; renderDrawer", html)
+        node_tab = html[
+            html.index("function openNodeTab(nodeId)"):
+            html.index("function runtimeLabel")
+        ]
+        self.assertIn("url.searchParams.set('workstream', node.workstream)", node_tab)
+        self.assertIn("url.searchParams.set('node', nodeId)", node_tab)
+        self.assertIn("window.open(url.toString(), '_blank', 'noopener')", node_tab)
         self.assertIn("'document-writing-plan':'文档撰写方案'", html)
         self.assertIn("'document-deliverable':'文档内容验收'", html)
         self.assertIn("<h1>风险与变更</h1>", html)
@@ -854,6 +979,9 @@ class DashboardTest(unittest.TestCase):
             action["kind"] == "REFINE_DESIRED_STATE"
             for action in vdoc_before_review["closure"]["actions"]
         ))
+        with self.assertRaisesRegex(HarnessError, "尚未.*形成文档撰写方案"):
+            self.store.review_workstream("VDOC", "approve", "alice", "同意当前文档范围")
+        self.design_minimal_vdoc()
         self.store.review_workstream("VDOC", "approve", "alice", "同意当前文档范围")
         document = self.store.documents()[0]
         self.store.track_document_item(
@@ -994,6 +1122,8 @@ class DashboardTest(unittest.TestCase):
                 },
             ],
         }
+        delivery_specs = proposal["nodes"][2:]
+        proposal["nodes"] = proposal["nodes"][:2]
         proposal_path = self.root / "vdoc-plan.json"
         proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
         self.store.design_workstream(
@@ -1005,15 +1135,15 @@ class DashboardTest(unittest.TestCase):
         catalog_nodes = [node for node in vdoc["nodes"] if node["role"] == "document-catalog"]
         delivery_nodes = [node for node in vdoc["nodes"] if node["delivery_review"]]
         self.assertEqual(vdoc["plan_node_count"], 2)
-        self.assertEqual(vdoc["delivery_node_count"], 3)
-        self.assertEqual(vdoc["progress"]["required"], 5)
+        self.assertEqual(vdoc["delivery_node_count"], 0)
+        self.assertEqual(vdoc["progress"]["required"], 2)
         self.assertEqual(vdoc["exit_criteria"], [
             "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
             "所有文档交付节点中等待负责人确认的事项、修改要求和阻塞问题均已关闭",
         ])
         self.assertEqual(len(plan_nodes), 2)
         self.assertEqual(len(catalog_nodes), 8)
-        self.assertEqual(len(delivery_nodes), 3)
+        self.assertEqual(len(delivery_nodes), 0)
         self.assertEqual(
             {node["role"] for node in plan_nodes}, {"document-writing-plan"},
         )
@@ -1023,7 +1153,7 @@ class DashboardTest(unittest.TestCase):
         self.assertTrue(all(node["plan_review"] is None for node in delivery_nodes))
         self.assertEqual(
             len(next(node for node in catalog_nodes if node["key"] == "verification-plan")["document"]["delivery_nodes"]),
-            2,
+            0,
         )
         first = plan_nodes[0]
         self.assertEqual(first["plan_review"]["status"], "PENDING")
@@ -1063,9 +1193,33 @@ class DashboardTest(unittest.TestCase):
                     "verdict": "approve", "reviewer": "alice",
                     "reason": "该区块已经结合当前 DUT 验证对象确认",
                 }, self.server.write_token)
+        approved = self.store.dashboard_snapshot()
+        approved_vdoc = next(item for item in approved["workstreams"] if item["workstream"] == "VDOC")
+        self.assertEqual(approved_vdoc["lifecycle"], "ACTIVE")
+        self.assertEqual(approved_vdoc["delivery_node_count"], 0)
+        self.assertTrue(any(
+            item["kind"] == "AUTHOR_DOCUMENT_CONTENT"
+            for item in approved_vdoc["closure"]["actions"]
+        ))
+        approved_revision = approved_vdoc["revision"]
+
+        delivery_proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": delivery_specs,
+        }
+        delivery_path = self.root / "vdoc-deliveries.json"
+        delivery_path.write_text(json.dumps(delivery_proposal), encoding="utf-8")
+        registered = self.store.design_workstream(
+            "VDOC", None, [], [], [], desired_file=str(delivery_path),
+        )
+        self.assertEqual(registered["revision"], approved_revision)
+        self.assertEqual(registered["vdoc_phase"], "CONTENT_REVIEW")
+
         final = self.store.dashboard_snapshot()
         final_vdoc = next(item for item in final["workstreams"] if item["workstream"] == "VDOC")
         self.assertEqual(final_vdoc["lifecycle"], "ACTIVE")
+        self.assertEqual(final_vdoc["delivery_node_count"], 3)
+        self.assertEqual(final_vdoc["progress"]["required"], 5)
         self.assertTrue(all(
             node["plan_review"]["status"] == "APPROVED"
             for node in final_vdoc["nodes"] if node["plan_review"] and node["required"]

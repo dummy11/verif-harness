@@ -7,15 +7,33 @@ conversation. Persist accepted answers as revisioned structured state and a
 Markdown projection.
 
 For VDOC, read [document delivery instructions](vdoc.md) and the templates for
-the documents being drafted. Default VDOC goals name eight engineering documents;
-the Engine creates only missing templates in the project's verification output
-directory, then the Agent fills engineering semantics through Human dialogue.
+the documents being drafted. Running default `plan VDOC` registers eight internal
+document catalogs and creates only missing templates in the project's verification
+output directory. Those catalogs are navigation and dependency anchors, not a
+default eight-node proposal, and “eight documents, all required” is never a
+substitute for analysing the current DUT. Before asking the Human to approve a
+VDOC plan, derive a variable-size `DesiredStateProposal/1` from the DUT,
+specification, interfaces, verification points, checking, coverage, scenarios,
+and unresolved decisions. The initial proposal must contain only DUT-specific
+`document-writing-plan` nodes. Do not create or show `document-deliverable`
+nodes, write or modify formal document bodies, or run `docs sync` until every
+required writing-plan section has been approved and VDOC is `ACTIVE`. After
+approval, write the formal content, run `docs sync`, and submit a separate
+delivery-only `DesiredStateProposal/1` whose independently reviewable
+`document-deliverable` nodes trace to the approved plans. Never combine the two
+phases in one proposal or one Human review request. If closure returns
+`REFINE_DESIRED_STATE` or `REFINE_DOCUMENT_DELIVERIES`, continue Agent analysis
+and proposal construction; do not present fixed catalogs or structurally
+invalid nodes for Human approval.
+
 Existing documents are never overwritten. The CLI's desired-state/plan projections
 are not those deliverables; document governance state is rendered on demand from SQLite.
-Treat each governed document as a top-level delivery node. Its engineering topics,
-open questions, and decisions are nested review content, not proof that the whole
-subject is complete and not one node per paragraph. The document body remains the
-editable semantic authority.
+The document body remains the editable semantic authority. A document may have
+multiple writing-plan and delivery nodes, while engineering topics, open questions,
+and decisions remain nested review content rather than one node per paragraph.
+An early preview draft is allowed only when the user explicitly requests one;
+keep it outside formal document synchronization, evidence, and delivery nodes
+until the writing plan is approved.
 
 ```text
 $verif-harness plan VDOC|VENV|VSTIM|VCHK|VCOV|VCASE|VREG \

@@ -41,6 +41,21 @@ This repository contains public, reusable verification infrastructure.
   不得只显示“等待计划评审”“空闲”“未登记活动”等缺少对象或行动的信息。
   CLI 命令名、JSON/schema 字段、数据库值和审计记录中的正式协议名称可以保留，
   但首次展示时必须给出面向用户的解释，且不能直接作为主要交互文案。
+- VDOC 必须按“文档撰写方案审批 → Agent 撰写正文 → 正文内容验收”串行
+  推进。在当前 `document-writing-plan` 的所有必需区块未经负责人批准、
+  VDOC 未进入 `ACTIVE` 前，Agent 不得自行生成或修改正式正文，不得通过
+  `docs sync` 建立新的正文语义版本，不得激活可验收的
+  `document-deliverable` 节点，也不得要求负责人同时审批撰写方案和
+  验收正文内容。
+- 初次 VDOC proposal 只能包含 `document-writing-plan`。所有必需方案批准后，
+  Agent 才可撰写正式正文、执行 `docs sync`，并通过另一份只包含
+  `document-deliverable` 的 proposal 登记正文验收范围；两种节点不得在
+  同一 proposal 或同一次负责人审批请求中出现。`plan VDOC` 在方案审批前
+  只能创建缺失模板并登记路径和摘要。
+- 只有用户明确要求提前试写时，Agent 才可在方案批准前生成正文草稿；必须
+  显著标记为“未批准预览草稿”，不得作为验证证据、文档通过、VDOC 完成或
+  下游实现授权。方案进入 `ACTIVE` 后，Agent 才按已批准范围撰写和同步正文，
+  再单独登记对应内容节点供负责人验收。
 
 ## Required checks
 

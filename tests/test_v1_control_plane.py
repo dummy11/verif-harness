@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from verif_harness.evidence_policy import policy_for
+from verif_harness.store import ProjectStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,93 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
+
+    def design_minimal_vdoc(self) -> dict:
+        def node(
+            key: str, title: str, role: str, parent_key: str, statement: str,
+        ) -> dict:
+            return {
+                "key": key, "title": title, "role": role,
+                "parent_key": parent_key, "document_key": "verification-plan",
+                "required": True, "statement": statement,
+                "purpose": "明确当前 DUT 的验证范围并支持独立评审。",
+                "scope": ["当前 DUT 的接口与验证边界"],
+                "acceptance_criteria": ["范围、依据和验证责任均明确"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#dut-scope"],
+                "work_content": ["当前 DUT 的接口、范围和验证责任"],
+                "implementation_approach": ["对照 DUT 顶层和验证计划逐项核对"],
+                "deliverables": ["验证计划中的 DUT 范围说明"],
+                "progress_measures": [{
+                    "id": f"{key}-reviewed", "label": "已确认范围",
+                    "unit": "项", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["没有遗漏必需接口或验证责任"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }
+
+        proposal = {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [
+                node(
+                    "dut-scope-plan", "DUT 验证范围撰写方案",
+                    "document-writing-plan", "verification-plan",
+                    "验证计划将明确当前 DUT 的接口和验证边界。",
+                ),
+            ],
+        }
+        path = self.root / "minimal-vdoc-plan.json"
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        return self.design("VDOC", "--desired-file", str(path))
+
+    def register_minimal_vdoc_delivery(self) -> dict:
+        proposal = self.minimal_vdoc_delivery_proposal()
+        path = self.root / "minimal-vdoc-delivery.json"
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        return self.design("VDOC", "--desired-file", str(path))
+
+    @staticmethod
+    def minimal_vdoc_delivery_proposal() -> dict:
+        return {
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{
+                "key": "dut-scope-content", "title": "DUT 验证范围正文",
+                "role": "document-deliverable", "parent_key": "dut-scope-plan",
+                "document_key": "verification-plan", "required": True,
+                "statement": "验证计划正文已经明确当前 DUT 的接口和验证边界。",
+                "purpose": "明确当前 DUT 的验证范围并支持独立评审。",
+                "scope": ["当前 DUT 的接口与验证边界"],
+                "acceptance_criteria": ["范围、依据和验证责任均明确"],
+                "source_refs": ["rtl/dut.sv", "verification_plan.md#dut-scope"],
+                "work_content": ["当前 DUT 的接口、范围和验证责任"],
+                "implementation_approach": ["对照 DUT 顶层和验证计划逐项核对"],
+                "deliverables": ["验证计划中的 DUT 范围说明"],
+                "progress_measures": [{
+                    "id": "dut-scope-content-reviewed", "label": "已确认范围",
+                    "unit": "项", "target": "全部", "source": "verification_plan.md",
+                }],
+                "quality_checks": ["没有遗漏必需接口或验证责任"],
+                "suggested_mode": "review", "evidence_claim": "document-review",
+            }],
+        }
+
+    def complete_minimal_vdoc(self) -> dict:
+        self.design_minimal_vdoc()
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
+        plan = self.register_minimal_vdoc_delivery()
+        for document in self.run_cli("docs", "status")["documents"]:
+            self.run_cli("docs", "review", document["path"], "--reviewer", "alice")
+        delivery = next(
+            item for item in plan["desired_state"]
+            if item["role"] == "document-deliverable"
+        )
+        store = ProjectStore(self.root)
+        review_state = store.document_delivery_review_state(delivery["id"])
+        store.review_document_delivery(
+            delivery["id"], review_state["definition_digest"],
+            review_state["document_digest"], "approve", "alice",
+            "验证计划中的 DUT 范围正文已确认",
+        )
+        return plan
 
     @staticmethod
     def adapter_receipt(analyzer: str) -> dict:
@@ -214,6 +302,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn("不采用 Stage 或 Spec Kit", instructions)
         self.assertIn("不要直接显示协议角色名 Human", instructions)
         self.assertIn("不能只说“等待计划评审”“空闲”或“未登记活动”", instructions)
+        self.assertIn("负责人审批文档撰写方案 → Agent 撰写正文", instructions)
+        self.assertIn("方案未进入 `ACTIVE` 前", instructions)
+        self.assertIn("不得生成或修改正式正文、执行 `docs sync`", instructions)
+        self.assertIn("不得创建内容验收节点", instructions)
         self.assertIn("单跳 SSH 配置及启动命令", instructions)
         self.assertIn("双跳 SSH 配置及启动命令", instructions)
         self.assertIn("不得从 URL 删除 `project` 或 `token` 参数", instructions)
@@ -271,6 +363,21 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertIn('never leave a follow-up blocking prompt such as "start plan VDOC?"', instructions)
         self.assertIn("Dashboard and `verif-harness agent-question answer` are two", skill)
         self.assertIn("写回同一个 SQLite 问题记录", guide)
+
+    def test_vdoc_planner_does_not_treat_fixed_document_catalogs_as_a_proposal(self) -> None:
+        instructions = (
+            ROOT / "skills/verif-harness/vplan/INSTRUCTIONS.md"
+        ).read_text(encoding="utf-8")
+        normalized = instructions.replace("\n", " ")
+
+        self.assertIn("default eight-node proposal", normalized)
+        self.assertIn("“eight documents, all required” is never a", normalized)
+        self.assertIn("initial proposal must contain only DUT-specific", normalized)
+        self.assertIn("`document-writing-plan`", instructions)
+        self.assertIn("`document-deliverable`", instructions)
+        self.assertIn("`REFINE_DESIRED_STATE`", instructions)
+        self.assertIn("Never combine the two phases", normalized)
+        self.assertIn("do not present fixed catalogs or structurally invalid nodes", normalized)
 
     def test_bootstrap_rejects_invalid_dashboard_port_before_writing_state(self) -> None:
         result = self.invoke(
@@ -631,7 +738,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("acceptance_criteria 必须是非空字符串数组", rejected.stderr)
 
-    def test_vdoc_project_proposal_requires_delivery_coverage_before_review(self) -> None:
+    def test_vdoc_plan_and_delivery_registration_are_separate(self) -> None:
         self.bootstrap()
         proposal = {
             "schema": "DesiredStateProposal/1", "workstream": "VDOC",
@@ -657,26 +764,41 @@ class V1ControlPlaneTest(unittest.TestCase):
         }
         proposal_path = self.root / "vdoc-writing-only.json"
         proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
-        rejected = self.invoke("plan", "VDOC", "--desired-file", str(proposal_path))
-        self.assertEqual(rejected.returncode, 2)
-        self.assertIn("没有必需的文档交付节点", rejected.stderr)
+        plan = self.run_cli("plan", "VDOC", "--desired-file", str(proposal_path))
+        public_roles = {
+            item["role"] for item in plan["desired_state"]
+            if item["role"] != "document-catalog"
+        }
+        self.assertEqual(public_roles, {"document-writing-plan"})
 
-        legacy = self.run_cli("plan", "VDOC", "--desired", "legacy writing plan")
-        stored = legacy["desired_state"]
-        stored[0]["definition_origin"] = "project-proposal"
-        with sqlite3.connect(self.root / ".verif-harness/model.sqlite3") as connection:
-            connection.execute(
-                "UPDATE workstreams SET desired_json=? WHERE name='VDOC'",
-                (json.dumps(stored),),
-            )
-        closure = self.run_cli("closure", "--workstream", "VDOC")
-        self.assertEqual([item["kind"] for item in closure["actions"]], ["REFINE_DESIRED_STATE"])
-        blocked_review = self.invoke(
-            "review", "VDOC", "--verdict", "approve", "--reviewer", "alice",
-            "--reason", "should be rejected",
+        delivery_proposal = self.minimal_vdoc_delivery_proposal()
+        delivery_proposal["nodes"][0]["parent_key"] = "dut-reset-plan"
+        delivery_proposal["nodes"][0]["document_key"] = "verification-plan"
+        delivery_path = self.root / "vdoc-delivery-only.json"
+        delivery_path.write_text(json.dumps(delivery_proposal), encoding="utf-8")
+        premature = self.invoke("plan", "VDOC", "--desired-file", str(delivery_path))
+        self.assertEqual(premature.returncode, 2)
+        self.assertIn("文档撰写方案尚未批准", premature.stderr)
+
+        mixed = json.loads(json.dumps(proposal))
+        mixed["nodes"].append(delivery_proposal["nodes"][0])
+        mixed_path = self.root / "vdoc-mixed.json"
+        mixed_path.write_text(json.dumps(mixed), encoding="utf-8")
+        rejected = self.invoke("plan", "VDOC", "--desired-file", str(mixed_path))
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("不得同时提交", rejected.stderr)
+
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
+        registered = self.run_cli("plan", "VDOC", "--desired-file", str(delivery_path))
+        self.assertEqual(registered["revision"], plan["revision"])
+        self.assertEqual(registered["vdoc_phase"], "CONTENT_REVIEW")
+        self.assertEqual(
+            {
+                item["role"] for item in registered["desired_state"]
+                if item["role"] != "document-catalog"
+            },
+            {"document-writing-plan", "document-deliverable"},
         )
-        self.assertEqual(blocked_review.returncode, 2)
-        self.assertIn("文档工作分解不完整", blocked_review.stderr)
 
     def test_every_standard_desired_node_has_a_stored_evidence_contract(self) -> None:
         self.bootstrap()
@@ -1007,24 +1129,6 @@ class V1ControlPlaneTest(unittest.TestCase):
                 }],
                 "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
                 "suggested_mode": "review", "evidence_claim": "document-review",
-            }, {
-                "key": "dut-reset-semantics", "title": "DUT reset 正文交付",
-                "role": "document-deliverable", "parent_key": "dut-reset-plan",
-                "document_key": "verification-plan", "required": True,
-                "statement": "验证计划正文已明确 DUT reset 行为和验证边界。",
-                "purpose": "独立验收 reset 工程语义。",
-                "scope": ["DUT reset 极性、同步方式、保持和释放行为"],
-                "acceptance_criteria": ["每个 reset 域都有来源、预期行为和验证责任"],
-                "source_refs": ["verification_plan.md#reset", "rtl/dut.sv"],
-                "work_content": ["正文中的 reset 域、时序和验证场景"],
-                "implementation_approach": ["对照当前正文与 DUT 顶层逐项验收"],
-                "deliverables": ["reset 正文语义的独立验收结论"],
-                "progress_measures": [{
-                    "id": "reset-semantics-accepted", "label": "已验收 reset 域",
-                    "unit": "域", "target": "全部", "source": "verification_plan.md",
-                }],
-                "quality_checks": ["不存在无来源或无验证责任的 reset 域"],
-                "suggested_mode": "review", "evidence_claim": "document-review",
             }],
         }
         proposal_path = self.root / "vdoc-review-proposal.json"
@@ -1131,6 +1235,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         premature = self.invoke("docs", "review", "verification_plan.md", "--reviewer", "alice")
         self.assertEqual(premature.returncode, 2)
         self.assertIn("负责人批准当前 VDOC 文档撰写方案", premature.stderr)
+        premature_sync = self.invoke("docs", "sync", "verification_plan.md")
+        self.assertEqual(premature_sync.returncode, 2)
+        self.assertIn("负责人批准当前 VDOC 文档撰写方案", premature_sync.stderr)
         self.assertEqual(readonly_source.read_bytes(), original)
         self.assertEqual(self.invoke("freeze", "VDOC").returncode, 2)
 
@@ -1140,8 +1247,9 @@ class V1ControlPlaneTest(unittest.TestCase):
         root.mkdir(parents=True)
         plan_path = root / "verification_plan.md"
         plan_path.write_text("# Project-specific verification plan\n", encoding="utf-8")
-        self.run_cli("plan", "VDOC")
+        self.design_minimal_vdoc()
         self.assertEqual(plan_path.read_text(encoding="utf-8"), "# Project-specific verification plan\n")
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
         plan_path.write_text("# Project-specific verification plan\n\nUpdated semantics.\n", encoding="utf-8")
         before = self.run_cli("docs", "status", "verification_plan.md")["documents"][0]
         self.assertTrue(before["content_changed"])
@@ -1157,7 +1265,8 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_missing_document_change_is_idempotent_and_restore_requires_review(self) -> None:
         self.bootstrap()
-        self.run_cli("plan", "VDOC")
+        self.design_minimal_vdoc()
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
         path = self.root / "verification/docs/verification/verification_plan.md"
         original = path.read_text(encoding="utf-8")
         path.unlink()
@@ -1182,8 +1291,9 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_document_governance_items_and_review_are_sqlite_projections(self) -> None:
         self.bootstrap()
-        plan = self.run_cli("plan", "VDOC")
+        self.design_minimal_vdoc()
         self.run_cli("review", "VDOC", "--reviewer", "alice")
+        plan = self.register_minimal_vdoc_delivery()
         tracked = self.run_cli(
             "docs", "track", "verification_plan.md", "--id", "D-001",
             "--kind", "provisional", "--title", "暂按 transaction-level 比较",
@@ -1217,10 +1327,22 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_vdoc_freeze_snapshots_reviewed_semantic_documents(self) -> None:
         self.bootstrap()
-        self.run_cli("plan", "VDOC")
+        self.design_minimal_vdoc()
         self.run_cli("review", "VDOC", "--reviewer", "alice")
+        plan = self.register_minimal_vdoc_delivery()
         for document in self.run_cli("docs", "status")["documents"]:
             self.run_cli("docs", "review", document["path"], "--reviewer", "alice")
+        delivery = next(
+            item for item in plan["desired_state"]
+            if item["role"] == "document-deliverable"
+        )
+        store = ProjectStore(self.root)
+        review_state = store.document_delivery_review_state(delivery["id"])
+        store.review_document_delivery(
+            delivery["id"], review_state["definition_digest"],
+            review_state["document_digest"], "approve", "alice",
+            "验证计划中的 DUT 范围正文已确认",
+        )
         frozen = self.run_cli("freeze", "VDOC", "--reviewer", "alice", "--reason", "reviewed documents")
         bundle = self.root / ".verif-harness" / Path(frozen["path"]).parent
         manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
@@ -1246,18 +1368,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(len(plan["desired_state"]), 1)
         self.assertNotIn("document", plan["desired_state"][0])
 
-    def test_review_evidence_auto_closure_and_immutable_freeze(self) -> None:
+    def test_vdoc_review_auto_closure_and_immutable_freeze(self) -> None:
         self.bootstrap()
-        plan = self.design("VDOC", "--desired", "requirements reviewed")
-        desired = plan["desired_state"][0]["id"]
-        reviewed = self.run_cli("review", "--workstream", "VDOC", "--verdict", "approve",
-                                "--reviewer", "alice", "--reason", "reviewed")
-        self.assertEqual(reviewed["lifecycle"], "ACTIVE")
-        evidence = self.root / "evidence.json"
-        evidence.write_text('{"pass": true}\n', encoding="utf-8")
-        recorded = self.run_cli("record", "evidence", "--subject", desired, "--kind", "review",
-                                "--source", "evidence.json", "--verdict", "pass")
-        closure = next(item for item in recorded["auto_closure"]["workstreams"] if item["workstream"] == "VDOC")
+        self.complete_minimal_vdoc()
+        closure = self.run_cli("closure", "--workstream", "VDOC")
         self.assertTrue(closure["ready"])
         frozen = self.run_cli("freeze", "--workstream", "VDOC", "--reviewer", "alice", "--reason", "complete")
         baseline = self.root / ".verif-harness" / frozen["path"]
@@ -1660,7 +1774,7 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_vdoc_unresolved_human_items_are_executable_exit_blockers(self) -> None:
         self.bootstrap()
-        self.design("VDOC")
+        self.design_minimal_vdoc()
         self.run_cli("review", "VDOC")
         self.run_cli(
             "docs", "track", "verification_plan.md", "--id", "HD-001",
@@ -1818,9 +1932,11 @@ class V1ControlPlaneTest(unittest.TestCase):
 
     def test_prove_changed_and_short_freeze(self) -> None:
         self.bootstrap()
-        plan = self.run_cli("plan", "VDOC", "--desired", "requirements reviewed")
-        desired = plan["desired_state"][0]["id"]
-        self.run_cli("review")
+        plan = self.complete_minimal_vdoc()
+        desired = next(
+            item["id"] for item in plan["desired_state"]
+            if item["role"] == "document-writing-plan"
+        )
         evidence = self.root / "review.json"
         evidence.write_text('{"reviewed": true}\n', encoding="utf-8")
         proved = self.run_cli("prove", desired, "review.json", "--kind", "review")
@@ -1846,16 +1962,21 @@ class V1ControlPlaneTest(unittest.TestCase):
             "VCASE": "targeted-evidence", "VREG": "execution-evidence",
         }
         for workstream in ("VDOC", "VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):
+            if workstream == "VDOC":
+                plan = self.complete_minimal_vdoc()
+                writing_plan = next(
+                    item["id"] for item in plan["desired_state"]
+                    if item["role"] == "document-writing-plan"
+                )
+                self.run_cli("prove", writing_plan, "evidence.json")
+                self.assertEqual(self.run_cli("freeze", workstream)["lifecycle"], "BASELINED")
+                continue
             arguments = ["plan", workstream, "--desired", f"{workstream} verified"]
-            if workstream != "VDOC":
-                arguments.extend(["--evidence-claim", custom_claims[workstream]])
+            arguments.extend(["--evidence-claim", custom_claims[workstream]])
             plan = self.run_cli(*arguments)
             self.run_cli("review", workstream)
-            if workstream == "VDOC":
-                self.run_cli("prove", plan["desired_state"][0]["id"], "evidence.json")
-            else:
-                self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
-                             "--reason", "final-freeze command fixture")
+            self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
+                         "--reason", "final-freeze command fixture")
             self.assertEqual(self.run_cli("freeze", workstream)["lifecycle"], "BASELINED")
         final = self.run_cli("freeze", "final")
         self.assertEqual(final["kind"], "FINAL")
