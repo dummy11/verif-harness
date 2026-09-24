@@ -40,6 +40,18 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "role": {"const": "document-writing-plan"},
+                "key": {"pattern": "_authoring$"}
+              },
+              "required": ["role", "key"]
+            },
+            "then": {"required": ["authoring_contract"]}
+          }
+        ],
         "required": [
           "key", "title", "role", "parent_key", "statement", "purpose",
           "scope", "acceptance_criteria", "source_refs", "work_content",
@@ -78,9 +90,45 @@
             }
           },
           "quality_checks": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "authoring_contract": {"$ref": "#/$defs/authoringContract"},
           "suggested_mode": {"type": "string", "minLength": 1},
           "evidence_claim": {"type": "string", "minLength": 1}
         }
+      }
+    }
+  },
+  "$defs": {
+    "authoringContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "profile", "generation", "source_requirements",
+        "source_snapshot", "source_gaps", "dut_scope",
+        "rtl_spec_analysis_method", "document_dependencies",
+        "document_structure", "section_authoring_instructions",
+        "required_tables", "domain_rules",
+        "cross_document_consistency_rules", "traceability_requirements",
+        "review", "freeze", "change_invalidation_rules"
+      ],
+      "properties": {
+        "schema": {"const": "VerificationDocumentAuthoringContract/1"},
+        "profile": {"type": "object"},
+        "generation": {"type": "object"},
+        "source_requirements": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "source_snapshot": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "source_gaps": {"type": "array", "items": {"type": "object"}},
+        "dut_scope": {"type": "object"},
+        "rtl_spec_analysis_method": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "document_dependencies": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "document_structure": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "section_authoring_instructions": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "required_tables": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "domain_rules": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "cross_document_consistency_rules": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "traceability_requirements": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "review": {"type": "object"},
+        "freeze": {"type": "object"},
+        "change_invalidation_rules": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
       }
     }
   }

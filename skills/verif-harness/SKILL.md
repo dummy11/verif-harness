@@ -72,6 +72,12 @@ Workstream. Project lifecycle is separate.
   `vplan/INSTRUCTIONS.md`.
   For VDOC document drafting and cross-Workstream document revisions, read
   `vplan/vdoc.md` and the selected templates under `assets/vdoc/`.
+  Use the bundled `verification-doc-authoring` Skill and `plan authoring` engine
+  to construct the eight registry-backed DUT-specific writing-plan nodes. Each
+  node preserves a `VerificationDocumentAuthoringContract/1` with current
+  RTL/spec/document source digests, source gaps, domain rules, dependencies,
+  traceability, review, freeze, and invalidation criteria. It creates
+  `*_authoring` review candidates, not final Markdown or delivery nodes.
 - Document governance (`docs`): create missing semantic templates during VDOC
   planning, synchronize content digests, track decision/open-question state,
   record Human content reviews, and render status on demand. Never overwrite an

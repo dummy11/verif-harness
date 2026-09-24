@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "verification-plan",
+  "filename": "verification_plan.md",
+  "node_key": "verification_plan_authoring",
+  "title": "验证总计划撰写方案",
+  "purpose": "从当前 DUT 规格、RTL 结构、风险和工程约束形成可验证、可关闭的项目总计划撰写合同。",
+  "dependencies": ["verification-workflow"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "hierarchy", "ports", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "DUT 概览与来源基线", "purpose": "绑定 top、版本、spec 集、hierarchy 与接口边界。", "required": true},
+    {"section": "验证范围、非目标与风险", "purpose": "按 block/interface/feature/mode/error/reset 划分 scope 和 risk。", "required": true},
+    {"section": "总体验证策略", "purpose": "协调 stimulus、checking、reference model、assertion、coverage、testcase 和 regression。", "required": true},
+    {"section": "配置、时钟复位与运行矩阵", "purpose": "定义 mode/CSR/clock/reset/parameter/compile/runtime 组合。", "required": true},
+    {"section": "完成条件与开放问题", "purpose": "定义可检查 exit criteria、evidence 和 owner decisions。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "DUT 概览与来源基线", "instructions": ["列出真实 top、关键 child blocks、ports/interfaces 和所有规格版本。", "把 RTL observation、spec requirement 和负责人决定分别标注。"], "required_source_kinds": ["project-context", "rtl", "design-spec", "micro-architecture-spec", "interface-spec"]},
+    {"section": "验证范围、非目标与风险", "instructions": ["按 normal/boundary/error/concurrent/reset/config/performance 场景定义 in/out/defer。", "每个高风险项说明 failure impact、observability、controllability 和验证手段。"], "required_source_kinds": ["design-spec", "micro-architecture-spec", "register-spec"]},
+    {"section": "总体验证策略", "instructions": ["为每类 feature 指定 stimulus、oracle/checker、coverage、test 和 regression strategy。", "指出算法正确性、时序正确性、协议性质和安全 invariant 各自的 owner。"], "required_source_kinds": ["design-spec", "verification-artifact"]},
+    {"section": "配置、时钟复位与运行矩阵", "instructions": ["列出 parameter/CSR/mode/clock/reset 组合及合法性来源。", "不臆造 simulator capability、latency、timeout 或 coverage threshold。"], "required_source_kinds": ["rtl", "interface-spec", "register-spec"]},
+    {"section": "完成条件与开放问题", "instructions": ["把自然语言 exit criterion 落为 required desired node 和 typed evidence。", "每个 unresolved item 写明 owner、影响、阻塞程度和 review trigger。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "Scope 与风险矩阵", "purpose": "把项目范围变成可评审对象。", "required_columns": ["scope ID", "DUT object", "requirement/source", "risk", "priority", "disposition"]},
+    {"table": "验证策略矩阵", "purpose": "协调各验证手段。", "required_columns": ["feature/risk", "stimulus", "oracle/checker", "assertion", "coverage", "test/regression"]},
+    {"table": "Exit criteria", "purpose": "提供可执行关闭条件。", "required_columns": ["criterion ID", "condition", "desired node", "evidence", "owner", "waiver rule"]}
+  ],
+  "domain_rules": ["总计划覆盖 scope、risk、strategy 和 closure，不复制专题文档细节。", "性能、latency、throughput、coverage threshold 和 simulator support 必须有来源或负责人决定。", "VENV/VSTIM/VCHK/VCOV/VCASE/VREG 是并行可重入 Workstreams，不写成固定阶段序列。", "每个高风险 feature 必须有至少一种可判定 checker/oracle 和可达场景策略。"],
+  "cross_document_rules": ["verification_plan 是 feature_matrix 和所有专题文档的 scope/risk/exit 上游。"],
+  "traceability_rules": ["每个 scope/risk/exit criterion 追溯到 requirement/source 和具体 desired/evidence node。"],
+  "review_roles": ["Project verification lead"],
+  "review_criteria": ["范围、非目标、风险、验证手段和完成条件覆盖当前 DUT 的实际 block/interface/mode。"],
+  "freeze_criteria": ["所有必需 scope 与 exit criteria 已映射到当前 desired/evidence graph。"],
+  "change_invalidation_rules": ["DUT hierarchy/interface、feature、risk、clock/reset、CSR/mode 或 exit criterion 变化时重审。"]
+}

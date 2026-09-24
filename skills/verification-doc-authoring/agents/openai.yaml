@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verification Document Authoring"
+  short_description: "Build DUT-grounded ASIC verification writing plans"
+  default_prompt: "Use $verification-doc-authoring to generate the eight DUT-grounded verif-harness VDOC authoring nodes without writing final document bodies."

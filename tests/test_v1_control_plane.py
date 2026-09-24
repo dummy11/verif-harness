@@ -825,6 +825,38 @@ class V1ControlPlaneTest(unittest.TestCase):
             {"document-writing-plan", "document-deliverable"},
         )
 
+    def test_unified_document_authoring_contracts_are_persisted(self) -> None:
+        self.bootstrap()
+        generated = self.run_cli(
+            "plan", "authoring", "--output",
+            ".verif-harness/proposals/vdoc-authoring.json",
+        )
+        self.assertEqual(generated["node_count"], 8)
+        self.assertFalse(generated["writes_final_documents"])
+
+        plan = self.design(
+            "VDOC", "--desired-file",
+            str(self.root / ".verif-harness/proposals/vdoc-authoring.json"),
+        )
+        nodes = [
+            item for item in plan["desired_state"]
+            if isinstance(item.get("authoring_contract"), dict)
+        ]
+        self.assertEqual(len(nodes), 8)
+        self.assertEqual(
+            {item["authoring_contract"]["schema"] for item in nodes},
+            {"VerificationDocumentAuthoringContract/1"},
+        )
+        self.assertFalse(any(
+            item["role"] == "document-deliverable"
+            for item in plan["desired_state"]
+        ))
+        assertion = next(
+            item for item in nodes if item["document_key"] == "assertion-plan"
+        )
+        self.assertIn("feature-matrix", assertion["authoring_contract"]["document_dependencies"])
+        self.assertTrue(assertion["authoring_contract"]["source_gaps"])
+
     def test_every_standard_desired_node_has_a_stored_evidence_contract(self) -> None:
         self.bootstrap()
         for workstream in ("VENV", "VSTIM", "VCHK", "VCOV", "VCASE", "VREG"):

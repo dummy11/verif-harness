@@ -342,6 +342,7 @@
     .plan-approval-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 12px; }
     .plan-approval-controls > .detail-group { margin-top: 0; min-width: 0; }
     .plan-approval-controls > .btn { min-height: 42px; }
+    .plan-approval-controls > .btn:disabled { color: var(--muted); background: var(--panel-2); border-color: var(--line); cursor: not-allowed; }
     .metric-list { display: grid; gap: 8px; }
     .metric-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, auto) minmax(120px, auto); gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
     .compact-meta { color: var(--muted); font-size: 11px; }
@@ -2092,10 +2093,12 @@
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
         : '<div class="notice"><strong>当前方案还不能审批。</strong> Agent 需要先补齐当前 DUT 的文档工作分解。</div>';
       const canComplete = available && !n.plan_review.completed;
+      const completionLabel = n.plan_review.completed ? '已批准全部内容' : available ? '审批完成' : '方案待补齐';
       const completionTitle = n.plan_review.completed
-        ? '当前审批完成结论仍有效；继续提交审批意见后会重新计算节点状态'
-        : '将当前文档撰写方案工作节点标记为完成';
-      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档撰写方案</summary><div class="detail-group-body">${body}</div></details><button class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(completionTitle)}">审批完成</button></div>`;
+        ? '当前方案的全部内容已批准；提交新的审批意见后需要重新审批'
+        : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
+        : 'Agent 需要先补齐当前 DUT 的文档撰写方案';
+      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档撰写方案</summary><div class="detail-group-body">${body}</div></details><button type="button" class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(completionTitle)}">${completionLabel}</button></div>`;
     }
 
     function documentWritingPlanNodeHtml(n, available) {
@@ -2126,14 +2129,14 @@
     }
 
     function openNodePlanCompletionModal(n) {
-      openModal(`<h2>完成文档撰写方案审批</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice"><strong>这个操作只改变当前文档撰写方案工作节点的状态。</strong> 审批入口和审批历史会继续保留；之后提交新的审批意见时，系统会重新计算节点状态。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>完成说明</label><textarea name="reason" placeholder="说明当前方案为什么可以结束本轮审批" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认审批完成</button></div></form>`);
+      openModal(`<h2>批准当前文档撰写方案</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice"><strong>确认后，批准当前文档撰写方案的全部内容。</strong> 审批入口和审批历史会继续保留；之后提交新增、删除或修改意见时，本节点需要重新审批。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>批准说明</label><textarea name="reason" placeholder="说明批准当前方案全部内容的依据" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认审批完成</button></div></form>`);
       $('#node-plan-complete-form').onsubmit = async event => {
         event.preventDefault();
         const data = Object.fromEntries(new FormData(event.target));
         data.node = n.id;
         data.definition_digest = n.plan_review.definition_digest;
         rememberReviewer(data.reviewer);
-        await post('/api/reviews/node-plan-complete', data, '文档撰写方案工作节点已标记为完成');
+        await post('/api/reviews/node-plan-complete', data, '当前文档撰写方案的全部内容已批准');
       };
     }
 
@@ -2347,10 +2350,40 @@
         ...(NODE_ROLE_PROFILES[n.role] || {}),
       };
     }
+    function verificationDocAuthoringContractHtml(n) {
+      const contract = n.authoring_contract;
+      if (!contract || contract.schema !== 'VerificationDocumentAuthoringContract/1') return '';
+      const sourceRequirements = (contract.source_requirements || []).map(item =>
+        `${item.source_kind}${item.required ? '（必需）' : '（可选）'}：${item.purpose}；选择规则：${item.selection_rule}`
+      );
+      const sourceSnapshot = (contract.source_snapshot || []).map(item =>
+        `${item.kind} · ${item.path} · ${item.status} · SHA-256 ${item.sha256}`
+      );
+      const sourceGaps = (contract.source_gaps || []).map(item =>
+        `${item.missing_source}${item.blocks_document_authoring ? '（阻塞正文）' : '（需评审）'}：${item.impact}；处理：${item.required_review}`
+      );
+      const structure = (contract.document_structure || []).map(item =>
+        `${item.section}${item.required ? '（必需）' : '（可选）'}：${item.purpose}`
+      );
+      const sectionInstructions = (contract.section_authoring_instructions || []).map(item =>
+        `${item.section}：${(item.instructions || []).join('；')}；输入 ${(item.required_source_kinds || []).join('、')}`
+      );
+      const tables = (contract.required_tables || []).map(item =>
+        `${item.table}：${item.purpose}；列 ${(item.required_columns || []).join('、')}`
+      );
+      const dutFacts = Object.entries(contract.dut_scope || {}).flatMap(([kind, value]) => {
+        const items = Array.isArray(value) ? value : value ? [value] : [];
+        return items.map(item => `${kind} · ${item.name}：${item.detail}`);
+      });
+      const dependencies = (contract.document_dependencies || []).map(item =>
+        `先完成并保持有效：${item}`
+      );
+      return `<details class="detail-group"><summary>查看工业级文档撰写合同</summary><div class="detail-group-body"><dl class="kv"><dt>Profile</dt><dd>${escapeHtml(contract.profile?.document_key || '未登记')}</dd><dt>目标文件</dt><dd class="mono">${escapeHtml(contract.profile?.filename || '未登记')}</dd><dt>结构化合同</dt><dd class="mono">${escapeHtml(contract.schema)}</dd></dl><strong>来源要求</strong><ul>${planListHtml(sourceRequirements)}</ul><strong>来源快照</strong><ul>${planListHtml(sourceSnapshot)}</ul><strong>来源缺口与待评审项</strong><ul>${planListHtml(sourceGaps, '当前未登记来源缺口')}</ul><strong>DUT-specific 范围</strong><ul>${planListHtml(dutFacts)}</ul><strong>RTL/spec 分析方法</strong><ul>${planListHtml(contract.rtl_spec_analysis_method)}</ul><strong>文档依赖</strong><ul>${planListHtml(dependencies, '无上游文档依赖')}</ul><strong>文档结构</strong><ul>${planListHtml(structure)}</ul><strong>逐节撰写指令</strong><ul>${planListHtml(sectionInstructions)}</ul><strong>必需表格</strong><ul>${planListHtml(tables)}</ul><strong>领域规则</strong><ul>${planListHtml(contract.domain_rules)}</ul><strong>跨文档一致性</strong><ul>${planListHtml(contract.cross_document_consistency_rules)}</ul><strong>追溯要求</strong><ul>${planListHtml(contract.traceability_requirements)}</ul><strong>评审角色</strong><ul>${planListHtml(contract.review?.roles)}</ul><strong>方案评审条件</strong><ul>${planListHtml(contract.review?.criteria)}</ul><strong>后续正文冻结条件</strong><ul>${planListHtml(contract.freeze?.criteria)}</ul><strong>变更失效规则</strong><ul>${planListHtml(contract.change_invalidation_rules)}</ul></div></details>`;
+    }
     function nodeRolePanelHtml(n) {
       const profile = nodeRoleProfile(n);
       if (n.role === 'document-writing-plan') {
-        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计正文交付</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记方案质量检查')}</ul></div></section>`;
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计正文交付</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记方案质量检查')}</ul>${verificationDocAuthoringContractHtml(n)}</div></section>`;
       }
       if (n.role === 'document-deliverable') {
         return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>默认每份文档对应一个正文验收节点。</strong> 只有已批准的撰写方案明确拆分时，才按独立正文内容分别验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;

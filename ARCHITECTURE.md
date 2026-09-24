@@ -69,6 +69,16 @@ reviewed Markdown beside the immutable manifest.
 The VDOC bundle also contains an on-demand governance Markdown snapshot rendered
 from the same database state.
 
+Before VDOC review, the bundled `verification-doc-authoring` engine loads one
+common industrial authoring contract and eight registry-matched profiles. It
+generates DUT-specific `document-writing-plan` nodes whose structured contracts
+bind current project/RTL/spec/document SHA-256 values, source gaps, section-level
+instructions, required tables, domain rules, traceability, review/freeze, and
+change invalidation. Source files point to authoring nodes through `AFFECTS`;
+profile DAG and document deliveries use `DEPENDS_ON`. Therefore an RTL/spec or
+upstream authoring change reopens affected authoring and downstream delivery
+nodes without treating the generated plan as a final document or approval.
+
 `project.json` stores project configuration consumed by the CLI; `inventory.json`
 records the bootstrap inventory. `model.md` and Workstream `plan.md` are reading
 projections. Editing a reading projection does not update the database. Use the

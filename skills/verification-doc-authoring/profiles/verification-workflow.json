@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "verification-workflow",
+  "filename": "verification_workflow.md",
+  "node_key": "verification_workflow_authoring",
+  "title": "验证文档治理流程撰写方案",
+  "purpose": "定义当前 DUT 验证文档的事实源、职责、串行评审门禁、变更传播和基线治理方法。",
+  "dependencies": [],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top"],
+  "document_structure": [
+    {"section": "项目事实源与适用范围", "purpose": "绑定当前 DUT、输入来源、验证输出和治理边界。", "required": true},
+    {"section": "角色、权限与评审门禁", "purpose": "区分负责人、Main Agent、subagent、Engine 和工具的权限。", "required": true},
+    {"section": "文档依赖与推进流程", "purpose": "定义 8 份文档的 authoring/deliverable 依赖和串行 review。", "required": true},
+    {"section": "变更、失效与重验", "purpose": "定义 RTL/spec/document 变化后的 impact、invalidation 和 re-review。", "required": true},
+    {"section": "证据、冻结与审计", "purpose": "定义 evidence provenance、freeze/signoff 和历史保留。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "项目事实源与适用范围", "instructions": ["列出当前 DUT top、只读 RTL/spec roots、验证输出根和 authoritative stores。", "区分工程语义 Markdown、ProjectStore 状态与 raw tool artifacts。"], "required_source_kinds": ["project-context", "rtl", "design-spec"]},
+    {"section": "角色、权限与评审门禁", "instructions": ["写清负责人批准计划、验收正文、waiver 和 freeze 的独占权限。", "明确 authoring plan approval 不等于正文验收，Agent/subagent/tool 完成不等于证据或批准。"], "required_source_kinds": ["project-context"]},
+    {"section": "文档依赖与推进流程", "instructions": ["绘制 Requirement -> Feature -> checking/coverage/test -> evidence 的文档依赖图。", "列出每份 authoring node 与对应 document-deliverable 的 gate。"], "required_source_kinds": ["project-context", "verification-artifact"]},
+    {"section": "变更、失效与重验", "instructions": ["按 RTL/spec/interface/register/document 类型写明触发、影响分析和重审对象。", "保留 revision/digest/history，不用全量重建掩盖局部变化。"], "required_source_kinds": ["project-context", "rtl", "design-spec"]},
+    {"section": "证据、冻结与审计", "instructions": ["区分 raw artifact、typed evidence、Human review、closure 和 freeze。", "定义审计所需 identity、digest、revision、tool/config/test/seed 字段。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "事实源与权限矩阵", "purpose": "防止多个事实源和越权写入。", "required_columns": ["对象", "authoritative source", "writer", "reviewer", "禁止事项"]},
+    {"table": "文档依赖与门禁矩阵", "purpose": "表达 authoring、正文、下游消费者和失效传播。", "required_columns": ["document", "authoring dependency", "body gate", "consumers", "invalidation trigger"]},
+    {"table": "变更与重验矩阵", "purpose": "按输入变化选择受影响节点。", "required_columns": ["change type", "affected facts", "affected nodes", "required review", "evidence refresh"]}
+  ],
+  "domain_rules": ["VDOC 必须先审批 document-writing-plan，再由 Agent 撰写/同步正文，最后独立验收 document-deliverable。", "ProjectStore 是治理状态事实源；Markdown 是工程语义事实源；Dashboard/CLI 只是同一状态投影。", "文档治理不能被改造成线性 Stage 或通用项目管理模板，节点必须指向当前 DUT 验证对象。", "review、provisional、waiver、freeze 和 public release authorization 是不同决定，不得互相替代。"],
+  "cross_document_rules": ["文档治理流程必须列出 registry 中全部 8 个实际文件名和稳定 document_key。"],
+  "traceability_rules": ["每个治理动作追溯到 actor、revision、definition/document digest 和时间。"],
+  "review_roles": ["Project owner"],
+  "review_criteria": ["所有文档的 owner、输入、输出、gate 和 change impact 已明确。"],
+  "freeze_criteria": ["治理流程与当前 registry、CLI、Dashboard 和 ProjectStore 行为一致。"],
+  "change_invalidation_rules": ["registry、review policy、role boundary 或 state projection 变化时本节点及全部文档治理说明重审。"]
+}

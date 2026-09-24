@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "feature-matrix",
+  "filename": "feature_matrix.md",
+  "node_key": "feature_matrix_authoring",
+  "title": "验证点矩阵撰写方案",
+  "purpose": "把当前 DUT requirements 分解为稳定、可判定、可追溯的 verification features 和闭环映射。",
+  "dependencies": ["verification-plan"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "Feature 分解与 ID 规则", "purpose": "定义 requirement-to-feature decomposition 和稳定 ID。", "required": true},
+    {"section": "功能、边界与异常验证点", "purpose": "覆盖 normal/boundary/error/reset/config/concurrency 场景。", "required": true},
+    {"section": "可控性、可观察性与 Oracle", "purpose": "说明 stimulus reachability、观察点和判定方法。", "required": true},
+    {"section": "检查、覆盖、用例与证据映射", "purpose": "建立 feature 到 assertion/coverage/test/reference/evidence 的闭环。", "required": true},
+    {"section": "未闭合关系与处置", "purpose": "记录 defer/not-applicable/gap/waiver candidate。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "Feature 分解与 ID 规则", "instructions": ["每个 Feature ID 对应一个可判定行为或约束，不把整个 block 写成一个 feature。", "同一 requirement 的 mode/reset/error variants 使用明确 parent/variant 关系。"], "required_source_kinds": ["design-spec", "verification-document:verification-plan"]},
+    {"section": "功能、边界与异常验证点", "instructions": ["从接口、FSM/FIFO/pipeline/resource、CSR/config、error/interrupt 和 reset 提取正向与负向场景。", "对未定义行为保留 open question，不自行给出 expected result。"], "required_source_kinds": ["rtl", "micro-architecture-spec", "interface-spec", "register-spec"]},
+    {"section": "可控性、可观察性与 Oracle", "instructions": ["为每个 feature 写 stimulus entry、DUT acceptance point、observation point 和 expected oracle。", "标出需要 internal observation、reference model、scoreboard 或 assertion 的原因。"], "required_source_kinds": ["rtl", "verification-artifact"]},
+    {"section": "检查、覆盖、用例与证据映射", "instructions": ["使用稳定 Checker/Assertion/Coverage/Test/Evidence ID；未设计项明确为 gap。", "禁止用空占位 ID 或文件存在表示已实现/已覆盖。"], "required_source_kinds": ["verification-artifact"]},
+    {"section": "未闭合关系与处置", "instructions": ["每个 gap 写 impact、owner、target document/workstream 和 review trigger。", "not-applicable 必须有规格或负责人依据。"], "required_source_kinds": ["project-context", "design-spec"]}
+  ],
+  "required_tables": [
+    {"table": "Feature inventory", "purpose": "形成稳定验证点事实表。", "required_columns": ["Feature ID", "behavior/expected", "source anchor", "scenario class", "priority", "scope status"]},
+    {"table": "闭环映射", "purpose": "表达 requirement 到 evidence 的路径。", "required_columns": ["Feature ID", "stimulus", "checker/assertion", "coverage", "test", "evidence"]},
+    {"table": "Gap disposition", "purpose": "防止静默遗漏。", "required_columns": ["Feature/edge", "missing item", "impact", "owner", "disposition", "review trigger"]}
+  ],
+  "domain_rules": ["Feature 必须可判定、可追溯、可分配验证责任；不得只复述章节标题。", "normal、boundary、illegal/error、concurrency、reset/recovery、configuration variants 分开建模。", "RTL observation 只用于发现实现对象或差异，不能代替 spec expected behavior。", "每个 required feature 都必须有闭环映射或显式 gap/disposition。"],
+  "cross_document_rules": ["Feature ID 是 assertion、coverage、testcase、reference model 和 regression evidence 的共同 join key。"],
+  "traceability_rules": ["每个 Feature ID 至少有一个 requirement/source anchor，并关联所有适用验证手段。"],
+  "review_roles": ["Feature owner", "Checker/Coverage/Test owners"],
+  "review_criteria": ["当前 DUT 的功能、边界、错误、并发、reset 和配置行为没有被大粒度 feature 隐藏。"],
+  "freeze_criteria": ["所有 required features 有当前 disposition 和闭环路径。"],
+  "change_invalidation_rules": ["Requirement、feature semantics、interface/mode/reset/error behavior 或任何映射边变化时重审受影响 rows。"]
+}

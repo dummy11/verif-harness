@@ -27,6 +27,9 @@ class DashboardNavigationTest(unittest.TestCase):
     def test_browser_navigation_drafts_and_http_writes(self) -> None:
         self.run_browser_script("dashboard_navigation.cjs")
 
+    def test_plan_completion_without_section_approvals(self) -> None:
+        self.run_browser_script("dashboard_plan_completion.cjs")
+
     def test_markdown_document_reading_and_review(self) -> None:
         self.run_browser_script("dashboard_markdown.cjs")
 

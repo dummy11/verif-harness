@@ -51,6 +51,32 @@ The fixed `document-catalog` rows are internal containers and dependency
 anchors, not a third public VDOC node type. A writing-plan node says what and how
 the Agent proposes to write. A delivery node says which already-written semantic
 content the Human is accepting. Never reuse one content template for both.
+Construct all registry-backed writing-plan nodes with the bundled
+`verification-doc-authoring` Skill. The integrated engine reads the current
+project context, DUT top/parseable RTL ports, registered RTL/spec files, and
+existing verification documents, then emits one structured
+`VerificationDocumentAuthoringContract/1` per selected profile. Each contract
+contains source requirements/snapshots/gaps, DUT scope, RTL/spec analysis,
+document structure, section instructions, required tables, domain rules,
+cross-document consistency, traceability, review/freeze, and change-invalidation
+rules. Missing or ambiguous interfaces, latency, registers, state/protocol
+semantics, requirements, or existing artifact content remain source gaps.
+
+The standard keys are `verification_workflow_authoring`,
+`verification_plan_authoring`, `feature_matrix_authoring`,
+`tb_architecture_authoring`, `reference_model_authoring`,
+`coverage_plan_authoring`, `assertion_plan_authoring`, and
+`testcase_list_authoring`. The assertion profile additionally requires temporal,
+invariant, protocol, reset, resource, configuration, error/interrupt and X
+properties; assert/assume/cover and SIM/Formal responsibility; and
+activation/vacuity/cover evidence. Coverage, TB architecture, reference model,
+testcase and governance profiles carry their own executable domain rules.
+
+An authoring contract governs later writing; it is not a body, approval, or
+freeze record. A later `document-deliverable` uses its corresponding authoring
+node as `parent_key` and an explicit dependency. If a bound RTL/spec source or
+upstream authoring contract changes, existing invalidation propagation reopens
+the authoring node and every dependent delivery/downstream node.
 Within either public node, the Engine materializes hidden, digest-bound semantic
 work nodes for sections, review change items, source anchors, and dependency
 impact. They are real desired-state nodes with the same validity, dependency,
@@ -63,7 +89,9 @@ an additional writing-plan approval section, including when there are no questio
 
 The Dashboard exposes one writing-plan review form with only Add, Delete, and
 Modify choices and one review-content field. The adjacent approval-completion
-action records acceptance of the current node. It does not hide or lock review.
+action approves all content of the current writing-plan node. It requires no
+prior section approvals or Add/Delete/Modify submissions; those are change
+requests, not prerequisites for approval. It does not hide or lock review.
 Any later review invalidates the prior
 node-completion record until the responsible person completes approval again.
 

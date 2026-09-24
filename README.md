@@ -173,6 +173,9 @@ Human 决定。
 - [架构说明](ARCHITECTURE.md)：控制环、状态模型、子系统与 RTL 分层边界。
 - [故障排查](skills/verif-harness/docs/troubleshooting.md)：运行环境与工具问题。
 - [Skill 入口](skills/verif-harness/SKILL.md)：Codex/Kimi 使用 verif-harness 时的行为边界。
+- [验证文档撰写方案 Skill](skills/verification-doc-authoring/SKILL.md)：统一生成 8 个
+  DUT-specific `*_authoring` 节点；结构化合同绑定当前 RTL/spec 和文档依赖，只定义如何撰写，
+  不直接生成或验收正文。
 
 ## 项目状态
 

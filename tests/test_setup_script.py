@@ -144,6 +144,8 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('~/.kimi-code/config.toml', source)
         self.assertIn('.agents/skills', source)
         self.assertIn('.kimi-code/skills', source)
+        self.assertIn('install_skill_link "verif-harness"', source)
+        self.assertIn('install_skill_link "verification-doc-authoring"', source)
         self.assertIn('install_agent_profiles', source)
         self.assertIn('candidate="$target.new"', source)
         self.assertIn("review and merge the managed update", source)

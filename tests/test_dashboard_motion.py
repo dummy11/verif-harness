@@ -107,7 +107,7 @@ vm.runInContext(`
     work_content:['写入接口和验证点'], implementation_approach:['按已确认范围增量撰写'],
     source_refs:['当前 DUT 规格'], scope:['当前 DUT'], deliverables:['验证计划正文'], quality_checks:[],
     human_actions:[], agent_questions:[], outgoing:[], incoming:[],
-    plan_review:{status:'APPROVED',completed:false,definition_digest:'digest',completion_reviews:[],sections:sectionNames.map(section => ({section,status:'APPROVED',reviews:[]}))},
+    plan_review:{status:'PENDING',completed:false,definition_digest:'digest',completion_reviews:[],sections:sectionNames.map(section => ({section,status:'PENDING',reviews:[]}))},
   };
   state.snapshot.workstreams = [{workstream:'VDOC',nodes:[planNode],closure:{actions:[]}}];
   const planHtml = documentWritingPlanNodeHtml(planNode, true);
@@ -116,6 +116,15 @@ vm.runInContext(`
   assert.ok(planHtml.indexOf('id="node-plan-complete"') > planHtml.indexOf('审批文档撰写方案'));
   assert.match(planHtml, /data-plan-section-form=/);
   assert.match(planHtml, /审批历史记录/);
+  assert.doesNotMatch(planHtml, /id="node-plan-complete" disabled/);
+  assert.match(planHtml, /批准当前文档撰写方案的全部内容/);
+  // Legacy section states must not recreate the old four-section approval gate.
+  planNode.plan_review.sections = ['human-confirmations','planned-content','inputs-scope-deliverable','dependencies-impact']
+    .map(section => ({section,status:'PENDING',reviews:[]}));
+  assert.doesNotMatch(documentWritingPlanNodeHtml(planNode, true), /id="node-plan-complete" disabled/);
+  const unavailablePlanHtml = documentWritingPlanNodeHtml(planNode, false);
+  assert.match(unavailablePlanHtml, /id="node-plan-complete" disabled/);
+  assert.match(unavailablePlanHtml, /方案待补齐/);
   assert.doesNotMatch(planHtml, /审批尚未完成|当前工作节点状态|问题和支持材料记录/);
   assert.doesNotMatch(planHtml, /额外待确认的工程问题|审批当前方案，不是验收正文|human-confirmations/);
   assert.doesNotMatch(planHtml, /变更动作|影响范围|具体要求|data-review-change-fields|data-review-impact-preview/);
@@ -142,6 +151,7 @@ vm.runInContext(`
   planNode.plan_review.completed = true;
   const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
   assert.match(completedPlanHtml, /id="node-plan-complete" disabled/);
+  assert.match(completedPlanHtml, /已批准全部内容/);
   assert.match(completedPlanHtml, /data-plan-section-form=/);
 `, context);
 console.log('Dashboard motion renderers PASS');

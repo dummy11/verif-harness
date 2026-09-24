@@ -268,24 +268,36 @@ if [[ "$runtime" == "kimi" ]]; then
   skill_parent="$workspace_root/.kimi-code/skills"
   invocation='/skill:verif-harness'
 fi
-skill_link="$skill_parent/verif-harness"
-if [[ "$workspace_root" == "$package_root" ]]; then
-  skill_target="../../skills/verif-harness"
-else
-  skill_target="$package_root/skills/verif-harness"
-fi
 mkdir -p "$skill_parent"
-if [[ -L "$skill_link" ]]; then
-  if [[ "$(readlink "$skill_link")" != "$skill_target" ]]; then
-    echo "ERROR: refusing to replace existing runtime Skill link: $skill_link" >&2
+
+install_skill_link() {
+  local skill_name="$1"
+  local skill_link="$skill_parent/$skill_name"
+  local skill_target
+  if [[ "$workspace_root" == "$package_root" ]]; then
+    skill_target="../../skills/$skill_name"
+  else
+    skill_target="$package_root/skills/$skill_name"
+  fi
+  if [[ ! -f "$package_root/skills/$skill_name/SKILL.md" ]]; then
+    echo "ERROR: bundled Skill is missing: $package_root/skills/$skill_name/SKILL.md" >&2
     exit 2
   fi
-elif [[ -e "$skill_link" ]]; then
-  echo "ERROR: refusing to overwrite existing runtime Skill path: $skill_link" >&2
-  exit 2
-else
-  ln -s "$skill_target" "$skill_link"
-fi
+  if [[ -L "$skill_link" ]]; then
+    if [[ "$(readlink "$skill_link")" != "$skill_target" ]]; then
+      echo "ERROR: refusing to replace existing runtime Skill link: $skill_link" >&2
+      exit 2
+    fi
+  elif [[ -e "$skill_link" ]]; then
+    echo "ERROR: refusing to overwrite existing runtime Skill path: $skill_link" >&2
+    exit 2
+  else
+    ln -s "$skill_target" "$skill_link"
+  fi
+}
+
+install_skill_link "verif-harness"
+install_skill_link "verification-doc-authoring"
 
 echo "Configuring project-local xverif MCP registration for $runtime."
 "$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp configure \

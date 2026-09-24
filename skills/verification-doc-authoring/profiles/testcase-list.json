@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "testcase-list",
+  "filename": "testcase_list.md",
+  "node_key": "testcase_list_authoring",
+  "title": "用例清单撰写方案",
+  "purpose": "把当前 DUT verification features 转成可执行、可复现、可检查并可纳入回归的 testcase contracts。",
+  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture", "reference-model", "coverage-plan", "assertion-plan"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "用例分类、ID 与优先级", "purpose": "定义 smoke/directed/boundary/random/stress/error/reset/config 分类。", "required": true},
+    {"section": "Test intent 与场景合同", "purpose": "定义 precondition/config/stimulus/expected/checkers/coverage。", "required": true},
+    {"section": "可执行入口与复现", "purpose": "定义 class/sequence/config/seed/timeout/end condition/artifacts。", "required": true},
+    {"section": "负向、并发、reset 与压力场景", "purpose": "覆盖 illegal/error/recovery/contention/backpressure/resource exhaustion。", "required": true},
+    {"section": "回归分组、证据与缺口", "purpose": "定义 suites、selection、rerun/triage 和 evidence mapping。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "用例分类、ID 与优先级", "instructions": ["Test ID 稳定且关联 Feature/Risk；priority 含义和 required/optional 条件可判定。", "smoke 只证明最小环境；directed/random/stress/negative 各自说明目的。"], "required_source_kinds": ["verification-document:verification-plan", "verification-document:feature-matrix"]},
+    {"section": "Test intent 与场景合同", "instructions": ["逐 test 写 preconditions、CSR/config/mode、stimulus sequence、DUT acceptance、expected oracle/checker、assertion/coverage goals。", "不臆造 sequence/class/path；未实现项保持 planned 并给实现 owner。"], "required_source_kinds": ["design-spec", "verification-document:tb-architecture", "verification-document:reference-model", "verification-document:coverage-plan", "verification-document:assertion-plan"]},
+    {"section": "可执行入口与复现", "instructions": ["定义 test entry、compile/runtime config、seed policy、timeout/end-of-test、log/wave/evidence artifact。", "随机失败保留原 seed/config/revision；同 seed rerun 不得被新随机 run 替代。"], "required_source_kinds": ["project-context", "verification-artifact"]},
+    {"section": "负向、并发、reset 与压力场景", "instructions": ["从 error/interrupt、illegal protocol/config、reset during traffic、backpressure、out-of-order、FIFO/resource limit 提取适用场景。", "未定义 expected behavior 记录 source gap，不用常识补写 DUT 反应。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "register-spec", "design-spec"]},
+    {"section": "回归分组、证据与缺口", "instructions": ["定义 smoke/nightly/full/targeted 等 suite 的选择规则和资源/重复策略，不硬编码未确认 farm/EDA。", "映射 run manifest、result、triage、coverage DB 和 typed evidence；文件存在不等于 PASS。"], "required_source_kinds": ["verification-artifact", "verification-document:coverage-plan"]}
+  ],
+  "required_tables": [
+    {"table": "Testcase contract", "purpose": "定义每个 test 的可执行意图。", "required_columns": ["Test ID", "Feature/Risk", "priority/class", "precondition/config", "stimulus/scenario", "expected checker/oracle", "Assertion/Coverage IDs", "status/owner"]},
+    {"table": "Execution and reproducibility", "purpose": "保证可运行和可复现。", "required_columns": ["Test ID", "entry/sequence", "build/runtime config", "seed", "timeout/end condition", "artifacts/evidence"]},
+    {"table": "Regression mapping", "purpose": "把 test definition 与 batch policy 分开。", "required_columns": ["Test ID", "suite", "selection condition", "repeat/seed policy", "resource constraint", "rerun/triage policy"]}
+  ],
+  "domain_rules": ["每个 testcase 有明确 Feature/Risk、precondition、stimulus、expected oracle/checker、coverage/assertion goal 和 end condition。", "test definition 与 execution result 分开；未实现、未运行和失败不能被写成通过。", "随机/压力测试必须可复现，保留 seed、config、revision、timeout 和 artifact identity。", "负向、并发、reset/recovery、backpressure、out-of-order、resource limit 和 CSR/config 场景按 DUT 适用性展开。", "回归 suite 是选择策略，不改变 testcase 的 expected result 或 evidence requirement。"],
+  "cross_document_rules": ["Test expected checks 与 reference model/assertion 一致，coverage goals 与 coverage plan 一致，stimulus/observation path 与 TB architecture 一致。"],
+  "traceability_rules": ["每个 Test ID 追溯 Feature/Requirement、实现入口、suite/manifest、run/test/seed/config 和 typed evidence。"],
+  "review_roles": ["Test owner", "Regression owner", "Checker/Coverage owners"],
+  "review_criteria": ["每个 required feature/risk 有 testcase disposition，且每个 test 可执行、可终止、可判定、可复现。"],
+  "freeze_criteria": ["required tests 的定义、实现状态、suite mapping、expected checks 和 evidence path 绑定当前 revision。"],
+  "change_invalidation_rules": ["Feature/expected behavior、TB path、reference/compare、assertion/coverage goal、test implementation、suite/manifest/config 变化时重审。"]
+}

@@ -315,6 +315,19 @@ verif-harness review VDOC --verdict modify --reason "接口 reset 语义仍不�
 | `assertion_plan.md` | [assertion/property](glossary.md#dv-terms)、挂接、失败处理和必须真正触发的要求 | VCHK/VCOV |
 | `testcase_list.md` | 用例目标、优先级、检查方式、实现与证据映射 | VCASE/VREG |
 
+使用 [`verification-doc-authoring`](../../verification-doc-authoring/SKILL.md)
+统一生成 8 个 `*_authoring` 撰写方案节点。可先运行
+`verif-harness plan authoring --output .verif-harness/proposals/vdoc-authoring.json`，
+检查并补充当前 DUT 的 RTL/spec 事实后，再通过 `plan VDOC --desired-file` 登记。
+每个结构化 `authoring_contract` 都保存真实来源 path/SHA-256、DUT scope、逐节写法、
+required tables、领域规则、文档依赖、追溯、评审、冻结和变更失效条件；缺失或冲突信息进入
+`source_gaps`，不得补写为事实。Engine 不生成正式正文，也不创建正文验收节点。
+
+8 个 profile 分别覆盖治理流程、验证总计划、验证点矩阵、TB 架构、参考模型/比较、覆盖率、
+断言和用例。断言 profile 保留 temporal/invariant/protocol/reset/resource/config/error/X、
+assert/assume/cover、SIM/Formal、activation/vacuity/cover 等专属规则；其他 profile 也包含各自
+可执行的 ASIC verification 规则，不是章节标题模板。
+
 `code_coverage_waiver_manifest.md` 仅出现具体豁免候选时按需建立，由 VCOV 维护，
 不是初始 VDOC 的必需产物。所有模板见[VDOC 产出与模板索引](../vplan/vdoc.md)。
 
@@ -421,7 +434,7 @@ Engine 在 Agent 调用 `docs sync` 后记录文件的新 SHA-256，把依赖旧
 | 4. 读取输入与模板 | Agent | 只读分析 RTL、spec、已有验证文档、Knowledge Model 和本轮所需模板，不搜索或替换用户未指定的 DUT 输入 |
 | 5. 形成方案草案 | Agent | 先提出 scope 和 Feature/VF 分解，再说明计划写入的策略、架构、reference model、coverage、assertion 和 testcase 内容；此时不写正式正文 |
 | 6. 解决开放决策 | Human + Agent | Agent 只询问事实无法确定的问题；Human 作出工程选择；Agent 将答案及其影响目标写入新 revision |
-| 7. 逐节点审批实施方案 | Human | 负责人在当前 DUT 的文档撰写方案节点选择“新增、删除、修改”，填写审批内容并提交；确认本轮审批结束时点击“审批完成” |
+| 7. 逐节点审批实施方案 | Human | 负责人点击“审批完成”并确认，即批准当前文档撰写方案节点的全部内容；需要提出变更时才选择“新增、删除、修改”并提交审批内容 |
 | 8. 聚合规划审批 | Human + Engine | Engine 将审批绑定到当前节点方案摘要；所有必需方案节点完成审批后，VDOC 自动进入 [`ACTIVE`（可以开始工作）](glossary.md#workstream)；后续新意见使受影响的完成结论失效 |
 | 9. 完成文档初稿 | Agent | 仅在 VDOC 已进入 `ACTIVE` 后，Agent 按批准方案增量填写 Engine 已创建的缺失模板；已有文档和所有 RTL/spec 均不被覆盖 |
 | 10. 同步并登记正文验收范围 | Agent + Engine | Agent 调用 `docs sync`，再提交只包含 `document-deliverable` 的 proposal；Engine 登记路径、文件指纹、文档内容版本和可独立验收的正文节点，不改变已批准的方案 revision |
@@ -1300,8 +1313,10 @@ Dashboard 默认在当前标签页内导航；正常点击不会额外打开标�
 审批历史，以及紧邻审批入口的“审批完成”按钮；不混入通用节点状态、支持材料和正文验收内容。
 审批类型只列出“新增、删除、修改”；只填写一份“审批内容”，
 不再显示二级变更动作或影响范围输入。
-完成审批只改变该撰写方案工作节点状态，不锁定审批表单；后续仍可继续提交审批意见，新意见会使
-完成状态重新计算。正文验收和其他方案审批进入当前标签页的完整页面。需要对照时使用“新标签页打开 ↗”，或通过链接的 Cmd/Ctrl＋点击、鼠标中键
+点击“审批完成”打开确认弹窗，填写审批人和批准说明后，即批准当前方案节点的全部内容；
+无需先提交变更意见，也不要求逐个分区审批。批准后按钮显示“已批准全部内容”，审批表单仍可使用；
+后续新增、删除或修改意见会使旧完成结论失效，按钮恢复为“审批完成”。方案尚不完整时显示
+“方案待补齐”；禁用按钮使用灰色样式并提示原因。正文验收和其他方案审批进入当前标签页的完整页面。需要对照时使用“新标签页打开 ↗”，或通过链接的 Cmd/Ctrl＋点击、鼠标中键
 自行新开。重启、注销等操作仍使用当前页面的确认弹窗。
 正文验收页的“对照阅读文档 ↗”显式新开只读正文页，不复制验收表单；正文仍通过受控 API
 校验项目归属和文件存在性，缺失或越界时显示错误。
@@ -1336,6 +1351,7 @@ Dashboard 入口清单（所有内部导航、前进后退和新标签页均保�
 | 工作节点与问题入口 | 节点抽屉；“查看完整节点”进入当前页详情；问题进入当前页 Agent 问答 | 节点、问题或工作流不在当前项目/版本时提示并可返回概览 |
 | 方案审批、正文验收、文档查看 | 当前标签页的节点审批/验收页面及受控文档 API | 对象不存在或已过期时拒绝操作并提示，不复用旧版本草稿 |
 | 正文中的文档链接、章节链接、源码展开 | 当前项目受控文档阅读页、标题锚点或当前正文源码 | 未登记或缺失的文档不可点击；失效章节明确提示；渲染失败回退源码 |
+| 文档撰写方案“审批完成” | 抽屉或完整节点页的确认弹窗；确认后批准该节点当前版本的全部内容，重新读取权威快照 | 方案不完整时禁用并提示；摘要过期或存在未解决的负责人事项时由 API 拒绝并显示原因 |
 | 页面位置导航、“新标签页打开 ↗” | 上级项目/工作流，或显式新开同一对象的独立页面 | 保留项目与 token；目标失效时仍显示原因，不指向相似对象 |
 | 工作流重启 | 当前 VDOC 工作流的二次确认与受控 API | 当前版本不匹配时拒绝操作 |
 
@@ -1557,9 +1573,10 @@ verif-harness await-human VDOC \
 ```
 
 等待时 Activity 自动显示为 `WAITING_FOR_HUMAN`，Workstream 卡片明确显示当前正在等待负责人处理
-什么。VDOC 由 Human 在 Dashboard 的文档撰写方案节点中展开“审批文档撰写方案”，
-填写本节点的审批内容并提交；可用旁边的“审批完成”改变该工作节点状态，且之后仍能
-继续提交审批意见。所有计划要求完成的方案都通过后聚合为正式 Review。其他 Workstream 仍在独立
+什么。VDOC 由负责人在 Dashboard 的文档撰写方案节点点击“审批完成”，确认批准该节点当前版本的
+全部内容；无需先提交任何分区审批或变更意见。需要提出变更时，可展开“审批文档撰写方案”，
+选择新增、删除或修改并提交审批内容；新意见会使旧完成结论失效。
+所有计划要求完成的方案都通过后聚合为正式 Review。其他 Workstream 仍在独立
 方案页提交正式 Review。`approve` 使 Activity 恢复 `RUNNING` 并允许 Agent 继续，`modify/clarify/reject`
 分别要求修改、说明或停止。
 普通“提交意见”不会解除等待。60 秒内没有决定时命令返回 `TIMEOUT`，Agent 可以继续进行有界等待，
@@ -1590,7 +1607,8 @@ Human 可以从界面选择 Workstream 或节点，提交评论、要求修改�
 访问令牌；服务只监听 `127.0.0.1` 或 `localhost`，不提供网络账号登录或远程共享。各 Workstream 页面的
 方案操作会打开独立审批页；页面直接显示当前结果检查、验证环境、激励、覆盖率、用例或回归方案。
 VDOC 在每个按当前 DUT 分解出的文档撰写方案节点内直接展开一套审批表单。
-“审批完成”更新该撰写方案节点状态，不会关闭审批入口，也不代表正文验收通过。
+“审批完成”批准该撰写方案节点当前版本的全部内容，不以分区审批数量为前置条件，
+不会关闭审批入口，也不代表正文验收通过。
 
 VDOC 文档节点还提供“评审文档正文”。Dashboard 从已经登记的安全路径读取当前 UTF-8 Markdown
 正文，同时显示正文版本、内容变化、文档中的开放问题和工程决定。Human 阅读后可以选择认可当前

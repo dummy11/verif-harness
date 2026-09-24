@@ -917,6 +917,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("return navigateUrl(url)", node_tab)
         self.assertNotIn("window.open(", html)
         self.assertIn("'document-writing-plan':'文档撰写方案'", html)
+        self.assertIn("查看工业级文档撰写合同", html)
         self.assertIn("'document-deliverable':'文档内容验收'", html)
         self.assertIn("默认每份文档对应一个正文验收节点", html)
         self.assertNotIn("这里验收本节点对应的正文内容，不是整份文档", html)
@@ -1350,6 +1351,50 @@ class DashboardTest(unittest.TestCase):
                 "reason": "不允许重启其他工作流", "confirm": True,
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+    def test_vdoc_completion_approves_all_content_without_prior_reviews(self) -> None:
+        self.design_minimal_vdoc()
+        before = self.store.dashboard_snapshot()
+        vdoc = next(w for w in before["workstreams"] if w["workstream"] == "VDOC")
+        node = next(n for n in vdoc["nodes"] if n["plan_review"])
+        review = node["plan_review"]
+        self.assertEqual(review["status"], "PENDING")
+        self.assertEqual(review["reviews"], [])
+        self.assertEqual(review["completion_reviews"], [])
+        self.assertTrue(all(s["status"] == "PENDING" for s in review["sections"]))
+        payload = {
+            "node": node["id"], "definition_digest": review["definition_digest"],
+            "reviewer": "alice", "reason": "批准当前文档撰写方案的全部内容",
+        }
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/reviews/node-plan-complete", {
+                **payload, "definition_digest": "outdated-digest",
+            }, self.server.write_token)
+        self.assertEqual(caught.exception.code, 400)
+        self.assertEqual(self.store.node_plan_review_state(node["id"])["completion_reviews"], [])
+
+        result = self.post("/api/reviews/node-plan-complete", payload, self.server.write_token)
+        self.assertEqual(result["result"]["verdict"], "APPROVE")
+        with self.get("/api/snapshot") as response:
+            after = json.load(response)
+        refreshed = next(w for w in after["workstreams"] if w["workstream"] == "VDOC")
+        approved = next(n for n in refreshed["nodes"] if n["id"] == node["id"])
+        self.assertEqual(approved["status"], "VALID")
+        self.assertEqual(approved["plan_review"]["status"], "APPROVED")
+        self.assertTrue(approved["plan_review"]["completed"])
+        self.assertTrue(all(s["status"] == "APPROVED" for s in approved["plan_review"]["sections"]))
+        self.assertEqual(approved["plan_review"]["reviews"], [])
+        self.assertEqual(len(approved["plan_review"]["completion_reviews"]), 1)
+        self.assertEqual(refreshed["lifecycle"], "ACTIVE")
+        self.assertEqual(refreshed["delivery_node_count"], 0)
+        self.assertEqual(approved["document"], node["document"])
+        other_before = next(w for w in before["workstreams"] if w["workstream"] == "VCHK")
+        other_after = next(w for w in after["workstreams"] if w["workstream"] == "VCHK")
+        for key in ("revision", "lifecycle"):
+            self.assertEqual(other_after[key], other_before[key])
+        reopened = ProjectStore(self.root)
+        self.assertEqual(reopened.node_plan_review_state(node["id"]), approved["plan_review"])
+        self.assertEqual(reopened.model(node["id"])["nodes"][0]["status"], "VALID")
 
     def test_vdoc_plan_sections_are_reviewed_independently_and_aggregate(self) -> None:
         proposal = {

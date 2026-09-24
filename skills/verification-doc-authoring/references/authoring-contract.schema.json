@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/verif-harness/verification-document-authoring-contract.schema.json",
+  "title": "VerificationDocumentAuthoringContract/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile",
+    "generation",
+    "source_requirements",
+    "source_snapshot",
+    "source_gaps",
+    "dut_scope",
+    "rtl_spec_analysis_method",
+    "document_dependencies",
+    "document_structure",
+    "section_authoring_instructions",
+    "required_tables",
+    "domain_rules",
+    "cross_document_consistency_rules",
+    "traceability_requirements",
+    "review",
+    "freeze",
+    "change_invalidation_rules"
+  ],
+  "properties": {
+    "schema": {"const": "VerificationDocumentAuthoringContract/1"},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "document_key", "filename", "node_key", "profile_digest"],
+      "properties": {
+        "schema": {"const": "VerificationDocumentAuthoringProfile/1"},
+        "document_key": {"type": "string", "minLength": 1},
+        "filename": {"type": "string", "minLength": 1},
+        "node_key": {"type": "string", "pattern": "^[a-z0-9_]+_authoring$"},
+        "profile_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "generation": {"type": "object"},
+    "source_requirements": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "source_snapshot": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "source_gaps": {"type": "array", "items": {"type": "object"}},
+    "dut_scope": {"type": "object"},
+    "rtl_spec_analysis_method": {"$ref": "#/$defs/nonEmptyStrings"},
+    "document_dependencies": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "document_structure": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "section_authoring_instructions": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "required_tables": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+    "domain_rules": {"$ref": "#/$defs/nonEmptyStrings"},
+    "cross_document_consistency_rules": {"$ref": "#/$defs/nonEmptyStrings"},
+    "traceability_requirements": {"$ref": "#/$defs/nonEmptyStrings"},
+    "review": {"type": "object"},
+    "freeze": {"type": "object"},
+    "change_invalidation_rules": {"$ref": "#/$defs/nonEmptyStrings"}
+  },
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

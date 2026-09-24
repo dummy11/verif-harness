@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "tb-architecture",
+  "filename": "tb_architecture.md",
+  "node_key": "tb_architecture_authoring",
+  "title": "验证环境架构撰写方案",
+  "purpose": "从真实 RTL hierarchy/interfaces/clock-reset 与验证策略形成可实现、可观察、职责分层的 TB architecture 撰写合同。",
+  "dependencies": ["verification-plan", "feature-matrix"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "hierarchy", "ports", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "DUT 集成边界与拓扑", "purpose": "定义 tb_top/harness/interface/DUT/bind/UVM 层次。", "required": true},
+    {"section": "接口、时钟、复位与配置", "purpose": "定义每个真实接口的 role、clocking、reset、CSR/config 责任。", "required": true},
+    {"section": "Stimulus 与 observation 数据流", "purpose": "定义 sequence/driver/monitor/transaction 与 DUT acceptance/observation path。", "required": true},
+    {"section": "Checking、reference model 与 coverage 连接", "purpose": "定义 predictor/scoreboard/assertion/coverage 的输入与同步。", "required": true},
+    {"section": "构建、运行、诊断与扩展", "purpose": "定义 package/filelist/elaboration/config/log/wave/timeout/seed。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "DUT 集成边界与拓扑", "instructions": ["从实际 top/hierarchy/ports 画出结构图并列出验证组件实例。", "DUT RTL 只读；tie-off/adapter/bind 放在 harness/checker 层并说明来源。"], "required_source_kinds": ["rtl", "verification-document:verification-plan", "verification-document:feature-matrix"]},
+    {"section": "接口、时钟、复位与配置", "instructions": ["逐接口列 driver/monitor、clock/reset domain、采样/驱动 edge、handshake/backpressure/ordering。", "逐项列 parameter/CSR/config 来源、更新时机、side effect 和 reset value gap。"], "required_source_kinds": ["interface-spec", "register-spec", "rtl"]},
+    {"section": "Stimulus 与 observation 数据流", "instructions": ["定义 sequence item 到 pin/transaction、DUT acceptance、monitor reconstruction 的全链路。", "说明并发、out-of-order、tag/ID、flush、residual transaction、timeout 和 end-of-test。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "verification-artifact"]},
+    {"section": "Checking、reference model 与 coverage 连接", "instructions": ["列出 actual/expected 流、alignment key、reset/flush、mask/tolerance 和采样事件。", "区分 scoreboard、assertion、coverage 与 TB sanity 的职责。"], "required_source_kinds": ["verification-artifact", "design-spec"]},
+    {"section": "构建、运行、诊断与扩展", "instructions": ["写明 package/filelist 顺序、top、bind、config_db、plusarg、seed、wave/log 和错误出口。", "未实际验证的 simulator/EDA capability 标记 configured/unknown，不声称 supported。"], "required_source_kinds": ["project-context", "rtl", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "Component responsibility", "purpose": "保持 UVM/harness/checker 分层。", "required_columns": ["component", "instance/path", "responsibility", "input/output", "owner", "implementation status"]},
+    {"table": "Interface and timing", "purpose": "绑定真实端口与协议。", "required_columns": ["interface", "RTL ports", "driver", "monitor", "clock/reset", "handshake/sampling"]},
+    {"table": "Data/control flow", "purpose": "说明端到端 transaction 路径。", "required_columns": ["flow", "source", "transform", "destination", "alignment", "reset/flush/error handling"]}
+  ],
+  "domain_rules": ["tb_top 负责 elaboration/test startup；harness 负责 DUT structural integration；UVM 负责 behavior。", "VENV 最小 smoke 不依赖完整 business stimulus/checking/coverage/regression closure。", "每个 protocol interface 都必须有明确 driver/monitor ownership、clock/reset 和 sampling semantics。", "多时钟、reset sequencing、backpressure、out-of-order、flush 和 residual data 必须有显式架构处理。"],
+  "cross_document_rules": ["TB observation/stimulus paths 必须满足 feature、assertion、coverage、reference model 和 testcase 的实际需要。"],
+  "traceability_rules": ["每个 TB component/interface path 关联使用它的 Feature/Checker/Coverage/Test IDs。"],
+  "review_roles": ["TB architect", "UVC owner", "Build/integration owner"],
+  "review_criteria": ["架构图、component table、interface timing 与实际 RTL ports/hierarchy 一致。"],
+  "freeze_criteria": ["所有必需 stimulus/observation/checking path 有实现位置或明确 blocked gap。"],
+  "change_invalidation_rules": ["Top/hierarchy/port/interface/clock/reset/config、transaction format 或 component topology 变化时重审。"]
+}

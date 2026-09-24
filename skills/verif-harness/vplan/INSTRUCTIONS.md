@@ -23,8 +23,15 @@ split one document into multiple public nodes only for genuinely independent own
 or approval gates. The initial proposal must contain only DUT-specific
 `document-writing-plan` nodes. Do not create or show `document-deliverable`
 nodes, write or modify formal document bodies, or run `docs sync` until every
-required writing-plan section has been approved and VDOC is `ACTIVE`. After
-approval, write the formal content, run `docs sync`, and submit a separate
+required writing-plan section has been approved and VDOC is `ACTIVE`.
+Use the sibling `verification-doc-authoring` Skill and the integrated
+`plan authoring` engine for every in-scope registry document. Preserve each
+`VerificationDocumentAuthoringContract/1` under `authoring_contract`; its
+source snapshot must bind the current project/RTL/spec/document digests, and
+missing or conflicting facts must remain explicit source gaps. Keep the eight
+document-specific profiles and their dependency DAG; do not replace them with
+generic VDOC prose and do not generate final Markdown bodies at this stage.
+After approval, write the formal content, run `docs sync`, and submit a separate
 delivery-only `DesiredStateProposal/1` whose independently reviewable
 `document-deliverable` nodes trace to the approved plans. Never combine the two
 phases in one proposal or one Human review request. If closure returns

@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "assertion-plan",
+  "filename": "assertion_plan.md",
+  "node_key": "assertion_plan_authoring",
+  "title": "断言计划撰写方案",
+  "purpose": "把当前 DUT 的 protocol/temporal/invariant/reset/resource/config/error/X requirements 转成可实现、可激活、可追溯的 property intent 合同。",
+  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "范围、责任与 Property 类别", "purpose": "定义 assert/assume/cover、DUT/TB/environment 和 SIM/Formal 边界。", "required": true},
+    {"section": "Property intent inventory", "purpose": "逐条定义 temporal/invariant/protocol/reset/resource/config/error/X intent。", "required": true},
+    {"section": "Clock、reset、bind 与实现策略", "purpose": "定义采样、disable、观察点、parameterization 和 checker/bind。", "required": true},
+    {"section": "Activation、vacuity、cover 与证据", "purpose": "定义 attempts、antecedent reachability、cover 和 SIM/Formal evidence。", "required": true},
+    {"section": "失败诊断、例外与关闭", "purpose": "定义 severity/message/debug、waiver candidate 和 signoff。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "范围、责任与 Property 类别", "instructions": ["区分 DUT obligation、environment assumption、protocol monitor 和 TB sanity；每类写 owner/consumer。", "标明用于 simulation、formal 或两者；assumption 不能在 simulation 中静默掩盖 DUT violation。"], "required_source_kinds": ["verification-document:verification-plan", "verification-document:feature-matrix", "design-spec"]},
+    {"section": "Property intent inventory", "instructions": ["覆盖 handshake/order/stability/latency、state invariant、reset/recovery、FIFO/resource/credit、CSR/config、error/interrupt 和 X/illegal。", "每条写 trigger、antecedent、consequent、time window、overlap、abort/disable、responsibility 和 source anchor。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "register-spec", "rtl"]},
+    {"section": "Clock、reset、bind 与实现策略", "instructions": ["逐 property 选择 clocking event、sync/async reset、disable iff、multi-clock sampling 和 observation point。", "通过 checker/interface/bind 接入，不修改 DUT RTL；internal signal 使用必须有层次稳定性与可观察性评审。"], "required_source_kinds": ["rtl", "verification-document:tb-architecture"]},
+    {"section": "Activation、vacuity、cover 与证据", "instructions": ["为 antecedent/attempt/activation 和关键 sequence 配套 cover/reachability strategy。", "Simulation 记录 attempts/failures/vacuity；Formal 记录 bound/proof/cover/assumption consistency。"], "required_source_kinds": ["verification-artifact", "verification-document:feature-matrix"]},
+    {"section": "失败诊断、例外与关闭", "instructions": ["定义 Assertion ID、severity、message fields、sampled values、test/seed/time 和 waveform anchor。", "disabled/waived/not-applicable 必须有 owner、理由、scope 和 review trigger。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "Property intent", "purpose": "形成实现前的工业级 property contract。", "required_columns": ["Assertion ID", "Feature/Requirement", "kind assert/assume/cover", "category", "intent", "clock/reset/disable", "trigger/antecedent", "consequent/timing", "responsibility", "SIM/Formal", "bind/observation", "status/open questions"]},
+    {"table": "Activation and vacuity", "purpose": "证明 property 真正生效。", "required_columns": ["Assertion ID", "attempt/activation condition", "cover/reachability", "expected minimum/criterion", "evidence", "vacuity disposition"]},
+    {"table": "Failure and exception policy", "purpose": "统一诊断与例外。", "required_columns": ["Assertion ID/category", "severity", "diagnostic payload", "disable control", "waiver candidate", "owner/review trigger"]}
+  ],
+  "domain_rules": ["Property 类别至少覆盖 temporal、invariant、protocol、reset、resource、configuration、error/interrupt 和 X/illegal behavior 的适用项。", "每条 Property 明确 assert/assume/cover、SIM/Formal applicability、clock/reset/disable、bind/observation 和 responsibility。", "零 failure 不能证明 property 生效；必须检查 attempts、activation、antecedent reachability、vacuity 和 cover。", "纯算法数值正确性默认由 reference model/scoreboard 检查，除非存在有来源的局部 invariant。", "禁止为了回归变绿而静默禁用 assertion；所有 disable/waiver/not-applicable 都进入可审计处置。"],
+  "cross_document_rules": ["Assertion ID 与 Feature/Coverage/Test 一致；clock/reset/bind 与 TB architecture 一致；compare responsibility 与 reference model/scoreboard 不冲突。"],
+  "traceability_rules": ["每个 Assertion ID 追溯 requirement/feature/source、property implementation、bind、activation test/cover 和 SIM/Formal evidence。"],
+  "review_roles": ["Assertion owner", "Formal verification owner", "Interface/design owner"],
+  "review_criteria": ["Property intent schema、责任边界、时序、reset、activation/vacuity、diagnostic 和例外规则对当前 DUT 完整。"],
+  "freeze_criteria": ["所有 required properties 有 implement/defer/not-applicable/waiver disposition，并有当前 activation/vacuity 或 formal proof/cover 证据计划。"],
+  "change_invalidation_rules": ["Protocol/timing/reset/FSM/FIFO/resource/CSR/error/X semantics、bind path、assumption 或 property intent 变化时重审。"]
+}

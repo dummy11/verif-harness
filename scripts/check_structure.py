@@ -5,11 +5,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from verif_harness.document_authoring import (  # noqa: E402
+    DocumentAuthoringError, load_authoring_profiles, load_common_rules,
+)
+
 CORE_MODES = ("bootstrap", "vplan", "vmodel", "vcheck", "vclosure", "vreason")
+BUNDLED_SKILLS = ("verif-harness", "verification-doc-authoring")
 CAPABILITY_MODES = (
     "doctor", "xverif", "wavepeek", "add-interface", "add-shared-pkg",
     "add-uvc-skeleton", "add-harness-layer", "add-env-layer",
@@ -31,7 +40,11 @@ def main() -> int:
     failures: list[str] = []
     required_dirs = (
         "deps", "docs", "examples/simple_fifo", "scripts", "templates/dut",
-        "tests", "verif_harness", "skills/verif-harness", ".github/workflows",
+        "tests", "verif_harness", "skills/verif-harness",
+        "skills/verification-doc-authoring",
+        "skills/verification-doc-authoring/core",
+        "skills/verification-doc-authoring/profiles",
+        "skills/verification-doc-authoring/references", ".github/workflows",
     )
     required_files = (
         "verif_harness/__init__.py", "verif_harness/cli.py", "verif_harness/store.py",
@@ -40,6 +53,12 @@ def main() -> int:
         "deps/runtime.lock.json", "deps/runtime-requirements.lock",
         "deps/xverif.lock.json", "deps/wavepeek.lock.json",
         "skills/verif-harness/docs/user_guide.md",
+        "verif_harness/document_authoring.py",
+        "skills/verification-doc-authoring/SKILL.md",
+        "skills/verification-doc-authoring/agents/openai.yaml",
+        "skills/verification-doc-authoring/core/common-rules.json",
+        "skills/verification-doc-authoring/references/authoring-contract.schema.json",
+        "skills/verification-doc-authoring/references/checklist.md",
     )
     for relative in required_dirs:
         if not (ROOT / relative).is_dir():
@@ -97,11 +116,34 @@ def main() -> int:
         if not (ROOT / "skills/verif-harness" / mode / "INSTRUCTIONS.md").is_file():
             failures.append(f"core mode lacks instructions: {mode}")
 
+    expected_profiles = {
+        "verification-workflow": "verification_workflow.md",
+        "verification-plan": "verification_plan.md",
+        "feature-matrix": "feature_matrix.md",
+        "tb-architecture": "tb_architecture.md",
+        "reference-model": "reference_model_spec.md",
+        "coverage-plan": "coverage_plan.md",
+        "assertion-plan": "assertion_plan.md",
+        "testcase-list": "testcase_list.md",
+    }
+    try:
+        profiles = load_authoring_profiles()
+        load_common_rules()
+    except DocumentAuthoringError as exc:
+        failures.append(f"verification-doc-authoring registry invalid: {exc}")
+    else:
+        if {key: item["filename"] for key, item in profiles.items()} != expected_profiles:
+            failures.append("verification-doc-authoring profiles differ from the eight VDOC documents")
+
     for failure in failures:
         print(f"ERROR: {failure}")
     if failures:
         return 1
-    print(f"Structure check PASS: v1 core={len(CORE_MODES)}, capabilities={len(CAPABILITY_MODES)}, example_sources={len(entries)}")
+    print(
+        f"Structure check PASS: skills={len(BUNDLED_SKILLS)}, "
+        f"v1 core={len(CORE_MODES)}, capabilities={len(CAPABILITY_MODES)}, "
+        f"example_sources={len(entries)}"
+    )
     return 0
 
 

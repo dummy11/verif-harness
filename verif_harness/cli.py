@@ -88,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""常用命令：
   verif-harness bootstrap
+  verif-harness plan authoring --output .verif-harness/proposals/vdoc-authoring.json
   verif-harness plan VDOC
   verif-harness review [VDOC]
   verif-harness status [VDOC]
@@ -213,6 +214,19 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument(
         "--desired-file",
         help="供 Agent 和负责人评审的 DesiredStateProposal/1 JSON；在模板汇总节点下追加项目级子节点",
+    )
+    authoring = plan_commands.add_parser(
+        "authoring",
+        help="从当前 DUT RTL/spec 和已有验证文档生成结构化 VDOC 撰写方案候选",
+    )
+    project_argument(authoring)
+    authoring.add_argument(
+        "--document", action="append", default=[],
+        help="生成指定 document_key；可重复，省略时生成 registry 中全部八份文档",
+    )
+    authoring.add_argument(
+        "--output",
+        help="把候选 proposal 写入项目内路径；省略时直接输出 DesiredStateProposal/1",
     )
     show = plan_commands.add_parser("show", help="显示当前 Workstream plan")
     project_argument(show); workstream_argument(show)
@@ -829,6 +843,8 @@ def main(arguments: list[str] | None = None) -> int:
                 emit(store.design_workstream(args.workstream, args.objective, args.desired, args.exit_criteria,
                                              args.decision, args.document_root, args.evidence_claim,
                                              args.desired_file))
+            elif args.plan_command == "authoring":
+                emit(store.build_vdoc_authoring_proposal(args.document, args.output))
             elif args.plan_command == "show": emit(store.workstream(args.workstream))
             elif args.plan_command == "review":
                 workstream = infer_workstream(store, args.workstream, "review")

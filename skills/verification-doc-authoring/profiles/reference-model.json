@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "reference-model",
+  "filename": "reference_model_spec.md",
+  "node_key": "reference_model_authoring",
+  "title": "参考模型接入与比较规则撰写方案",
+  "purpose": "定义当前 DUT reference model 的适用范围、数据/状态/数值语义、同步对齐、compare policy 和独立可信度验证。",
+  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "模型目标、来源与适用范围", "purpose": "定义 golden/reference 身份、版本、抽象级别与 unsupported scope。", "required": true},
+    {"section": "输入、配置、状态与输出语义", "purpose": "定义 transaction/config/state transfer 和 reset/flush。", "required": true},
+    {"section": "数值、格式与异常规则", "purpose": "定义 precision/rounding/saturation/overflow/X/invalid/error。", "required": true},
+    {"section": "时间、顺序与对齐", "purpose": "定义 latency/order/tag/queue/buffer/flush 和 compare window。", "required": true},
+    {"section": "API、adapter、compare 与模型验证", "purpose": "定义接口合同、mismatch 诊断和模型自身可信度。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "模型目标、来源与适用范围", "instructions": ["记录模型 source/version/owner/license/build/run identity 和 supported features。", "区分 transaction-level、cycle-aware、bit-accurate 和 approximate；无来源不得自行选择。"], "required_source_kinds": ["project-context", "design-spec", "verification-document:verification-plan", "verification-document:feature-matrix"]},
+    {"section": "输入、配置、状态与输出语义", "instructions": ["逐字段映射 DUT transaction/CSR/config 到模型 API，并写 source anchor。", "定义 state initialization、reset、flush、warm-up、multi-context 和 side effect。"], "required_source_kinds": ["interface-spec", "register-spec", "micro-architecture-spec"]},
+    {"section": "数值、格式与异常规则", "instructions": ["明确 width/signedness/endian/layout/quantization/rounding/saturation/overflow/mask。", "错误、invalid、NaN/X/Z、unsupported input 的 expected handling 必须有来源。"], "required_source_kinds": ["design-spec", "register-spec"]},
+    {"section": "时间、顺序与对齐", "instructions": ["定义 input acceptance、expected production、actual observation、tag/sequence/order 与 compare time。", "可变 latency、out-of-order、drop/flush/backpressure 不得用固定 FIFO 假设掩盖。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "verification-document:tb-architecture"]},
+    {"section": "API、adapter、compare 与模型验证", "instructions": ["定义 adapter ownership、错误返回、determinism、version logging 和 replay。", "设计 independent vectors/metamorphic/cross-model checks，避免 DUT 与模型共享同一错误假设。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "Support matrix", "purpose": "限定模型适用性。", "required_columns": ["Feature/operation", "model support", "abstraction/accuracy", "unsupported disposition", "source"]},
+    {"table": "I/O and state mapping", "purpose": "固定 DUT/model 语义转换。", "required_columns": ["DUT field/event", "model field/API", "format", "config/state", "reset/flush", "source"]},
+    {"table": "Compare policy", "purpose": "定义可判定 oracle。", "required_columns": ["data/behavior class", "alignment", "mask/valid", "precision/tolerance", "timing/order", "mismatch action"]}
+  ],
+  "domain_rules": ["bit-exact、tolerance、rounding、saturation、latency 和 ordering policy 必须有规格或负责人决定。", "模型适用范围与 unsupported behavior 显式列出，不把跳过比较算 PASS。", "reset/flush/config/state engagement 必须由运行证据证明，文件存在或 API 可调用不等于模型已参与检查。", "compare diagnostics 至少包含 transaction identity、expected/actual、model version、config、test/seed 和 source digest。"],
+  "cross_document_rules": ["compare policy 与 TB data flow、Feature expected result、Test checks 和 Regression evidence 必须一致。"],
+  "traceability_rules": ["每条 compare rule 关联 Feature/Requirement、model code/API、scoreboard implementation 和 evidence。"],
+  "review_roles": ["Reference model owner", "Scoreboard owner", "Algorithm/design owner"],
+  "review_criteria": ["适用范围、数值/状态/时间语义和 compare policy 对当前 DUT 可执行且无默认猜测。"],
+  "freeze_criteria": ["模型版本、adapter、compare policy、支持矩阵和 independent validation evidence 均绑定当前 revision。"],
+  "change_invalidation_rules": ["算法、format/width、CSR/config、latency/order/reset/flush、model/API/adapter 或 compare policy 变化时重审。"]
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "VerificationDocumentAuthoringProfile/1",
+  "document_key": "coverage-plan",
+  "filename": "coverage_plan.md",
+  "node_key": "coverage_plan_authoring",
+  "title": "覆盖率计划撰写方案",
+  "purpose": "把当前 DUT features、场景、状态、配置和风险转成可采样、可达、可关闭的 functional/code/assertion coverage 撰写合同。",
+  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture"],
+  "source_requirements": [],
+  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "document_structure": [
+    {"section": "覆盖目标、类型与统计口径", "purpose": "定义 functional/code/assertion coverage 的用途和分母。", "required": true},
+    {"section": "Functional coverage model", "purpose": "定义 covergroup/coverpoint/bin/sample/gating。", "required": true},
+    {"section": "Cross、状态空间与可达性", "purpose": "定义有工程意义的 crosses、legal/illegal/unreachable。", "required": true},
+    {"section": "Code/Assertion coverage 与 exclusions", "purpose": "定义结构覆盖、断言 attempts/vacuity 和 exclusion governance。", "required": true},
+    {"section": "收集、合并、补洞与关闭", "purpose": "定义数据库 identity、merge、hole analysis 和 closure evidence。", "required": true}
+  ],
+  "section_authoring_instructions": [
+    {"section": "覆盖目标、类型与统计口径", "instructions": ["按 Feature/Risk 说明 functional/code/assertion coverage 的目的，不预设 100%。", "阈值、denominator、per-instance 和 exclusion policy 必须有来源/负责人决定。"], "required_source_kinds": ["verification-document:verification-plan", "verification-document:feature-matrix", "design-spec"]},
+    {"section": "Functional coverage model", "instructions": ["逐项写 Coverage ID、sample object/event、iff/gating、bins/boundaries 和 observation success condition。", "采样 DUT accepted/observed behavior，不把 stimulus generated 当成 DUT executed。"], "required_source_kinds": ["verification-document:tb-architecture", "interface-spec", "register-spec"]},
+    {"section": "Cross、状态空间与可达性", "instructions": ["只建立能回答风险问题的 cross；控制笛卡尔积和自动 bins。", "illegal/ignore/unreachable 必须分别有 spec、design constraint 或 reachability evidence。"], "required_source_kinds": ["micro-architecture-spec", "design-spec", "verification-artifact"]},
+    {"section": "Code/Assertion coverage 与 exclusions", "instructions": ["定义 line/toggle/branch/FSM scope、generated logic、reset/X 和 hierarchy filtering。", "定义 assertion attempts/success/failure/vacuity/cover；exclusion 只登记 candidate，不预批准。"], "required_source_kinds": ["rtl", "verification-artifact"]},
+    {"section": "收集、合并、补洞与关闭", "instructions": ["绑定 RTL/TB/test/seed/config/tool/database digests 和 merge compatibility。", "区分 stimulus gap、observability gap、checker gap、unreachable candidate 和 waiver candidate。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+  ],
+  "required_tables": [
+    {"table": "Functional coverage items", "purpose": "定义可实现采样合同。", "required_columns": ["Coverage ID", "Feature ID", "sample event/object", "iff/gating", "bins/boundaries", "expected stimulus"]},
+    {"table": "Cross and reachability", "purpose": "治理组合空间。", "required_columns": ["Cross ID", "dimensions", "purpose", "legal combinations", "illegal/unreachable basis", "size control"]},
+    {"table": "Closure and exclusions", "purpose": "防止 false green。", "required_columns": ["coverage target", "current evidence", "gap class", "action/owner", "exclusion/waiver ref", "recheck trigger"]}
+  ],
+  "domain_rules": ["Functional coverage 采样点必须证明 DUT 已接受或产生目标行为，不能只在 sequence 随机化时采样。", "bins/crosses 由 Feature/Risk 驱动；边界、illegal/ignore/unreachable 都有来源和审查。", "Code coverage exclusion 与 functional coverage closure 分开治理，未证明不可达的项保持 open。", "Assertion coverage 同时检查 attempts、activation、vacuity 和 cover reachability，零 failure 不是 closure。"],
+  "cross_document_rules": ["Coverage IDs 映射 Feature/Test/Assertion；sampling/gating 与 TB monitor、clock/reset 和 protocol acceptance 一致。"],
+  "traceability_rules": ["每个 Coverage/Cross/Exclusion ID 关联 Feature/Requirement、实现位置、测试来源和 coverage database evidence。"],
+  "review_roles": ["Coverage owner", "Feature owner", "Formal/assertion owner"],
+  "review_criteria": ["覆盖模型针对当前 DUT 的状态、配置、边界、错误与并发风险，且 sampling/reachability 可证明。"],
+  "freeze_criteria": ["当前数据库 identity、目标分母、所有 gap disposition 和 exclusion/waiver review 完整。"],
+  "change_invalidation_rules": ["Feature/bin/cross/sample/gating、RTL hierarchy/FSM、test/config、tool/database 或 exclusion 变化时重审。"]
+}

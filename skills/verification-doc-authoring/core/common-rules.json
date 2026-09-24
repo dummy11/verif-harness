@@ -1,0 +1,51 @@
+{
+  "schema": "VerificationDocumentAuthoringCommonRules/1",
+  "source_requirements": [
+    {"source_kind": "project-context", "required": true, "purpose": "绑定当前项目、DUT top、输入根目录、Git revision 和 VDOC revision。", "selection_rule": "只使用当前 project.json、inventory 和 ProjectStore 状态，不复用其他项目或 revision 的结论。"},
+    {"source_kind": "rtl", "required": true, "purpose": "核对真实 hierarchy、ports、interfaces、clock/reset 与可观察内部结构。", "selection_rule": "RTL 只读；自动提取结果属于 RTL observation，不自动升级为 specification requirement。"},
+    {"source_kind": "design-spec", "required": true, "purpose": "提取功能、时序、协议、配置、错误处理和完成条件的规范来源。", "selection_rule": "保留稳定 requirement ID、章节或原文锚点；冲突、缺失或不可解析内容进入 source_gaps。"},
+    {"source_kind": "micro-architecture-spec", "required": false, "purpose": "理解 block/FSM/FIFO/pipeline/buffer/credit、状态与资源边界。", "selection_rule": "只记录来源明确的内部结构与约束；缺失时不得由信号名反推设计意图。"},
+    {"source_kind": "interface-spec", "required": false, "purpose": "确定协议角色、handshake、ordering、latency、backpressure 与 reset 规则。", "selection_rule": "接口语义必须来自 Interface Spec、Design Spec 或负责人决定，端口名称只能作为待确认线索。"},
+    {"source_kind": "register-spec", "required": false, "purpose": "确定 CSR address/field/access/reset/side-effect、错误与 interrupt 语义。", "selection_rule": "只使用当前 Register Spec 中有锚点的定义；RTL decode observation 不能替代寄存器规范。"},
+    {"source_kind": "verification-artifact", "required": false, "purpose": "继承当前 verification plan、feature、TB、checker、coverage、testcase、regression 和 traceability 决定。", "selection_rule": "只消费当前 revision 的项目级内容；template-only、过期或未验收内容必须明确标记。"}
+  ],
+  "rtl_spec_analysis_method": [
+    "先建立 source inventory 与 SHA-256，再按 requirement/feature/source anchor 提取事实；禁止用通用 ASIC 常识填补当前 DUT 事实。",
+    "对 RTL hierarchy/port/clock/reset/internal structure observation 与 spec requirement 分栏记录，并对差异、冲突、不可观察点建立 source gap。",
+    "逐项分析 protocol、timing/latency、reset、configuration/CSR、resource/FIFO/buffer/credit、error/interrupt 和 X/illegal behavior；只写来源支持的项目事实。",
+    "把已有 verification artifacts 作为当前 revision 的依赖输入，检查 stable ID、术语、scope、checker、coverage、test 和 evidence 映射是否一致。",
+    "无法从当前来源确定的接口、时序、latency、寄存器、状态机、协议约束和功能需求必须留在 unresolved/source_gaps，不能生成确定性文案。"
+  ],
+  "cross_document_consistency_rules": [
+    "统一使用当前项目的 Requirement ID、Feature ID、Interface ID、Assertion ID、Coverage ID、Test ID 和 Evidence ID；同一 ID 不得在不同文档改变语义。",
+    "verification_plan 的 scope/risk/exit criteria 必须在 feature_matrix 和专题文档中有具体落点；专题文档不得静默扩张总计划范围。",
+    "TB observation/stimulus path、reference model/scoreboard compare policy、assertion responsibility、coverage sampling 与 testcase expected checks 必须使用同一 clock/reset、transaction 和配置语义。",
+    "Requirement -> Feature -> Test/Assertion/Coverage/Reference Model/Regression -> Evidence/Traceability 必须形成闭环；缺失边进入明确 gap，不以 TBD ID 冒充闭环。",
+    "同一 DUT 行为由 scoreboard、assertion 和 coverage 重复涉及时，分别说明 oracle、failure criterion 与 sampling purpose，禁止形成矛盾通过标准。"
+  ],
+  "traceability_requirements": [
+    "每个项目级事实保留 source id、path、SHA-256 与章节/requirement anchor；RTL observation 与 specification requirement 分开。",
+    "每个必需 Requirement/Feature 都有 implement、verify、defer、not-applicable 或 waiver-candidate 处置及理由。",
+    "每个 Test/Assertion/Coverage/Reference Model 项目追溯到 Feature/Requirement，并进一步关联实现位置、run configuration 与当前 evidence。",
+    "开放问题、暂定决定和例外记录 owner、影响节点、review trigger 与下游失效范围。"
+  ],
+  "review_roles": ["DV owner", "Design owner", "Verification architect"],
+  "review_criteria": [
+    "authoring node 已绑定当前 DUT、当前 project/revision 和真实 RTL/spec/document digests。",
+    "每个缺失或冲突来源都保留 source gap、影响、required review 和是否阻塞正文撰写，不存在 fabricate。",
+    "章节级指令与 required tables 能指导另一名验证工程师编写项目正文，而不是只有通用章节标题。",
+    "跨文档依赖、stable IDs、traceability、review、freeze 与 change invalidation 条件均可执行。"
+  ],
+  "freeze_criteria": [
+    "对应正文已按当前 authoring contract 完成，并通过独立 document-deliverable 验收。",
+    "所有 blocking source gaps、冲突和 owner review 已关闭；允许保留的非阻塞项有明确 owner、理由和重审触发器。",
+    "正文、authoring contract、RTL/spec 与下游 evidence 的 digests/revisions 一致，且 closure 不含 stale/revalidation finding。",
+    "freeze 仍需负责人显式决定；authoring node、Agent 自检或工具 PASS 不授予 freeze。"
+  ],
+  "change_invalidation_rules": [
+    "任何 source snapshot 文件 digest、DUT top、profile digest 或 node definition 变化都使对应 authoring node 失效并要求重新评审。",
+    "authoring node 失效必须传播到对应 document-deliverable，以及通过 document dependency 读取它的下游 authoring/document nodes。",
+    "RTL/spec 变化只重算受影响事实、章节和 traceability 边；保留历史 revision、review 和 evidence，不覆盖旧记录。",
+    "新增/删除/修改 Requirement、port/interface、clock/reset、CSR、FSM/FIFO/pipeline/resource、error/interrupt 或 protocol rule 时必须执行 impact analysis。"
+  ]
+}

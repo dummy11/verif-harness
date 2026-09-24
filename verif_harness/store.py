@@ -17,6 +17,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
 
+from .document_authoring import (
+    AUTHORING_CONTRACT_SCHEMA,
+    DocumentAuthoringError,
+    build_authoring_proposal,
+    load_authoring_profiles,
+    normalize_authoring_contract,
+)
 from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
 from .evidence_policy import policy_for
 from .reachability import ReachabilityError, validate_reachability
@@ -99,6 +106,18 @@ VDOC_DOCUMENTS = {
     "testcase-list": ("testcase_list.md", "列清每个测试用例要验证的内容、使用的场景、检查方法和运行方式", ["VDOC", "VCASE", "VREG"]),
 }
 
+AUTHORING_PROFILES = load_authoring_profiles()
+if set(AUTHORING_PROFILES) != set(VDOC_DOCUMENTS):
+    raise RuntimeError(
+        "verification-doc-authoring profile registry 与 VDOC_DOCUMENTS 不一致: "
+        f"profiles={sorted(AUTHORING_PROFILES)}, documents={sorted(VDOC_DOCUMENTS)}"
+    )
+for _document_key, _profile in AUTHORING_PROFILES.items():
+    if _profile["filename"] != VDOC_DOCUMENTS[_document_key][0]:
+        raise RuntimeError(
+            f"verification-doc-authoring profile filename 与 VDOC_DOCUMENTS 不一致: {_document_key}"
+        )
+
 VDOC_PLAN_CONTENT = {
     "verification-workflow": [
         "定义文档编写、评审、修改、失效重验和冻结流程",
@@ -133,7 +152,6 @@ VDOC_PLAN_CONTENT = {
         "关联检查方法、覆盖目标、单测入口和回归分组",
     ],
 }
-
 
 def vdoc_document_contract(key: str) -> dict[str, Any]:
     filename, _title, workstreams = VDOC_DOCUMENTS[key]
@@ -863,6 +881,12 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  负责人验收正文内容”串行推进。方案未进入 `ACTIVE` 前，Agent 只能",
         "  提交 `document-writing-plan`；不得生成或修改正式正文、执行 `docs sync`、",
         "  创建 `document-deliverable`，或要求负责人同时审批方案和验收正文。",
+        "- VDOC 撰写方案必须使用 `verification-doc-authoring` 的统一 engine 和当前 registry",
+        "  中 8 个 profiles。每个 `*_authoring` 节点保存结构化 contract，绑定当前",
+        "  RTL/spec/document path 与 SHA-256、DUT-specific facts、source gaps、领域规则、",
+        "  文档依赖、追溯、评审、冻结和 change invalidation；不得用通用模板文案代替。",
+        "- 缺失或冲突的接口、时序/latency、CSR、FSM/FIFO/pipeline/resource、protocol、",
+        "  error/interrupt 或 requirement 必须留作 source gap 和 required review，不得臆造。",
         "- 只有用户明确要求提前试写时，才可在方案批准前生成“未批准预览草稿”；",
         "  该草稿不得同步为正文语义版本，不得创建内容验收节点，也不得作为任何",
         "  完成、证据或下游实现授权。",
@@ -1455,6 +1479,68 @@ class ProjectStore:
                 count += 1
         return count
 
+    def _reconcile_vdoc_authoring_edges(
+        self, connection: sqlite3.Connection, desired_rows: list[dict[str, Any]],
+    ) -> int:
+        """Bind source digests and profile dependencies to current authoring nodes."""
+        authoring_by_document = {
+            str(item["document_key"]): item
+            for item in desired_rows
+            if item.get("role") == "document-writing-plan"
+            and isinstance(item.get("authoring_contract"), dict)
+        }
+        count = 0
+        timestamp = now()
+        connection.execute(
+            "DELETE FROM edges WHERE origin IN ('authoring-source','authoring-profile')"
+        )
+        for document_key, item in authoring_by_document.items():
+            contract = item["authoring_contract"]
+            for source in contract["source_snapshot"]:
+                source_id = f"file:{source['path']}"
+                observed = connection.execute(
+                    "SELECT 1 FROM nodes WHERE id=?", (source_id,),
+                ).fetchone()
+                if observed is None:
+                    self.upsert_node(
+                        connection, source_id, "artifact", str(source["path"]),
+                        Validity.UNKNOWN,
+                        data={
+                            "path": source["path"], "kind": source["kind"],
+                            "sha256": source["sha256"], "authoring_source": True,
+                        },
+                    )
+                connection.execute(
+                    "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                    (
+                        source_id, item["id"], "AFFECTS", "authoring-source", 1.0,
+                        json_text({
+                            "source_id": source["id"], "source_kind": source["kind"],
+                            "source_sha256": source["sha256"],
+                            "document_key": document_key,
+                        }), timestamp,
+                    ),
+                )
+                count += 1
+            for dependency_key in contract["document_dependencies"]:
+                prerequisite = authoring_by_document.get(str(dependency_key))
+                if prerequisite is None:
+                    continue
+                connection.execute(
+                    "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                    (
+                        item["id"], prerequisite["id"], "DEPENDS_ON",
+                        "authoring-profile", 1.0,
+                        json_text({
+                            "dependent_document": document_key,
+                            "prerequisite_document": dependency_key,
+                            "required_state": "VALID",
+                        }), timestamp,
+                    ),
+                )
+                count += 1
+        return count
+
     def planning_context(self, workstream: str) -> dict[str, Any]:
         model = self.model()
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -1474,6 +1560,33 @@ class ProjectStore:
                 "open_findings": [item for item in model["findings"] if item["status"] == "OPEN"][:100],
                 "truncated": len(relevant) > 200 or len(model["edges"]) > 200,
             },
+        }
+
+    def build_vdoc_authoring_proposal(
+        self, document_keys: Iterable[str] = (), output: str | None = None,
+    ) -> dict[str, Any]:
+        """Generate a grounded writing-plan proposal without registering or approving it."""
+        self.require()
+        try:
+            proposal = build_authoring_proposal(self.root, document_keys)
+        except DocumentAuthoringError as exc:
+            raise HarnessError(str(exc)) from exc
+        if output is None:
+            return proposal
+        relative = relative_path(self.root, output)
+        self._document_path_allowed(relative)
+        target = self.root / relative
+        if target.is_symlink():
+            raise HarnessError(f"拒绝跟随 authoring proposal 符号链接: {relative}")
+        atomic_json(target, proposal)
+        return {
+            "schema": "VerificationDocumentAuthoringProposal/1",
+            "path": relative,
+            "document_keys": [item["document_key"] for item in proposal["nodes"]],
+            "node_count": len(proposal["nodes"]),
+            "contract_schema": AUTHORING_CONTRACT_SCHEMA,
+            "registered": False,
+            "writes_final_documents": False,
         }
 
     def _document_path_allowed(self, relative: str) -> None:
@@ -1695,6 +1808,43 @@ class ProjectStore:
             required = item.get("required", True)
             if not isinstance(required, bool):
                 raise HarnessError(f"{prefix}.required 必须是 boolean")
+            raw_authoring_contract = item.get("authoring_contract")
+            reserved_authoring_keys = {
+                str(profile["node_key"]): profile_key
+                for profile_key, profile in AUTHORING_PROFILES.items()
+            }
+            is_authoring_plan = (
+                workstream == "VDOC" and role == "document-writing-plan"
+            )
+            if key in reserved_authoring_keys and (
+                not is_authoring_plan
+                or document_key != reserved_authoring_keys[key]
+            ):
+                raise HarnessError(
+                    f"{prefix}.key={key} 只能用于 {reserved_authoring_keys[key]} 的 "
+                    "document-writing-plan"
+                )
+            if key in reserved_authoring_keys and raw_authoring_contract is None:
+                raise HarnessError(
+                    f"{prefix}.key={key} 必须携带当前 profile 生成的 authoring_contract"
+                )
+            authoring_contract = None
+            if raw_authoring_contract is not None and not is_authoring_plan:
+                raise HarnessError(
+                    f"{prefix}.authoring_contract 只适用于 VDOC document-writing-plan"
+                )
+            if raw_authoring_contract is not None:
+                try:
+                    authoring_contract = normalize_authoring_contract(
+                        raw_authoring_contract, document_key, self.root,
+                    )
+                except DocumentAuthoringError as exc:
+                    raise HarnessError(f"{prefix}.authoring_contract 无效: {exc}") from exc
+                expected_key = str(AUTHORING_PROFILES[document_key]["node_key"])
+                if key != expected_key:
+                    raise HarnessError(
+                        f"{prefix}.key 必须与 authoring profile 一致: {expected_key}"
+                    )
             internal_units: list[dict[str, Any]] = []
             semantic_manifest_digest = None
             if workstream == "VDOC":
@@ -1719,6 +1869,8 @@ class ProjectStore:
                 ),
                 "required": required, "definition_origin": "project-proposal",
                 "definition_status": "REVIEW_CANDIDATE",
+                **({"authoring_contract": authoring_contract}
+                   if authoring_contract is not None else {}),
                 **({
                     "internal_semantic_units": internal_units,
                     "semantic_manifest_digest": semantic_manifest_digest,
@@ -1914,6 +2066,10 @@ class ProjectStore:
                     "DELETE FROM edges WHERE source=? AND relation='CHILD_OF'",
                     (item["id"],),
                 )
+                connection.execute(
+                    "DELETE FROM edges WHERE source=? AND origin='authoring-contract'",
+                    (item["id"],),
+                )
             for row in [*delivery_rows, *internal_rows]:
                 self.upsert_node(
                     connection, row["id"], "desired-state", row["title"],
@@ -1928,6 +2084,19 @@ class ProjectStore:
                         }), timestamp,
                     ),
                 )
+                if row.get("role") == "document-deliverable":
+                    connection.execute(
+                        "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                        (
+                            row["id"], row["parent_id"], "DEPENDS_ON",
+                            "authoring-contract", 1.0,
+                            json_text({
+                                "document_key": row["document_key"],
+                                "required_parent_state": "VALID",
+                                "reason": "正文验收必须受当前有效 authoring node 约束",
+                            }), timestamp,
+                        ),
+                    )
             lifecycle = (
                 "PARTIALLY_STALE"
                 if current_plan["lifecycle"] == "PARTIALLY_STALE" else "ACTIVE"
@@ -2117,6 +2286,7 @@ class ProjectStore:
                             "internal_semantic_units", "semantic_manifest_digest",
                             "semantic_unit_id", "semantic_field", "semantic_sequence",
                             "semantic_digest", "visibility", "visible_to_human", "parent_role",
+                            "authoring_contract",
                         ) if field in spec
                     })
                 else:
@@ -2142,6 +2312,10 @@ class ProjectStore:
             """, (name, "REVIEW", revision, objective_value, json_text(desired_rows), json_text(exit_values),
                   json_text(decisions), json_text(context), now()))
             default_dependency_count = self._reconcile_default_dependencies(connection)
+            authoring_dependency_count = (
+                self._reconcile_vdoc_authoring_edges(connection, desired_rows)
+                if name == "VDOC" else 0
+            )
         self.write_workstream_projection(name)
         materialized_documents: list[dict[str, Any]] = []
         if name == "VDOC":
@@ -2175,6 +2349,7 @@ class ProjectStore:
             }
         result["decision_log"] = decisions
         result["default_dependency_count"] = default_dependency_count
+        result["authoring_dependency_count"] = authoring_dependency_count
         result["desired_state_proposal"] = proposal_source
         result["project_goal_count"] = len(proposal_nodes)
         result["questions_for_human"] = [
@@ -3387,6 +3562,21 @@ class ProjectStore:
                 "方案审批前不得创建正文内容验收节点: "
                 + ", ".join(sorted(item["key"] for item in premature_deliveries))
             )
+        authoring_by_document = {
+            str(item.get("document_key")): item
+            for item in required_plans
+            if isinstance(item.get("authoring_contract"), dict)
+        }
+        for document_key, item in authoring_by_document.items():
+            missing_dependencies = sorted(
+                set(item["authoring_contract"].get("document_dependencies", []))
+                - set(authoring_by_document)
+            )
+            if missing_dependencies:
+                issues.append(
+                    f"{document_key} authoring profile 缺少上游 authoring nodes: "
+                    + ", ".join(missing_dependencies)
+                )
         return issues
 
     @staticmethod
