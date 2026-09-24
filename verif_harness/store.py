@@ -448,7 +448,7 @@ def desired_definition(
 def vdoc_internal_semantic_units(
     key: str, role: str, fields: dict[str, list[str]],
 ) -> tuple[list[dict[str, Any]], str]:
-    """Create stable, non-Human-facing units for fine-grained VDOC comparison."""
+    """Create stable, non-Human-facing units for fine-grained VDOC work."""
     units: list[dict[str, Any]] = []
     for field in (
         "scope", "work_content", "acceptance_criteria", "source_refs",
@@ -474,6 +474,71 @@ def vdoc_internal_semantic_units(
         {"id": item["id"], "digest": item["digest"]} for item in units
     ]).encode("utf-8")).hexdigest()
     return units, manifest_digest
+
+
+def vdoc_internal_child_specs(parent: dict[str, Any]) -> list[dict[str, Any]]:
+    """Materialize hidden semantic units as full desired-state child nodes."""
+    field_labels = {
+        "scope": "范围",
+        "work_content": "工作内容",
+        "acceptance_criteria": "验收条件",
+        "source_refs": "输入依据",
+        "deliverables": "交付内容",
+        "quality_checks": "质量检查",
+    }
+    children: list[dict[str, Any]] = []
+    for unit in parent.get("internal_semantic_units", []):
+        field = str(unit["field"])
+        sequence = int(unit["sequence"])
+        content = str(unit["content"])
+        key = f"{parent['key']}--semantic--{field}--{sequence}"
+        label = field_labels.get(field, field)
+        children.append({
+            "key": key,
+            "title": f"{parent['title']} · {label} {sequence}",
+            "role": "document-semantic-unit",
+            "visibility": "internal",
+            "visible_to_human": False,
+            "required": parent.get("required", True),
+            "suggested_mode": parent.get("suggested_mode", "review"),
+            "evidence_claim": "document-review",
+            "parent_key": parent["key"],
+            "parent_role": parent["role"],
+            "document_key": parent.get("document_key"),
+            "content_kind": "internal-semantic-work",
+            "semantic_unit_id": unit["id"],
+            "semantic_field": field,
+            "semantic_sequence": sequence,
+            "semantic_digest": unit["digest"],
+            "statement": content,
+            "purpose": (
+                f"独立跟踪公开文档节点“{parent['title']}”中的{label}，"
+                "使其能够参与执行、依赖、证据、问题和失效传播。"
+            ),
+            "scope": [content],
+            "acceptance_criteria": [
+                f"当前版本的{label}已经完成，并与对应规格、正文和依赖工作一致",
+            ],
+            "source_refs": list(parent.get("source_refs", [])),
+            "work_content": [content],
+            "implementation_approach": list(parent.get("implementation_approach", [])),
+            "deliverables": [f"公开文档节点“{parent['title']}”中的{label}完成结果"],
+            "progress_measures": [{
+                "id": f"semantic-{field}-{sequence}",
+                "label": f"已完成{label}",
+                "unit": "项",
+                "target": "1",
+                "source": str(unit["id"]),
+            }],
+            "quality_checks": list(parent.get("quality_checks", [])),
+            "definition_origin": "engine-derived",
+            "definition_status": "REVIEW_CANDIDATE",
+            "role_description": (
+                "负责人不可见的文档内部工作节点；与其他工作节点使用同一状态、"
+                "依赖、证据、Activity、Agent assignment、问题和 closure 机制"
+            ),
+        })
+    return children
 
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
@@ -1344,9 +1409,19 @@ class ProjectStore:
     @staticmethod
     def _reconcile_default_dependencies(connection: sqlite3.Connection) -> int:
         current: dict[tuple[str, str], str] = {}
+        vdoc_semantic: dict[str, list[dict[str, str]]] = {}
         for row in connection.execute("SELECT name,desired_json FROM workstreams"):
             for desired in json.loads(row["desired_json"]):
                 current[(row["name"], desired["key"])] = desired["id"]
+                if (
+                    row["name"] == "VDOC"
+                    and desired.get("role") == "document-semantic-unit"
+                    and desired.get("document_key")
+                ):
+                    vdoc_semantic.setdefault(str(desired["document_key"]), []).append({
+                        "id": desired["id"],
+                        "parent_role": str(desired.get("parent_role") or ""),
+                    })
         connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
         count = 0
         timestamp = now()
@@ -1355,12 +1430,29 @@ class ProjectStore:
             prerequisite = current.get(prerequisite_key)
             if dependent is None or prerequisite is None:
                 continue
-            connection.execute(
-                "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
-                (dependent, prerequisite, "DEPENDS_ON", "planner-default", 1.0,
-                 json_text({"dependent": list(dependent_key), "prerequisite": list(prerequisite_key)}), timestamp),
-            )
-            count += 1
+            prerequisites = [prerequisite]
+            if prerequisite_key[0] == "VDOC":
+                candidates = vdoc_semantic.get(prerequisite_key[1], [])
+                delivery_candidates = [
+                    item["id"] for item in candidates
+                    if item["parent_role"] == "document-deliverable"
+                ]
+                plan_candidates = [
+                    item["id"] for item in candidates
+                    if item["parent_role"] == "document-writing-plan"
+                ]
+                prerequisites = delivery_candidates or plan_candidates or prerequisites
+            for resolved_prerequisite in prerequisites:
+                connection.execute(
+                    "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                    (dependent, resolved_prerequisite, "DEPENDS_ON", "planner-default", 1.0,
+                     json_text({
+                         "dependent": list(dependent_key),
+                         "prerequisite": list(prerequisite_key),
+                         "resolved_prerequisite": resolved_prerequisite,
+                     }), timestamp),
+                )
+                count += 1
         return count
 
     def planning_context(self, workstream: str) -> dict[str, Any]:
@@ -1739,6 +1831,10 @@ class ProjectStore:
         retained = [
             item for item in current_plan["desired_state"]
             if item.get("role") != "document-deliverable"
+            and not (
+                item.get("role") == "document-semantic-unit"
+                and item.get("parent_role") == "document-deliverable"
+            )
         ]
         key_to_id = {item["key"]: item["id"] for item in retained}
         key_to_id.update({
@@ -1768,6 +1864,8 @@ class ProjectStore:
                 "parent_id": key_to_id.get(spec.get("parent_key")),
                 "document_key": spec.get("document_key"),
                 "content_kind": "semantic-acceptance",
+                "visibility": "public",
+                "visible_to_human": True,
                 **{
                     field: spec[field] for field in (
                         "statement", "purpose", "scope", "acceptance_criteria",
@@ -1780,11 +1878,34 @@ class ProjectStore:
             }
             delivery_rows.append(row)
 
+        internal_rows: list[dict[str, Any]] = []
+        for parent in delivery_rows:
+            for spec in vdoc_internal_child_specs(parent):
+                node_id = f"workstream:VDOC:r{revision}:desired:{spec['key']}"
+                internal_rows.append({
+                    **spec,
+                    "id": node_id,
+                    "parent_id": parent["id"],
+                    "evidence_contract": {
+                        "version": "DocumentReviewPolicy/1",
+                        "claim": "document-review",
+                        "required": [
+                            "已保存当前语义工作单元的完成材料",
+                            "完成材料与当前文档版本和节点定义一致",
+                        ],
+                    },
+                })
+
         previous_deliveries = self._vdoc_delivery_desired(current_plan)
-        next_desired = [*retained, *delivery_rows]
+        previous_internal = [
+            item for item in current_plan["desired_state"]
+            if item.get("role") == "document-semantic-unit"
+            and item.get("parent_role") == "document-deliverable"
+        ]
+        next_desired = [*retained, *delivery_rows, *internal_rows]
         timestamp = now()
         with self.connect() as connection:
-            for item in previous_deliveries:
+            for item in [*previous_deliveries, *previous_internal]:
                 connection.execute(
                     "UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE id=?",
                     (Validity.STALE.value, timestamp, item["id"]),
@@ -1793,7 +1914,7 @@ class ProjectStore:
                     "DELETE FROM edges WHERE source=? AND relation='CHILD_OF'",
                     (item["id"],),
                 )
-            for row in delivery_rows:
+            for row in [*delivery_rows, *internal_rows]:
                 self.upsert_node(
                     connection, row["id"], "desired-state", row["title"],
                     Validity.REVIEW_REQUIRED, "VDOC", row,
@@ -1915,6 +2036,12 @@ class ProjectStore:
                     "VDOC 文档撰写方案不能进入审批：" + "；".join(issues)
                 )
         desired_specs.extend(proposal_nodes)
+        if name == "VDOC":
+            desired_specs.extend(
+                child
+                for parent in proposal_nodes
+                for child in vdoc_internal_child_specs(parent)
+            )
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -1957,7 +2084,10 @@ class ProjectStore:
                        "parent_key": spec.get("parent_key"),
                        "parent_id": key_to_id.get(spec.get("parent_key")),
                        "document_key": spec.get("document_key"),
-                       "content_kind": spec.get("content_kind")}
+                       "content_kind": spec.get("content_kind"),
+                       "visibility": spec.get("visibility", "public"),
+                       "visible_to_human": spec.get("visible_to_human", True),
+                       "parent_role": spec.get("parent_role")}
                 if name == "VDOC" and not desired:
                     if key in VDOC_DOCUMENTS:
                         row["document"] = vdoc_document_contract(key)
@@ -1985,6 +2115,8 @@ class ProjectStore:
                             "deliverables", "progress_measures", "quality_checks",
                             "definition_origin", "definition_status", "role_description",
                             "internal_semantic_units", "semantic_manifest_digest",
+                            "semantic_unit_id", "semantic_field", "semantic_sequence",
+                            "semantic_digest", "visibility", "visible_to_human", "parent_role",
                         ) if field in spec
                     })
                 else:
@@ -3139,6 +3271,14 @@ class ProjectStore:
                             "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
                             (Validity.VALID.value, timestamp, item["id"]),
                         )
+                        for child in self._vdoc_internal_desired(
+                            plan, parent_id=item["id"],
+                            parent_role="document-writing-plan",
+                        ):
+                            connection.execute(
+                                "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                                (Validity.VALID.value, timestamp, child["id"]),
+                            )
             review_id = uuid.uuid4().hex
             connection.execute("INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
                                (review_id, plan["workstream"], plan["revision"], verdict.upper(), reviewer, reason, now()))
@@ -3205,6 +3345,18 @@ class ProjectStore:
         return [
             item for item in plan["desired_state"]
             if item.get("role") == "document-deliverable"
+        ]
+
+    @staticmethod
+    def _vdoc_internal_desired(
+        plan: dict[str, Any], *, parent_id: str | None = None,
+        parent_role: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return [
+            item for item in plan["desired_state"]
+            if item.get("role") == "document-semantic-unit"
+            and (parent_id is None or item.get("parent_id") == parent_id)
+            and (parent_role is None or item.get("parent_role") == parent_role)
         ]
 
     @staticmethod
@@ -3592,14 +3744,21 @@ class ProjectStore:
                 if section_approved:
                     approved += 1
                 if item.get("definition_origin") == "project-proposal":
+                    item_status = (
+                        Validity.VALID.value
+                        if section_approved else Validity.REVIEW_REQUIRED.value
+                    )
                     connection.execute(
                         "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                        (
-                            Validity.VALID.value
-                            if section_approved else Validity.REVIEW_REQUIRED.value,
-                            timestamp, item["id"],
-                        ),
+                        (item_status, timestamp, item["id"]),
                     )
+                    for child in self._vdoc_internal_desired(
+                        plan, parent_id=item["id"], parent_role="document-writing-plan",
+                    ):
+                        connection.execute(
+                            "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                            (item_status, timestamp, child["id"]),
+                        )
             all_approved = approved == len(required)
             lifecycle = "ACTIVE" if all_approved else (
                 "REVISE" if has_changes_requested else "REVIEW"
@@ -4029,6 +4188,7 @@ class ProjectStore:
             raise HarnessError(f"文档交付节点未明确归属文档: {node_id}")
         document = self.documents(f"document:vdoc:{document_key}")[0]
         definition_digest = self._node_plan_digest(plan, desired)
+        internal_children = self._vdoc_internal_desired(plan, parent_id=node_id)
         with self.read_connect() as connection:
             rows = [dict(row) for row in connection.execute(
                 """SELECT id,node_id,workstream,revision,definition_digest,document_id,
@@ -4055,6 +4215,21 @@ class ProjectStore:
                    WHERE target=? AND status='OPEN' ORDER BY created_at""",
                 (node_id,),
             )]
+            observed_internal = {row["id"]: dict(row) for row in connection.execute(
+                "SELECT id,title,status FROM nodes WHERE id IN (%s) ORDER BY id"
+                % ",".join("?" for _ in internal_children),
+                [item["id"] for item in internal_children],
+            )} if internal_children else {}
+        internal_statuses = [
+            observed_internal.get(item["id"], {
+                "id": item["id"], "title": item["title"], "status": "MISSING",
+            })
+            for item in internal_children
+        ]
+        internal_blockers = [
+            item for item in internal_statuses
+            if item["status"] not in {Validity.VALID.value, Validity.WAIVED.value}
+        ]
         for row in rows:
             row["provisional"] = provisional_details.get(row["id"])
             row["change_items"] = change_items.get(row["id"], [])
@@ -4079,6 +4254,8 @@ class ProjectStore:
                     else "PROVISIONAL" if current["verdict"] == "PROVISIONAL"
                     else "CHANGES_REQUESTED"
                 )
+                if status in {"APPROVED", "PROVISIONAL"} and internal_blockers:
+                    status = "AGENT_CHECKING"
         if not document["exists"] or document["content_changed"]:
             status = "PENDING"
             current = None
@@ -4097,6 +4274,12 @@ class ProjectStore:
             "reviews": rows,
             "agent_check": current.get("agent_check") if current is not None else None,
             "open_agent_questions": open_agent_questions,
+            "internal_work": {
+                "total": len(internal_statuses),
+                "complete": len(internal_statuses) - len(internal_blockers),
+                "ready": not internal_blockers,
+                "blockers": internal_blockers,
+            },
         }
 
     def _refresh_vdoc_delivery_acceptance(self, node_id: str) -> None:
@@ -4141,8 +4324,26 @@ class ProjectStore:
                 check = self._review_agent_check(
                     connection, latest["id"] if latest is not None else None,
                 )
+                internal_children = self._vdoc_internal_desired(
+                    plan, parent_id=item["id"],
+                )
+                internal_statuses = {
+                    row["id"]: row["status"] for row in connection.execute(
+                        "SELECT id,status FROM nodes WHERE id IN (%s)"
+                        % ",".join("?" for _ in internal_children),
+                        [child["id"] for child in internal_children],
+                    )
+                } if internal_children else {}
+                internal_blockers = sum(
+                    internal_statuses.get(child["id"])
+                    not in {Validity.VALID.value, Validity.WAIVED.value}
+                    for child in internal_children
+                )
                 agent_checked = check is None or check["status"] == "COMPLETED"
-                eligible = latest is not None and not open_questions and agent_checked
+                eligible = (
+                    latest is not None and not open_questions and agent_checked
+                    and not internal_blockers
+                )
                 item_status = (
                     Validity.VALID.value
                     if eligible and latest["verdict"] == "APPROVE"
@@ -4856,27 +5057,52 @@ class ProjectStore:
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
             raise HarnessError("VALID（已通过）必须由验证证据建立；PROVISIONAL/WAIVED 必须由负责人评审建立")
         with self.connect() as connection:
+            node = connection.execute(
+                "SELECT data_json FROM nodes WHERE id=?", (node_id,),
+            ).fetchone()
+            if node is None:
+                raise HarnessError(f"未知 node: {node_id}")
+            node_data = json.loads(node["data_json"])
             changed = connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
             if changed.rowcount != 1:
                 raise HarnessError(f"未知 node: {node_id}")
+        delivery_parent = (
+            node_data.get("parent_id")
+            if node_data.get("role") == "document-semantic-unit"
+            and node_data.get("parent_role") == "document-deliverable"
+            else None
+        )
+        if delivery_parent:
+            self._refresh_vdoc_delivery_acceptance(str(delivery_parent))
         self.write_model_projection()
         return {"id": node_id, "status": status.value, "auto_closure": self.reconcile()}
 
     def waive_node(self, node_id: str, reviewer: str, reason: str) -> dict[str, Any]:
         self.require()
         with self.connect() as connection:
-            node = connection.execute("SELECT workstream FROM nodes WHERE id=?", (node_id,)).fetchone()
+            node = connection.execute(
+                "SELECT workstream,data_json FROM nodes WHERE id=?", (node_id,),
+            ).fetchone()
             if node is None:
                 raise HarnessError(f"未知 node: {node_id}")
             if node["workstream"] is None:
                 raise HarnessError("waiver 只允许用于已规划 Workstream 中的 node")
             name = node["workstream"]
+            node_data = json.loads(node["data_json"])
             plan = connection.execute("SELECT revision FROM workstreams WHERE name=?", (name,)).fetchone()
             review_id = uuid.uuid4().hex
             connection.execute("INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
                                (review_id, name, int(plan["revision"]), "WAIVE", reviewer, f"{node_id}: {reason}", now()))
             connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (Validity.WAIVED.value, now(), node_id))
             connection.execute("UPDATE findings SET status='WAIVED' WHERE subject=? AND status='OPEN'", (node_id,))
+        delivery_parent = (
+            node_data.get("parent_id")
+            if node_data.get("role") == "document-semantic-unit"
+            and node_data.get("parent_role") == "document-deliverable"
+            else None
+        )
+        if delivery_parent:
+            self._refresh_vdoc_delivery_acceptance(str(delivery_parent))
         self.write_model_projection()
         self.write_workstream_projection(name)
         return {"review_id": review_id, "id": node_id, "status": Validity.WAIVED.value,
@@ -4941,6 +5167,14 @@ class ProjectStore:
                                (Validity.VALID.value if verdict == "pass" else Validity.INVALID.value, now(), subject))
             if verdict == "pass":
                 connection.execute("UPDATE findings SET status='RESOLVED' WHERE subject=? AND status='OPEN'", (subject,))
+        delivery_parent = (
+            subject_data.get("parent_id")
+            if subject_data.get("role") == "document-semantic-unit"
+            and subject_data.get("parent_role") == "document-deliverable"
+            else None
+        )
+        if delivery_parent:
+            self._refresh_vdoc_delivery_acceptance(str(delivery_parent))
         self.write_model_projection()
         return {"id": evidence_id, "subject": subject, "kind": kind, "source": relative,
                 "digest": digest, "verdict": verdict.upper(), "data": data or {},
@@ -5485,6 +5719,12 @@ class ProjectStore:
                 if name == "VDOC" and desired.get("role") == "document-catalog":
                     continue
                 if (
+                    name == "VDOC"
+                    and desired.get("role") == "document-semantic-unit"
+                    and plan["lifecycle"] in {"REVIEW", "REVISE"}
+                ):
+                    continue
+                if (
                     name == "VDOC" and vdoc_proposal_issues
                     and desired.get("role") in PROJECT_NODE_ROLES["VDOC"]
                 ):
@@ -5874,6 +6114,11 @@ class ProjectStore:
             }
             current_desired_ids.update(desired_ids)
             for desired in plan["desired_state"]:
+                if (
+                    plan["workstream"] == "VDOC"
+                    and desired.get("role") == "document-semantic-unit"
+                ):
+                    continue
                 if (
                     plan["workstream"] == "VDOC"
                     and desired.get("role") == "document-deliverable"

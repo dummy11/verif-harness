@@ -95,6 +95,24 @@ class V1ControlPlaneTest(unittest.TestCase):
         path.write_text(json.dumps(proposal), encoding="utf-8")
         return self.design("VDOC", "--desired-file", str(path))
 
+    def complete_vdoc_internal_work(self, plan: dict | None = None) -> list[dict]:
+        store = ProjectStore(self.root)
+        current = plan or store.workstream("VDOC")
+        children = [
+            item for item in current["desired_state"]
+            if item.get("role") == "document-semantic-unit"
+            and item.get("parent_role") == "document-deliverable"
+        ]
+        for child in children:
+            store.add_evidence(
+                child["id"], "document-review", "rtl/dut.sv", "pass",
+                {
+                    "semantic_unit_id": child["semantic_unit_id"],
+                    "definition_digest": child["semantic_digest"],
+                },
+            )
+        return children
+
     @staticmethod
     def minimal_vdoc_delivery_proposal() -> dict:
         return {
@@ -124,6 +142,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.design_minimal_vdoc()
         self.run_cli("review", "VDOC", "--reviewer", "alice")
         plan = self.register_minimal_vdoc_delivery()
+        self.complete_vdoc_internal_work(plan)
         for document in self.run_cli("docs", "status")["documents"]:
             self.run_cli("docs", "review", document["path"], "--reviewer", "alice")
         delivery = next(
@@ -771,7 +790,8 @@ class V1ControlPlaneTest(unittest.TestCase):
         plan = self.run_cli("plan", "VDOC", "--desired-file", str(proposal_path))
         public_roles = {
             item["role"] for item in plan["desired_state"]
-            if item["role"] != "document-catalog"
+            if item.get("visible_to_human", True)
+            and item["role"] != "document-catalog"
         }
         self.assertEqual(public_roles, {"document-writing-plan"})
 
@@ -799,7 +819,8 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(
             {
                 item["role"] for item in registered["desired_state"]
-                if item["role"] != "document-catalog"
+                if item.get("visible_to_human", True)
+                and item["role"] != "document-catalog"
             },
             {"document-writing-plan", "document-deliverable"},
         )
@@ -1334,6 +1355,8 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.design_minimal_vdoc()
         self.run_cli("review", "VDOC", "--reviewer", "alice")
         plan = self.register_minimal_vdoc_delivery()
+        internal_work = self.complete_vdoc_internal_work(plan)
+        self.assertTrue(internal_work)
         for document in self.run_cli("docs", "status")["documents"]:
             self.run_cli("docs", "review", document["path"], "--reviewer", "alice")
         delivery = next(

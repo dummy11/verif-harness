@@ -58,8 +58,10 @@ This repository contains public, reusable verification infrastructure.
   再单独登记对应内容节点供负责人验收。
 - 对本轮实际纳入的 N 份文档，VDOC 默认建立 N 个公开的
   `document-writing-plan` 节点和 N 个公开的 `document-deliverable` 节点，
-  每份文档各一个。章节、审批变更项和依赖影响可映射为负责人不可见的内部
-  语义单元；只有确有不同负责人或独立 gate 时才拆分更多公开节点。
+  每份文档各一个。章节、审批变更项和依赖影响必须映射为负责人不可见的内部
+  工作子节点；这些子节点与其他工作节点使用同一状态、依赖、Activity、Agent
+  assignment、问题、支持材料、失效传播和 closure 机制，只是不单独形成负责人
+  待办或审批结论。只有确有不同负责人或独立 gate 时才拆分更多公开节点。
 - 负责人提交正文验收结论后，Main Agent 必须检查该审批、当前正文和依赖影响，
   并自行判断是否需要通过节点绑定的 `agent-question` 继续向负责人提问。
   文档交付节点只有在当前版本已由负责人审批通过、Main Agent 检查已完成且

@@ -52,10 +52,12 @@ The fixed `document-catalog` rows are internal containers and dependency
 anchors, not a third public VDOC node type. A writing-plan node says what and how
 the Agent proposes to write. A delivery node says which already-written semantic
 content the Human is accepting. Never reuse one content template for both.
-Within either public node, the Engine records hidden, digest-bound semantic units for
-sections, review change items, source anchors, and dependency impact. These units
-support fine-grained invalidation but are not separate Human tasks or approval
-targets; acceptance is always aggregated at the public node.
+Within either public node, the Engine materializes hidden, digest-bound semantic
+work nodes for sections, review change items, source anchors, and dependency
+impact. They are real desired-state nodes with the same validity, dependency,
+Activity, Agent assignment, question, evidence, invalidation, and closure
+mechanisms as other work nodes. They are not separate Human tasks or approval
+targets; Human acceptance is always aggregated at the public node.
 
 VDOC is a serial two-phase lifecycle. The initial DUT-specific proposal contains
 only writing-plan nodes and is the only object presented for plan approval. It

@@ -16,7 +16,9 @@ VDOC plan, derive a `DesiredStateProposal/1` from the DUT,
 specification, interfaces, verification points, checking, coverage, scenarios,
 and unresolved decisions. For N documents actually in scope, default to N public
 `document-writing-plan` nodes and, after authoring, N public
-`document-deliverable` nodes. Keep semantic sections and dependency units internal;
+`document-deliverable` nodes. Materialize semantic sections and dependency units as
+internal work nodes with the same execution, dependency, evidence, invalidation,
+question, Activity, assignment, and closure capabilities as other work nodes;
 split one document into multiple public nodes only for genuinely independent owners
 or approval gates. The initial proposal must contain only DUT-specific
 `document-writing-plan` nodes. Do not create or show `document-deliverable`
