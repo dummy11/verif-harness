@@ -1,5 +1,16 @@
 # Third-party notices
 
+## Dashboard Markdown rendering
+
+The Dashboard includes the unmodified browser distribution of
+[markdown-it 15.0.2](https://github.com/markdown-it/markdown-it/releases/tag/15.0.2)
+under `verif_harness/vendor/markdown-it/`. The adjacent `manifest.json` records
+the official npm archive, integrity and browser-file SHA-256. This MIT-licensed
+component and its bundled mdurl, uc.micro, entities, linkify-it and punycode.js
+dependencies retain their separate ownership; their licenses are included in
+the same directory. The Dashboard loads the bundle locally without a CDN or
+Node.js runtime. Raw HTML and automatic external media loading are disabled.
+
 ## Managed CPython runtime
 
 verif-harness downloads a platform-specific CPython archive produced by

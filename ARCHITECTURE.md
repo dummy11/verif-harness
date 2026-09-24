@@ -39,6 +39,10 @@ and may route to one another; they are not lifecycle states.
 Project VDOC Markdown is the source for verification engineering semantics:
 scope, feature definitions, architecture, compare policy, coverage, assertions,
 and testcase contracts remain directly readable and Git-reviewable.
+The Dashboard renders this same Markdown into a read-only HTML view using a
+pinned local parser, with escaped raw HTML and project-scoped document links.
+Generated HTML is neither persisted nor used as an approval identity; source
+digests and revisions remain authoritative. Each view also exposes the source.
 
 `.verif-harness/model.sqlite3` is the machine source of truth for governance
 state. In addition to the core model, it stores:

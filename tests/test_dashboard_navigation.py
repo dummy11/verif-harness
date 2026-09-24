@@ -25,6 +25,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DashboardNavigationTest(unittest.TestCase):
     def test_browser_navigation_drafts_and_http_writes(self) -> None:
+        self.run_browser_script("dashboard_navigation.cjs")
+
+    def test_markdown_document_reading_and_review(self) -> None:
+        self.run_browser_script("dashboard_markdown.cjs")
+
+    def run_browser_script(self, script: str) -> None:
         if not shutil.which("node"):
             self.skipTest("Node.js is required for browser navigation tests")
         probe = subprocess.run(
@@ -85,6 +91,13 @@ class DashboardNavigationTest(unittest.TestCase):
                         plan["id"], section["section"], plan["plan_review"]["definition_digest"],
                         "approve", "fixture-reviewer", "仅供隔离浏览器测试",
                     )
+                if script == "dashboard_markdown.cjs":
+                    document = other.documents("verification_plan.md")[0]
+                    (other.root / document["path"]).write_text(
+                        (ROOT / "tests/dashboard_markdown_fixture.md").read_text(encoding="utf-8"),
+                        encoding="utf-8",
+                    )
+                    other.sync_documents([document["id"]])
                 fixture.register_minimal_vdoc_delivery()
             finally:
                 fixture.root, fixture.store = original_root, original_store
@@ -96,7 +109,7 @@ class DashboardNavigationTest(unittest.TestCase):
                 "question": question["id"],
             }
             result = subprocess.run(
-                ["node", str(ROOT / "tests/dashboard_navigation.cjs")],
+                ["node", str(ROOT / "tests" / script)],
                 input=json.dumps(config), text=True, capture_output=True,
                 env=os.environ.copy(), timeout=150,
             )

@@ -36,6 +36,10 @@ DASHBOARD_PROJECT_SCHEMA = "DashboardProjectRegistration/1"
 DASHBOARD_REGISTRY_ENV = "VERIF_HARNESS_DASHBOARD_REGISTRY_DIR"
 DASHBOARD_DEFAULT_PORT = 8765
 DASHBOARD_AUTO_PORT_COUNT = 32
+DASHBOARD_ASSETS = {
+    "/assets/markdown-it.min.js": "vendor/markdown-it/markdown-it.min.js",
+    "/assets/dashboard-markdown.js": "dashboard_markdown.js",
+}
 
 
 def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
@@ -275,9 +279,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("X-Frame-Options", "DENY")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+                "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
                 "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'",
             )
+            self.end_headers()
+            self.wfile.write(payload)
+        elif parsed.path in DASHBOARD_ASSETS:
+            # Exact allowlist, behind the same access-token check as the page.
+            payload = (Path(__file__).parent / DASHBOARD_ASSETS[parsed.path]).read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(payload)
         elif parsed.path == "/api/projects":

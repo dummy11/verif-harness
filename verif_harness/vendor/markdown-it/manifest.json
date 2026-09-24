@@ -1,0 +1,12 @@
+{
+  "package": "markdown-it",
+  "version": "15.0.2",
+  "upstream": "https://github.com/markdown-it/markdown-it",
+  "tarball": "https://registry.npmjs.org/markdown-it/-/markdown-it-15.0.2.tgz",
+  "integrity": "sha512-q4IGxMv56jCqT4OCRCADBoDP3LO4MhmTXjFbphHPXs4g3j9Xg5RDnxqN8IF/3vIWEU+VCnUq+7JUg/cfy2E6Qw==",
+  "upstream_file": "dist/browser/markdown-it.umd.min.js",
+  "file": "markdown-it.min.js",
+  "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5",
+  "license": "MIT",
+  "bundled_dependencies": ["mdurl", "uc.micro", "entities", "linkify-it", "punycode.js"]
+}

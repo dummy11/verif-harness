@@ -90,9 +90,14 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(await page.evaluate(() => document.activeElement.value), '未提交的范围说明');
     assert.equal(await form.locator('[name="reason"]').inputValue(), '未提交的范围说明');
     assert.equal(await form.locator('[name="verdict"]').inputValue(), 'add');
+    // Close the modal drawer before using the sidebar, as a user must. The
+    // reopened drawer must retain the same draft after leaving this page.
+    await page.locator('#close-drawer').click();
+    await page.waitForFunction(() => !document.querySelector('#drawer-backdrop.open'));
     await page.locator('[data-nav="agent"]').click();
     await heading('Agent 交互');
     await page.goBack();
+    await page.locator(`[data-open-node="${node}"]`).click();
     await page.locator('#drawer .node-plan-approval').waitFor();
     assert.equal(await form.locator('[name="reason"]').inputValue(), '未提交的范围说明');
 
