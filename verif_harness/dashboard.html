@@ -138,17 +138,25 @@
     .ws-meter span { position: absolute; z-index: 2; bottom: 13px; color: var(--muted); font-size: 10px; }
     .ws-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     .ws-foot span:last-child { margin-left: auto; white-space: nowrap; }
-    .progress-ring { --progress: 0; position: relative; flex: 0 0 auto; width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--blue) calc(var(--progress) * 1%), var(--gray-bg) 0); animation: progress-breathe 2.2s ease-in-out infinite; }
+    .progress-ring { --progress: 0; position: relative; flex: 0 0 auto; width: 62px; height: 62px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--motion-color, var(--blue)) calc(var(--progress) * 1%), var(--gray-bg) 0); }
     .progress-ring::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: var(--panel); }
     .progress-ring span { position: relative; color: var(--text); font-size: 12px; font-weight: 800; }
     .progress-ring.small { width: 46px; height: 46px; }
     .progress-ring.small::before { inset: 6px; }
     .progress-ring.small span { font-size: 10px; }
-    @keyframes progress-breathe { 50% { transform: scale(.96); filter: saturate(.82); box-shadow: 0 0 0 5px color-mix(in srgb, var(--blue) 8%, transparent); } }
+    [data-motion="active"] { --motion-color: var(--blue); --motion-period: 2.6s; }
+    [data-motion="waiting"] { --motion-color: var(--yellow); --motion-period: 3.4s; }
+    .status-pulse { display: inline-block; flex: 0 0 auto; width: 7px; height: 7px; margin-right: 7px; vertical-align: middle; border-radius: 50%; color: var(--motion-color); background: currentColor; animation: status-breathe var(--motion-period) ease-in-out infinite; }
+    .ws-meter:is([data-motion="active"], [data-motion="waiting"]),
+    .progress-ring:is([data-motion="active"], [data-motion="waiting"]),
+    .node-progress-bar:is([data-motion="active"], [data-motion="waiting"]) { animation: progress-breathe var(--motion-period) ease-in-out infinite; }
+    @keyframes status-breathe { 0%, 100% { opacity: .6; box-shadow: 0 0 0 0 transparent; } 50% { opacity: 1; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent); } }
+    @keyframes progress-breathe { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--motion-color) 22%, transparent); } }
+    .planning-indicator { display: flex; align-items: center; justify-content: center; gap: 5px; }
     .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .badge { display: inline-flex; align-items: center; border-radius: 99px; padding: 3px 8px; font-size: 11px; font-weight: 750; white-space: nowrap; }
     .VALID, .SATISFIED, .BASELINED, .COMPLETED, .RESOLVED, .CLOSED, .SUPPORTED, .APPROVED { color: var(--green); background: var(--green-bg); }
-    .RUNNING { color: var(--blue); background: var(--blue-bg); }
+    .RUNNING, .ACTIVE, .AGENT_CHECKING { color: var(--blue); background: var(--blue-bg); }
     .WAITING_FOR_PARENT { color: var(--purple); background: var(--purple-bg); }
     .INVALID, .FAILED, .NOT_SUPPORTED { color: var(--red); background: var(--red-bg); }
     .STALE, .REVALIDATION_REQUIRED, .PARTIALLY_STALE, .EXPIRED, .SUPERSEDED { color: var(--orange); background: var(--orange-bg); }
@@ -283,7 +291,7 @@
     .node-progress-cell { min-width: 240px; }
     .node-progress-head { display: flex; align-items: center; gap: 10px; }
     .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
-    .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2374d8, #4d9df9); }
+    .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--motion-color, var(--blue)); }
     .node-progress-text { margin-top: 6px; color: var(--muted); font-size: 12px; }
     .node-attention { margin-top: 6px; color: var(--amber); font-size: 12px; font-weight: 700; }
     .node-attention-link { padding: 0; border: 0; color: var(--amber); background: transparent; font: inherit; font-weight: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
@@ -314,10 +322,10 @@
     .node-status-goal { color: var(--text); font-size: 15px; font-weight: 700; }
     .node-status-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 14px; }
     .node-status-fact { padding-top: 10px; border-top: 1px solid var(--line); }
-    .node-status-fact span, .node-status-fact strong, .node-status-fact small { display: block; overflow-wrap: anywhere; }
-    .node-status-fact span, .node-status-fact small { color: var(--muted); }
-    .node-status-fact span { margin-bottom: 4px; font-size: 12px; font-weight: 700; }
-    .node-status-fact small { margin-top: 4px; }
+    .node-status-fact > span, .node-status-fact > strong, .node-status-fact > small { display: block; overflow-wrap: anywhere; }
+    .node-status-fact > span, .node-status-fact > small { color: var(--muted); }
+    .node-status-fact > span { margin-bottom: 4px; font-size: 12px; font-weight: 700; }
+    .node-status-fact > small { margin-top: 4px; }
     .node-status-card .project-status-next { margin-top: 12px; }
     .notice { margin: 0 0 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line)); border-left: 4px solid var(--yellow); border-radius: 10px; background: var(--yellow-bg); }
     .criteria-table { width: 100%; border-collapse: collapse; }
@@ -360,7 +368,7 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .state-dot, .progress-ring { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
@@ -580,16 +588,24 @@
       VCASE:'根据具体测试用例及功能与用例的对应关系继续拆分，并说明实际运行结果。',
       VREG:'根据批量测试配置、具体运行和同类失败继续拆分，并说明用例、随机种子、结果和处理进展。'
     };
-    const statusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="系统值：${escapeHtml(value)}">${escapeHtml(STATUS_LABELS[value] || value)}</span>`;
+    // Motion decorates the recorded state; it is neither a heartbeat nor a progress source.
+    function statusMotion(value) {
+      if (['RUNNING', 'ACTIVE', 'AGENT_CHECKING'].includes(value)) return 'active';
+      if (['PENDING', 'REVIEW', 'REVISE', 'REVIEW_REQUIRED', 'HUMAN_REVIEW_REQUIRED', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT', 'OPEN', 'CHANGES_REQUESTED', 'PROVISIONAL', 'BLOCKED', 'NOT_SATISFIED'].includes(value)) return 'waiting';
+      return 'none';
+    }
+    const statusPulse = motion => ['active', 'waiting'].includes(motion)
+      ? `<span class="status-pulse" data-motion="${motion}" aria-hidden="true"></span>` : '';
+    const statusBadge = (value, motion=statusMotion(value)) => `<span class="badge ${escapeHtml(value)}" title="系统值：${escapeHtml(value)}">${statusPulse(motion)}${escapeHtml(STATUS_LABELS[value] || value)}</span>`;
     const PLAN_REVIEW_STATUS_LABELS = {
       PENDING:'待审批', APPROVED:'已审批通过', CHANGES_REQUESTED:'需要修改'
     };
     const DELIVERY_REVIEW_STATUS_LABELS = {
       PENDING:'待验收', AGENT_CHECKING:'Agent 正在检查审批', WAITING_FOR_HUMAN:'Agent 等待你回答', APPROVED:'已验收通过', PROVISIONAL:'暂定接受', CHANGES_REQUESTED:'需要修改'
     };
-    const planReviewStatusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="方案审批状态：${escapeHtml(value)}">${escapeHtml(PLAN_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value)}</span>`;
+    const planReviewStatusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="方案审批状态：${escapeHtml(value)}">${statusPulse(statusMotion(value))}${escapeHtml(PLAN_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value)}</span>`;
     const deliveryReviewStatusLabel = value => DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
-    const deliveryReviewStatusBadge = value => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${escapeHtml(deliveryReviewStatusLabel(value))}</span>`;
+    const deliveryReviewStatusBadge = value => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${statusPulse(statusMotion(value))}${escapeHtml(deliveryReviewStatusLabel(value))}</span>`;
     function vdocPlanReviewState(workstream) {
       const plans = workstream?.workstream === 'VDOC'
         ? (workstream.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required)
@@ -617,7 +633,13 @@
       }
       return WORKSTREAM_STATE_LABELS[workstream.workstream]?.[value] || STATUS_LABELS[value] || value;
     };
-    const workstreamStatusBadge = (workstream) => `<span class="badge ${escapeHtml(workstream.lifecycle)}" title="系统值：${escapeHtml(workstream.lifecycle)}">${escapeHtml(workstreamStatusLabel(workstream))}</span>`;
+    function workstreamMotion(w) {
+      const motion = statusMotion(w.lifecycle);
+      if (w.closure?.ready || motion === 'none') return 'none';
+      return humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length
+        ? 'waiting' : motion;
+    }
+    const workstreamStatusBadge = (workstream) => `<span class="badge ${escapeHtml(workstream.lifecycle)}" title="系统值：${escapeHtml(workstream.lifecycle)}">${statusPulse(workstreamMotion(workstream))}${escapeHtml(workstreamStatusLabel(workstream))}</span>`;
     const agentStatusBadge = (value) => { const label = AGENT_STATUS_LABELS[value] || STATUS_LABELS[value] || value; return `<span class="badge ${escapeHtml(value)}" title="当前状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`; };
     const roleLabel = value => ROLE_LABELS[value] || value || '未说明';
     const actionLabel = value => ACTION_LABELS[value] || value || '暂无后续工作';
@@ -868,9 +890,9 @@
     function severityLabel(value) {
       return {CRITICAL:'严重', HIGH:'高', MEDIUM:'中', LOW:'低'}[value] || humanText(value || '未分级');
     }
-    function progressRing(value, label, small=false) {
+    function progressRing(value, label, small=false, motion='none') {
       const normalized = Math.max(0, Math.min(100, Number(value) || 0));
-      return `<div class="progress-ring${small ? ' small' : ''}" style="--progress:${normalized}" role="img" aria-label="${escapeHtml(label)}"><span>${normalized}%</span></div>`;
+      return `<div class="progress-ring${small ? ' small' : ''}" data-motion="${motion}" style="--progress:${normalized}" role="img" aria-label="${escapeHtml(label)}"><span>${normalized}%</span></div>`;
     }
     function currentProjectWorkstream(snapshot=state.snapshot) {
       const lifecycleWeight = {REVISE:70, REVIEW:60, PARTIALLY_STALE:50, ACTIVE:40, SATISFIED:20, BASELINED:10};
@@ -957,19 +979,20 @@
           ? '0 条已登记工作流 · Agent 已开始形成方案'
           : '0 条工作流';
       const emptyWorkstreams = planning
-        ? `<div class="card empty"><strong>${planning.isVdoc ? 'VDOC 文档撰写方案正在编制' : '验证工作方案正在编制'}</strong><p>Agent 提交可审批方案后，这里才会出现正式工作流和工作节点。</p></div>`
+        ? `<div class="card empty"><div class="planning-indicator">${statusPulse(statusMotion(planning.activity.status))}<strong>${planning.isVdoc ? 'VDOC 文档撰写方案正在编制' : '验证工作方案正在编制'}</strong></div><p>Agent 提交可审批方案后，这里才会出现正式工作流和工作节点。</p></div>`
         : '<div class="card empty">尚未规划工作流</div>';
       $('#main').innerHTML = `<div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${escapeHtml(workstreamCount)}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || emptyWorkstreams}</div></section>${projectContextHtml()}</div>`;
       bindWorkstreamCards(); bindNodeLinks();
     }
     function wsCard(w) {
       const p = percent(w.progress);
+      const motion = workstreamMotion(w);
       const next = humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length
         ? '等待你处理这条工作流的待办'
         : w.closure?.ready ? '当前完成条件已满足' : (w.closure?.actions || [])[0]
           ? actionLabel(w.closure.actions[0].kind) : '继续按工作节点推进';
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}"><div class="ws-title"><div class="ws-title-copy"><small>${escapeHtml(w.workstream)}</small><strong>${escapeHtml(workstreamLabel(w.workstream))}</strong></div>${workstreamStatusBadge(w)}</div>
-        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter" style="--value:${p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--brand)'}" role="img" aria-label="${escapeHtml(w.workstream)} 当前版本已有 ${w.progress.satisfied} / ${w.progress.required} 个工作节点达到完成结论"><strong>${p}%</strong><span>工作节点</span></div>
+        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter" data-motion="${motion}" style="--value:${p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--motion-color, var(--brand))'}" role="img" aria-label="${escapeHtml(w.workstream)} 当前版本已有 ${w.progress.satisfied} / ${w.progress.required} 个工作节点达到完成结论"><strong>${p}%</strong><span>工作节点</span></div>
         <div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${w.progress.satisfied}/${w.progress.required} 个节点已有结论；不代表验证质量</div><span aria-hidden="true">↗</span></div></article>`;
     }
     function bindOverviewEntries() {
@@ -1010,7 +1033,7 @@
     }
     function activityRows(items) {
       if (!items.length) return '<div class="empty">当前没有正在进行的 Agent 工作</div>';
-      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = agentTarget(a); return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta">${target.html} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true)}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
+      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = agentTarget(a); return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta">${target.html} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true, statusMotion(a.status))}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
     }
     function agentTarget(item) {
       const raw = item?.node_id || item?.target || 'project';
@@ -1295,16 +1318,30 @@
         basis: '当前没有可计算的数值指标或完成条件，按节点完成结论显示',
       };
     }
+    function nodeMotion(n) {
+      const status = n.closure_assessment?.conclusion || n.status;
+      if (['CLOSED', 'VALID', 'WAIVED', 'APPROVED', 'COMPLETED'].includes(status)) return 'none';
+      if (['INVALID', 'FAILED', 'STALE', 'REVALIDATION_REQUIRED', 'EXPIRED', 'SUPERSEDED', 'CANCELLED'].includes(n.status)) return 'none';
+      if ((n.agent_questions || []).some(q => q.status === 'OPEN')) return 'waiting';
+      const review = n.delivery_review?.status || n.plan_review?.status;
+      if (review && review !== 'APPROVED') return statusMotion(review);
+      const activity = (n.activities || []).find(a => ['RUNNING', 'PENDING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT'].includes(a.status));
+      return statusMotion(activity?.status || status);
+    }
+    function nodeProgressBarHtml(progress, motion) {
+      return `<div class="node-progress-bar" data-motion="${motion}" role="progressbar" aria-label="${escapeHtml(progress.metric)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.ratio}" title="${escapeHtml(progress.basis)} · ${progress.ratio}%"><span style="width:${progress.ratio}%"></span></div>`;
+    }
     function nodeProgressHtml(n) {
       const status = n.closure_assessment?.conclusion || n.status;
       const progress = nodeProgressState(n);
-      const bar = `<div class="node-progress-bar" role="progressbar" aria-label="${escapeHtml(progress.metric)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.ratio}" title="${escapeHtml(progress.basis)} · ${progress.ratio}%"><span style="width:${progress.ratio}%"></span></div>`;
+      const motion = nodeMotion(n);
+      const bar = nodeProgressBarHtml(progress, motion);
       const attention = nodeAttentionText(n);
       const openQuestion = (n.agent_questions || []).find(item => item.status === 'OPEN');
       const attentionHtml = !attention ? '' : openQuestion
         ? `<div class="node-attention">⚠ <button class="node-attention-link" data-agent-question="${escapeHtml(openQuestion.id)}" title="前往 Agent 交互页面回答问题">${escapeHtml(attention)}</button></div>`
         : `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>`;
-      return `<div class="node-progress-cell">${statusBadge(status)}${bar}<div class="node-progress-text">${escapeHtml(progress.metric)} · ${escapeHtml(progress.basis)}</div>${attentionHtml}</div>`;
+      return `<div class="node-progress-cell">${statusBadge(status, motion)}${bar}<div class="node-progress-text">${escapeHtml(progress.metric)} · ${escapeHtml(progress.basis)}</div>${attentionHtml}</div>`;
     }
     function progressHtml(n) {
       const measures = n.progress_measures || [];
@@ -1440,7 +1477,7 @@
         ? '<button class="btn primary" type="button" data-open-pending-items>打开需要你处理</button>'
         : '';
       const statusTitle = w.workstream === 'VDOC' ? '当前项目状态' : '当前工作流状态';
-      return `<section class="card project-status-card" aria-label="${statusTitle}"><div class="project-status-label">${statusTitle}</div><div class="project-status-head"><h2>${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
+      return `<section class="card project-status-card" aria-label="${statusTitle}"><div class="project-status-label">${statusTitle}</div><div class="project-status-head"><h2>${statusPulse(workstreamMotion(w))}${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
     }
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
@@ -2110,7 +2147,7 @@
         : n.definition_origin === 'project-proposal' ? '' : `<div class="notice"><strong>这是一项通用工作汇总。</strong> 它只用来提醒项目需要做这类工作，不代表具体功能或场景已经完成。</div>`;
       $('#drawer-backdrop').classList.add('open');
       $('#drawer').innerHTML = `<div class="drawer-head"><div><div>${statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(roleLabel(n.role))} · ${escapeHtml(n.workstream || '未归属工作流')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">✕</button></div>
-        ${genericNotice}<section class="card node-status-card" aria-label="当前工作节点状态"><div class="project-status-label">当前工作节点状态</div><div class="node-status-goal">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div><div class="node-status-facts"><div class="node-status-fact"><span>当前判断</span><strong>${statusBadge(assessment.conclusion || n.status)}</strong><small>${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</small></div><div class="node-status-fact"><span>实际进度</span><strong>${escapeHtml(progressBrief(n))}</strong></div><div class="node-status-fact"><span>当前主要问题</span><strong>${escapeHtml(mainBlocker(n))}</strong></div></div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(action.label)}。${escapeHtml(action.reason)}</div></section>
+        ${genericNotice}<section class="card node-status-card" aria-label="当前工作节点状态"><div class="project-status-label">当前工作节点状态</div><div class="node-status-goal">${escapeHtml(humanText(n.statement || '尚未登记具体目标'))}</div><div class="node-status-facts"><div class="node-status-fact"><span>当前判断</span><strong>${statusBadge(assessment.conclusion || n.status, nodeMotion(n))}</strong><small>${escapeHtml(humanText((assessment.reasons || [])[0] || '尚未说明原因'))}</small></div><div class="node-status-fact"><span>实际进度</span><strong>${escapeHtml(nodeProgressState(n).metric)}</strong>${nodeProgressBarHtml(nodeProgressState(n), nodeMotion(n))}</div><div class="node-status-fact"><span>当前主要问题</span><strong>${escapeHtml(mainBlocker(n))}</strong></div></div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(action.label)}。${escapeHtml(action.reason)}</div></section>
         <div class="page-actions" style="margin:14px 0 0"><button class="btn primary" id="node-comment">评论或要求调整</button>${n.delivery_review ? '<button class="btn" id="document-delivery-revision-tab">调整文档内容</button><button class="btn primary" id="document-delivery-review-tab">在新标签页验收文档内容</button>' : ''}${n.role === 'document-catalog' && n.document ? '<button class="btn" id="document-review">查看整篇文档评审</button>' : ''}${n.closure_assessment ? '<button class="btn" id="node-closure-review">确认工作节点判断</button>' : ''}${n.workstream ? '<button class="btn danger" id="node-waive">接受例外</button>' : ''}</div>
         ${nodeRolePanelHtml(n)}
         ${n.role === 'document-writing-plan' ? nodePlanApprovalPanelHtml(n, planReviewAvailable) : ''}

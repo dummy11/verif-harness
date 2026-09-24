@@ -17,6 +17,9 @@ Versioning.
 
 ### Changed
 
+- Added state-driven breathing indicators to Dashboard planning, Workstream status
+  and progress rings, and work-node status and progress bars. Motion preserves
+  recorded progress, stops for terminal states, and respects reduced-motion settings.
 - Dashboard services are now scoped to the current OS account. Automatic startup
   begins at port `8765`, skips occupied and foreign-account ports instead of
   falsely reusing them, protects the page and data APIs with a mode-`0600` account token,
