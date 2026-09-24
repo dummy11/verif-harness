@@ -79,21 +79,17 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const form = page.locator('#drawer [data-plan-section-form]').first();
     const section = await form.getAttribute('data-plan-section-form');
     await form.locator('[name="reviewer"]').fill('browser-test-reviewer');
+    await form.locator('[name="verdict"]').selectOption('add');
     await form.locator('[name="reason"]').fill('未提交的范围说明');
-    await form.locator('[name="verdict"]').selectOption('modify');
-    await form.locator('[data-change-instruction]').fill('第一项修改要求');
-    await form.locator('[data-add-review-change]').click();
-    await form.locator('[data-change-target]').nth(1).fill('接口边界');
-    await form.locator('[data-change-instruction]').nth(1).fill('第二项修改要求');
+    assert.equal(await form.locator('[data-change-operation],[data-change-target],[data-change-instruction]').count(), 0);
     // A real HTTP snapshot drives the same path as a live event, without waiting for the SSE interval.
     const snapshot = await api(`/api/snapshot?project=${config.project}`);
     const scrollBefore = await page.evaluate(() => window.scrollY);
     await page.evaluate(snapshot => setSnapshot(snapshot), snapshot);
     assert.ok(Math.abs(await page.evaluate(() => window.scrollY) - scrollBefore) <= 1);
-    assert.equal(await page.evaluate(() => document.activeElement.value), '第二项修改要求');
+    assert.equal(await page.evaluate(() => document.activeElement.value), '未提交的范围说明');
     assert.equal(await form.locator('[name="reason"]').inputValue(), '未提交的范围说明');
-    assert.equal(await form.locator('[data-change-instruction]').nth(1).inputValue(), '第二项修改要求');
-    assert.equal(await form.locator('[name="verdict"]').inputValue(), 'modify');
+    assert.equal(await form.locator('[name="verdict"]').inputValue(), 'add');
     await page.locator('[data-nav="agent"]').click();
     await heading('Agent 交互');
     await page.goBack();
@@ -101,7 +97,6 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(await form.locator('[name="reason"]').inputValue(), '未提交的范围说明');
 
     // Successful UI submission must write through the API and clear only that draft.
-    await form.locator('[name="verdict"]').selectOption('clarify');
     const written = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-section') && r.request().method() === 'POST');
     await form.getByRole('button', {name:'提交审批',exact:true}).click();
     assert.equal((await written).ok(), true);
@@ -109,14 +104,11 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const after = await api(`/api/snapshot?project=${config.project}`);
     const stored = after.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.id === node);
     assert.ok(stored.plan_review.sections.find(s => s.section === section).reviews.some(r => r.reason === '未提交的范围说明'));
+    const savedReview = stored.plan_review.sections.find(s => s.section === section).current_review;
+    assert.equal(savedReview.change_items[0].operation, 'add');
+    assert.equal(savedReview.change_items[0].instruction, '未提交的范围说明');
 
     // Completing the approval changes only this writing-plan node state; approval remains usable.
-    for (const item of stored.plan_review.sections) {
-      await api('/api/reviews/node-plan-section', {
-        node, section:item.section, definition_digest:stored.plan_review.definition_digest,
-        verdict:'approve', reviewer:'browser-test-reviewer', reason:'当前方案内容已确认',
-      });
-    }
     const approvedSnapshot = await api(`/api/snapshot?project=${config.project}`);
     await page.evaluate(snapshot => setSnapshot(snapshot), approvedSnapshot);
     const completeButton = page.locator('#drawer #node-plan-complete');
@@ -135,8 +127,8 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
       await page.locator('#drawer .node-plan-approval > summary').click();
     }
     await form.locator('[name="reviewer"]').fill('browser-test-reviewer');
-    await form.locator('[name="reason"]').fill('审批完成后继续提交批准意见');
-    await form.locator('[name="verdict"]').selectOption('approve');
+    await form.locator('[name="reason"]').fill('审批完成后继续提交修改意见');
+    await form.locator('[name="verdict"]').selectOption('modify');
     const continuedWrite = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-section') && r.request().method() === 'POST');
     await form.getByRole('button', {name:'提交审批', exact:true}).click();
     assert.equal((await continuedWrite).ok(), true);

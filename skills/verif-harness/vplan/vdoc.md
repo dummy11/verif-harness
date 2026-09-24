@@ -37,9 +37,8 @@ VDOC has exactly two public node types:
 
 - `document-writing-plan`: a DUT-specific document-writing plan. Every node has
   an explicit `document_key` naming exactly one document. Its objective
-  and scope, planned content, Human engineering decisions,
-  input/scope/deliverable contract, and dependency impact are reviewable
-  sections inside the node, not additional node types;
+  and scope, planned content, input/scope/deliverable contract, and dependency
+  impact belong to one node-level review;
 - `document-deliverable`: the public content-acceptance node for exactly one
   Markdown document. Every node has an explicit `document_key`; the default is
   one delivery node per in-scope document. It records actual semantic content,
@@ -59,16 +58,19 @@ Activity, Agent assignment, question, evidence, invalidation, and closure
 mechanisms as other work nodes. They are not separate Human tasks or approval
 targets; Human acceptance is always aggregated at the public node.
 
-After all required sections of one writing-plan node are approved, the Dashboard
-exposes a node-scoped approval-completion action next to the expandable review
-control. That action changes only the public writing-plan node validity; it does
-not hide or lock section review. Any later section review invalidates the prior
+Engineering questions use the existing Agent-question interaction. They are not
+an additional writing-plan approval section, including when there are no questions.
+
+The Dashboard exposes one writing-plan review form with only Add, Delete, and
+Modify choices and one review-content field. The adjacent approval-completion
+action records acceptance of the current node. It does not hide or lock review.
+Any later review invalidates the prior
 node-completion record until the responsible person completes approval again.
 
 VDOC is a serial two-phase lifecycle. The initial DUT-specific proposal contains
 only writing-plan nodes and is the only object presented for plan approval. It
 is invalid to mix writing-plan and delivery nodes in one proposal. Before every
-required plan section is approved and VDOC becomes `ACTIVE`, the Agent must not
+required plan node is approved and VDOC becomes `ACTIVE`, the Agent must not
 write or modify the formal document body, run `docs sync`, create delivery
 nodes, or ask the responsible person to accept body content. After approval,
 the Agent writes the formal body, runs `docs sync`, and submits a separate
@@ -106,7 +108,7 @@ closure-evidence node.
    conversation. Persist explicit answers with decision references; leave
    unresolved items visible with their affected goals. No guessed thresholds,
    fake source references, pre-approved waivers, or invented simulator evidence.
-   Wait for all required plan sections to be approved before formal body work.
+   Wait for all required plan nodes to complete approval before formal body work.
 4. After VDOC becomes `ACTIVE`, populate the approved formal content, run
    `docs sync`, and register delivery-only nodes for independent body review.
    Base document governance on `verification_workflow.md`: document-first work,
@@ -138,14 +140,12 @@ for their actual goals, rather than guessing which custom node a document satisf
 Cross-workstream consumers need explicit dependency edges as applicable.
 
 The initial file/draft remains UNKNOWN or REVIEW_REQUIRED. In the Dashboard,
-each required DUT-specific VDOC plan node opens its review in a new tab. Human
-Decisions, planned ASIC-verification content, input/scope/deliverable, and any
-actual dependency/impact block are reviewed independently and bound to the
-current node-plan digest. All required sections of all required project nodes
-must be approved before the VDOC plan becomes ACTIVE. The eight document
+each required DUT-specific VDOC plan node expands a single review form. Review
+content and completion are bound to the current node-plan digest. All required
+plan nodes must complete approval before the VDOC plan becomes ACTIVE. The eight document
 catalogs remain available for navigation, but are not plan or delivery nodes. A
 pure-CLI `review VDOC` is only a batch recording surface after the Human has
-explicitly reviewed those sections.
+explicitly reviewed those nodes.
 Plan approval authorizes the Agent to write the desired scope; it does not
 certify document content. Until the delivery-only proposal is registered, the
 Dashboard reports that the Agent is authoring content and exposes no content
@@ -170,8 +170,8 @@ VDOC review is an iterative, revision-bound loop rather than a one-time approval
 2. The Engine validates the plan proposal and document mapping, records the
    workstream revision and node-definition digests, and exposes only the plan
    review targets. This registration is not an engineering approval.
-3. The Human independently reviews every required writing-plan section. The
-   Human may approve, request modification, request clarification, or reject it.
+3. The Human reviews each required writing-plan node using Add, Delete, or Modify
+   and review content, then records approval completion for the current node.
 4. Only after all required plans are approved, the Agent writes or revises the
    formal body, synchronizes its digest, and registers a separate delivery-only
    proposal. The Human then reviews the semantic content represented by each
@@ -200,8 +200,8 @@ deterministic aggregation of recorded conclusions.
 VDOC is converged only when all of the following are true for the current
 revision:
 
-- every required `document-writing-plan` node has all required sections approved
-  by the Human and a current approval-completion record newer than those section
+- every required `document-writing-plan` node has a Human approval-completion
+  record newer than its node-level
   reviews;
 - every required `document-deliverable` node has a Human approval against the
   current node-definition digest and current document digest, its corresponding

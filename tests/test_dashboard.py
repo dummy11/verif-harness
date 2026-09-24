@@ -796,9 +796,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Agent 等待你回答", html)
         self.assertIn('class="node-attention-link" data-agent-question=', html)
         self.assertIn("前往 Agent 交互页面回答问题", html)
-        self.assertIn("planReviewStatusBadge(review.status)", html)
+        self.assertIn("function planReviewFormHtml(n)", html)
         self.assertIn("本撰写方案仍待审批", html)
-        self.assertIn("当前没有额外工程问题；仍需审批这部分内容", html)
+        self.assertNotIn("当前没有额外工程问题；仍需审批这部分内容", html)
+        self.assertNotIn("审批当前方案，不是验收正文。", html)
         self.assertIn("/api/reviews/node-plan-section", html)
         self.assertNotIn("这条工作流何时算完成", html)
         self.assertIn("文档审批与验收进展", html)
@@ -1488,7 +1489,10 @@ class DashboardTest(unittest.TestCase):
         )
         first = plan_nodes[0]
         self.assertEqual(first["plan_review"]["status"], "PENDING")
-        self.assertGreaterEqual(len(first["plan_review"]["sections"]), 3)
+        self.assertNotIn("human-confirmations", {
+            item["section"] for item in first["plan_review"]["sections"]
+        })
+        self.assertEqual([item["section"] for item in first["plan_review"]["sections"]], ["writing-plan"])
         vdoc_pending_reviews = [
             item for item in vdoc["waiting_for_human"] if item["source"] == "closure"
         ]
@@ -1525,13 +1529,11 @@ class DashboardTest(unittest.TestCase):
         for node in changed_vdoc["nodes"]:
             if not node["plan_review"]:
                 continue
-            for item in node["plan_review"]["sections"]:
-                self.post("/api/reviews/node-plan-section", {
-                    "node": node["id"], "section": item["section"],
-                    "definition_digest": node["plan_review"]["definition_digest"],
-                    "verdict": "approve", "reviewer": "alice",
-                    "reason": "该区块已经结合当前 DUT 验证对象确认",
-                }, self.server.write_token)
+            self.post("/api/reviews/node-plan-complete", {
+                "node": node["id"],
+                "definition_digest": node["plan_review"]["definition_digest"],
+                "reviewer": "alice", "reason": "当前 DUT 文档撰写方案审批完成",
+            }, self.server.write_token)
         approved = self.store.dashboard_snapshot()
         approved_vdoc = next(item for item in approved["workstreams"] if item["workstream"] == "VDOC")
         self.assertEqual(approved_vdoc["lifecycle"], "ACTIVE")
@@ -1790,11 +1792,6 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(event["payload"]["change_items"], changes)
 
         refreshed = self.store.node_plan_review_state(plan_node["id"])
-        for item in refreshed["sections"]:
-            self.store.review_node_plan_section(
-                plan_node["id"], item["section"], refreshed["definition_digest"],
-                "approve", "alice", "当前 DUT 的撰写范围已经确认",
-            )
         before_completion = self.store.dashboard_snapshot()
         before_node = next(
             item for item in next(
@@ -1818,10 +1815,10 @@ class DashboardTest(unittest.TestCase):
         continued_section = refreshed["sections"][0]["section"]
         self.store.review_node_plan_section(
             plan_node["id"], continued_section, refreshed["definition_digest"],
-            "approve", "alice", "审批完成后继续补充一条批准意见",
+            "modify", "alice", "审批完成后继续补充一条修改意见",
         )
         continued_state = self.store.node_plan_review_state(plan_node["id"])
-        self.assertEqual(continued_state["status"], "APPROVED")
+        self.assertEqual(continued_state["status"], "CHANGES_REQUESTED")
         self.assertFalse(continued_state["completed"])
         self.assertEqual(
             self.store.model(plan_node["id"])["nodes"][0]["status"],

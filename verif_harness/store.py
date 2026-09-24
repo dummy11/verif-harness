@@ -3317,14 +3317,7 @@ class ProjectStore:
 
     @staticmethod
     def _node_plan_sections(connection: sqlite3.Connection, node_id: str) -> list[str]:
-        sections = ["human-confirmations", "planned-content", "inputs-scope-deliverable"]
-        has_dependencies = connection.execute(
-            "SELECT 1 FROM edges WHERE source=? OR target=? LIMIT 1",
-            (node_id, node_id),
-        ).fetchone()
-        if has_dependencies is not None:
-            sections.append("dependencies-impact")
-        return sections
+        return ["writing-plan"]
 
     @staticmethod
     def _vdoc_public_desired(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -3672,6 +3665,10 @@ class ProjectStore:
             and row["verdict"] == "APPROVE"
             and row["created_at"] >= latest_section_at
         )), None)
+        if current_completion is not None:
+            status = "APPROVED"
+            for item in section_states:
+                item["status"] = "APPROVED"
         return {
             "node_id": node_id,
             "workstream": plan["workstream"],
@@ -3709,7 +3706,7 @@ class ProjectStore:
         if section not in allowed_sections:
             raise HarnessError("未知或当前不需要审批的文档撰写方案区块")
         plan = self.workstream("VDOC")
-        proposal_issues = self._vdoc_plan_proposal_issues(plan["desired_state"])
+        proposal_issues = self._vdoc_plan_proposal_issues(self._vdoc_writing_plan_desired(plan))
         if selected == "approve" and proposal_issues:
             raise HarnessError(
                 "当前 VDOC 文档工作分解不完整，不能审批撰写方案："
@@ -3717,7 +3714,7 @@ class ProjectStore:
             )
         timestamp = now()
         with self.connect() as connection:
-            if selected == "approve" and section == "human-confirmations":
+            if selected == "approve":
                 unresolved_actions = connection.execute(
                     "SELECT COUNT(*) count FROM human_actions WHERE target=? AND status='OPEN'",
                     (node_id,),
@@ -3742,78 +3739,7 @@ class ProjectStore:
                 connection, review_id, node_id, selected, reviewer.strip(),
                 normalized_changes, timestamp,
             )
-            required = [
-                item for item in self._vdoc_plan_desired(plan)
-                if item.get("required", True)
-            ]
-            approved = 0
-            has_changes_requested = False
-            for item in required:
-                digest = self._node_plan_digest(plan, item)
-                section_approved = True
-                latest_section_at = ""
-                for required_section in self._node_plan_sections(connection, item["id"]):
-                    latest = connection.execute(
-                        """SELECT verdict,created_at FROM node_plan_section_reviews
-                           WHERE node_id=? AND revision=? AND definition_digest=? AND section=?
-                           ORDER BY rowid DESC LIMIT 1""",
-                        (item["id"], plan["revision"], digest, required_section),
-                    ).fetchone()
-                    if latest is None or latest["verdict"] != "APPROVE":
-                        section_approved = False
-                        if latest is not None:
-                            has_changes_requested = True
-                        break
-                    latest_section_at = max(latest_section_at, latest["created_at"])
-                if section_approved:
-                    approved += 1
-                if item.get("definition_origin") == "project-proposal":
-                    completion = connection.execute(
-                        """SELECT created_at FROM node_plan_reviews
-                           WHERE node_id=? AND revision=? AND definition_digest=?
-                             AND verdict='APPROVE'
-                           ORDER BY rowid DESC LIMIT 1""",
-                        (item["id"], plan["revision"], digest),
-                    ).fetchone()
-                    completed = bool(
-                        section_approved and completion is not None
-                        and completion["created_at"] >= latest_section_at
-                    )
-                    item_status = (
-                        Validity.VALID.value
-                        if completed else Validity.REVIEW_REQUIRED.value
-                    )
-                    connection.execute(
-                        "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                        (item_status, timestamp, item["id"]),
-                    )
-                    for child in self._vdoc_internal_desired(
-                        plan, parent_id=item["id"], parent_role="document-writing-plan",
-                    ):
-                        connection.execute(
-                            "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                            (item_status, timestamp, child["id"]),
-                        )
-            all_approved = approved == len(required)
-            lifecycle = "ACTIVE" if all_approved else (
-                "REVISE" if has_changes_requested else "REVIEW"
-            )
-            connection.execute(
-                "UPDATE workstreams SET lifecycle=?,updated_at=? WHERE name='VDOC'",
-                (lifecycle, timestamp),
-            )
-            if all_approved:
-                existing = connection.execute(
-                    "SELECT id FROM reviews WHERE workstream='VDOC' AND revision=? AND verdict='APPROVE'",
-                    (plan["revision"],),
-                ).fetchone()
-                if existing is None:
-                    connection.execute(
-                        "INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
-                        (f"review:{uuid.uuid4().hex[:12]}", "VDOC", plan["revision"],
-                         "APPROVE", reviewer.strip(),
-                         "所有必需文档撰写方案节点均已由负责人审批通过", timestamp),
-                    )
+            self._refresh_node_plan_reviews(connection, plan, timestamp, reviewer.strip())
         self.write_workstream_projection("VDOC")
         refreshed = self.node_plan_review_state(node_id)
         return {
@@ -3835,6 +3761,60 @@ class ProjectStore:
             "auto_closure": self.evaluate_closure("VDOC"),
         }
 
+    def _refresh_node_plan_reviews(
+        self, connection: sqlite3.Connection, plan: dict[str, Any],
+        timestamp: str, reviewer: str,
+    ) -> None:
+        required_approvals = []
+        has_changes_requested = False
+        for item in self._vdoc_plan_desired(plan):
+            digest = self._node_plan_digest(plan, item)
+            latest = connection.execute(
+                """SELECT verdict,created_at FROM node_plan_section_reviews
+                   WHERE node_id=? AND revision=? AND definition_digest=? AND section='writing-plan'
+                   ORDER BY rowid DESC LIMIT 1""",
+                (item["id"], plan["revision"], digest),
+            ).fetchone()
+            completion = connection.execute(
+                """SELECT created_at FROM node_plan_reviews
+                   WHERE node_id=? AND revision=? AND definition_digest=? AND verdict='APPROVE'
+                   ORDER BY rowid DESC LIMIT 1""",
+                (item["id"], plan["revision"], digest),
+            ).fetchone()
+            completed = bool(completion and (latest is None or completion["created_at"] >= latest["created_at"]))
+            approved = completed or bool(latest and latest["verdict"] == "APPROVE")
+            if item.get("required", True):
+                required_approvals.append(approved)
+                has_changes_requested |= bool(latest and not approved)
+            if item.get("definition_origin") == "project-proposal":
+                item_status = Validity.VALID.value if completed else Validity.REVIEW_REQUIRED.value
+                connection.execute(
+                    "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                    (item_status, timestamp, item["id"]),
+                )
+                for child in self._vdoc_internal_desired(
+                    plan, parent_id=item["id"], parent_role="document-writing-plan",
+                ):
+                    connection.execute(
+                        "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                        (item_status, timestamp, child["id"]),
+                    )
+        all_approved = bool(required_approvals) and all(required_approvals)
+        lifecycle = "ACTIVE" if all_approved else ("REVISE" if has_changes_requested else "REVIEW")
+        connection.execute(
+            "UPDATE workstreams SET lifecycle=?,updated_at=? WHERE name='VDOC'",
+            (lifecycle, timestamp),
+        )
+        if all_approved and connection.execute(
+            "SELECT id FROM reviews WHERE workstream='VDOC' AND revision=? AND verdict='APPROVE'",
+            (plan["revision"],),
+        ).fetchone() is None:
+            connection.execute(
+                "INSERT INTO reviews VALUES(?,?,?,?,?,?,?)",
+                (f"review:{uuid.uuid4().hex[:12]}", "VDOC", plan["revision"], "APPROVE",
+                 reviewer, "所有必需文档撰写方案节点均已由负责人审批通过", timestamp),
+            )
+
     def complete_node_plan_review(
         self, node_id: str, definition_digest: str, reviewer: str, reason: str,
     ) -> dict[str, Any]:
@@ -3850,27 +3830,24 @@ class ProjectStore:
         state = self.node_plan_review_state(node_id, plan, desired)
         if state["definition_digest"] != definition_digest:
             raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新操作")
-        if state["status"] != "APPROVED":
-            raise HarnessError("必须先批准当前文档撰写方案的全部必需内容，才能审批完成")
+        proposal_issues = self._vdoc_plan_proposal_issues(self._vdoc_writing_plan_desired(plan))
+        if proposal_issues:
+            raise HarnessError("当前文档撰写方案不完整，不能审批完成：" + "；".join(proposal_issues))
         timestamp = now()
         review_id = f"plan-review:{uuid.uuid4().hex[:12]}"
         with self.connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM human_actions WHERE target=? AND status='OPEN'", (node_id,),
+            ).fetchone() or connection.execute(
+                "SELECT 1 FROM agent_questions WHERE target=? AND status='OPEN'", (node_id,),
+            ).fetchone():
+                raise HarnessError("该文档节点仍有等待负责人确认的事项或 Agent 问题；请先处理后再审批完成")
             connection.execute(
                 "INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)",
                 (review_id, node_id, "VDOC", plan["revision"], definition_digest,
                  "APPROVE", reviewer.strip(), reason.strip(), timestamp),
             )
-            connection.execute(
-                "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                (Validity.VALID.value, timestamp, node_id),
-            )
-            for child in self._vdoc_internal_desired(
-                plan, parent_id=node_id, parent_role="document-writing-plan",
-            ):
-                connection.execute(
-                    "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                    (Validity.VALID.value, timestamp, child["id"]),
-                )
+            self._refresh_node_plan_reviews(connection, plan, timestamp, reviewer.strip())
             event_id = self._record_review_submitted_event(
                 connection, review_id, node_id, "approve", reviewer.strip(), [], timestamp,
             )

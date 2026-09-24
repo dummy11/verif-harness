@@ -42,7 +42,7 @@ This repository contains public, reusable verification infrastructure.
   CLI 命令名、JSON/schema 字段、数据库值和审计记录中的正式协议名称可以保留，
   但首次展示时必须给出面向用户的解释，且不能直接作为主要交互文案。
 - VDOC 必须按“文档撰写方案审批 → Agent 撰写正文 → 正文内容验收”串行
-  推进。在当前 `document-writing-plan` 的所有必需区块未经负责人批准、
+  推进。在当前必需 `document-writing-plan` 节点未经负责人完成审批、
   VDOC 未进入 `ACTIVE` 前，Agent 不得自行生成或修改正式正文，不得通过
   `docs sync` 建立新的正文语义版本，不得激活可验收的
   `document-deliverable` 节点，也不得要求负责人同时审批撰写方案和
@@ -62,10 +62,12 @@ This repository contains public, reusable verification infrastructure.
   工作子节点；这些子节点与其他工作节点使用同一状态、依赖、Activity、Agent
   assignment、问题、支持材料、失效传播和 closure 机制，只是不单独形成负责人
   待办或审批结论。只有确有不同负责人或独立 gate 时才拆分更多公开节点。
-- `document-writing-plan` 节点详情只展示本节点的文档撰写方案、逐项审批和
+- `document-writing-plan` 节点详情只展示本节点的文档撰写方案、节点审批和
   审批历史；“审批完成”必须紧邻可展开的审批入口，并且只改变当前工作节点
   状态。审批完成后仍允许继续提交审批意见；任何后续意见都必须使旧的完成
   结论重新计算，不得锁定审批入口或隐藏历史。
+  审批区只有一套表单；审批类型仅为“新增、删除、修改”，填写“审批内容”，
+  不增加二级变更动作、影响范围、分区审批或说明横幅。
 - 负责人提交正文验收结论后，Main Agent 必须检查该审批、当前正文和依赖影响，
   并自行判断是否需要通过节点绑定的 `agent-question` 继续向负责人提问。
   文档交付节点只有在当前版本已由负责人审批通过、Main Agent 检查已完成且
@@ -138,7 +140,7 @@ This repository contains public, reusable verification infrastructure.
   `ACTIVE`、正文已同步或交付节点已登记都不表示正文验收通过。方案审批、正文
   验收和 Main Agent 验收后检查必须分别记录，不得由一个操作或状态代替。
 - 进度条只表示当前 revision 的节点完成条件或审批进展：优先使用数值观测，
-  撰写方案按已批准必需区块，正文交付按当前验收结论，其他节点按已满足的
+  撰写方案按当前节点审批完成结论，正文交付按当前验收结论，其他节点按已满足的
   acceptance conditions；没有可量化数据时只能显示 0%/100% 结论条。不得把
   进度条解释成 Agent 运行时间、主观完成度或验证质量。
 

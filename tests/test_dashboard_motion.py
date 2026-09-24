@@ -99,7 +99,7 @@ vm.runInContext(`
   assert.match(progressRing(50, 'Activity', true, 'active'), /data-motion="active"/);
   assert.match(progressRing(100, 'Activity complete'), /data-motion="none"/);
 
-  const sectionNames = ['human-confirmations','planned-content','inputs-scope-deliverable','dependencies-impact'];
+  const sectionNames = ['writing-plan'];
   const planNode = {
     id:'vdoc-plan', key:'vdoc-plan', title:'当前 DUT 文档撰写方案', role:'document-writing-plan',
     status:'REVIEW_REQUIRED', workstream:'VDOC', required:true, purpose:'定义正文撰写范围',
@@ -117,6 +117,27 @@ vm.runInContext(`
   assert.match(planHtml, /data-plan-section-form=/);
   assert.match(planHtml, /审批历史记录/);
   assert.doesNotMatch(planHtml, /审批尚未完成|当前工作节点状态|问题和支持材料记录/);
+  assert.doesNotMatch(planHtml, /额外待确认的工程问题|审批当前方案，不是验收正文|human-confirmations/);
+  assert.doesNotMatch(planHtml, /变更动作|影响范围|具体要求|data-review-change-fields|data-review-impact-preview/);
+  assert.doesNotMatch(planHtml, /计划写入的具体内容|输入依据、范围和交付对象|依赖和影响/);
+  assert.equal(planHtml.split('data-plan-section-form=').length - 1, 1);
+  assert.doesNotMatch(planReviewFormHtml(planNode), /value="approve"|value="clarify"|value="reject"/);
+  for (const verdict of ['add','delete','modify']) {
+    assert.ok(planHtml.includes('value="' + verdict + '"'));
+    const payload = planSectionReviewPayload(planNode, 'writing-plan', planNode.title, {verdict, reviewer:'alice', reason:'审批内容'});
+    assert.equal(payload.node, planNode.id);
+    assert.equal(payload.definition_digest, 'digest');
+    if (['add','modify','delete'].includes(verdict)) {
+      assert.equal(payload.verdict, 'modify');
+      assert.equal(payload.change_items[0].operation, verdict);
+      assert.equal(payload.change_items[0].instruction, '审批内容');
+      assert.equal(payload.change_items[0].target, planNode.title);
+      assert.equal(planReviewVerdictLabel({verdict:'MODIFY',change_items:payload.change_items}), {add:'新增',modify:'修改',delete:'删除'}[verdict]);
+    } else {
+      assert.equal(payload.verdict, verdict);
+      assert.equal(payload.change_items.length, 0);
+    }
+  }
   assert.ok(!planHtml.includes('<strong>审批完成</strong>'));
   planNode.plan_review.completed = true;
   const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
