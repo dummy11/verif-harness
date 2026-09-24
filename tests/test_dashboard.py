@@ -728,7 +728,23 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("function collectReviewChangeItems", html)
         self.assertIn("要求新增", html)
         self.assertIn("要求删除", html)
-        self.assertIn("提交审批结论", html)
+        self.assertIn("<label>审批类型</label>", html)
+        self.assertIn("<label>审批内容</label>", html)
+        self.assertIn("<button class=\"btn primary\">提交审批</button>", html)
+        self.assertIn("function nodePlanApprovalPanelHtml", html)
+        self.assertIn("审批历史记录", html)
+        self.assertIn("审批尚未完成", html)
+        self.assertIn("<strong>审批完成</strong>", html)
+        self.assertNotIn('id="node-plan-review-tab"', html)
+        node_drawer = html[
+            html.index("function renderDrawer(id)"):
+            html.index("function closeDrawer()")
+        ]
+        self.assertLess(
+            node_drawer.index("${nodeRolePanelHtml(n)}"),
+            node_drawer.index("nodePlanApprovalPanelHtml(n, planReviewAvailable)"),
+        )
+        self.assertIn("bindPlanSectionReviewForms(n, $('#drawer'))", node_drawer)
         self.assertIn("提交正文验收结论", html)
         self.assertIn("Agent 等待你回答", html)
         self.assertIn('class="node-attention-link" data-agent-question=', html)
