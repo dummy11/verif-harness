@@ -5866,7 +5866,7 @@ class ProjectStore:
                             actions.append({
                                 "kind": "HUMAN_REVIEW", "target": desired["id"],
                                 "priority": 1, "executor": "human", "suggested_mode": "plan",
-                                "reason": "当前 DUT 的文档撰写方案节点等待负责人审批",
+                                "reason": f"“{desired['title']}”等待负责人审批",
                             })
                 else:
                     actions.append({"kind": "HUMAN_REVIEW", "target": f"workstream:{name}", "priority": 1,
@@ -6266,6 +6266,19 @@ class ProjectStore:
                 for item in closure_by_workstream.get(plan["workstream"], {}).get("actions", [])
                 if item.get("executor") == "human"
             ]
+            waiting_nodes = {item["id"]: item for item in desired_nodes}
+            for item in closure_waiting:
+                target_node = waiting_nodes.get(item["target"])
+                if target_node is None:
+                    continue
+                item.update({
+                    "target_title": target_node["title"],
+                    "target_role": target_node.get("role"),
+                    "document_key": target_node.get("document_key"),
+                    "document_title": (
+                        target_node.get("document") or {}
+                    ).get("title"),
+                })
             document_waiting = [
                 {
                     "id": f"document-item:{item['document_id']}:{item['id']}",

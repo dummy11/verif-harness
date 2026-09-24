@@ -113,6 +113,9 @@
     .project-status-progress strong { color: var(--text); }
     .project-status-next { margin: 14px -20px 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); background: var(--panel-2); }
     .project-status-next strong { color: var(--text); }
+    .pending-status-list { margin: 16px -20px 0; border-top: 1px solid var(--line); }
+    .pending-status-list .list-row { padding: 16px 20px; }
+    .pending-status-card .project-status-next { margin-top: 0; }
     .status-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
     .state-dot { width: 13px; height: 13px; border: 3px solid var(--panel); border-radius: 50%; background: var(--gray); box-shadow: 0 0 0 2px var(--gray-bg); }
     .state-dot.RUNNING { background: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); animation: waiting-breathe 1.8s ease-in-out infinite; }
@@ -1072,22 +1075,14 @@
     function renderPendingItemsPage() {
       const s = state.snapshot;
       const items = humanPendingItems(s);
-      const questions = (s.agent_questions || []).filter(question => question.status === 'OPEN');
-      const otherItems = items.filter(item => item.source !== 'agent-question');
-      const questionSection = questions.length
-        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>需要你回答</h2><p>主 Agent 正在等待你的工程判断；提交回答后会继续相关工作。</p></div><span class="badge WAITING_FOR_HUMAN">${questions.length} 项待回答</span></div><div class="agent-question-list">${agentQuestionCardsHtml(questions)}</div><div class="agent-side-note"><strong>你也可以在当前主 Agent 对话中回答，两处会自动同步。</strong> 回答只用于继续当前工作，不会自动确认工作节点或验证结论。</div></article></section>`
-        : '';
-      const otherSection = otherItems.length
-        ? `<section class="section"><div class="section-head"><h2>审批、验收与确认</h2><span class="count">${otherItems.length} 项</span></div><div class="card list-card attention">${humanRows(otherItems)}</div></section>`
-        : '';
-      const empty = items.length ? '' : '<section class="section"><div class="card empty">当前没有需要你处理的事项</div></section>';
-      $('#main').innerHTML = `<div class="page-head"><div><h1>需要你处理</h1><p>这里只列出现在需要你回答、审批、验收或确认的事项；Agent 和工具自行执行的工作不会进入这里。</p></div></div>${projectContextHtml(true)}${questionSection}${otherSection}${empty}`;
+      const summary = pendingItemSummary(items, true);
+      const title = items.length ? `${items.length} 项等待你处理` : '当前没有需要你处理的事项';
+      const next = items.length
+        ? '点击待办名称直接打开对应工作节点；审批、验收和确认都在该节点内完成。'
+        : '继续查看验证工作流；出现需要工程判断的事项后会在这里汇总。';
+      const rows = items.length ? humanRows(items) : '<div class="empty">当前无需回答、审批、验收或确认</div>';
+      $('#main').innerHTML = `<div class="overview-main"><section class="card project-status-card pending-status-card" aria-label="需要你处理"><div class="project-status-label">需要你处理</div><div class="project-status-head"><h1>${escapeHtml(title)}</h1><div class="project-status-badges">${statusBadge(items.length ? 'WAITING_FOR_HUMAN' : 'VALID')}</div></div><div class="project-status-progress"><strong>${escapeHtml(summary)}</strong><span>这里只汇总当前项目需要负责人处理的工作节点，不创建另一套待办流程。</span></div><div class="pending-status-list">${rows}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div></section></div>`;
       bindNodeLinks();
-      if (state.focusAgentQuestion) {
-        const form = [...document.querySelectorAll('[data-agent-question-form]')].find(item => item.dataset.agentQuestionForm === state.focusAgentQuestion);
-        if (form) { form.scrollIntoView({behavior:'smooth', block:'center'}); form.querySelector('input')?.focus(); }
-        state.focusAgentQuestion = null;
-      }
     }
     function renderRiskChangesPage() {
       const items = riskItems(state.snapshot);
@@ -1122,35 +1117,52 @@
         const targetNode = findNode(a.target);
         const planNodeReview = a.source === 'closure' && Boolean(targetNode?.plan_review);
         const deliveryNodeReview = a.source === 'closure' && Boolean(targetNode?.delivery_review);
+        const nodeName = humanText(targetNode?.title || a.target_title || '当前工作节点');
+        const documentName = humanText(
+          targetNode?.document?.title || a.document_title || targetNode?.document_key || ''
+        );
+        const objectName = documentName && documentName !== nodeName
+          ? `${documentName} · ${nodeName}` : nodeName;
         const contextualAction = a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-writing-plan'
-          ? '请审批文档撰写方案'
+          ? `审批：${objectName}`
           : a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-deliverable'
-            ? '请验收文档交付内容'
-            : humanActionLabel(a.action);
+            ? `验收：${objectName}`
+            : a.source === 'document-item'
+              ? `${humanActionLabel(a.action)}：${documentName || nodeName}`
+              : a.target_type === 'workstream'
+                ? `${humanActionLabel(a.action)}：${workstreamLabel(a.target.replace(/^workstream:/, ''))}`
+                : targetNode ? `${humanActionLabel(a.action)}：${nodeName}` : humanActionLabel(a.action);
         const title = contextualAction;
         const label = a.source === 'agent-question'
           ? `<button class="node-link" data-agent-question="${escapeHtml(a.question_id)}">${escapeHtml(title)}</button>`
           : a.target_type === 'workstream'
           ? `<button class="node-link" data-review-workstream="${escapeHtml(a.target.replace(/^workstream:/, ''))}">${escapeHtml(title)}</button>`
-          : planNodeReview
-            ? `<button class="node-link" data-review-plan-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
-          : deliveryNodeReview
-            ? `<button class="node-link" data-review-delivery-node="${escapeHtml(a.target)}">${escapeHtml(title)}</button>`
           : targetNode && ['node','document-item'].includes(a.target_type)
             ? `<button class="node-link" data-open-node="${escapeHtml(targetNode.id)}">${escapeHtml(title)}</button>`
             : `<div class="row-title">${escapeHtml(title)}</div>`;
-        const context = a.source === 'agent-question'
-          ? '请在“Agent 交互”中回答'
-          : a.source === 'closure' && targetNode?.role === 'document-writing-plan'
-          ? '文档撰写方案等待审批'
-          : a.source === 'closure' && targetNode?.role === 'document-deliverable'
-            ? '文档交付内容等待验收'
-            : a.source === 'closure'
-              ? '当前计划需要负责人评审'
-              : a.source === 'document-item'
-                ? '文档中尚未处理的事项'
-                : a.reviewer;
-        return `<div class="list-row"><div>${label}<div class="row-meta">${escapeHtml(humanText(a.reason))} · ${escapeHtml(context)} · ${shortTime(a.created_at)}</div></div>${pendingItemStatusBadge(a, targetNode)}</div>`;
+        const planSectionLabels = {
+          'human-confirmations':'工程问题',
+          'planned-content':'计划写入内容',
+          'inputs-scope-deliverable':'输入、范围和交付对象',
+          'dependencies-impact':'依赖和影响',
+        };
+        const pendingSections = (targetNode?.plan_review?.sections || [])
+          .filter(section => section.status !== 'APPROVED')
+          .map(section => planSectionLabels[section.section] || section.section);
+        const planContent = (targetNode?.work_content || []).slice(0, 1).map(humanText);
+        const deliveryContent = (targetNode?.work_content || []).slice(0, 2).map(humanText);
+        const contextParts = [];
+        if (documentName) contextParts.push(`所属文档：${documentName}`);
+        if (planNodeReview) {
+          contextParts.push(`待审批：${pendingSections.join('、') || '当前方案'}`);
+          if (planContent.length) contextParts.push(`方案内容：${planContent[0]}`);
+        }
+        else if (deliveryNodeReview) contextParts.push(`验收内容：${deliveryContent.join('；') || nodeName}`);
+        else if (a.source === 'agent-question') contextParts.push('请在“Agent 交互”中回答');
+        else if (a.source === 'closure') contextParts.push('当前计划需要负责人评审');
+        else if (a.source === 'document-item') contextParts.push(`具体事项：${humanText(a.reason)}`);
+        else contextParts.push(humanText(a.reason || a.reviewer));
+        return `<div class="list-row"><div>${label}<div class="row-meta">${contextParts.map(part => escapeHtml(part)).join(' · ')} · ${shortTime(a.created_at)}</div></div>${pendingItemStatusBadge(a, targetNode)}</div>`;
       }).join('');
     }
     function evidenceRows(items) {
@@ -1656,7 +1668,7 @@
         const planReview = n.plan_review;
         const reviewStatus = planReview ? statusBadge(planReview.status) : '';
         const reviewAction = w.workstream === 'VDOC' && n.plan_review && !vdocPlan.needsRefinement
-          ? `<button class="btn primary" data-review-plan-node="${escapeHtml(n.id)}">在新标签页审批本节点方案</button>`
+          ? `<button class="btn primary" data-open-node="${escapeHtml(n.id)}">打开工作节点审批</button>`
           : '';
         const details = w.workstream === 'VDOC'
           ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul><strong>交付对象</strong><ul>${planListHtml(n.deliverables)}</ul>`

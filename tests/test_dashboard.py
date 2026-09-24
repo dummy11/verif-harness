@@ -669,8 +669,28 @@ class DashboardTest(unittest.TestCase):
             html.index("function renderPendingItemsPage()"):
             html.index("function renderRiskChangesPage()")
         ]
-        self.assertLess(pending_page.index("${questionSection}"), pending_page.index("${otherSection}"))
+        self.assertIn('class="overview-main"', pending_page)
+        self.assertIn('class="card project-status-card pending-status-card"', pending_page)
+        self.assertIn("humanRows(items)", pending_page)
+        self.assertIn("${rows}", pending_page)
+        self.assertIn("点击待办名称直接打开对应工作节点", pending_page)
+        self.assertNotIn("projectContextHtml", pending_page)
+        self.assertNotIn("questionSection", pending_page)
+        self.assertNotIn("otherSection", pending_page)
+        self.assertNotIn("审批、验收与确认", pending_page)
+        self.assertNotIn('<section class="section', pending_page)
         self.assertNotIn("runDetails", pending_page)
+        human_rows = html[
+            html.index("function humanRows(items)"):
+            html.index("function evidenceRows(items)")
+        ]
+        self.assertIn("审批：${objectName}", human_rows)
+        self.assertIn("验收：${objectName}", human_rows)
+        self.assertIn("所属文档：${documentName}", human_rows)
+        self.assertIn("方案内容：${planContent[0]}", human_rows)
+        self.assertIn("data-open-node", human_rows)
+        self.assertNotIn("data-review-plan-node", human_rows)
+        self.assertNotIn("data-review-delivery-node", human_rows)
         self.assertNotIn("function agentRunDetailsHtml", html)
         self.assertNotIn("function agentWorkStatusHtml", html)
         self.assertNotIn("function subagentWorkStatusHtml", html)
@@ -731,7 +751,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("在新标签页验收文档内容", html)
         self.assertIn("审批文档撰写方案", html)
         self.assertIn("调整文档", html)
-        self.assertIn("请审批文档撰写方案", html)
+        self.assertIn("审批：${objectName}", html)
         self.assertIn("本次审批对象：${planName}", html)
         self.assertIn("这一步审批的是${planName}，不是已经完成的内容", html)
         self.assertIn("这份方案包含的工作节点", html)
@@ -1462,6 +1482,14 @@ class DashboardTest(unittest.TestCase):
             item for item in snapshot["waiting_for_human"] if item["source"] == "closure"
         ]
         self.assertEqual(len(vdoc_pending_reviews), 2)
+        pending_by_target = {item["target"]: item for item in vdoc_pending_reviews}
+        for node in plan_nodes:
+            pending = pending_by_target[node["id"]]
+            self.assertEqual(pending["target_title"], node["title"])
+            self.assertEqual(pending["target_role"], "document-writing-plan")
+            self.assertEqual(pending["document_key"], node["document_key"])
+            self.assertEqual(pending["document_title"], node["document"]["title"])
+            self.assertIn(node["title"], pending["reason"])
         self.assertEqual(snapshot["project_agent"]["open_question_count"], 0)
         self.assertEqual(
             snapshot["project_agent"]["pending_review_count"], len(all_pending_reviews),
