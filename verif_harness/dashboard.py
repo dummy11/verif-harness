@@ -471,6 +471,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 str(body.get("node", "")), str(body.get("section", "")),
                 digest, verdict, reviewer, reason, change_items,
             )
+        if path == "/api/reviews/node-plan-complete":
+            reviewer = str(body.get("reviewer", "")).strip()
+            reason = str(body.get("reason", "")).strip()
+            digest = str(body.get("definition_digest", "")).strip()
+            if not reviewer or not reason or not digest:
+                raise HarnessError("文档撰写方案审批完成必须填写审批人、完成说明和当前方案摘要")
+            return store.complete_node_plan_review(
+                str(body.get("node", "")), digest, reviewer, reason,
+            )
         if path == "/api/reviews/node-closure":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:

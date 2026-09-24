@@ -541,7 +541,7 @@ class DashboardTest(unittest.TestCase):
             html = response.read().decode("utf-8")
         interactive_attributes = {
             attribute
-            for tag in re.findall(r"<(?:button|article|form)\b[^>]*>", html)
+            for tag in re.findall(r"<(?:a|button|article|form)\b[^>]*>", html)
             for attribute in re.findall(r"\b(data-[a-z0-9-]+)(?==|[\s>])", tag)
         }
         bound_attributes = set(re.findall(
@@ -578,7 +578,8 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('id="project-unregister"', html)
         self.assertIn("fetch('/api/projects', {headers:{'X-Verif-Token':token}})", html)
         self.assertIn("&token=${encodeURIComponent(token)}", html)
-        self.assertIn("data.dashboard_project = state.project", html)
+        self.assertIn("data.dashboard_project = project", html)
+        self.assertIn("if (state.project !== project) return", html)
         self.assertIn("/api/registrations/remove", html)
         for entry in ("overview", "pending", "agent", "risk"):
             self.assertIn(f'data-nav="{entry}"', html)
@@ -726,7 +727,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("@keyframes waiting-breathe", html)
         self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
-        self.assertIn("个工作节点 · 点击名称后在新标签页查看详情", html)
+        self.assertIn("个工作节点 · 点击名称在侧边查看，审批进入完整页面", html)
         self.assertNotIn("<div class=\"label\">需要你处理</div>", html)
         self.assertNotIn("<h2>等待负责人处理</h2>", html)
         self.assertNotIn("humanRows(openHuman)", html)
@@ -751,7 +752,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("实际进度", html)
         self.assertIn("完成条件与当前判断", html)
         self.assertIn("确认工作节点判断", html)
-        self.assertIn("在新标签页验收文档内容", html)
+        self.assertIn("进入正文验收", html)
         self.assertIn("审批文档撰写方案", html)
         self.assertIn("调整文档", html)
         self.assertIn("审批：${objectName}", html)
@@ -774,19 +775,23 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("<label>审批内容</label>", html)
         self.assertIn("<button class=\"btn primary\">提交审批</button>", html)
         self.assertIn("function nodePlanApprovalPanelHtml", html)
-        self.assertIn("审批历史记录", html)
-        self.assertIn("审批尚未完成", html)
-        self.assertIn("<strong>审批完成</strong>", html)
+        self.assertIn('class="plan-approval-controls"', html)
+        self.assertIn('id="node-plan-complete"', html)
+        self.assertIn("/api/reviews/node-plan-complete", html)
+        self.assertNotIn("<strong>审批尚未完成</strong>", html)
+        self.assertIn("本撰写方案已经审批通过", html)
+        self.assertIn("本撰写方案仍待审批", html)
         self.assertNotIn('id="node-plan-review-tab"', html)
         node_drawer = html[
-            html.index("function renderDrawer(id)"):
+            html.index("function renderDrawer(id, full=false)"):
             html.index("function closeDrawer()")
         ]
-        self.assertLess(
-            node_drawer.index("${nodeRolePanelHtml(n)}"),
-            node_drawer.index("nodePlanApprovalPanelHtml(n, planReviewAvailable)"),
-        )
-        self.assertIn("bindPlanSectionReviewForms(n, $('#drawer'))", node_drawer)
+        self.assertIn("if (planNode)", node_drawer)
+        self.assertIn("documentWritingPlanNodeHtml(n, planReviewAvailable)", node_drawer)
+        self.assertIn("bindPlanSectionReviewForms(n, root)", node_drawer)
+        self.assertIn("openNodePlanCompletionModal(n)", node_drawer)
+        self.assertNotIn("data-review-plan-node", node_drawer)
+        self.assertIn("查看完整节点", node_drawer)
         self.assertIn("提交正文验收结论", html)
         self.assertIn("Agent 等待你回答", html)
         self.assertIn('class="node-attention-link" data-agent-question=', html)
@@ -868,7 +873,9 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('role="progressbar"', html)
         self.assertIn('aria-valuenow="${progress.ratio}"', html)
         self.assertNotIn("const bar = ratio === null ? ''", html)
-        self.assertIn("点击名称后在新标签页查看详情", html)
+        self.assertIn("点击名称在侧边查看，审批进入完整页面", html)
+        self.assertNotIn("点击名称后在新标签页查看详情", html)
+        self.assertNotIn("在新标签页验收文档内容", html)
         self.assertIn('data-open-node="${escapeHtml(n.id)}"', html)
         self.assertIn("openNodeTab(button.dataset.openNode)", html)
         self.assertIn('data-open-workstream="${escapeHtml(workstreamTarget)}"', html)
@@ -906,7 +913,8 @@ class DashboardTest(unittest.TestCase):
         ]
         self.assertIn("url.searchParams.set('workstream', node.workstream)", node_tab)
         self.assertIn("url.searchParams.set('node', nodeId)", node_tab)
-        self.assertIn("window.open(url.toString(), '_blank', 'noopener')", node_tab)
+        self.assertIn("return navigateUrl(url)", node_tab)
+        self.assertNotIn("window.open(", html)
         self.assertIn("'document-writing-plan':'文档撰写方案'", html)
         self.assertIn("'document-deliverable':'文档内容验收'", html)
         self.assertIn("默认每份文档对应一个正文验收节点", html)
@@ -924,7 +932,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("data-review-workstream", html)
         self.assertIn("button.dataset.reviewWorkstream", html)
         self.assertIn("openWorkstreamReviewTab(button.dataset.reviewWorkstream)", html)
-        self.assertIn("window.open(url.toString(), '_blank', 'noopener')", html)
+        self.assertIn('target="_blank" rel="noopener"', html)
+        self.assertIn("'pushState'", html)
+        self.assertIn("window.addEventListener('popstate'", html)
+        self.assertIn("window.addEventListener('beforeunload'", html)
         standalone_url = html[
             html.index("function standaloneUrl()"):
             html.index("function openPendingItemsTab")
@@ -1784,10 +1795,42 @@ class DashboardTest(unittest.TestCase):
                 plan_node["id"], item["section"], refreshed["definition_digest"],
                 "approve", "alice", "当前 DUT 的撰写范围已经确认",
             )
+        before_completion = self.store.dashboard_snapshot()
+        before_node = next(
+            item for item in next(
+                workstream for workstream in before_completion["workstreams"]
+                if workstream["workstream"] == "VDOC"
+            )["nodes"] if item["id"] == plan_node["id"]
+        )
+        self.assertFalse(before_node["plan_review"]["completed"])
+        self.assertEqual(before_node["status"], "REVIEW_REQUIRED")
+        completed = self.post("/api/reviews/node-plan-complete", {
+            "node": plan_node["id"],
+            "definition_digest": refreshed["definition_digest"],
+            "reviewer": "alice",
+            "reason": "当前文档撰写方案已经完成本轮审批",
+        }, self.server.write_token)["result"]
+        self.assertTrue(completed["plan_review"]["completed"])
         self.assertTrue(all(
             self.store.model(item["id"])["nodes"][0]["status"] == "VALID"
             for item in internal_children
         ))
+        continued_section = refreshed["sections"][0]["section"]
+        self.store.review_node_plan_section(
+            plan_node["id"], continued_section, refreshed["definition_digest"],
+            "approve", "alice", "审批完成后继续补充一条批准意见",
+        )
+        continued_state = self.store.node_plan_review_state(plan_node["id"])
+        self.assertEqual(continued_state["status"], "APPROVED")
+        self.assertFalse(continued_state["completed"])
+        self.assertEqual(
+            self.store.model(plan_node["id"])["nodes"][0]["status"],
+            "REVIEW_REQUIRED",
+        )
+        self.store.complete_node_plan_review(
+            plan_node["id"], refreshed["definition_digest"], "alice",
+            "补充审批意见后再次确认审批完成",
+        )
         self.register_minimal_vdoc_delivery()
         content_snapshot = self.store.dashboard_snapshot()
         content_vdoc = next(

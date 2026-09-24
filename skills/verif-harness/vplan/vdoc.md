@@ -59,6 +59,12 @@ Activity, Agent assignment, question, evidence, invalidation, and closure
 mechanisms as other work nodes. They are not separate Human tasks or approval
 targets; Human acceptance is always aggregated at the public node.
 
+After all required sections of one writing-plan node are approved, the Dashboard
+exposes a node-scoped approval-completion action next to the expandable review
+control. That action changes only the public writing-plan node validity; it does
+not hide or lock section review. Any later section review invalidates the prior
+node-completion record until the responsible person completes approval again.
+
 VDOC is a serial two-phase lifecycle. The initial DUT-specific proposal contains
 only writing-plan nodes and is the only object presented for plan approval. It
 is invalid to mix writing-plan and delivery nodes in one proposal. Before every
@@ -195,7 +201,8 @@ VDOC is converged only when all of the following are true for the current
 revision:
 
 - every required `document-writing-plan` node has all required sections approved
-  by the Human;
+  by the Human and a current approval-completion record newer than those section
+  reviews;
 - every required `document-deliverable` node has a Human approval against the
   current node-definition digest and current document digest, its corresponding
   Main-Agent review check is complete, and it has no open Agent question;

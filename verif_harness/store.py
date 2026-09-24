@@ -3626,6 +3626,12 @@ class ProjectStore:
                 connection, (row["id"] for row in rows),
             )
             required_sections = self._node_plan_sections(connection, node_id)
+            completion_reviews = [dict(row) for row in connection.execute(
+                """SELECT id,node_id,workstream,revision,definition_digest,verdict,
+                          reviewer,reason,created_at
+                   FROM node_plan_reviews WHERE node_id=? ORDER BY rowid""",
+                (node_id,),
+            )]
         for row in rows:
             row["change_items"] = change_items.get(row["id"], [])
         section_states: list[dict[str, Any]] = []
@@ -3653,12 +3659,28 @@ class ProjectStore:
             status = "CHANGES_REQUESTED"
         else:
             status = "PENDING"
+        latest_section_at = max(
+            (
+                item["current_review"]["created_at"]
+                for item in section_states if item["current_review"] is not None
+            ),
+            default="",
+        )
+        current_completion = next((row for row in reversed(completion_reviews) if (
+            row["revision"] == plan["revision"]
+            and row["definition_digest"] == digest
+            and row["verdict"] == "APPROVE"
+            and row["created_at"] >= latest_section_at
+        )), None)
         return {
             "node_id": node_id,
             "workstream": plan["workstream"],
             "revision": plan["revision"],
             "definition_digest": digest,
             "status": status,
+            "completed": status == "APPROVED" and current_completion is not None,
+            "current_completion": current_completion,
+            "completion_reviews": completion_reviews,
             "sections": section_states,
             "reviews": rows,
         }
@@ -3729,9 +3751,10 @@ class ProjectStore:
             for item in required:
                 digest = self._node_plan_digest(plan, item)
                 section_approved = True
+                latest_section_at = ""
                 for required_section in self._node_plan_sections(connection, item["id"]):
                     latest = connection.execute(
-                        """SELECT verdict FROM node_plan_section_reviews
+                        """SELECT verdict,created_at FROM node_plan_section_reviews
                            WHERE node_id=? AND revision=? AND definition_digest=? AND section=?
                            ORDER BY rowid DESC LIMIT 1""",
                         (item["id"], plan["revision"], digest, required_section),
@@ -3741,12 +3764,24 @@ class ProjectStore:
                         if latest is not None:
                             has_changes_requested = True
                         break
+                    latest_section_at = max(latest_section_at, latest["created_at"])
                 if section_approved:
                     approved += 1
                 if item.get("definition_origin") == "project-proposal":
+                    completion = connection.execute(
+                        """SELECT created_at FROM node_plan_reviews
+                           WHERE node_id=? AND revision=? AND definition_digest=?
+                             AND verdict='APPROVE'
+                           ORDER BY rowid DESC LIMIT 1""",
+                        (item["id"], plan["revision"], digest),
+                    ).fetchone()
+                    completed = bool(
+                        section_approved and completion is not None
+                        and completion["created_at"] >= latest_section_at
+                    )
                     item_status = (
                         Validity.VALID.value
-                        if section_approved else Validity.REVIEW_REQUIRED.value
+                        if completed else Validity.REVIEW_REQUIRED.value
                     )
                     connection.execute(
                         "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
@@ -3797,6 +3832,57 @@ class ProjectStore:
             },
             "plan_review": refreshed,
             "lifecycle": self.workstream("VDOC")["lifecycle"],
+            "auto_closure": self.evaluate_closure("VDOC"),
+        }
+
+    def complete_node_plan_review(
+        self, node_id: str, definition_digest: str, reviewer: str, reason: str,
+    ) -> dict[str, Any]:
+        if not reviewer.strip() or not reason.strip():
+            raise HarnessError("审批完成必须填写审批人和完成说明")
+        plan = self.workstream("VDOC")
+        desired = next(
+            (item for item in self._vdoc_writing_plan_desired(plan) if item["id"] == node_id),
+            None,
+        )
+        if desired is None:
+            raise HarnessError("审批完成只适用于当前 VDOC 文档撰写方案节点")
+        state = self.node_plan_review_state(node_id, plan, desired)
+        if state["definition_digest"] != definition_digest:
+            raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新操作")
+        if state["status"] != "APPROVED":
+            raise HarnessError("必须先批准当前文档撰写方案的全部必需内容，才能审批完成")
+        timestamp = now()
+        review_id = f"plan-review:{uuid.uuid4().hex[:12]}"
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)",
+                (review_id, node_id, "VDOC", plan["revision"], definition_digest,
+                 "APPROVE", reviewer.strip(), reason.strip(), timestamp),
+            )
+            connection.execute(
+                "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                (Validity.VALID.value, timestamp, node_id),
+            )
+            for child in self._vdoc_internal_desired(
+                plan, parent_id=node_id, parent_role="document-writing-plan",
+            ):
+                connection.execute(
+                    "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
+                    (Validity.VALID.value, timestamp, child["id"]),
+                )
+            event_id = self._record_review_submitted_event(
+                connection, review_id, node_id, "approve", reviewer.strip(), [], timestamp,
+            )
+        self.write_workstream_projection("VDOC")
+        return {
+            "review_id": review_id,
+            "node_id": node_id,
+            "verdict": "APPROVE",
+            "reviewer": reviewer.strip(),
+            "reason": reason.strip(),
+            "event_id": event_id,
+            "plan_review": self.node_plan_review_state(node_id),
             "auto_closure": self.evaluate_closure("VDOC"),
         }
 

@@ -25,6 +25,7 @@ const elements = new Map();
 const context = vm.createContext({
   assert, URLSearchParams,
   window: {location: {search: ''}},
+  localStorage: {getItem: () => '', setItem: () => {}},
   document: {
     querySelector: selector => {
       if (!elements.has(selector)) elements.set(selector, {content: 'test-token', innerHTML: ''});
@@ -97,6 +98,30 @@ vm.runInContext(`
   }
   assert.match(progressRing(50, 'Activity', true, 'active'), /data-motion="active"/);
   assert.match(progressRing(100, 'Activity complete'), /data-motion="none"/);
+
+  const sectionNames = ['human-confirmations','planned-content','inputs-scope-deliverable','dependencies-impact'];
+  const planNode = {
+    id:'vdoc-plan', key:'vdoc-plan', title:'当前 DUT 文档撰写方案', role:'document-writing-plan',
+    status:'REVIEW_REQUIRED', workstream:'VDOC', required:true, purpose:'定义正文撰写范围',
+    document_key:'verification-plan', document:{title:'验证计划',path:'docs/verification_plan.md'},
+    work_content:['写入接口和验证点'], implementation_approach:['按已确认范围增量撰写'],
+    source_refs:['当前 DUT 规格'], scope:['当前 DUT'], deliverables:['验证计划正文'], quality_checks:[],
+    human_actions:[], agent_questions:[], outgoing:[], incoming:[],
+    plan_review:{status:'APPROVED',completed:false,definition_digest:'digest',completion_reviews:[],sections:sectionNames.map(section => ({section,status:'APPROVED',reviews:[]}))},
+  };
+  state.snapshot.workstreams = [{workstream:'VDOC',nodes:[planNode],closure:{actions:[]}}];
+  const planHtml = documentWritingPlanNodeHtml(planNode, true);
+  assert.ok(planHtml.indexOf('文档撰写方案</h3>') < planHtml.indexOf('plan-approval-controls'));
+  assert.ok(planHtml.indexOf('审批文档撰写方案') > planHtml.indexOf('plan-approval-controls'));
+  assert.ok(planHtml.indexOf('id="node-plan-complete"') > planHtml.indexOf('审批文档撰写方案'));
+  assert.match(planHtml, /data-plan-section-form=/);
+  assert.match(planHtml, /审批历史记录/);
+  assert.doesNotMatch(planHtml, /审批尚未完成|当前工作节点状态|问题和支持材料记录/);
+  assert.ok(!planHtml.includes('<strong>审批完成</strong>'));
+  planNode.plan_review.completed = true;
+  const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
+  assert.match(completedPlanHtml, /id="node-plan-complete" disabled/);
+  assert.match(completedPlanHtml, /data-plan-section-form=/);
 `, context);
 console.log('Dashboard motion renderers PASS');
 """,

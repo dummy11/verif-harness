@@ -62,6 +62,10 @@ This repository contains public, reusable verification infrastructure.
   工作子节点；这些子节点与其他工作节点使用同一状态、依赖、Activity、Agent
   assignment、问题、支持材料、失效传播和 closure 机制，只是不单独形成负责人
   待办或审批结论。只有确有不同负责人或独立 gate 时才拆分更多公开节点。
+- `document-writing-plan` 节点详情只展示本节点的文档撰写方案、逐项审批和
+  审批历史；“审批完成”必须紧邻可展开的审批入口，并且只改变当前工作节点
+  状态。审批完成后仍允许继续提交审批意见；任何后续意见都必须使旧的完成
+  结论重新计算，不得锁定审批入口或隐藏历史。
 - 负责人提交正文验收结论后，Main Agent 必须检查该审批、当前正文和依赖影响，
   并自行判断是否需要通过节点绑定的 `agent-question` 继续向负责人提问。
   文档交付节点只有在当前版本已由负责人审批通过、Main Agent 检查已完成且

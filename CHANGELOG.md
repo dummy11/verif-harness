@@ -17,6 +17,14 @@ Versioning.
 
 ### Changed
 
+- Document-writing-plan node details now contain only the writing plan, inline
+  section review, review history, and an adjacent node-level approval-completion
+  action. Completing the approval changes node validity without locking later
+  review; any later section review invalidates the earlier completion state.
+- Dashboard navigation now defaults to the current tab, with native links,
+  browser back/forward, node quick-view drawers and explicit new-tab comparison.
+  Revision-scoped, tab-local drafts preserve unfinished reviews across refresh
+  events and navigation without carrying old input into new approval versions.
 - Added state-driven breathing indicators to Dashboard planning, Workstream status
   and progress rings, and work-node status and progress bars. Motion preserves
   recorded progress, stops for terminal states, and respects reduced-motion settings.
