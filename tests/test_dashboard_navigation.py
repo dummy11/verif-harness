@@ -33,6 +33,9 @@ class DashboardNavigationTest(unittest.TestCase):
     def test_markdown_document_reading_and_review(self) -> None:
         self.run_browser_script("dashboard_markdown.cjs")
 
+    def test_work_node_alignment_document_names_and_progress_rings(self) -> None:
+        self.run_browser_script("dashboard_node_list.cjs")
+
     def run_browser_script(self, script: str) -> None:
         if not shutil.which("node"):
             self.skipTest("Node.js is required for browser navigation tests")

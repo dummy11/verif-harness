@@ -298,7 +298,21 @@
     .risk-content-list { margin: 0; padding-left: 18px; }
     .risk-content-list li { margin: 0 0 6px; line-height: 1.5; }
     .risk-content-list li:last-child { margin-bottom: 0; }
-    .node-progress-cell { min-width: 240px; }
+    .work-node-table { table-layout: fixed; min-width: 720px; }
+    .work-node-table th:first-child { width: 38%; padding-left: 42px; }
+    .work-node-table th:nth-child(2) { width: 18%; }
+    .work-node-table th:nth-child(3) { width: 88px; text-align: center; }
+    .work-node-table td { vertical-align: middle; overflow-wrap: anywhere; }
+    .work-node-name { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 6px; }
+    .work-node-copy { min-width: 0; }
+    .work-node-copy .node-link { font: inherit; font-weight: 700; overflow-wrap: anywhere; }
+    .work-node-document { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .node-progress-cell { display: grid; justify-items: center; }
+    .node-progress-ring { width: 54px; height: 54px; }
+    .node-progress-ring::before { inset: 5px; }
+    .node-progress-ring[data-complete="true"] { --motion-color: var(--green); }
+    .work-node-table tr:hover .node-progress-ring::before { background: var(--panel-2); }
+    .node-row-approval { margin-top: 8px; }
     .node-progress-head { display: flex; align-items: center; gap: 10px; }
     .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
     .node-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--motion-color, var(--blue)); }
@@ -306,7 +320,8 @@
     .node-attention { margin-top: 6px; color: var(--amber); font-size: 12px; font-weight: 700; }
     .node-attention-link { padding: 0; border: 0; color: var(--amber); background: transparent; font: inherit; font-weight: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .node-link { border: 0; padding: 0; color: var(--brand); background: transparent; text-align: left; font-weight: 700; }
-    .tree-toggle { width: 22px; margin-left: -24px; border: 0; color: var(--muted); background: transparent; }
+    .tree-toggle { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; color: var(--muted); background: transparent; }
+    .tree-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
     .node-statement { max-width: 540px; margin-top: 4px; color: var(--muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .node-id { margin-top: 3px; max-width: 520px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
     .exit-list { margin: 0; padding: 0 0 0 18px; }
@@ -406,6 +421,11 @@
     @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .btn { width: 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) {
+      .work-node-table { min-width: 620px; }
+      .work-node-table th:first-child { width: 45%; }
+      .work-node-table .node-progress-cell { min-width: 0; }
+    }
   </style>
 </head>
 <body>
@@ -1677,16 +1697,21 @@
       return `<div class="node-progress-bar" data-motion="${motion}" role="progressbar" aria-label="${escapeHtml(progress.metric)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.ratio}" title="${escapeHtml(progress.basis)} · ${progress.ratio}%"><span style="width:${progress.ratio}%"></span></div>`;
     }
     function nodeProgressHtml(n) {
+      const progress = nodeProgressState(n);
+      const label = `${progress.metric} · ${progress.basis}`;
+      const completed = ['CLOSED','VALID','WAIVED','APPROVED'].includes(n.closure_assessment?.conclusion || n.status);
+      return `<div class="node-progress-cell"><div class="progress-ring node-progress-ring" data-motion="${nodeMotion(n)}" data-complete="${completed}" style="--progress:${progress.ratio}" role="progressbar" aria-label="${escapeHtml(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.ratio}" aria-valuetext="${escapeHtml(`${progress.ratio}% · ${label}`)}" title="${escapeHtml(label)}"><span>${progress.ratio}%</span></div></div>`;
+    }
+    function nodeStatusHtml(n) {
       const status = n.closure_assessment?.conclusion || n.status;
       const progress = nodeProgressState(n);
       const motion = nodeMotion(n);
-      const bar = nodeProgressBarHtml(progress, motion);
       const attention = nodeAttentionText(n);
       const openQuestion = (n.agent_questions || []).find(item => item.status === 'OPEN');
       const attentionHtml = !attention ? '' : openQuestion
         ? `<div class="node-attention">⚠ <button class="node-attention-link" data-agent-question="${escapeHtml(openQuestion.id)}" title="前往 Agent 交互页面回答问题">${escapeHtml(attention)}</button></div>`
         : `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>`;
-      return `<div class="node-progress-cell">${statusBadge(status, motion)}${bar}<div class="node-progress-text">${escapeHtml(progress.metric)} · ${escapeHtml(progress.basis)}</div>${attentionHtml}</div>`;
+      return `${statusBadge(status, motion)}<div class="node-progress-text" title="${escapeHtml(progress.basis)}">${escapeHtml(progress.metric)}</div>${attentionHtml}`;
     }
     function progressHtml(n) {
       const measures = n.progress_measures || [];
@@ -1830,10 +1855,10 @@
         const nodes = w.nodes.filter(n => ['document-writing-plan','document-deliverable'].includes(n.role));
         const rows = nodes.length
           ? nodeRows(nodes)
-          : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+          : '<tr><td colspan="4" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
         $('#main').innerHTML = `<div class="page-head"><div><h1>VDOC · ${escapeHtml(workstreamLabel('VDOC'))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn primary" id="add-vdoc-node">添加节点</button><button class="btn" id="delete-vdoc-node">删除节点</button><button class="btn danger" id="restart-vdoc-workflow">重新启动工作流</button></div></div>
           ${workstreamStatusCardHtml(w)}
-          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
         $('#add-vdoc-node').onclick = () => openVdocRevisionRequestTab('add');
         $('#delete-vdoc-node').onclick = () => openVdocRevisionRequestTab('remove');
         $('#restart-vdoc-workflow').onclick = () => openVdocRestartModal(w);
@@ -1847,7 +1872,7 @@
       const concreteNodes = planNodes.length;
       const planRows = concreteNodes
         ? nodeRows(planNodes)
-        : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+        : '<tr><td colspan="4" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
       const catalogLabel = '工作流固定分类';
       const catalog = catalogNodes.length
         ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
@@ -1858,29 +1883,47 @@
         ${projectContextHtml(true)}
         ${workstreamStatusCardHtml(w)}
         ${vdocReviewProgressHtml(w)}
-        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称在侧边查看，审批进入完整页面</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
+        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称在侧边查看，审批进入完整页面</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
         <section class="section"><details class="detail-group"><summary>Agent 当前工作 <span class="row-meta">${active.length ? `${active.length} 项正在处理` : '当前没有正在处理的工作'}</span></summary><div class="detail-group-body card list-card">${activityRows(active)}</div></details></section>
         <section class="section"><div class="section-head"><h2>还要完成什么</h2><span class="count">系统列出下一步，不代替负责人决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
       if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
       if ($('#review-ws')) $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
       bindOverviewEntries(); bindNodeLinks();
     }
+    function nodeDocumentLabel(n) {
+      if (n.role !== 'document-deliverable') return '';
+      // Catalog titles describe purpose, not document names. Prefer the known
+      // document kind; custom documents retain their registered title.
+      const key = n.document_key || n.document?.document_key || '';
+      const kind = authoringLabel(key);
+      const title = kind && kind !== key ? kind : n.document?.title || '文档名称未登记';
+      const filename = String(n.document?.path || n.delivery_review?.document_path || '').split(/[\\/]/).pop();
+      return `${humanText(title)}${filename && filename !== title ? ` · ${filename}` : ''}`;
+    }
     function nodeRows(nodes) {
       const query = state.query.toLowerCase();
       const byParent = new Map();
       nodes.forEach(n => { const key = n.parent_id || ''; if (!byParent.has(key)) byParent.set(key, []); byParent.get(key).push(n); });
       const ordered = [], visited = new Set();
-      function visit(node, depth) { if (visited.has(node.id)) return; visited.add(node.id); ordered.push([node, depth]); if (!state.collapsedNodes.has(node.id) || query) (byParent.get(node.id) || []).forEach(child => visit(child, depth + 1)); }
-      nodes.filter(n => !n.parent_id || !nodes.some(parent => parent.id === n.parent_id)).forEach(n => visit(n, 0));
-      nodes.forEach(n => visit(n, 0));
-      const filtered = ordered.filter(([n]) => !query || `${n.id} ${n.title} ${n.status} ${n.key} ${n.statement || ''}`.toLowerCase().includes(query));
-      if (!filtered.length) return '<tr><td colspan="3" class="empty">没有匹配的节点</td></tr>';
-      return filtered.map(([n, depth]) => {
+      function visit(node, visible=true) {
+        if (visited.has(node.id)) return;
+        visited.add(node.id);
+        if (visible) ordered.push(node);
+        (byParent.get(node.id) || []).forEach(child => visit(child, visible && (!state.collapsedNodes.has(node.id) || Boolean(query))));
+      }
+      const nodeIds = new Set(nodes.map(n => n.id));
+      nodes.filter(n => !n.parent_id || !nodeIds.has(n.parent_id)).forEach(n => visit(n));
+      nodes.forEach(n => visit(n));
+      const filtered = ordered.filter(n => !query || `${n.id} ${n.title} ${n.status} ${n.key} ${n.statement || ''} ${nodeDocumentLabel(n)}`.toLowerCase().includes(query));
+      if (!filtered.length) return '<tr><td colspan="4" class="empty">没有匹配的节点</td></tr>';
+      return filtered.map(n => {
         const children = byParent.get(n.id) || [];
-        const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) ? '▸' : '▾'}</button>` : '';
+        const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" aria-expanded="${!state.collapsedNodes.has(n.id) || Boolean(query)}" aria-label="展开或折叠${escapeHtml(humanText(n.title))}的子节点" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) && !query ? '▸' : '▾'}</button>` : '<span aria-hidden="true"></span>';
+        const documentLabel = nodeDocumentLabel(n);
+        const document = documentLabel ? `<div class="work-node-document">文档：${escapeHtml(documentLabel)}</div>` : '';
         const approval = n.role === 'document-writing-plan' && n.plan_review
-          ? `<div style="margin-top:8px"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
-        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}${approval}</td></tr>`;
+          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
+        return `<tr><td><div class="work-node-name">${toggle}<div class="work-node-copy"><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button>${document}</div></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td><td>${nodeStatusHtml(n)}${approval}</td></tr>`;
       }).join('');
     }
     function closureRows(items) {

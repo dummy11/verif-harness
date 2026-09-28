@@ -137,9 +137,11 @@ vm.runInContext(`
     n.progress_observation.checks = count;
     const beforeNode = JSON.stringify(n);
     const rendered = nodeProgressHtml(n);
-    assert.match(rendered, /class="node-progress-bar" data-motion="active"/);
+    assert.match(rendered, /class="progress-ring node-progress-ring" data-motion="active"/);
     assert.ok(rendered.includes('aria-valuenow="' + ratio + '"'));
-    assert.ok(rendered.includes('width:' + ratio + '%'));
+    assert.ok(rendered.includes('--progress:' + ratio));
+    assert.ok(rendered.includes('<span>' + ratio + '%</span>'));
+    assert.doesNotMatch(rendered, /node-progress-bar/);
     assert.equal(JSON.stringify(n), beforeNode);
   }
   n.agent_questions = [{status:'OPEN',id:'q'}];
@@ -150,7 +152,7 @@ vm.runInContext(`
   n.delivery_review.status = 'PENDING';
   assert.equal(nodeMotion(n), 'waiting');
   n.delivery_review.status = 'APPROVED'; n.status = 'VALID';
-  assert.match(nodeProgressHtml(n), /class="node-progress-bar" data-motion="none"/);
+  assert.match(nodeProgressHtml(n), /class="progress-ring node-progress-ring" data-motion="none"/);
   assert.doesNotMatch(nodeProgressHtml(n), /status-pulse/);
   for (const status of ['FAILED','INVALID','CANCELLED','STALE','EXPIRED','SUPERSEDED']) {
     assert.equal(nodeMotion({...n,status}), 'none');
@@ -219,6 +221,37 @@ vm.runInContext(`
   assert.match(completedPlanHtml, /已批准全部内容/);
   assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled>已批准全部内容/);
   assert.match(completedPlanHtml, /data-plan-section-form=/);
+
+  const deliveryNode = {
+    id:'vdoc-body', parent_id:planNode.id, title:'正文验收', role:'document-deliverable',
+    document_key:'verification-plan', document:{title:'验证计划',path:'docs/verification_plan.md'},
+    status:'REVIEW_REQUIRED', delivery_review:{status:'PENDING'}, required:true,
+  };
+  assert.equal(nodeDocumentLabel(deliveryNode), '验证总计划 · verification_plan.md');
+  assert.match(nodeRows([planNode, deliveryNode]), /文档：验证总计划 · verification_plan.md/);
+  assert.doesNotMatch(nodeRows([planNode, deliveryNode]), /margin-left:|node-progress-bar/);
+  assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="0"/);
+  deliveryNode.delivery_review.status = 'AGENT_CHECKING';
+  assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="0"/);
+  deliveryNode.delivery_review.status = 'APPROVED';
+  deliveryNode.status = 'VALID';
+  assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="100"/);
+  state.collapsedNodes.add(planNode.id);
+  assert.doesNotMatch(nodeRows([planNode, deliveryNode]), /data-open-node="vdoc-body"/);
+  state.query = 'verification_plan.md';
+  assert.match(nodeRows([planNode, deliveryNode]), /data-open-node="vdoc-body"/);
+  assert.doesNotMatch(nodeRows([planNode, deliveryNode]), /data-open-node="vdoc-plan"/);
+  state.query = 'does-not-exist';
+  assert.match(nodeRows([planNode, deliveryNode]), /colspan="4"/);
+  state.query = '';
+  state.collapsedNodes.clear();
+  deliveryNode.document_key = 'custom-document';
+  deliveryNode.document.title = '<script>bad</script>';
+  assert.doesNotMatch(nodeRows([deliveryNode]), /<script>/);
+  assert.match(nodeRows([deliveryNode]), /&lt;script&gt;/);
+  delete deliveryNode.document;
+  deliveryNode.document_key = 'verification-plan';
+  assert.equal(nodeDocumentLabel(deliveryNode), '验证总计划');
 `, context);
 console.log('Dashboard motion renderers PASS');
 """,
