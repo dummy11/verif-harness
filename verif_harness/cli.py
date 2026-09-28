@@ -110,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
   verif-harness dashboard --open-browser
   verif-harness agent-work candidates
   verif-harness agent-question ask NODE --prompt TEXT --option ID LABEL DESCRIPTION
+  verif-harness agent-review-feedback list --status PENDING
   verif-harness agent-review-check list --status PENDING
   verif-harness await-human VDOC
 
@@ -521,9 +522,31 @@ def build_parser() -> argparse.ArgumentParser:
     review_check_complete.add_argument("review_id")
     review_check_complete.add_argument("--summary", required=True)
 
+    agent_review_feedback = commands.add_parser(
+        "agent-review-feedback",
+        help="处理负责人显式提交给 Main Agent 的方案或正文审批意见批次",
+    )
+    review_feedback_commands = agent_review_feedback.add_subparsers(
+        dest="review_feedback_command", required=True,
+    )
+    review_feedback_list = review_feedback_commands.add_parser(
+        "list", help="列出等待处理、等待负责人回答或已完成的审批意见批次",
+    )
+    project_argument(review_feedback_list)
+    review_feedback_list.add_argument(
+        "--status", choices=("PENDING", "WAITING_FOR_HUMAN", "RESOLVED", "SUPERSEDED"),
+        type=str.upper,
+    )
+    review_feedback_complete = review_feedback_commands.add_parser(
+        "complete", help="登记 Main Agent 已完成一个审批意见批次的分析和修改",
+    )
+    project_argument(review_feedback_complete)
+    review_feedback_complete.add_argument("batch_id")
+    review_feedback_complete.add_argument("--summary", required=True)
+
     await_human = commands.add_parser(
         "await-human",
-        help="等待负责人通过 Dashboard 或 CLI 提交当前工作流方案版本的正式评审",
+        help="等待负责人提交当前版本的正式评审或把审批意见交给 Main Agent",
     )
     project_argument(await_human)
     await_human.add_argument("workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
@@ -990,6 +1013,15 @@ def main(arguments: list[str] | None = None) -> int:
                 ))
             else:
                 emit({"agent_review_checks": store.review_agent_checks(args.status)})
+        elif args.command == "agent-review-feedback":
+            if args.review_feedback_command == "complete":
+                emit(store.complete_review_feedback(
+                    args.batch_id, PROJECT_AGENT_ACTOR, args.summary,
+                ))
+            else:
+                emit({
+                    "review_feedback_batches": store.review_feedback_batches(args.status),
+                })
         elif args.command == "await-human":
             emit(store.await_human_review(
                 args.workstream, args.revision, args.after_review,

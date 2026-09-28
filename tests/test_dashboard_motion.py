@@ -168,7 +168,7 @@ vm.runInContext(`
     work_content:['写入接口和验证点'], implementation_approach:['按已确认范围增量撰写'],
     source_refs:['当前 DUT 规格'], scope:['当前 DUT'], deliverables:['验证计划正文'], quality_checks:[],
     human_actions:[], agent_questions:[], outgoing:[], incoming:[],
-    plan_review:{status:'PENDING',completed:false,definition_digest:'digest',completion_reviews:[],sections:sectionNames.map(section => ({section,status:'PENDING',reviews:[]}))},
+    plan_review:{status:'PENDING',completed:false,definition_digest:'digest',completion_reviews:[],sections:sectionNames.map(section => ({section,status:'PENDING',reviews:[]})),feedback:{draft_count:0,processing_count:0,waiting_for_human_count:0,unresolved_count:0,can_approve:true}},
   };
   state.snapshot.workstreams = [{workstream:'VDOC',nodes:[planNode],closure:{actions:[]}}];
   const planHtml = documentWritingPlanNodeHtml(planNode, true);
@@ -178,6 +178,8 @@ vm.runInContext(`
   assert.match(planHtml, /data-plan-section-form=/);
   assert.match(planHtml, /审批历史记录/);
   assert.doesNotMatch(planHtml, /id="node-plan-complete" disabled/);
+  assert.match(planHtml, /提交当前 0 条审批意见给 Agent/);
+  assert.match(planHtml, /data-submit-node-feedback disabled/);
   assert.match(planHtml, /批准当前文档撰写方案的全部内容/);
   assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" >批准全部内容/);
   assert.match(planHtml, /writing-plan-inputs"><summary>输入依据/);
@@ -185,6 +187,17 @@ vm.runInContext(`
   state.snapshot.workstreams[0].closure.actions = [{kind:'REFINE_DESIRED_STATE'}];
   assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled/);
   state.snapshot.workstreams[0].closure.actions = [];
+  planNode.plan_review.feedback = {draft_count:2,processing_count:0,waiting_for_human_count:0,unresolved_count:2,can_approve:false};
+  const feedbackPlanHtml = documentWritingPlanNodeHtml(planNode, true);
+  assert.match(feedbackPlanHtml, /提交当前 2 条审批意见给 Agent/);
+  assert.doesNotMatch(feedbackPlanHtml, /data-submit-node-feedback disabled/);
+  assert.match(feedbackPlanHtml, /id="node-plan-complete" disabled/);
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled/);
+  planNode.plan_review.feedback = {draft_count:0,processing_count:2,waiting_for_human_count:0,unresolved_count:2,can_approve:false};
+  const processingPlanHtml = documentWritingPlanNodeHtml(planNode, true);
+  assert.match(processingPlanHtml, /上一批审批意见正在由 Agent 处理/);
+  assert.ok(processingPlanHtml.includes('<button class="btn primary" disabled>添加审批意见</button>'));
+  planNode.plan_review.feedback = {draft_count:0,processing_count:0,waiting_for_human_count:0,unresolved_count:0,can_approve:true};
   // Legacy section states must not recreate the old four-section approval gate.
   planNode.plan_review.sections = ['human-confirmations','planned-content','inputs-scope-deliverable','dependencies-impact']
     .map(section => ({section,status:'PENDING',reviews:[]}));

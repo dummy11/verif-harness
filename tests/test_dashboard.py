@@ -769,7 +769,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("尚未根据当前 DUT", html)
         self.assertIn("这份方案何时完成", html)
         self.assertIn("批准方案并开始相关工作", html)
-        self.assertIn("提交审批", html)
+        self.assertIn("添加审批意见", html)
         self.assertIn("review-plan-node", html)
         self.assertIn("openNodePlanReviewTab", html)
         self.assertIn("data-plan-section-form", html)
@@ -779,7 +779,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("要求删除", html)
         self.assertIn("<label>审批类型</label>", html)
         self.assertIn("<label>审批内容</label>", html)
-        self.assertIn("<button class=\"btn primary\">提交审批</button>", html)
+        self.assertIn(">添加审批意见</button>", html)
+        self.assertIn("提交当前 ${feedback.draft_count} 条审批意见给 Agent", html)
+        self.assertIn("/api/reviews/node-feedback-submit", html)
+        self.assertIn("APPLY_REVIEW_FEEDBACK:'Agent 处理审批意见并修改内容'", html)
         self.assertIn("function nodePlanApprovalPanelHtml", html)
         self.assertIn('class="plan-approval-controls"', html)
         self.assertIn('id="node-plan-complete"', html)
@@ -1707,6 +1710,17 @@ class DashboardTest(unittest.TestCase):
         changed_vdoc = next(item for item in changed["workstreams"] if item["workstream"] == "VDOC")
         changed_first = next(item for item in changed_vdoc["nodes"] if item["id"] == first["id"])
         self.assertEqual(changed_first["plan_review"]["status"], "CHANGES_REQUESTED")
+        feedback_batch = self.store.submit_review_feedback(
+            changed_first["id"], changed_first["plan_review"]["definition_digest"],
+        )
+        self.store.complete_review_feedback(
+            feedback_batch["batch_id"], "Project Main Agent",
+            "已把当前 DUT 的接口和验证点绑定到文档撰写方案",
+        )
+        changed = self.store.dashboard_snapshot()
+        changed_vdoc = next(
+            item for item in changed["workstreams"] if item["workstream"] == "VDOC"
+        )
 
         for node in changed_vdoc["nodes"]:
             if not node["plan_review"]:
@@ -1965,8 +1979,10 @@ class DashboardTest(unittest.TestCase):
         }, self.server.write_token)
         result = response["result"]
         self.assertEqual(result["change_items"], changes)
-        self.assertEqual(result["agent_follow_up"]["status"], "CHECK_REQUIRED")
-        self.assertFalse(result["agent_follow_up"]["waiting_for_human"])
+        self.assertEqual(
+            result["agent_follow_up"]["status"], "AWAITING_FEEDBACK_SUBMISSION",
+        )
+        self.assertTrue(result["agent_follow_up"]["waiting_for_human"])
 
         plan_state = self.store.node_plan_review_state(plan_node["id"])
         recorded = next(
@@ -1979,7 +1995,9 @@ class DashboardTest(unittest.TestCase):
             if item["id"] == result["event_id"]
         )
         self.assertEqual(event["kind"], "review-submitted")
-        self.assertEqual(event["payload"]["agent_follow_up"], "CHECK_REQUIRED")
+        self.assertEqual(
+            event["payload"]["agent_follow_up"], "AWAITING_FEEDBACK_SUBMISSION",
+        )
         self.assertEqual(event["payload"]["change_items"], changes)
 
         refreshed = self.store.node_plan_review_state(plan_node["id"])
@@ -1992,6 +2010,34 @@ class DashboardTest(unittest.TestCase):
         )
         self.assertFalse(before_node["plan_review"]["completed"])
         self.assertEqual(before_node["status"], "REVIEW_REQUIRED")
+        self.assertEqual(before_node["plan_review"]["feedback"]["draft_count"], 2)
+        with self.assertRaises(urllib.error.HTTPError) as pending_feedback:
+            self.post("/api/reviews/node-plan-complete", {
+                "node": plan_node["id"],
+                "definition_digest": refreshed["definition_digest"],
+                "reviewer": "alice",
+                "reason": "不能批准尚未修改的方案",
+            }, self.server.write_token)
+        self.assertEqual(pending_feedback.exception.code, 400)
+        submitted_feedback = self.post("/api/reviews/node-feedback-submit", {
+            "node": plan_node["id"],
+            "definition_digest": refreshed["definition_digest"],
+        }, self.server.write_token)["result"]
+        self.assertEqual(submitted_feedback["count"], 2)
+        self.assertTrue(any(
+            item["kind"] == "APPLY_REVIEW_FEEDBACK"
+            and item["target"] == plan_node["id"]
+            for item in submitted_feedback["auto_closure"]["actions"]
+        ))
+        with self.assertRaises(HarnessError):
+            self.store.review_node_plan_section(
+                plan_node["id"], section, refreshed["definition_digest"],
+                "modify", "alice", "Agent 处理完成前不能追加下一批意见",
+            )
+        self.store.complete_review_feedback(
+            submitted_feedback["batch_id"], "Project Main Agent",
+            "已分析两条意见并更新当前方案",
+        )
         completed = self.post("/api/reviews/node-plan-complete", {
             "node": plan_node["id"],
             "definition_digest": refreshed["definition_digest"],
@@ -2014,6 +2060,13 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(
             self.store.model(plan_node["id"])["nodes"][0]["status"],
             "REVIEW_REQUIRED",
+        )
+        continued_batch = self.store.submit_review_feedback(
+            plan_node["id"], refreshed["definition_digest"],
+        )
+        self.store.complete_review_feedback(
+            continued_batch["batch_id"], "Project Main Agent",
+            "已处理审批完成后的补充修改意见",
         )
         self.store.complete_node_plan_review(
             plan_node["id"], refreshed["definition_digest"], "alice",
@@ -2069,11 +2122,10 @@ class DashboardTest(unittest.TestCase):
         }, self.server.write_token)["result"]
         self.assertEqual(delivery_response["change_items"], delivery_changes)
         self.assertEqual(
-            delivery_response["delivery_review"]["status"], "AGENT_CHECKING",
+            delivery_response["delivery_review"]["status"], "CHANGES_REQUESTED",
         )
         self.assertEqual(
-            self.store.review_agent_checks("PENDING")[0]["review_id"],
-            delivery_response["review_id"],
+            delivery_response["delivery_review"]["feedback"]["draft_count"], 1,
         )
         submitted_snapshot = self.store.dashboard_snapshot()
         submitted_vdoc = next(
@@ -2084,7 +2136,7 @@ class DashboardTest(unittest.TestCase):
             node for node in submitted_vdoc["nodes"] if node["id"] == delivery["id"]
         )
         self.assertEqual(submitted_node["status"], "REVIEW_REQUIRED")
-        self.assertEqual(submitted_node["delivery_review"]["status"], "AGENT_CHECKING")
+        self.assertEqual(submitted_node["delivery_review"]["status"], "CHANGES_REQUESTED")
         # The VCHK plan still needs its owner's approval. A simultaneous Agent
         # check must not hide that actionable request in the project summary.
         self.assertEqual(submitted_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
@@ -2092,15 +2144,15 @@ class DashboardTest(unittest.TestCase):
             item["target"] == "workstream:VCHK"
             for item in submitted_snapshot["waiting_for_human"]
         ))
-        self.assertEqual(submitted_snapshot["project_agent"]["pending_agent_review_check_count"], 1)
-        self.assertFalse(any(
+        self.assertEqual(submitted_snapshot["project_agent"]["pending_agent_review_check_count"], 0)
+        self.assertTrue(any(
             item["target"] == delivery["id"]
             for item in submitted_snapshot["waiting_for_human"]
         ))
         self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
         self.assertEqual(self.store.model(delivery["id"])["nodes"][0]["status"], "REVIEW_REQUIRED")
         self.assertTrue(any(
-            item["kind"] == "CHECK_DOCUMENT_REVIEW"
+            item["kind"] == "SUBMIT_REVIEW_FEEDBACK"
             and item["target"] == delivery["id"]
             for item in self.store.evaluate_closure("VDOC", persist=False)["actions"]
         ))
@@ -2110,6 +2162,18 @@ class DashboardTest(unittest.TestCase):
             if item["id"] == delivery_response["review_id"]
         )
         self.assertEqual(recorded_delivery["change_items"], delivery_changes)
+
+        delivery_batch = self.post("/api/reviews/node-feedback-submit", {
+            "node": delivery["id"],
+            "definition_digest": delivery_state["definition_digest"],
+            "document_digest": delivery_state["document_digest"],
+        }, self.server.write_token)["result"]
+        self.assertEqual(delivery_batch["count"], 1)
+        self.assertTrue(any(
+            item["kind"] == "APPLY_REVIEW_FEEDBACK"
+            and item["target"] == delivery["id"]
+            for item in delivery_batch["auto_closure"]["actions"]
+        ))
 
         question = self.store.ask_agent_question(
             delivery["id"], "sideband 信号是否纳入本次交付验收？", [
@@ -2129,7 +2193,9 @@ class DashboardTest(unittest.TestCase):
         )
         waiting_snapshot = self.store.dashboard_snapshot()
         self.assertEqual(waiting_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
-        self.assertEqual(self.store.review_agent_checks("WAITING_FOR_HUMAN")[0]["review_id"], delivery_response["review_id"])
+        self.assertEqual(
+            self.store.review_feedback_state(delivery["id"])["waiting_for_human_count"], 1,
+        )
         self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
         with self.assertRaises(urllib.error.HTTPError) as captured:
             self.post("/api/reviews/document-delivery", {
@@ -2145,24 +2211,24 @@ class DashboardTest(unittest.TestCase):
             "id": question["id"], "option": "include", "reviewer": "alice",
             "answer_text": "纳入本版交付范围",
         }, self.server.write_token)
-        self.assertEqual(
-            self.store.review_agent_checks("PENDING")[0]["review_id"],
-            delivery_response["review_id"],
-        )
+        self.assertEqual(self.store.review_feedback_state(delivery["id"])["processing_count"], 1)
         answered_snapshot = self.store.dashboard_snapshot()
         self.assertEqual(answered_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
-        self.assertEqual(answered_snapshot["project_agent"]["pending_agent_review_check_count"], 1)
+        self.assertEqual(answered_snapshot["project_agent"]["pending_agent_feedback_count"], 1)
         self.assertTrue(any(
             item["target"] == "workstream:VCHK"
             for item in answered_snapshot["waiting_for_human"]
         ))
         self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
-        checked_modify = self.post("/api/reviews/agent-check", {
-            "review_id": delivery_response["review_id"],
+        checked_modify = self.post("/api/reviews/agent-feedback-complete", {
+            "batch_id": delivery_batch["batch_id"],
             "checked_by": "Project Main Agent",
             "summary": "负责人已确认 sideband 范围，修改要求已经完整",
         }, self.server.write_token)["result"]
-        self.assertEqual(checked_modify["delivery_review"]["status"], "CHANGES_REQUESTED")
+        self.assertEqual(checked_modify["feedback"]["unresolved_count"], 0)
+        self.assertEqual(
+            self.store.document_delivery_review_state(delivery["id"])["status"], "PENDING",
+        )
 
         approval_submission = self.post("/api/reviews/document-delivery", {
             "node": delivery["id"],

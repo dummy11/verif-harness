@@ -896,6 +896,12 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- 只有用户明确要求提前试写时，才可在方案批准前生成“未批准预览草稿”；",
         "  该草稿不得同步为正文语义版本，不得创建内容验收节点，也不得作为任何",
         "  完成、证据或下游实现授权。",
+        "- 负责人新增、删除或修改审批意见后，必须先由“提交当前 N 条审批意见给 Agent”",
+        "  形成一个批次；这时不得批准全部内容。Main Agent 通过 `await-human` 收到",
+        "  `APPLY_REVIEW_FEEDBACK`，或用 `agent-review-feedback list --status PENDING` 读取批次，",
+        "  逐条分析并修改方案或正文。若需要工程判断，登记节点绑定的 agent-question；",
+        "  处理完成后用 `agent-review-feedback complete BATCH_ID --summary ...` 登记结果。",
+        "  只有当前批次全部处理完成，负责人才能重新查看并批准全部内容。",
         "- 负责人提交文档交付节点的验收结论后，Main Agent 必须读取",
         "  `agent-review-check list --status PENDING` 并检查当前审批、正文和依赖影响。",
         "  Agent 自行判断是否需要负责人确认：需要时用绑定该交付节点的",
@@ -1203,6 +1209,15 @@ CREATE TABLE IF NOT EXISTS review_change_items (
   target TEXT NOT NULL, instruction TEXT NOT NULL,
   PRIMARY KEY (review_id, sequence)
 );
+CREATE TABLE IF NOT EXISTS review_feedback_items (
+  id TEXT PRIMARY KEY, review_id TEXT NOT NULL, node_id TEXT NOT NULL,
+  workstream TEXT NOT NULL, revision INTEGER NOT NULL,
+  definition_digest TEXT NOT NULL, document_digest TEXT NOT NULL,
+  operation TEXT NOT NULL, target TEXT NOT NULL,
+  reviewer TEXT NOT NULL, instruction TEXT NOT NULL,
+  status TEXT NOT NULL, batch_id TEXT, resolution TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, resolved_at TEXT
+);
 CREATE TABLE IF NOT EXISTS review_agent_checks (
   review_id TEXT PRIMARY KEY, node_id TEXT NOT NULL, status TEXT NOT NULL,
   checked_by TEXT, summary TEXT NOT NULL,
@@ -1214,6 +1229,10 @@ CREATE INDEX IF NOT EXISTS findings_subject ON findings(subject,status);
 CREATE INDEX IF NOT EXISTS plan_reviews_node ON node_plan_reviews(node_id,revision);
 CREATE INDEX IF NOT EXISTS plan_sections_node ON node_plan_section_reviews(node_id,revision);
 CREATE INDEX IF NOT EXISTS delivery_reviews_node ON document_delivery_reviews(node_id,revision);
+CREATE INDEX IF NOT EXISTS review_feedback_node
+  ON review_feedback_items(node_id,revision,status);
+CREATE INDEX IF NOT EXISTS review_feedback_batch
+  ON review_feedback_items(batch_id,status);
 CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
@@ -2383,6 +2402,18 @@ class ProjectStore:
                   decisions_json=excluded.decisions_json,context_json=excluded.context_json,updated_at=excluded.updated_at
             """, (name, "REVIEW", revision, objective_value, json_text(desired_rows), json_text(exit_values),
                   json_text(decisions), json_text(context), now()))
+            if name == "VDOC":
+                timestamp = now()
+                connection.execute(
+                    """UPDATE review_feedback_items
+                       SET status='SUPERSEDED',resolution=?,updated_at=?,resolved_at=?
+                       WHERE workstream='VDOC' AND revision<?
+                         AND status IN ('DRAFT','PENDING','WAITING_FOR_HUMAN')""",
+                    (
+                        f"VDOC revision {revision} 已取代本批审批意见所绑定的旧版本",
+                        timestamp, timestamp, revision,
+                    ),
+                )
             default_dependency_count = self._reconcile_default_dependencies(connection)
             authoring_dependency_count = (
                 self._reconcile_vdoc_authoring_edges(connection, desired_rows)
@@ -2845,7 +2876,10 @@ class ProjectStore:
                     )
                 except HarnessError:
                     continue
-                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"}:
+                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"} and not (
+                    action["kind"] == "APPLY_REVIEW_FEEDBACK"
+                    and plan["lifecycle"] == "REVISE"
+                ):
                     continue
                 blocking_question = connection.execute(
                     """SELECT id FROM agent_questions
@@ -2910,7 +2944,10 @@ class ProjectStore:
                 plan, desired = self._current_assignment_definition(
                     connection, action["target"],
                 )
-                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"}:
+                if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"} and not (
+                    action["kind"] == "APPLY_REVIEW_FEEDBACK"
+                    and plan["lifecycle"] == "REVISE"
+                ):
                     raise HarnessError("Workstream 尚未获准执行，不能分派 subagent")
                 blocking_question = connection.execute(
                     """SELECT id FROM agent_questions
@@ -3336,6 +3373,13 @@ class ProjectStore:
             )
             if node_id and question_workstream == "VDOC":
                 connection.execute(
+                    """UPDATE review_feedback_items
+                       SET status='WAITING_FOR_HUMAN',updated_at=?
+                       WHERE node_id=? AND status='PENDING'
+                         AND revision=(SELECT revision FROM workstreams WHERE name='VDOC')""",
+                    (timestamp, node_id),
+                )
+                connection.execute(
                     """UPDATE review_agent_checks SET status='WAITING_FOR_HUMAN',
                        updated_at=? WHERE review_id=(
                          SELECT id FROM document_delivery_reviews
@@ -3453,6 +3497,15 @@ class ProjectStore:
                        WHERE target=? AND status='OPEN'""",
                     (node_id,),
                 ).fetchone()["count"]
+                connection.execute(
+                    """UPDATE review_feedback_items SET status=?,updated_at=?
+                       WHERE node_id=? AND status='WAITING_FOR_HUMAN'
+                         AND revision=(SELECT revision FROM workstreams WHERE name='VDOC')""",
+                    (
+                        "WAITING_FOR_HUMAN" if remaining_for_node else "PENDING",
+                        timestamp, node_id,
+                    ),
+                )
                 connection.execute(
                     """UPDATE review_agent_checks SET status=?,updated_at=?
                        WHERE review_id=(
@@ -3843,10 +3896,267 @@ class ProjectStore:
             )
 
     @staticmethod
+    def _store_review_feedback_items(
+        connection: sqlite3.Connection, review_id: str, node_id: str,
+        revision: int, definition_digest: str, document_digest: str,
+        reviewer: str, items: Iterable[dict[str, str]], timestamp: str,
+    ) -> list[str]:
+        feedback_ids: list[str] = []
+        for item in items:
+            feedback_id = f"review-feedback:{uuid.uuid4().hex[:12]}"
+            connection.execute(
+                """INSERT INTO review_feedback_items
+                   (id,review_id,node_id,workstream,revision,definition_digest,
+                    document_digest,operation,target,reviewer,instruction,status,batch_id,
+                    resolution,created_at,updated_at,resolved_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    feedback_id, review_id, node_id, "VDOC", revision,
+                    definition_digest, document_digest, item["operation"],
+                    item["target"], reviewer, item["instruction"], "DRAFT", None, "",
+                    timestamp, timestamp, None,
+                ),
+            )
+            feedback_ids.append(feedback_id)
+        return feedback_ids
+
+    def review_feedback_state(
+        self, node_id: str, plan: dict[str, Any] | None = None,
+        desired: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return revision-bound approval opinions awaiting one explicit Agent handoff."""
+        self.ensure_dashboard_schema()
+        if plan is None:
+            plan = self.workstream("VDOC")
+        if desired is None:
+            desired = next(
+                (item for item in plan["desired_state"] if item["id"] == node_id),
+                None,
+            )
+        if desired is None or desired.get("role") not in {
+            "document-writing-plan", "document-deliverable",
+        }:
+            raise HarnessError("审批意见只适用于当前 VDOC 文档撰写方案或正文验收节点")
+        definition_digest = self._node_plan_digest(plan, desired)
+        document_digest = ""
+        if desired.get("role") == "document-deliverable":
+            document_key = self._vdoc_document_key(plan, desired)
+            if document_key is None:
+                raise HarnessError(f"文档交付节点未明确归属文档: {node_id}")
+            document_digest = self.documents(
+                f"document:vdoc:{document_key}", include_delivery_nodes=False,
+            )[0]["digest"]
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                """SELECT * FROM review_feedback_items
+                   WHERE node_id=? ORDER BY rowid""", (node_id,),
+            )]
+        current = [
+            item for item in rows if int(item["revision"]) == int(plan["revision"])
+        ]
+        draft = [item for item in current if item["status"] == "DRAFT"]
+        pending = [item for item in current if item["status"] == "PENDING"]
+        waiting = [item for item in current if item["status"] == "WAITING_FOR_HUMAN"]
+        resolved = [item for item in current if item["status"] == "RESOLVED"]
+        return {
+            "node_id": node_id,
+            "revision": plan["revision"],
+            "definition_digest": definition_digest,
+            "document_digest": document_digest,
+            "draft_count": len(draft),
+            "processing_count": len(pending) + len(waiting),
+            "waiting_for_human_count": len(waiting),
+            "resolved_count": len(resolved),
+            "unresolved_count": len(draft) + len(pending) + len(waiting),
+            "can_approve": not draft and not pending and not waiting,
+            "draft_items": draft,
+            "processing_items": [*pending, *waiting],
+            "items": rows,
+            "current_items": current,
+            "batch_ids": sorted({
+                str(item["batch_id"]) for item in [*pending, *waiting]
+                if item.get("batch_id")
+            }),
+        }
+
+    @store_operation
+    def submit_review_feedback(
+        self, node_id: str, definition_digest: str,
+        document_digest: str = "",
+    ) -> dict[str, Any]:
+        """Seal all current draft opinions into one durable Main Agent work batch."""
+        plan = self.workstream("VDOC")
+        desired = next(
+            (item for item in plan["desired_state"] if item["id"] == node_id), None,
+        )
+        if desired is None or desired.get("role") not in {
+            "document-writing-plan", "document-deliverable",
+        }:
+            raise HarnessError("只能提交当前 VDOC 方案或正文节点的审批意见")
+        state = self.review_feedback_state(node_id, plan, desired)
+        if state["definition_digest"] != definition_digest:
+            raise HarnessError("审批对象已变化；请刷新后重新核对当前审批意见")
+        if desired.get("role") == "document-deliverable" and (
+            state["document_digest"] != document_digest
+        ):
+            raise HarnessError("文档正文已变化；请刷新后重新核对当前审批意见")
+        timestamp = now()
+        batch_id = f"review-feedback-batch:{uuid.uuid4().hex[:12]}"
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT id FROM review_feedback_items
+                   WHERE node_id=? AND revision=? AND status='DRAFT'
+                   ORDER BY rowid""",
+                (node_id, plan["revision"]),
+            ).fetchall()
+            if not rows:
+                raise HarnessError("当前节点没有待提交给 Agent 的审批意见")
+            feedback_ids = [row["id"] for row in rows]
+            connection.executemany(
+                """UPDATE review_feedback_items
+                   SET status='PENDING',batch_id=?,updated_at=? WHERE id=?""",
+                [(batch_id, timestamp, item_id) for item_id in feedback_ids],
+            )
+            event_id = f"event:{uuid.uuid4().hex[:12]}"
+            connection.execute(
+                "INSERT INTO events VALUES(?,?,?,?,?,?)",
+                (
+                    event_id, "review-feedback-submitted", node_id, None,
+                    json_text({
+                        "batch_id": batch_id,
+                        "feedback_ids": feedback_ids,
+                        "count": len(feedback_ids),
+                        "agent_follow_up": "APPLY_REVIEW_FEEDBACK",
+                    }),
+                    timestamp,
+                ),
+            )
+        closure = self.evaluate_closure("VDOC")
+        return {
+            "batch_id": batch_id,
+            "node_id": node_id,
+            "count": len(feedback_ids),
+            "event_id": event_id,
+            "feedback": self.review_feedback_state(node_id),
+            "auto_closure": closure,
+        }
+
+    @store_operation
+    def complete_review_feedback(
+        self, batch_id: str, checked_by: str, summary: str,
+    ) -> dict[str, Any]:
+        """Record Main Agent handling for every opinion in one submitted batch."""
+        self.ensure_dashboard_schema()
+        if checked_by.strip() != PROJECT_AGENT_ACTOR:
+            raise HarnessError(
+                f"审批意见只能由 {PROJECT_AGENT_ACTOR} 登记处理完成"
+            )
+        if not summary.strip():
+            raise HarnessError("Agent 必须填写本批审批意见的处理摘要")
+        timestamp = now()
+        open_question_ids: list[str] = []
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT * FROM review_feedback_items
+                   WHERE batch_id=? ORDER BY rowid""", (batch_id,),
+            ).fetchall()
+            if not rows:
+                raise HarnessError(f"未知审批意见批次: {batch_id}")
+            if any(row["status"] not in {"PENDING", "WAITING_FOR_HUMAN"} for row in rows):
+                raise HarnessError("审批意见批次已经处理完成或不再是当前待处理批次")
+            node_id = rows[0]["node_id"]
+            if any(row["node_id"] != node_id for row in rows):
+                raise HarnessError("审批意见批次包含多个工作节点，拒绝完成")
+            open_questions = connection.execute(
+                """SELECT id FROM agent_questions
+                   WHERE target=? AND status='OPEN' ORDER BY created_at""",
+                (node_id,),
+            ).fetchall()
+            if open_questions:
+                open_question_ids = [row["id"] for row in open_questions]
+                connection.execute(
+                    """UPDATE review_feedback_items
+                       SET status='WAITING_FOR_HUMAN',resolution=?,updated_at=?
+                       WHERE batch_id=?""",
+                    (summary.strip(), timestamp, batch_id),
+                )
+            else:
+                connection.execute(
+                    """UPDATE review_feedback_items
+                       SET status='RESOLVED',resolution=?,updated_at=?,resolved_at=?
+                       WHERE batch_id=?""",
+                    (summary.strip(), timestamp, timestamp, batch_id),
+                )
+        plan = self.workstream("VDOC")
+        desired = next(
+            (item for item in plan["desired_state"] if item["id"] == node_id), None,
+        )
+        if desired is not None and desired.get("role") == "document-writing-plan":
+            with self.connect() as connection:
+                self._refresh_node_plan_reviews(
+                    connection, plan, timestamp, PROJECT_AGENT_ACTOR,
+                )
+            self.write_workstream_projection("VDOC")
+        elif desired is not None and desired.get("role") == "document-deliverable":
+            self._refresh_vdoc_delivery_acceptance(node_id)
+            self.write_model_projection()
+        closure = self.evaluate_closure("VDOC")
+        if open_question_ids:
+            raise HarnessError(
+                "Agent 已提出等待负责人回答的问题（"
+                + "、".join(open_question_ids)
+                + "）；回答并重新分析后才能完成本批审批意见"
+            )
+        return {
+            "batch_id": batch_id,
+            "node_id": node_id,
+            "feedback": self.review_feedback_state(node_id),
+            "auto_closure": closure,
+        }
+
+    def review_feedback_batches(self, status: str | None = None) -> list[dict[str, Any]]:
+        """List submitted approval-opinion batches for the Project Main Agent."""
+        self.ensure_dashboard_schema()
+        selected = status.upper() if status else None
+        if selected and selected not in {
+            "PENDING", "WAITING_FOR_HUMAN", "RESOLVED", "SUPERSEDED",
+        }:
+            raise HarnessError(
+                "审批意见状态必须是 PENDING/WAITING_FOR_HUMAN/RESOLVED/SUPERSEDED"
+            )
+        filters = ["batch_id IS NOT NULL"]
+        values: list[Any] = []
+        if selected:
+            filters.append("status=?")
+            values.append(selected)
+        with self.read_connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                "SELECT * FROM review_feedback_items WHERE " + " AND ".join(filters)
+                + " ORDER BY created_at DESC",
+                values,
+            )]
+        grouped: dict[str, dict[str, Any]] = {}
+        for item in rows:
+            batch = grouped.setdefault(str(item["batch_id"]), {
+                "batch_id": item["batch_id"], "node_id": item["node_id"],
+                "workstream": item["workstream"], "revision": item["revision"],
+                "status": item["status"], "items": [],
+            })
+            batch["items"].append(item)
+            if item["status"] == "WAITING_FOR_HUMAN":
+                batch["status"] = "WAITING_FOR_HUMAN"
+            elif item["status"] == "PENDING" and batch["status"] == "RESOLVED":
+                batch["status"] = "PENDING"
+        return list(grouped.values())
+
+    @staticmethod
     def _record_review_submitted_event(
         connection: sqlite3.Connection, review_id: str, node_id: str,
         verdict: str, reviewer: str, change_items: list[dict[str, str]],
         timestamp: str, *, requires_agent_check: bool = False,
+        agent_follow_up: str = "CHECK_REQUIRED",
     ) -> str:
         """Record a checkpoint for Agent analysis without claiming it already ran."""
         event_id = f"event:{uuid.uuid4().hex[:12]}"
@@ -3867,7 +4177,7 @@ class ProjectStore:
                     "verdict": verdict.upper(),
                     "reviewer": reviewer,
                     "change_items": change_items,
-                    "agent_follow_up": "CHECK_REQUIRED",
+                    "agent_follow_up": agent_follow_up,
                 }), timestamp,
             ),
         )
@@ -3918,8 +4228,13 @@ class ProjectStore:
                    FROM node_plan_reviews WHERE node_id=? ORDER BY rowid""",
                 (node_id,),
             )]
+        feedback = self.review_feedback_state(node_id, plan, desired)
+        feedback_by_review: dict[str, list[dict[str, Any]]] = {}
+        for item in feedback["items"]:
+            feedback_by_review.setdefault(item["review_id"], []).append(item)
         for row in rows:
             row["change_items"] = change_items.get(row["id"], [])
+            row["feedback_items"] = feedback_by_review.get(row["id"], [])
         section_states: list[dict[str, Any]] = []
         for section in required_sections:
             section_rows = [row for row in rows if row["section"] == section]
@@ -3973,6 +4288,7 @@ class ProjectStore:
             "completion_reviews": completion_reviews,
             "sections": section_states,
             "reviews": rows,
+            "feedback": feedback,
         }
 
     @store_operation
@@ -3996,6 +4312,10 @@ class ProjectStore:
             raise HarnessError("节点级方案审批当前只适用于 VDOC 文档撰写方案节点")
         if state["definition_digest"] != definition_digest:
             raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新审批")
+        if state["feedback"]["processing_count"]:
+            raise HarnessError(
+                "上一批审批意见仍在等待 Agent 处理；请先查看修改结果，再提交新的审批意见"
+            )
         allowed_sections = {item["section"] for item in state["sections"]}
         if section not in allowed_sections:
             raise HarnessError("未知或当前不需要审批的文档撰写方案区块")
@@ -4029,9 +4349,16 @@ class ProjectStore:
                  section, selected.upper(), reviewer.strip(), reason.strip(), timestamp),
             )
             self._store_review_change_items(connection, review_id, normalized_changes)
+            feedback_ids = self._store_review_feedback_items(
+                connection, review_id, node_id, plan["revision"],
+                definition_digest, "", reviewer.strip(), normalized_changes, timestamp,
+            )
             event_id = self._record_review_submitted_event(
                 connection, review_id, node_id, selected, reviewer.strip(),
                 normalized_changes, timestamp,
+                agent_follow_up=(
+                    "AWAITING_FEEDBACK_SUBMISSION" if feedback_ids else "CHECK_REQUIRED"
+                ),
             )
             self._refresh_node_plan_reviews(connection, plan, timestamp, reviewer.strip())
         self.write_workstream_projection("VDOC")
@@ -4046,9 +4373,15 @@ class ProjectStore:
             "change_items": normalized_changes,
             "event_id": event_id,
             "agent_follow_up": {
-                "status": "CHECK_REQUIRED",
-                "waiting_for_human": False,
-                "message": "审批结论已保存；Agent 将在下一检查点分析意见和依赖影响",
+                "status": (
+                    "AWAITING_FEEDBACK_SUBMISSION" if feedback_ids else "CHECK_REQUIRED"
+                ),
+                "waiting_for_human": bool(feedback_ids),
+                "message": (
+                    "审批意见已保存；请提交当前意见给 Agent 处理"
+                    if feedback_ids
+                    else "审批结论已保存"
+                ),
             },
             "plan_review": refreshed,
             "lifecycle": self.workstream("VDOC")["lifecycle"],
@@ -4123,6 +4456,10 @@ class ProjectStore:
         state = self.node_plan_review_state(node_id, plan, desired)
         if state["definition_digest"] != definition_digest:
             raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新操作")
+        if state["feedback"]["unresolved_count"]:
+            raise HarnessError(
+                "当前仍有未处理的审批意见；请先提交给 Agent，并等待修改完成后再批准全部内容"
+            )
         proposal_issues = self._vdoc_plan_proposal_issues(self._vdoc_writing_plan_desired(plan))
         if proposal_issues:
             raise HarnessError("当前文档撰写方案不完整，不能审批完成：" + "；".join(proposal_issues))
@@ -4162,7 +4499,7 @@ class ProjectStore:
         after_review_id: str | None = None, timeout: float = 60.0,
         activity_id: str | None = None,
     ) -> dict[str, Any]:
-        """Wait for one revision-bound formal Workstream review.
+        """Wait for a revision-bound review decision or submitted opinion batch.
 
         This is a bounded SQLite checkpoint, not a channel for injecting text into an
         Agent session. The caller remains responsible for interpreting the returned
@@ -4180,7 +4517,8 @@ class ProjectStore:
             )
         closure = self.evaluate_closure(name, persist=False)
         has_pending_checkpoint = any(
-            item.get("kind") == "HUMAN_REVIEW" and item.get("executor") == "human"
+            item.get("kind") in {"HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK"}
+            and item.get("executor") == "human"
             for item in closure["actions"]
         )
 
@@ -4233,8 +4571,38 @@ class ProjectStore:
             result.pop("rowid", None)
             return result
 
+        def matching_feedback_batch() -> dict[str, Any] | None:
+            if name != "VDOC":
+                return None
+            return next((
+                item for item in self.review_feedback_batches("PENDING")
+                if item["workstream"] == name
+                and int(item["revision"]) == selected_revision
+            ), None)
+
         started = time.monotonic()
         while True:
+            feedback_batch = matching_feedback_batch()
+            if feedback_batch is not None:
+                if activity_id:
+                    activity = self.update_activity(
+                        activity_id, "RUNNING",
+                        "已收到负责人提交的审批意见；Main Agent 需要立即分析并修改当前内容",
+                    )
+                return {
+                    "schema": "HumanCheckpoint/1",
+                    "status": "ACTION_REQUIRED",
+                    "checkpoint": {
+                        "action": "APPLY_REVIEW_FEEDBACK", "workstream": name,
+                        "revision": selected_revision,
+                        "node_id": feedback_batch["node_id"],
+                    },
+                    "review": None,
+                    "feedback_batch": feedback_batch,
+                    "resume": True,
+                    "next": "apply_review_feedback",
+                    "activity": activity,
+                }
             review = matching_review()
             if review is not None:
                 verdict = review["verdict"]
@@ -4251,6 +4619,7 @@ class ProjectStore:
                         "revision": selected_revision,
                     },
                     "review": review,
+                    "feedback_batch": None,
                     "resume": verdict == "APPROVE",
                     "next": {
                         "APPROVE": "continue",
@@ -4279,6 +4648,7 @@ class ProjectStore:
                         "revision": selected_revision,
                     },
                     "review": None,
+                    "feedback_batch": None,
                     "resume": False,
                     "next": "wait",
                     "retry_after_review": after_review_id,
@@ -4600,10 +4970,15 @@ class ProjectStore:
             item for item in internal_statuses
             if item["status"] not in {Validity.VALID.value, Validity.WAIVED.value}
         ]
+        feedback = self.review_feedback_state(node_id, plan, desired)
+        feedback_by_review: dict[str, list[dict[str, Any]]] = {}
+        for item in feedback["items"]:
+            feedback_by_review.setdefault(item["review_id"], []).append(item)
         for row in rows:
             row["provisional"] = provisional_details.get(row["id"])
             row["change_items"] = change_items.get(row["id"], [])
             row["agent_check"] = agent_checks.get(row["id"])
+            row["feedback_items"] = feedback_by_review.get(row["id"], [])
         current = next((row for row in reversed(rows) if (
             row["revision"] == plan["revision"]
             and row["definition_digest"] == definition_digest
@@ -4626,6 +5001,19 @@ class ProjectStore:
                 )
                 if status in {"APPROVED", "PROVISIONAL"} and internal_blockers:
                     status = "AGENT_CHECKING"
+        if feedback["draft_count"]:
+            status = "CHANGES_REQUESTED"
+        elif feedback["waiting_for_human_count"]:
+            status = "WAITING_FOR_HUMAN"
+        elif feedback["processing_count"]:
+            status = "AGENT_CHECKING"
+        elif current is not None and current["verdict"] == "MODIFY" and any(
+            item["review_id"] == current["id"] and item["status"] == "RESOLVED"
+            for item in feedback["current_items"]
+        ):
+            # Agent has handled the requested changes. The resulting current body
+            # still needs one explicit whole-content approval from the owner.
+            status = "PENDING"
         if not document["exists"] or document["content_changed"]:
             status = "PENDING"
             current = None
@@ -4650,6 +5038,7 @@ class ProjectStore:
             "current_review": current,
             "reviews": rows,
             "agent_check": current.get("agent_check") if current is not None else None,
+            "feedback": feedback,
             "open_agent_questions": open_agent_questions,
             "internal_work": {
                 "total": len(internal_statuses),
@@ -4698,6 +5087,12 @@ class ProjectStore:
                        WHERE target=? AND status='OPEN'""",
                     (item["id"],),
                 ).fetchone()["count"]
+                unresolved_feedback = connection.execute(
+                    """SELECT COUNT(*) count FROM review_feedback_items
+                       WHERE node_id=? AND revision=?
+                         AND status IN ('DRAFT','PENDING','WAITING_FOR_HUMAN')""",
+                    (item["id"], plan["revision"]),
+                ).fetchone()["count"]
                 check = self._review_agent_check(
                     connection, latest["id"] if latest is not None else None,
                 )
@@ -4719,7 +5114,7 @@ class ProjectStore:
                 agent_checked = check is None or check["status"] == "COMPLETED"
                 eligible = (
                     latest is not None and not open_questions and agent_checked
-                    and not internal_blockers
+                    and not internal_blockers and not unresolved_feedback
                 )
                 item_status = (
                     Validity.VALID.value
@@ -4880,6 +5275,10 @@ class ProjectStore:
             raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
         if not state["document_available"]:
             raise HarnessError("文档正文缺失或尚未同步，请先由 Agent 准备当前版本正文")
+        if selected == "modify" and state["feedback"]["processing_count"]:
+            raise HarnessError(
+                "上一批审批意见仍在等待 Agent 处理；请先查看修改结果，再提交新的审批意见"
+            )
         if (
             selected != "modify"
             and state["current_review"] is not None
@@ -4909,10 +5308,15 @@ class ProjectStore:
             )]
         if selected == "approve" and (
             pending_items or pending_confirmations or pending_questions
+            or state["feedback"]["unresolved_count"]
         ):
             blockers = [item["id"] for item in pending_items]
             blockers.extend(item["id"] for item in pending_confirmations)
             blockers.extend(item["id"] for item in pending_questions)
+            blockers.extend(
+                item["id"] for item in state["feedback"]["current_items"]
+                if item["status"] in {"DRAFT", "PENDING", "WAITING_FOR_HUMAN"}
+            )
             raise HarnessError(
                 "交付节点仍有等待负责人确认的问题、工程决定或 Agent 分析事项（"
                 + "、".join(blockers) + "）；逐项处理后才能批准交付节点"
@@ -4932,6 +5336,11 @@ class ProjectStore:
                  selected.upper(), reviewer.strip(), notes.strip(), timestamp),
             )
             self._store_review_change_items(connection, review_id, normalized_changes)
+            feedback_ids = self._store_review_feedback_items(
+                connection, review_id, node_id, plan["revision"],
+                definition_digest, document["digest"], reviewer.strip(),
+                normalized_changes, timestamp,
+            )
             if selected == "provisional":
                 connection.execute(
                     "INSERT INTO document_delivery_provisionals VALUES(?,?,?)",
@@ -4981,7 +5390,12 @@ class ProjectStore:
             )
             event_id = self._record_review_submitted_event(
                 connection, review_id, node_id, selected, reviewer.strip(),
-                normalized_changes, timestamp, requires_agent_check=True,
+                normalized_changes, timestamp,
+                requires_agent_check=not feedback_ids,
+                agent_follow_up=(
+                    "AWAITING_FEEDBACK_SUBMISSION"
+                    if feedback_ids else "CHECK_REQUIRED"
+                ),
             )
         self._refresh_vdoc_delivery_acceptance(node_id)
         self.write_model_projection()
@@ -4995,9 +5409,15 @@ class ProjectStore:
             "change_items": normalized_changes,
             "event_id": event_id,
             "agent_follow_up": {
-                "status": "AGENT_CHECKING",
-                "waiting_for_human": False,
-                "message": "验收结论已保存；Agent 必须检查后才能形成验收状态",
+                "status": (
+                    "AWAITING_FEEDBACK_SUBMISSION" if feedback_ids else "AGENT_CHECKING"
+                ),
+                "waiting_for_human": bool(feedback_ids),
+                "message": (
+                    "审批意见已保存；请提交当前意见给 Agent 处理"
+                    if feedback_ids
+                    else "验收结论已保存；Agent 必须检查后才能形成验收状态"
+                ),
             },
             "delivery_review": self.document_delivery_review_state(node_id),
             "document": self.documents(document_id)[0],
@@ -6216,6 +6636,16 @@ class ProjectStore:
                     "SELECT id,status FROM nodes WHERE workstream=?", (name,),
                 )
             }
+            feedback_by_node: dict[str, list[dict[str, Any]]] = {}
+            for row in connection.execute(
+                """SELECT id,node_id,status,batch_id,operation,target,instruction
+                   FROM review_feedback_items
+                   WHERE workstream=? AND revision=?
+                     AND status IN ('DRAFT','PENDING','WAITING_FOR_HUMAN')
+                   ORDER BY rowid""",
+                (name, plan["revision"]),
+            ):
+                feedback_by_node.setdefault(row["node_id"], []).append(dict(row))
             dependencies_by_node: dict[str, list[dict[str, Any]]] = {}
             for row in connection.execute(
                 """SELECT edges.source,nodes.id,nodes.status,nodes.workstream,nodes.title
@@ -6241,6 +6671,14 @@ class ProjectStore:
                 ):
                     continue
                 status = node_statuses.get(desired["id"], Validity.UNKNOWN.value)
+                feedback_rows = feedback_by_node.get(desired["id"], [])
+                draft_feedback = [
+                    item for item in feedback_rows if item["status"] == "DRAFT"
+                ]
+                submitted_feedback = [
+                    item for item in feedback_rows
+                    if item["status"] in {"PENDING", "WAITING_FOR_HUMAN"}
+                ]
                 dependencies = dependencies_by_node.get(desired["id"], [])
                 blockers = [item for item in dependencies if item["status"] not in {
                     Validity.VALID.value, Validity.PROVISIONAL.value, Validity.WAIVED.value,
@@ -6261,7 +6699,31 @@ class ProjectStore:
                     # Only the review of this revision and these exact contents
                     # may determine the next action; historical checks remain audit data.
                     delivery_agent_check = delivery_state["agent_check"]
-                if desired.get("required", True) and missing_dependencies:
+                if draft_feedback:
+                    actions.append({
+                        "kind": "SUBMIT_REVIEW_FEEDBACK", "target": desired["id"],
+                        "priority": 1, "executor": "human", "suggested_mode": "review",
+                        "reason": (
+                            f"当前有 {len(draft_feedback)} 条审批意见尚未提交给 Agent；"
+                            "提交后才能修改并重新审批"
+                        ),
+                        "feedback_count": len(draft_feedback),
+                    })
+                elif submitted_feedback:
+                    actions.append({
+                        "kind": "APPLY_REVIEW_FEEDBACK", "target": desired["id"],
+                        "priority": 2, "executor": "reasoning", "suggested_mode": "review",
+                        "reason": (
+                            f"负责人已提交 {len(submitted_feedback)} 条审批意见；"
+                            "Main Agent 必须分析影响、修改方案或正文并登记处理结果"
+                        ),
+                        "feedback_count": len(submitted_feedback),
+                        "batch_ids": sorted({
+                            item["batch_id"] for item in submitted_feedback
+                            if item.get("batch_id")
+                        }),
+                    })
+                elif desired.get("required", True) and missing_dependencies:
                     actions.append({
                         "kind": "PLAN_PREREQUISITE", "target": desired["id"], "priority": 3,
                         "executor": "reasoning", "suggested_mode": "plan",
@@ -6386,6 +6848,8 @@ class ProjectStore:
                         review_state = self.node_plan_review_state(
                             desired["id"], plan, desired,
                         )
+                        if feedback_by_node.get(desired["id"]):
+                            continue
                         if review_state["status"] != "APPROVED":
                             actions.append({
                                 "kind": "HUMAN_REVIEW", "target": desired["id"],
@@ -7166,6 +7630,12 @@ class ProjectStore:
         pending_agent_review_checks = [
             item for item in current_agent_review_checks if item["status"] == "PENDING"
         ]
+        pending_agent_feedback_count = sum(
+            int(action.get("feedback_count", 0))
+            for closure in closure_by_workstream.values()
+            for action in closure.get("actions", [])
+            if action.get("kind") == "APPLY_REVIEW_FEEDBACK"
+        )
 
         # The project Agent is a persistent control-plane actor, not an Activity row.
         # Activities describe bounded work and may legitimately be empty while the
@@ -7238,6 +7708,12 @@ class ProjectStore:
             project_agent_message = (
                 f"需要你处理 {'、'.join(pending_parts)}；处理后 Agent 才会继续相关工作"
             )
+        elif pending_agent_feedback_count:
+            project_agent_status = "PENDING"
+            project_agent_message = (
+                f"已提交 {pending_agent_feedback_count} 条审批意见，等待 Main Agent 分析并修改；"
+                "当前无需负责人重复提交"
+            )
         elif pending_agent_review_checks:
             project_agent_status = "RUNNING"
             project_agent_message = (
@@ -7294,6 +7770,7 @@ class ProjectStore:
             "pending_review_count": pending_review_count,
             "pending_confirmation_count": pending_confirmation_count,
             "pending_agent_review_check_count": len(pending_agent_review_checks),
+            "pending_agent_feedback_count": pending_agent_feedback_count,
             "latest_activity": latest_activity,
         }
 

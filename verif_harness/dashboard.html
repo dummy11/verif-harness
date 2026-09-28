@@ -361,8 +361,8 @@
     .detail-group-body { padding: 14px; border-top: 1px solid var(--line); }
     .plan-approval-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 12px; }
     .plan-approval-controls > .detail-group { margin-top: 0; min-width: 0; }
-    .plan-approval-controls > .btn { min-height: 42px; }
-    .plan-approval-controls > .btn:disabled { color: var(--muted); background: var(--panel-2); border-color: var(--line); cursor: not-allowed; }
+    .plan-approval-controls > .modal-actions .btn { min-height: 42px; }
+    .plan-approval-controls > .modal-actions .btn:disabled { color: var(--muted); background: var(--panel-2); border-color: var(--line); cursor: not-allowed; }
     .metric-list { display: grid; gap: 8px; }
     .metric-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, auto) minmax(120px, auto); gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
     .compact-meta { color: var(--muted); font-size: 11px; }
@@ -420,7 +420,7 @@
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .btn { width: 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .modal-actions { width: 100%; } .plan-approval-controls > .modal-actions .btn { flex: 1 1 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
     @media (max-width: 760px) {
       .work-node-table { min-width: 620px; }
       .work-node-table th:first-child { width: 45%; }
@@ -544,6 +544,8 @@
       REFINE_DESIRED_STATE:'由 Agent 完善当前 DUT 的工作节点',
       AUTHOR_DOCUMENT_CONTENT:'Agent 按已批准方案撰写正文',
       REFINE_DOCUMENT_DELIVERIES:'Agent 完善正文内容验收范围',
+      SUBMIT_REVIEW_FEEDBACK:'提交当前审批意见给 Agent',
+      APPLY_REVIEW_FEEDBACK:'Agent 处理审批意见并修改内容',
       HUMAN_REVIEW:'等待负责人评审当前计划'
     };
     const WORKSTREAM_LABELS = {
@@ -1611,6 +1613,9 @@
     function nodeAttentionText(n) {
       const openAgentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
       if (openAgentQuestions.length) return `Agent 等待你回答 ${openAgentQuestions.length} 个问题`;
+      const feedback = nodeFeedbackState(n);
+      if (feedback.draft_count) return `请提交当前 ${feedback.draft_count} 条审批意见给 Agent`;
+      if (feedback.processing_count) return `Agent 待处理 ${feedback.processing_count} 条审批意见`;
       if (n.plan_review && n.plan_review.status !== 'APPROVED') {
         const parentWorkstream = workstream(n.workstream);
         if (parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement) {
@@ -1921,8 +1926,9 @@
         const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" aria-expanded="${!state.collapsedNodes.has(n.id) || Boolean(query)}" aria-label="展开或折叠${escapeHtml(humanText(n.title))}的子节点" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) && !query ? '▸' : '▾'}</button>` : '<span aria-hidden="true"></span>';
         const documentLabel = nodeDocumentLabel(n);
         const document = documentLabel ? `<div class="work-node-document">文档：${escapeHtml(documentLabel)}</div>` : '';
+        const feedbackReady = nodeFeedbackState(n).can_approve;
         const approval = n.role === 'document-writing-plan' && n.plan_review
-          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
+          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed && feedbackReady ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
         return `<tr><td><div class="work-node-name">${toggle}<div class="work-node-copy"><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button>${document}</div></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td><td>${nodeStatusHtml(n)}${approval}</td></tr>`;
       }).join('');
     }
@@ -1945,7 +1951,7 @@
       document.querySelectorAll('[data-approve-plan-node]').forEach(button => button.onclick = event => {
         event.stopPropagation();
         const n = findNode(button.dataset.approvePlanNode);
-        if (!planApprovalAvailable(n) || n.plan_review.completed) { toast('当前方案不能重复审批，请刷新后核对节点状态', true); return; }
+        if (!planApprovalAvailable(n) || n.plan_review.completed || !nodeFeedbackState(n).can_approve) { toast('当前方案存在未处理审批意见或不能重复审批，请刷新后核对节点状态', true); return; }
         openNodePlanCompletionModal(n);
       });
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
@@ -2249,6 +2255,17 @@
       return `<ul>${items.map(item => `<li><strong>${escapeHtml(labels[item.operation] || item.operation)}</strong> ${escapeHtml(item.target)}：${escapeHtml(item.instruction)}</li>`).join('')}</ul>`;
     }
 
+    function reviewFeedbackHistoryHtml(items) {
+      if (!(items || []).length) return '';
+      const status = items.some(item => item.status === 'DRAFT') ? '等待提交给 Agent'
+        : items.some(item => item.status === 'WAITING_FOR_HUMAN') ? 'Agent 等待你回答'
+          : items.some(item => item.status === 'PENDING') ? '等待 Agent 处理'
+            : items.some(item => item.status === 'SUPERSEDED') ? '已由新版本取代'
+            : 'Agent 已处理';
+      const resolution = [...new Set(items.map(item => item.resolution).filter(Boolean))].join('；');
+      return `<div class="row-meta">${escapeHtml(status)}${resolution ? ` · ${escapeHtml(resolution)}` : ''}</div>`;
+    }
+
     function planReviewVerdictLabel(item) {
       const operations = [...new Set((item.change_items || []).map(change => change.operation))];
       if (item.verdict === 'MODIFY' && operations.length === 1) {
@@ -2260,7 +2277,32 @@
     function planReviewFormHtml(n) {
       if (!n.plan_review && !n.delivery_review) return '';
       const attribute = n.delivery_review ? 'id="delivery-review-form" data-delivery-opinion-form' : 'data-plan-section-form="writing-plan"';
-      return `<form ${attribute}><div class="field"><label>审批类型</label><select name="verdict"><option value="add">新增</option><option value="delete">删除</option><option value="modify">修改</option></select></div><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批内容</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button class="btn primary">提交审批</button></div></form>`;
+      const processing = nodeFeedbackState(n).processing_count > 0;
+      const disabled = processing ? 'disabled' : '';
+      const notice = processing ? '<div class="notice">上一批审批意见正在由 Agent 处理；请先查看修改结果，再继续添加意见。</div>' : '';
+      return `<form ${attribute}>${notice}<div class="field"><label>审批类型</label><select name="verdict" ${disabled}><option value="add">新增</option><option value="delete">删除</option><option value="modify">修改</option></select></div><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required ${disabled}></div><div class="field"><label>审批内容</label><textarea name="reason" required ${disabled}></textarea></div><div class="modal-actions"><button class="btn primary" ${disabled}>添加审批意见</button></div></form>`;
+    }
+
+    function nodeFeedbackState(n) {
+      return n.plan_review?.feedback || n.delivery_review?.feedback || {
+        draft_count:0, processing_count:0, waiting_for_human_count:0,
+        unresolved_count:0, can_approve:true,
+      };
+    }
+
+    function reviewFeedbackSubmitButtonHtml(n) {
+      const feedback = nodeFeedbackState(n);
+      const label = feedback.draft_count
+        ? `提交当前 ${feedback.draft_count} 条审批意见给 Agent`
+        : feedback.processing_count
+          ? `已提交 ${feedback.processing_count} 条，等待 Agent 处理`
+          : '提交当前 0 条审批意见给 Agent';
+      const title = feedback.draft_count
+        ? '一次性提交当前节点尚未处理的审批意见；提交后由 Main Agent 分析并修改内容'
+        : feedback.processing_count
+          ? '本轮审批意见已经提交，等待 Main Agent 完成修改并登记处理结果'
+          : '当前没有需要提交给 Agent 的审批意见';
+      return `<button type="button" class="btn" data-submit-node-feedback ${feedback.draft_count ? '' : 'disabled'} title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
     }
 
     function planReviewHistoryHtml(n) {
@@ -2273,7 +2315,7 @@
       };
       const items = (n.plan_review?.reviews || []).concat((n.plan_review?.completion_reviews || []).map(review => ({...review, section:'completion'})))
         .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')));
-      return items.map(item => `<div class="list-row"><div><strong>${escapeHtml(item.section === 'completion' ? '审批完成' : `${sectionTitles[item.section] || item.section} · ${planReviewVerdictLabel(item)}`)}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.reason)} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}</div></div>`).join('') || '<div class="empty">尚无审批历史记录</div>';
+      return items.map(item => `<div class="list-row"><div><strong>${escapeHtml(item.section === 'completion' ? '审批完成' : `${sectionTitles[item.section] || item.section} · ${planReviewVerdictLabel(item)}`)}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.reason)} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}${reviewFeedbackHistoryHtml(item.feedback_items)}</div></div>`).join('') || '<div class="empty">尚无审批历史记录</div>';
     }
 
     function nodePlanApprovalPanelHtml(n, available) {
@@ -2281,13 +2323,15 @@
       const body = available
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
         : '<div class="notice"><strong>当前方案还不能审批。</strong> Agent 需要先补齐当前 DUT 的文档工作分解。</div>';
-      const canComplete = available && !n.plan_review.completed;
+      const feedback = nodeFeedbackState(n);
+      const canComplete = available && !n.plan_review.completed && feedback.can_approve;
       const completionLabel = n.plan_review.completed ? '已批准全部内容' : available ? '批准全部内容' : '方案待补齐';
       const completionTitle = n.plan_review.completed
         ? '当前方案的全部内容已批准；提交新的审批意见后需要重新审批'
+        : feedback.unresolved_count ? '当前审批意见尚未由 Agent 处理完成，不能批准未修改的内容'
         : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
         : 'Agent 需要先补齐当前 DUT 的文档撰写方案';
-      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档撰写方案</summary><div class="detail-group-body">${body}</div></details><button type="button" class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(completionTitle)}">${completionLabel}</button></div>`;
+      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档撰写方案</summary><div class="detail-group-body">${body}</div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(completionTitle)}">${completionLabel}</button></div></div>`;
     }
 
     function planApprovalAvailable(n) {
@@ -2301,6 +2345,7 @@
 
     function deliveryApprovalState(n) {
       const review = n.delivery_review || {};
+      const feedback = nodeFeedbackState(n);
       const approved = review.current_review?.verdict === 'APPROVE';
       const pendingCheck = ['AGENT_CHECKING','WAITING_FOR_HUMAN'].includes(review.status);
       const w = workstream(n.workstream);
@@ -2310,10 +2355,11 @@
         && !(n.next_actions || []).some(a => a.kind === 'WAIT_FOR_DEPENDENCY')
         && !(w?.closure?.actions || []).some(a => a.kind === 'REFINE_DOCUMENT_DELIVERIES');
       return {
-        enabled: available && !approved && !pendingCheck,
+        enabled: available && !approved && !pendingCheck && feedback.can_approve,
         label: approved ? '已批准全部内容' : pendingCheck ? '等待 Agent 检查' : '批准全部内容',
         title: approved ? '本版本正文已批准；Agent 检查完成前不表示已验收通过'
           : pendingCheck ? '等待 Agent 完成本轮验收检查'
+          : feedback.unresolved_count ? '当前审批意见尚未由 Agent 处理完成，不能批准未修改的正文'
           : available ? '批准当前节点对应的全部正文内容' : '请先同步正文并完成前置审批和待确认事项',
       };
     }
@@ -2321,7 +2367,7 @@
     function deliveryApprovalPanelHtml(n) {
       const approval = deliveryApprovalState(n);
       const history = (n.delivery_review.reviews || []).slice().reverse().map(item =>
-        `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '审批完成' : planReviewVerdictLabel(item))}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes || '')} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}${item.provisional ? `<div class="row-meta">责任人：${escapeHtml(item.provisional.owner)}；再次验收条件：${escapeHtml(item.provisional.review_trigger)}</div>` : ''}</div></div>`
+        `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '审批完成' : planReviewVerdictLabel(item))}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes || '')} · ${shortTime(item.created_at)}</div>${reviewChangeHistoryHtml(item.change_items)}${reviewFeedbackHistoryHtml(item.feedback_items)}${item.provisional ? `<div class="row-meta">责任人：${escapeHtml(item.provisional.owner)}；再次验收条件：${escapeHtml(item.provisional.review_trigger)}</div>` : ''}</div></div>`
       ).join('') || '<div class="empty">尚无审批历史记录</div>';
       const questions = (n.agent_questions || []).filter(q => q.status === 'OPEN');
       const confirmations = (n.human_actions || []).filter(a => a.status === 'OPEN');
@@ -2329,7 +2375,7 @@
       const confirmationRows = confirmations.map(item => `<div class="detail-card"><strong>${escapeHtml(humanActionLabel(item.action))}</strong><p>${escapeHtml(item.reason)}</p><form data-delivery-confirmation="${escapeHtml(item.id)}"><div class="field"><label>处理人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>处理意见</label><textarea name="resolution" required></textarea></div><button class="btn primary">确认事项已处理</button></form></div>`).join('');
       const blockers = questions.length || confirmations.length || documentItems.length
         ? `<section class="section"><h3>当前需要你确认</h3>${questions.length ? agentQuestionCardsHtml(questions) : ''}${confirmationRows}${documentItems.length ? `<ul>${documentItems.map(item => `<li>${escapeHtml(documentItemLabel(item.kind))}：${escapeHtml(item.title)}</li>`).join('')}</ul><p>请与 Agent 确认上述事项；处理结果登记后才能批准正文。</p>` : ''}</section>` : '';
-      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档正文</summary><div class="detail-group-body">${planReviewFormHtml(n)}${blockers}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${history}</div></section></div></details><button type="button" class="btn primary" id="node-delivery-complete" ${approval.enabled ? '' : 'disabled'} title="${escapeHtml(approval.title)}">${approval.label}</button></div>`;
+      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档正文</summary><div class="detail-group-body">${planReviewFormHtml(n)}${blockers}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${history}</div></section></div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-delivery-complete" ${approval.enabled ? '' : 'disabled'} title="${escapeHtml(approval.title)}">${approval.label}</button></div></div>`;
     }
 
     function documentDeliveryNodeHtml(n) {
@@ -2340,6 +2386,7 @@
       root.querySelector('[data-view-delivery-document]').href = routeUrl({document:n.delivery_review.document_id}).toString();
       const complete = root.querySelector('#node-delivery-complete');
       if (complete && !complete.disabled) complete.onclick = () => openNodePlanCompletionModal(n);
+      bindReviewFeedbackSubmit(n, root);
       const form = root.querySelector('[data-delivery-opinion-form]');
       form.onsubmit = async event => {
         event.preventDefault();
@@ -2350,7 +2397,7 @@
           document_digest:n.delivery_review.document_digest,
           verdict:'modify', reviewer:values.reviewer, notes:values.reason.trim(),
           change_items:[{operation:values.verdict,target:n.title,instruction:values.reason.trim()}],
-        }, '审批意见已保存；等待 Agent 检查并修改正文');
+        }, '审批意见已保存；请提交当前意见给 Agent');
       };
       root.querySelectorAll('[data-delivery-confirmation]').forEach(form => {
         form.onsubmit = async event => {
@@ -2378,7 +2425,9 @@
         const matching = body.document.digest === n.delivery_review.document_digest && !body.document.content_changed;
         container.innerHTML = documentBodyHtml(body);
         root.querySelector('#node-delivery-complete').disabled = !matching || !deliveryApprovalState(n).enabled;
-        root.querySelector('[data-delivery-opinion-form] button').disabled = !matching;
+        root.querySelector('[data-delivery-opinion-form] button').disabled = (
+          !matching || nodeFeedbackState(n).processing_count > 0
+        );
         bindDocumentContent();
       } catch (error) {
         if (!current()) return;
@@ -2399,6 +2448,28 @@
       };
     }
 
+    function bindReviewFeedbackSubmit(n, root=document) {
+      const button = root.querySelector('[data-submit-node-feedback]');
+      if (!button || button.disabled) return;
+      button.onclick = async () => {
+        if (button.dataset.pending === 'true') return;
+        button.dataset.pending = 'true'; button.disabled = true;
+        const original = button.textContent;
+        button.textContent = '正在提交给 Agent…';
+        const review = n.delivery_review || n.plan_review;
+        await post('/api/reviews/node-feedback-submit', {
+          node:n.id,
+          definition_digest:review.definition_digest,
+          document_digest:n.delivery_review?.document_digest || '',
+        }, '当前审批意见已提交给 Agent');
+        if (root.contains(button)) {
+          delete button.dataset.pending;
+          button.disabled = false;
+          button.textContent = original;
+        }
+      };
+    }
+
     function bindPlanSectionReviewForms(n, root=document) {
       root.querySelectorAll('[data-plan-section-form]').forEach(form => {
         const sectionTitle = n.title;
@@ -2406,9 +2477,10 @@
           event.preventDefault();
           const data = planSectionReviewPayload(n, form.dataset.planSectionForm, sectionTitle, Object.fromEntries(new FormData(event.target)));
           rememberReviewer(data.reviewer);
-          await post('/api/reviews/node-plan-section', data, '审批结论已保存；等待 Agent 检查并给出建议');
+          await post('/api/reviews/node-plan-section', data, '审批意见已保存；请提交当前意见给 Agent');
         };
       });
+      bindReviewFeedbackSubmit(n, root);
     }
 
     function openNodePlanCompletionModal(n) {

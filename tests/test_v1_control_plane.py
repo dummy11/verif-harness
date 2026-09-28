@@ -1262,6 +1262,62 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(stale.returncode, 2)
         self.assertIn("旧 revision 的评审不能恢复当前工作", stale.stderr)
 
+    def test_submitting_current_approval_opinions_wakes_awaiting_main_agent(self) -> None:
+        self.bootstrap()
+        plan = self.design_minimal_vdoc()
+        node = next(
+            item for item in plan["desired_state"]
+            if item["role"] == "document-writing-plan"
+        )
+        store = ProjectStore(self.root)
+        state = store.node_plan_review_state(node["id"])
+        store.review_node_plan_section(
+            node["id"], "writing-plan", state["definition_digest"],
+            "modify", "alice", "补充复位释放后的检查方法",
+            [{
+                "operation": "add", "target": "复位检查",
+                "instruction": "补充复位释放后的检查方法",
+            }],
+        )
+
+        environment = os.environ.copy()
+        environment["GIT_AUTHOR_NAME"] = "test-user"
+        environment.pop("USER", None)
+        waiter = subprocess.Popen(
+            [
+                sys.executable, str(CLI), "await-human", "VDOC",
+                "--revision", str(plan["revision"]), "--timeout", "3",
+                "--project-root", str(self.root),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env=environment,
+        )
+        time.sleep(0.3)
+        self.assertIsNone(waiter.poll(), "只保存意见不应唤醒 Main Agent")
+        submitted = store.submit_review_feedback(
+            node["id"], state["definition_digest"],
+        )
+        stdout, stderr = waiter.communicate(timeout=5)
+        self.assertEqual(waiter.returncode, 0, stdout + stderr)
+        resumed = json.loads(stdout)
+        self.assertEqual(resumed["status"], "ACTION_REQUIRED")
+        self.assertEqual(resumed["checkpoint"]["action"], "APPLY_REVIEW_FEEDBACK")
+        self.assertEqual(resumed["checkpoint"]["node_id"], node["id"])
+        self.assertEqual(
+            resumed["feedback_batch"]["batch_id"], submitted["batch_id"],
+        )
+        self.assertEqual(
+            resumed["feedback_batch"]["items"][0]["target"], "复位检查",
+        )
+        self.assertTrue(resumed["resume"])
+        self.assertEqual(resumed["next"], "apply_review_feedback")
+        replacement = self.design_minimal_vdoc()
+        self.assertGreater(replacement["revision"], plan["revision"])
+        superseded = self.run_cli(
+            "agent-review-feedback", "list", "--status", "SUPERSEDED",
+        )["review_feedback_batches"]
+        self.assertEqual([item["batch_id"] for item in superseded], [submitted["batch_id"]])
+
     def test_vdoc_materializes_missing_semantic_documents_without_approving_them(self) -> None:
         self.bootstrap()
         readonly_source = self.root / "rtl/dut.sv"

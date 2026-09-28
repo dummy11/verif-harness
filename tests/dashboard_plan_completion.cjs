@@ -125,16 +125,41 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await form.locator('[name="reviewer"]').fill('browser-test-reviewer');
     await form.locator('[name="reason"]').fill('补充当前 DUT 的异常场景范围');
     const changed = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-section') && r.request().method() === 'POST');
-    await form.getByRole('button', {name:'提交审批', exact:true}).click();
+    await form.getByRole('button', {name:'添加审批意见', exact:true}).click();
     assert.equal((await changed).ok(), true);
-    await page.locator('#main').getByRole('button', {name:'批准全部内容', exact:true}).waitFor();
-    assert.equal(await page.locator('#main #node-plan-complete').isEnabled(), true);
+    const feedbackButton = page.locator('#main [data-submit-node-feedback]');
+    await feedbackButton.getByText('提交当前 1 条审批意见给 Agent', {exact:true}).waitFor();
+    assert.equal(await feedbackButton.isEnabled(), true);
+    assert.equal(await page.locator('#main #node-plan-complete').isEnabled(), false);
     const revised = planNode(await snapshot());
     assert.equal(revised.status, 'REVIEW_REQUIRED');
     assert.equal(revised.plan_review.completed, false);
     assert.equal(revised.plan_review.status, 'CHANGES_REQUESTED');
     assert.equal(revised.plan_review.completion_reviews.length, 1);
     assert.equal(revised.plan_review.reviews.length, 1);
+    assert.equal(revised.plan_review.feedback.draft_count, 1);
+    const feedbackWrite = page.waitForResponse(r => r.url().includes('/api/reviews/node-feedback-submit') && r.request().method() === 'POST');
+    await feedbackButton.click();
+    const feedbackResponse = await feedbackWrite;
+    assert.equal(feedbackResponse.ok(), true);
+    const feedbackReceipt = await feedbackResponse.json();
+    await page.locator('#main [data-submit-node-feedback]').getByText('已提交 1 条，等待 Agent 处理', {exact:true}).waitFor();
+    assert.equal(await page.locator('#main #node-plan-complete').isEnabled(), false);
+    assert.equal(await page.locator('#main [data-plan-section-form] button').isEnabled(), false);
+    const agentCompletion = await context.request.post(`${config.url}api/reviews/agent-feedback-complete`, {
+      headers:{'X-Verif-Token':config.token},
+      data:{
+        dashboard_project:config.project,
+        batch_id:feedbackReceipt.result.batch_id,
+        checked_by:'Project Main Agent',
+        summary:'已按意见补充当前 DUT 的异常场景范围',
+      },
+    });
+    assert.equal(agentCompletion.ok(), true, await agentCompletion.text());
+    await page.evaluate(snapshot => setSnapshot(snapshot), await snapshot());
+    await page.locator('#main').getByRole('button', {name:'批准全部内容', exact:true}).waitFor();
+    assert.equal(await page.locator('#main #node-plan-complete').isEnabled(), true);
+    assert.equal(await page.locator('#main [data-plan-section-form] button').isEnabled(), true);
     // A lost write response is not a rejection: do not enable a blind retry.
     await page.locator('#main #node-plan-complete').click();
     await page.route(endpoint, route => route.abort('failed'));

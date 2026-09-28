@@ -44,7 +44,10 @@ assert.match(context.VerifMarkdown.render('[link](assertion_plan.md)', other), /
 assert.doesNotMatch(context.VerifMarkdown.render('[link](assertion_plan.md)', {...options, documents:[]}), /<a /);
 const collisions = context.VerifMarkdown.render('# A\n\n# A\n\n# A-1', options);
 assert.equal(new Set([...collisions.matchAll(/ id="([^"]+)"/g)].map(m => m[1])).size, 3);
-delete context.markdownit;
+// A global `var` from the bundled parser is non-configurable in newer Node VM
+// contexts, so deleting the proxy property can be a no-op. Explicitly clear it
+// to exercise the renderer-unavailable fallback consistently across Node versions.
+context.markdownit = undefined;
 assert.match(context.VerifMarkdown.render(source, options), /<details open /);
 assert.doesNotMatch(context.VerifMarkdown.render(source, options), /<script>/);
 const dashboard = fs.readFileSync(path.join(root, 'verif_harness/dashboard.html'), 'utf8');

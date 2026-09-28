@@ -103,7 +103,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
 
     // Successful UI submission must write through the API and clear only that draft.
     const written = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-section') && r.request().method() === 'POST');
-    await form.getByRole('button', {name:'提交审批',exact:true}).click();
+    await form.getByRole('button', {name:'添加审批意见',exact:true}).click();
     assert.equal((await written).ok(), true);
     await page.waitForFunction(() => document.querySelector('[data-plan-section-form] [name="reason"]').value === '');
     const after = await api(`/api/snapshot?project=${config.project}`);
@@ -113,11 +113,29 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(savedReview.change_items[0].operation, 'add');
     assert.equal(savedReview.change_items[0].instruction, '未提交的范围说明');
 
-    // Completing the approval changes only this writing-plan node state; approval remains usable.
+    // Saved opinions disable approval until the owner submits the current batch
+    // and Main Agent records that the requested change is complete.
     const approvedSnapshot = await api(`/api/snapshot?project=${config.project}`);
     await page.evaluate(snapshot => setSnapshot(snapshot), approvedSnapshot);
     const completeButton = page.locator('#drawer #node-plan-complete');
+    const feedbackButton = page.locator('#drawer [data-submit-node-feedback]');
+    assert.equal(await completeButton.isEnabled(), false);
+    assert.equal(await feedbackButton.isEnabled(), true);
+    const feedbackWrite = page.waitForResponse(r => r.url().includes('/api/reviews/node-feedback-submit') && r.request().method() === 'POST');
+    await feedbackButton.click();
+    const feedbackResponse = await feedbackWrite;
+    assert.equal(feedbackResponse.ok(), true);
+    const feedbackReceipt = await feedbackResponse.json();
+    assert.equal(await page.locator('#drawer #node-plan-complete').isEnabled(), false);
+    assert.equal(await page.locator('#drawer [data-plan-section-form] button').isEnabled(), false);
+    await api('/api/reviews/agent-feedback-complete', {
+      batch_id:feedbackReceipt.result.batch_id,
+      checked_by:'Project Main Agent',
+      summary:'已按意见补充当前 DUT 的范围说明',
+    });
+    await page.evaluate(snapshot => setSnapshot(snapshot), await api(`/api/snapshot?project=${config.project}`));
     assert.equal(await completeButton.isEnabled(), true);
+    assert.equal(await page.locator('#drawer [data-plan-section-form] button').isEnabled(), true);
     await completeButton.click();
     await page.locator('#node-plan-complete-form [name="reviewer"]').fill('browser-test-reviewer');
     await page.locator('#node-plan-complete-form [name="reason"]').fill('完成本轮文档撰写方案审批');
@@ -139,12 +157,14 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await form.locator('[name="reason"]').fill('审批完成后继续提交修改意见');
     await form.locator('[name="verdict"]').selectOption('modify');
     const continuedWrite = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-section') && r.request().method() === 'POST');
-    await form.getByRole('button', {name:'提交审批', exact:true}).click();
+    await form.getByRole('button', {name:'添加审批意见', exact:true}).click();
     assert.equal((await continuedWrite).ok(), true);
     const continuedSnapshot = await api(`/api/snapshot?project=${config.project}`);
     const continuedNode = continuedSnapshot.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.id === node);
     assert.equal(continuedNode.status, 'REVIEW_REQUIRED');
     assert.equal(continuedNode.plan_review.completed, false);
+    assert.equal(continuedNode.plan_review.feedback.draft_count, 1);
+    assert.equal(await page.locator('#drawer #node-plan-complete').isEnabled(), false);
 
     // Changed digest: never replay an old draft into a new approval form.
     await form.locator('[name="reason"]').fill('只适用于旧版本');

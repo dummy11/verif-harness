@@ -172,6 +172,9 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(continuedReview.current_review.verdict, 'MODIFY');
     assert.equal(continuedReview.current_review.change_items[0].operation, 'delete');
     assert.equal(continuedReview.reviews.length, 2);
+    assert.equal(continuedReview.feedback.draft_count, 1);
+    assert.equal(await page.locator('#node-delivery-complete').isEnabled(), false);
+    assert.equal(await page.locator('[data-submit-node-feedback]').isEnabled(), true);
     // Renderer failure leaves readable source, never a blank acceptance surface.
     await page.route('**/assets/markdown-it.min.js?*', route => route.abort());
     await page.goto(url({document:docId}));

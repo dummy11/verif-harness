@@ -154,10 +154,35 @@ class DeliveryPendingTest(unittest.TestCase):
         review = changed["delivery_review"]
         self.assertEqual(review["current_review"]["verdict"], "MODIFY")
         self.assertEqual(len(review["reviews"]), 2)
-        self.assertEqual(review["status"], "AGENT_CHECKING")
+        self.assertEqual(review["status"], "CHANGES_REQUESTED")
+        self.assertEqual(review["feedback"]["draft_count"], 1)
         self.assertEqual(f.store.model(self.node["id"])["nodes"][0]["status"], "REVIEW_REQUIRED")
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            f.post("/api/reviews/document-delivery", payload, f.server.write_token)
+        self.assertEqual(error.exception.code, 400)
+        batch = f.post("/api/reviews/node-feedback-submit", {
+            "node": self.node["id"],
+            "definition_digest": state["definition_digest"],
+            "document_digest": state["document_digest"],
+        }, f.server.write_token)["result"]
+        self.assertEqual(batch["count"], 1)
+        self.assertEqual(
+            f.store.document_delivery_review_state(self.node["id"])["status"],
+            "AGENT_CHECKING",
+        )
+        f.store.complete_review_feedback(
+            batch["batch_id"], "Project Main Agent", "已补充接口复位条件",
+        )
+        self.assertEqual(
+            f.store.document_delivery_review_state(self.node["id"])["status"],
+            "PENDING",
+        )
         f.store.complete_review_agent_check(approved["result"]["review_id"], "Project Main Agent", "历史检查仅供审计")
-        self.assertEqual(f.store.document_delivery_review_state(self.node["id"])["agent_check"]["status"], "PENDING")
+        self.assertIsNone(f.store.document_delivery_review_state(self.node["id"])["agent_check"])
+        approved_again = f.post(
+            "/api/reviews/document-delivery", payload, f.server.write_token,
+        )["result"]
+        self.assertEqual(approved_again["delivery_review"]["status"], "AGENT_CHECKING")
 
     def test_missing_body_cannot_be_approved(self) -> None:
         self.path.unlink()

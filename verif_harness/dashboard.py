@@ -530,6 +530,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return store.complete_review_agent_check(
                 str(body.get("review_id", "")), checked_by, summary,
             )
+        if path == "/api/reviews/node-feedback-submit":
+            digest = str(body.get("definition_digest", "")).strip()
+            if not digest:
+                raise HarnessError("提交审批意见必须提供当前节点内容摘要")
+            return store.submit_review_feedback(
+                str(body.get("node", "")), digest,
+                str(body.get("document_digest", "")).strip(),
+            )
+        if path == "/api/reviews/agent-feedback-complete":
+            checked_by = str(body.get("checked_by", "")).strip()
+            summary = str(body.get("summary", "")).strip()
+            if not checked_by or not summary:
+                raise HarnessError("Agent 处理审批意见必须填写 checked_by 和 summary")
+            return store.complete_review_feedback(
+                str(body.get("batch_id", "")), checked_by, summary,
+            )
         if path == "/api/reviews/node-plan-section":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:
