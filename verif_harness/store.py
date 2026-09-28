@@ -4189,7 +4189,9 @@ class ProjectStore:
                 }
             time.sleep(min(0.25, max(timeout - elapsed, 0.0)))
 
-    def node_closure_assessment(self, node_id: str) -> dict[str, Any]:
+    def node_closure_assessment(
+        self, node_id: str, *, _plan: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Build a reproducible Human-reviewable explanation of one node conclusion."""
         self.require()
         with self.read_connect() as connection:
@@ -4202,11 +4204,10 @@ class ProjectStore:
             if row["type"] != "desired-state" or not row["workstream"]:
                 raise HarnessError("Closure Assessment 只适用于 Workstream desired-state node")
             data = json.loads(row["data_json"])
-            plan = connection.execute(
-                "SELECT revision,lifecycle,desired_json FROM workstreams WHERE name=?",
-                (row["workstream"],),
-            ).fetchone()
-            current_ids = {item["id"] for item in json.loads(plan["desired_json"])}
+            plan = _plan if _plan is not None else self.workstream(row["workstream"])
+            if plan["workstream"] != row["workstream"]:
+                raise HarnessError("节点与当前工作流不匹配；请刷新后重试")
+            current_ids = {item["id"] for item in plan["desired_state"]}
             dependencies = [dict(item) for item in connection.execute(
                 """SELECT nodes.id,nodes.title,nodes.status,nodes.workstream,nodes.updated_at
                    FROM edges JOIN nodes ON nodes.id=edges.target
@@ -4362,7 +4363,10 @@ class ProjectStore:
             "auto_closure": self.reconcile(),
         }
 
-    def documents(self, selector: str | None = None) -> list[dict[str, Any]]:
+    def documents(
+        self, selector: str | None = None, *, include_delivery_nodes: bool = True,
+        _plan: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         self.require()
         with self.read_connect() as connection:
             exists = connection.execute(
@@ -4404,14 +4408,16 @@ class ProjectStore:
                 for item in items:
                     item["affects"] = json.loads(item.pop("affects_json"))
                 row["governance_items"] = items
-        try:
-            plan = self.workstream("VDOC")
-        except HarnessError:
-            plan = None
+        plan = _plan
+        if include_delivery_nodes and plan is None:
+            try:
+                plan = self.workstream("VDOC")
+            except HarnessError:
+                plan = None
         for row in rows:
             row["document_key"] = row["id"].removeprefix("document:vdoc:")
             row["delivery_nodes"] = []
-            if plan is None or plan["lifecycle"] not in {
+            if not include_delivery_nodes or plan is None or plan["lifecycle"] not in {
                 "ACTIVE", "PARTIALLY_STALE", "SATISFIED", "BASELINED",
             }:
                 continue
@@ -4446,7 +4452,9 @@ class ProjectStore:
         document_key = self._vdoc_document_key(plan, desired)
         if document_key is None:
             raise HarnessError(f"文档交付节点未明确归属文档: {node_id}")
-        document = self.documents(f"document:vdoc:{document_key}")[0]
+        document = self.documents(
+            f"document:vdoc:{document_key}", include_delivery_nodes=False,
+        )[0]
         definition_digest = self._node_plan_digest(plan, desired)
         internal_children = self._vdoc_internal_desired(plan, parent_id=node_id)
         with self.read_connect() as connection:
@@ -4898,7 +4906,7 @@ class ProjectStore:
 
     def document_content(self, selector: str) -> dict[str, Any]:
         """Read one registered VDOC body for the loopback Dashboard review surface."""
-        document = self.documents(selector)[0]
+        document = self.documents(selector, include_delivery_nodes=False)[0]
         path = self.root / document["path"]
         if path.is_symlink():
             raise HarnessError(f"拒绝通过符号链接读取验证文档: {document['path']}")
@@ -5968,7 +5976,27 @@ class ProjectStore:
 
     def evaluate_closure(self, workstream: str, persist: bool = True) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
-        plan = self.workstream(name)
+        plans = self.workstreams()
+        plan = next((item for item in plans if item["workstream"] == name), None)
+        if plan is None:
+            raise HarnessError(f"Workstream {name} 尚未设计")
+        return self._evaluate_closure(plan, self._planned_nodes(plans), persist=persist)
+
+    @staticmethod
+    def _planned_nodes(plans: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+        return {
+            (plan["workstream"], item["key"]): item
+            for plan in plans for item in plan["desired_state"]
+        }
+
+    def _evaluate_closure(
+        self, plan: dict[str, Any],
+        current_nodes: dict[tuple[str, str], dict[str, Any]], *,
+        persist: bool,
+        delivery_reviews: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate the same rules with definitions loaded once by this read operation."""
+        name = plan["workstream"]
         actions: list[dict[str, Any]] = []
         vdoc_proposal_issues = (
             self._vdoc_plan_proposal_issues(plan["desired_state"])
@@ -5997,8 +6025,24 @@ class ProjectStore:
         )
         connector = self.connect if persist else self.read_connect
         with connector() as connection:
-            current_nodes = self._current_desired_nodes(connection)
             current_desired = {key: item["id"] for key, item in current_nodes.items()}
+            # Internal document units remain part of closure. Read their states and
+            # dependencies in bulk, rather than issuing two queries for every unit.
+            node_statuses = {
+                row["id"]: row["status"] for row in connection.execute(
+                    "SELECT id,status FROM nodes WHERE workstream=?", (name,),
+                )
+            }
+            dependencies_by_node: dict[str, list[dict[str, Any]]] = {}
+            for row in connection.execute(
+                """SELECT edges.source,nodes.id,nodes.status,nodes.workstream,nodes.title
+                   FROM edges JOIN nodes ON nodes.id=edges.target
+                   JOIN nodes AS source_node ON source_node.id=edges.source
+                   WHERE source_node.workstream=? AND edges.relation='DEPENDS_ON'
+                   ORDER BY edges.source,nodes.id""", (name,),
+            ):
+                dependency = dict(row)
+                dependencies_by_node.setdefault(dependency.pop("source"), []).append(dependency)
             for desired in plan["desired_state"]:
                 if name == "VDOC" and desired.get("role") == "document-catalog":
                     continue
@@ -6013,14 +6057,8 @@ class ProjectStore:
                     and desired.get("role") in PROJECT_NODE_ROLES["VDOC"]
                 ):
                     continue
-                row = connection.execute("SELECT status FROM nodes WHERE id=?", (desired["id"],)).fetchone()
-                status = row["status"] if row else Validity.UNKNOWN.value
-                dependencies = [dict(item) for item in connection.execute(
-                    """SELECT nodes.id,nodes.status,nodes.workstream,nodes.title
-                       FROM edges JOIN nodes ON nodes.id=edges.target
-                       WHERE edges.source=? AND edges.relation='DEPENDS_ON'
-                       ORDER BY nodes.id""", (desired["id"],)
-                )]
+                status = node_statuses.get(desired["id"], Validity.UNKNOWN.value)
+                dependencies = dependencies_by_node.get(desired["id"], [])
                 blockers = [item for item in dependencies if item["status"] not in {
                     Validity.VALID.value, Validity.PROVISIONAL.value, Validity.WAIVED.value,
                 }]
@@ -6035,6 +6073,8 @@ class ProjectStore:
                     delivery_state = self.document_delivery_review_state(
                         desired["id"], plan, desired,
                     )
+                    if delivery_reviews is not None:
+                        delivery_reviews[desired["id"]] = delivery_state
                     # Only the review of this revision and these exact contents
                     # may determine the next action; historical checks remain audit data.
                     delivery_agent_check = delivery_state["agent_check"]
@@ -6425,15 +6465,21 @@ class ProjectStore:
             and item.get("visible_to_human", True)
         }
         model = self._dashboard_model(dashboard_node_ids)
+        current_nodes = self._planned_nodes(plans)
+        delivery_reviews: dict[str, dict[str, Any]] = {}
         closures = [
-            self.evaluate_closure(item["workstream"], persist=False) for item in plans
+            self._evaluate_closure(
+                item, current_nodes, persist=False, delivery_reviews=delivery_reviews,
+            ) for item in plans
         ]
         agent_assignment_history = self.agent_assignments()
         activities = self.activities()
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
         agent_review_checks = self.review_agent_checks()
-        documents = self.documents()
+        documents = self.documents(_plan=next(
+            (item for item in plans if item["workstream"] == "VDOC"), None,
+        ))
         document_status: dict[str, int] = {}
         for document in documents:
             observed = document["effective_status"]
@@ -6656,7 +6702,7 @@ class ProjectStore:
                     or documents_by_key.get(document_key)
                 )
                 delivery_review = (
-                    self.document_delivery_review_state(desired["id"], plan, desired)
+                    delivery_reviews[desired["id"]]
                     if desired["id"] in vdoc_delivery_ids else None
                 )
                 if delivery_review is not None:
@@ -6720,7 +6766,7 @@ class ProjectStore:
                     # node is or is not closed.  It is deliberately separate from the raw
                     # status so a Human can review the reasoning rather than a badge.
                     "closure_assessment": self._dashboard_closure_assessment(
-                        self.node_closure_assessment(desired["id"])
+                        self.node_closure_assessment(desired["id"], _plan=plan)
                     ),
                     "next_actions": [
                         action for action in workstream_closure.get("actions", [])
