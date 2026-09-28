@@ -4,6 +4,8 @@ import json
 import subprocess
 import sys
 import unittest
+import urllib.error
+from unittest import mock
 
 from tests import test_dashboard as fixtures
 
@@ -121,6 +123,48 @@ class DeliveryPendingTest(unittest.TestCase):
                                "(SELECT target FROM edges WHERE source=? AND relation='DEPENDS_ON')",
                                (self.node["id"],))
         self.assertEqual(self.node_actions()[0]["kind"], "WAIT_FOR_DEPENDENCY")
+
+    def test_whole_body_approval_optional_reason_and_later_opinions(self) -> None:
+        f = self.fixture
+        state = f.store.document_delivery_review_state(self.node["id"])
+        payload = {
+            "node": self.node["id"], "definition_digest": state["definition_digest"],
+            "document_digest": state["document_digest"], "verdict": "approve",
+            "reviewer": "fixture-owner", "notes": "", "include_snapshot": False,
+        }
+        for invalid in ({"reviewer": ""}, {"definition_digest": "stale"},
+                        {"document_digest": "stale"}, {"verdict": "modify"}):
+            with self.subTest(invalid=invalid), self.assertRaises(urllib.error.HTTPError) as error:
+                f.post("/api/reviews/document-delivery", {**payload, **invalid}, f.server.write_token)
+            self.assertEqual(error.exception.code, 400)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            f.post("/api/reviews/document-delivery", payload, "invalid-token")
+        self.assertEqual(error.exception.code, 403)
+        with mock.patch.object(fixtures.ProjectStore, "dashboard_snapshot", side_effect=AssertionError("save must not wait for snapshot")):
+            approved = f.post("/api/reviews/document-delivery", payload, f.server.write_token)
+        self.assertNotIn("snapshot", approved)
+        self.assertEqual(approved["result"]["notes"], "")
+        self.assertEqual(approved["result"]["delivery_review"]["status"], "AGENT_CHECKING")
+        with self.assertRaises(urllib.error.HTTPError):
+            f.post("/api/reviews/document-delivery", payload, f.server.write_token)
+        changed = f.post("/api/reviews/document-delivery", {
+            **payload, "verdict": "modify", "notes": "补充接口复位条件",
+            "change_items": [{"operation": "add", "target": "接口说明", "instruction": "补充接口复位条件"}],
+        }, f.server.write_token)["result"]
+        review = changed["delivery_review"]
+        self.assertEqual(review["current_review"]["verdict"], "MODIFY")
+        self.assertEqual(len(review["reviews"]), 2)
+        self.assertEqual(review["status"], "AGENT_CHECKING")
+        self.assertEqual(f.store.model(self.node["id"])["nodes"][0]["status"], "REVIEW_REQUIRED")
+        f.store.complete_review_agent_check(approved["result"]["review_id"], "Project Main Agent", "历史检查仅供审计")
+        self.assertEqual(f.store.document_delivery_review_state(self.node["id"])["agent_check"]["status"], "PENDING")
+
+    def test_missing_body_cannot_be_approved(self) -> None:
+        self.path.unlink()
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.submit()
+        self.assertEqual(error.exception.code, 400)
+        self.assertIn("正文缺失", error.exception.read().decode())
 
 
 if __name__ == "__main__":

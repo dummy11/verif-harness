@@ -434,7 +434,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     threading.Timer(0.2, self.server.shutdown).start()
                 return
             result = self._mutate(path, body, store)
-            if path == "/api/reviews/node-plan-complete" and body.get("include_snapshot") is False:
+            if path in {
+                "/api/reviews/node-plan-complete", "/api/reviews/document-delivery",
+            } and body.get("include_snapshot") is False:
                 # A saved approval must not wait for the whole-project view. The
                 # caller separately rereads the authoritative project snapshot.
                 self._json({"result": result, "dashboard_project_id": project_id})
@@ -494,9 +496,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             notes = str(body.get("notes", "")).strip()
             definition_digest = str(body.get("definition_digest", "")).strip()
             document_digest = str(body.get("document_digest", "")).strip()
-            if not reviewer or not notes or not definition_digest or not document_digest:
+            if not reviewer or (verdict != "approve" and not notes) or not definition_digest or not document_digest:
                 raise HarnessError(
-                    "文档交付节点评审必须填写 reviewer、notes、definition_digest 和 document_digest"
+                    "请填写审批人并刷新正文版本；提交修改意见时必须填写审批内容"
                 )
             change_items = body.get("change_items", [])
             if not isinstance(change_items, list):

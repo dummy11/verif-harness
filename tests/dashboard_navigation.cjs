@@ -165,17 +165,20 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.locator('#drawer .node-plan-approval').waitFor();
     assert.equal(await page.locator('#project-name').textContent(), 'alpha');
 
-    // The delivery page stays in this tab; its document comparison is a separate read-only tab.
+    // Delivery nodes use the same drawer/full-page approval layout as plans.
     await page.locator('#project-switcher').selectOption(config.otherProject);
     await page.locator('[data-workstream="VDOC"]').click();
     const otherSnapshotResponse = await context.request.get(config.url + `/api/snapshot?project=${config.otherProject}`, {headers:{'X-Verif-Token':config.token}});
     const otherSnapshot = await otherSnapshotResponse.json();
     const delivery = otherSnapshot.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.delivery_review);
     await page.locator(`[data-open-node="${delivery.id}"]`).click();
-    await page.locator('#document-delivery-review-tab').click();
+    await page.locator('#drawer [data-delivery-body] .document-preview').waitFor();
+    assert.equal(await page.locator('#drawer .node-status-card, #drawer #node-waive, #document-delivery-review-tab').count(), 0);
+    await page.locator('#expand-node').click();
+    await page.locator('#main .node-plan-approval > summary').click();
     await page.locator('#delivery-review-form').waitFor();
     assert.equal(await page.locator('#drawer-backdrop.open').count(), 0);
-    await page.locator('#delivery-review-form [name="notes"]').fill('正文待补充核对');
+    await page.locator('#delivery-review-form [name="reason"]').fill('正文待补充核对');
     const documentPopup = context.waitForEvent('page');
     await page.locator('[data-view-delivery-document]').click();
     const doc = await documentPopup;
@@ -184,7 +187,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(new URL(doc.url()).searchParams.get('project'), config.otherProject);
     await doc.close();
     await page.evaluate(snapshot => setSnapshot(snapshot), otherSnapshot);
-    await page.waitForFunction(() => document.querySelector('#delivery-review-form [name="notes"]')?.value === '正文待补充核对');
+    await page.waitForFunction(() => document.querySelector('#delivery-review-form [name="reason"]')?.value === '正文待补充核对');
 
     // Delayed document reads cannot replace a subsequently selected page.
     await page.route('**/api/document?*', async route => {

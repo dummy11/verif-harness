@@ -4743,8 +4743,8 @@ class ProjectStore:
         selected = verdict.lower()
         if selected not in {"approve", "provisional", "reject", "modify", "clarify"}:
             raise HarnessError("document delivery verdict 必须是 approve/provisional/reject/modify/clarify")
-        if not reviewer.strip() or not notes.strip():
-            raise HarnessError("文档交付节点评审必须提供 reviewer 和 notes")
+        if not reviewer.strip() or (selected != "approve" and not notes.strip()):
+            raise HarnessError("请填写审批人；提交正文修改意见时还必须填写审批内容")
         normalized_changes = self._normalize_review_change_items(
             selected, change_items,
             default_target="当前文档交付范围",
@@ -4770,8 +4770,11 @@ class ProjectStore:
             raise HarnessError("文档交付节点定义已变化；请刷新 Dashboard 后重新审批")
         if state["document_digest"] != document_digest:
             raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
+        if not state["document_available"]:
+            raise HarnessError("文档正文缺失或尚未同步，请先由 Agent 准备当前版本正文")
         if (
-            state["current_review"] is not None
+            selected != "modify"
+            and state["current_review"] is not None
             and state["agent_check"] is not None
             and state["agent_check"]["status"] != "COMPLETED"
         ):
