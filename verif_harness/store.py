@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import copy
+from collections import deque
+from contextlib import contextmanager
+from contextvars import ContextVar
 import hashlib
 import json
 import os
@@ -16,6 +20,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
+
+from .store_operation import StoreConnection, store_operation
 
 from .document_authoring import (
     AUTHORING_CONTRACT_SCHEMA,
@@ -1062,6 +1068,30 @@ CREATE TABLE IF NOT EXISTS workstreams (
   objective TEXT NOT NULL, desired_json TEXT NOT NULL, exit_json TEXT NOT NULL,
   decisions_json TEXT NOT NULL, context_json TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+-- Small transactional headers avoid traversing large JSON overflow pages just
+-- to check lifecycle/revision. Triggers also cover writes from other processes.
+CREATE TABLE IF NOT EXISTS workstream_read_headers (
+  name TEXT PRIMARY KEY, lifecycle TEXT NOT NULL, revision INTEGER NOT NULL,
+  objective TEXT NOT NULL, updated_at TEXT NOT NULL, definition_version TEXT NOT NULL
+);
+INSERT OR IGNORE INTO workstream_read_headers
+  SELECT name,lifecycle,revision,objective,updated_at,lower(hex(randomblob(16))) FROM workstreams
+  WHERE name NOT IN (SELECT name FROM workstream_read_headers);
+CREATE TRIGGER IF NOT EXISTS workstream_header_insert AFTER INSERT ON workstreams BEGIN
+  INSERT OR REPLACE INTO workstream_read_headers VALUES
+    (NEW.name,NEW.lifecycle,NEW.revision,NEW.objective,NEW.updated_at,lower(hex(randomblob(16))));
+END;
+CREATE TRIGGER IF NOT EXISTS workstream_header_update AFTER UPDATE ON workstreams BEGIN
+  UPDATE workstream_read_headers SET name=NEW.name,lifecycle=NEW.lifecycle,
+    revision=NEW.revision,objective=NEW.objective,updated_at=NEW.updated_at WHERE name=OLD.name;
+END;
+CREATE TRIGGER IF NOT EXISTS workstream_definition_update
+AFTER UPDATE OF desired_json,exit_json,decisions_json,context_json ON workstreams BEGIN
+  UPDATE workstream_read_headers SET definition_version=lower(hex(randomblob(16))) WHERE name=NEW.name;
+END;
+CREATE TRIGGER IF NOT EXISTS workstream_header_delete AFTER DELETE ON workstreams BEGIN
+  DELETE FROM workstream_read_headers WHERE name=OLD.name;
+END;
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY, workstream TEXT NOT NULL, revision INTEGER NOT NULL, verdict TEXT NOT NULL,
   reviewer TEXT NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
@@ -1178,6 +1208,14 @@ CREATE TABLE IF NOT EXISTS review_agent_checks (
   checked_by TEXT, summary TEXT NOT NULL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, checked_at TEXT
 );
+CREATE INDEX IF NOT EXISTS edges_reverse ON edges(target,relation,source);
+CREATE INDEX IF NOT EXISTS evidence_subject ON evidence(subject,created_at);
+CREATE INDEX IF NOT EXISTS findings_subject ON findings(subject,status);
+CREATE INDEX IF NOT EXISTS plan_reviews_node ON node_plan_reviews(node_id,revision);
+CREATE INDEX IF NOT EXISTS plan_sections_node ON node_plan_section_reviews(node_id,revision);
+CREATE INDEX IF NOT EXISTS delivery_reviews_node ON document_delivery_reviews(node_id,revision);
+CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
+CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
 
 
@@ -1190,6 +1228,42 @@ class ProjectStore:
         self.state = self.root / STATE_DIR
         self.database = self.state / "model.sqlite3"
         self._dashboard_schema_ready = False
+        self._operation_state = ContextVar("store_operation", default=None)
+
+    @contextmanager
+    def operation(self):
+        """Coalesce exports and reuse version-checked definitions within one call.
+
+        No state survives the outer call, and concurrent Dashboard threads do not
+        share it. SQL writes retain their existing transaction boundaries.
+        """
+        if self._operation_state.get() is not None:
+            yield
+            return
+        state = {"plans": {}, "projections": set(), "closures": {}, "flushing": False,
+                 "observer": None}
+        token = self._operation_state.set(state)
+        try:
+            yield
+        finally:
+            try:
+                state["flushing"] = True
+                for target in sorted(state["projections"]):
+                    if target == "model":
+                        self._write_model_projection()
+                    else:
+                        self._write_workstream_projection(target)
+            finally:
+                if state["observer"] is not None:
+                    state["observer"].close()
+                self._operation_state.reset(token)
+
+    def _operation_version(self) -> tuple[int, str]:
+        state = self._operation_state.get()
+        if state["observer"] is None:
+            state["observer"] = self.read_connect()
+        return (state["observer"].execute("PRAGMA data_version").fetchone()[0],
+                self.dashboard_change_token())
 
     @property
     def initialized(self) -> bool:
@@ -1257,18 +1331,19 @@ class ProjectStore:
 
     def connect(self) -> sqlite3.Connection:
         self.state.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database, timeout=30)
+        connection = sqlite3.connect(self.database, timeout=30, factory=StoreConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
-        connection.executescript(SCHEMA)
-        observed = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        if observed is not None and int(observed["value"]) != SCHEMA_VERSION:
-            connection.close()
-            raise HarnessError("检测到不兼容的 v1 开发态数据库；请移走 .verif-harness 后重新 bootstrap")
-        connection.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
-        connection.commit()
-        self._dashboard_schema_ready = True
+        if not self._dashboard_schema_ready:
+            connection.executescript(SCHEMA)
+            observed = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            if observed is not None and int(observed["value"]) != SCHEMA_VERSION:
+                connection.close()
+                raise HarnessError("检测到不兼容的 v1 开发态数据库；请移走 .verif-harness 后重新 bootstrap")
+            connection.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
+            connection.commit()
+            self._dashboard_schema_ready = True
         return connection
 
     def ensure_dashboard_schema(self) -> None:
@@ -1280,12 +1355,13 @@ class ProjectStore:
     def read_connect(self) -> sqlite3.Connection:
         self.require()
         connection = sqlite3.connect(
-            f"{self.database.as_uri()}?mode=ro", uri=True, timeout=30,
+            f"{self.database.as_uri()}?mode=ro", uri=True, timeout=30, factory=StoreConnection,
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
 
+    @store_operation
     def bootstrap(
         self, project_name: str | None = None, runtime: str = "auto",
         rtl_roots: Iterable[str] = (), docs_roots: Iterable[str] = (),
@@ -1430,22 +1506,16 @@ class ProjectStore:
             raise HarnessError("workstream 必须是 " + ", ".join(WORKSTREAM_TEMPLATES))
         return name
 
-    @staticmethod
-    def _reconcile_default_dependencies(connection: sqlite3.Connection) -> int:
+    def _reconcile_default_dependencies(self, connection: sqlite3.Connection) -> int:
         current: dict[tuple[str, str], str] = {}
         vdoc_semantic: dict[str, list[dict[str, str]]] = {}
-        for row in connection.execute("SELECT name,desired_json FROM workstreams"):
-            for desired in json.loads(row["desired_json"]):
-                current[(row["name"], desired["key"])] = desired["id"]
-                if (
-                    row["name"] == "VDOC"
-                    and desired.get("role") == "document-semantic-unit"
-                    and desired.get("document_key")
-                ):
-                    vdoc_semantic.setdefault(str(desired["document_key"]), []).append({
-                        "id": desired["id"],
-                        "parent_role": str(desired.get("parent_role") or ""),
-                    })
+        for (name, key), desired in self._current_desired_nodes(connection).items():
+            current[(name, key)] = desired["id"]
+            if (name == "VDOC" and desired.get("role") == "document-semantic-unit"
+                    and desired.get("document_key")):
+                vdoc_semantic.setdefault(str(desired["document_key"]), []).append({
+                    "id": desired["id"], "parent_role": str(desired.get("parent_role") or ""),
+                })
         connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
         count = 0
         timestamp = now()
@@ -1562,6 +1632,7 @@ class ProjectStore:
             },
         }
 
+    @store_operation
     def build_vdoc_authoring_proposal(
         self, document_keys: Iterable[str] = (), output: str | None = None,
     ) -> dict[str, Any]:
@@ -2125,6 +2196,7 @@ class ProjectStore:
         result["auto_closure"] = self.evaluate_closure("VDOC")
         return result
 
+    @store_operation
     def design_workstream(
         self, workstream: str, objective: str | None, desired: list[str],
         exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
@@ -2363,6 +2435,7 @@ class ProjectStore:
         result["auto_closure"] = self.evaluate_closure(name)
         return result
 
+    @store_operation
     def restart_vdoc_workflow(
         self, reviewer: str, reason: str, confirm: bool = False,
     ) -> dict[str, Any]:
@@ -2448,16 +2521,40 @@ class ProjectStore:
     def workstream(self, workstream: str) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
         self.require()
+        self.ensure_dashboard_schema()
         with self.read_connect() as connection:
-            row = connection.execute("SELECT * FROM workstreams WHERE name=?", (name,)).fetchone()
-        if row is None:
+            return self._read_workstream(connection, name)
+
+    def _read_workstream(self, connection: sqlite3.Connection, name: str) -> dict[str, Any]:
+        self.ensure_dashboard_schema()
+        if not connection.in_transaction:
+            connection.execute("BEGIN")
+        header = connection.execute(
+            "SELECT * FROM workstream_read_headers WHERE name=?", (name,),
+        ).fetchone()
+        if header is None:
             raise HarnessError(f"Workstream {name} 尚未设计")
+        state = self._operation_state.get()
+        cached = state["plans"].get(name) if state is not None else None
+        if cached is None or cached[0] != header["definition_version"]:
+            row = connection.execute(
+                "SELECT desired_json,exit_json,decisions_json,context_json FROM workstreams WHERE name=?",
+                (name,),
+            ).fetchone()
+            payload = {
+                "desired_state": json.loads(row["desired_json"]),
+                "exit_criteria": json.loads(row["exit_json"]),
+                "decisions": json.loads(row["decisions_json"]),
+                "planning_context": json.loads(row["context_json"]),
+            }
+            if state is not None:
+                state["plans"][name] = (header["definition_version"], payload)
+        else:
+            payload = cached[1]
         return {
             "workstream": name, "display_name": WORKSTREAM_TEMPLATES[name]["name"],
-            "lifecycle": row["lifecycle"], "revision": row["revision"], "objective": row["objective"],
-            "desired_state": json.loads(row["desired_json"]), "exit_criteria": json.loads(row["exit_json"]),
-            "decisions": json.loads(row["decisions_json"]), "planning_context": json.loads(row["context_json"]),
-            "updated_at": row["updated_at"],
+            "lifecycle": header["lifecycle"], "revision": header["revision"], "objective": header["objective"],
+            **copy.deepcopy(payload), "updated_at": header["updated_at"],
         }
 
     def workstreams(self) -> list[dict[str, Any]]:
@@ -2603,21 +2700,10 @@ class ProjectStore:
         ).fetchone()
         if node is None:
             raise HarnessError(f"未知 agent assignment node: {node_id}")
-        plan_row = connection.execute(
-            "SELECT * FROM workstreams WHERE name=?", (node["workstream"],),
-        ).fetchone()
-        if plan_row is None:
-            raise HarnessError(f"node 没有当前 Workstream: {node_id}")
-        desired_state = json.loads(plan_row["desired_json"])
-        desired = next((item for item in desired_state if item["id"] == node_id), None)
+        plan = self._read_workstream(connection, node["workstream"])
+        desired = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
         if desired is None:
             raise HarnessError(f"node 不属于当前 Workstream revision: {node_id}")
-        plan = {
-            "workstream": plan_row["name"],
-            "lifecycle": plan_row["lifecycle"],
-            "revision": plan_row["revision"],
-            "desired_state": desired_state,
-        }
         return plan, desired
 
     def _refresh_agent_assignments(self, connection: sqlite3.Connection) -> None:
@@ -2728,6 +2814,7 @@ class ProjectStore:
             or right_parts[:len(left_parts)] == left_parts
         )
 
+    @store_operation
     def agent_work_candidates(self, limit: int = 20) -> dict[str, Any]:
         """Return current closure actions that a runtime-native subagent may execute."""
         self.require()
@@ -2779,6 +2866,7 @@ class ProjectStore:
             "actions": actions,
         }
 
+    @store_operation
     def claim_agent_work(
         self, action_id: str, agent_id: str, role: str, operation: str,
         parent_agent_id: str = "project-agent", runtime_ref: str | None = None,
@@ -2875,6 +2963,7 @@ class ProjectStore:
             ) from exc
         return self.agent_assignment(assignment_id)
 
+    @store_operation
     def agent_assignment(self, assignment_id: str) -> dict[str, Any]:
         self.require()
         with self.connect() as connection:
@@ -2892,6 +2981,7 @@ class ProjectStore:
         result["activity"] = dict(activity) if activity is not None else None
         return result
 
+    @store_operation
     def agent_assignments(
         self, workstream: str | None = None, node_id: str | None = None,
         active_only: bool = False,
@@ -2931,6 +3021,7 @@ class ProjectStore:
             results.append(item)
         return results
 
+    @store_operation
     def heartbeat_agent_work(
         self, assignment_id: str, agent_id: str, phase: str = "RUNNING",
         message: str | None = None, current: int | None = None,
@@ -2982,6 +3073,7 @@ class ProjectStore:
             )
         return self.agent_assignment(assignment_id)
 
+    @store_operation
     def finish_agent_work(
         self, assignment_id: str, agent_id: str, outcome: str, summary: str,
         result: dict[str, Any] | None = None,
@@ -3034,6 +3126,7 @@ class ProjectStore:
                 )
         return self.agent_assignment(assignment_id)
 
+    @store_operation
     def add_human_action(
         self, target: str, action: str, reviewer: str, reason: str,
         payload: dict[str, Any] | None = None,
@@ -3096,6 +3189,7 @@ class ProjectStore:
             row["payload"] = json.loads(row.pop("payload_json"))
         return rows
 
+    @store_operation
     def resolve_human_action(
         self, action_id: str, reviewer: str, resolution: str,
         status: str = "RESOLVED",
@@ -3155,6 +3249,7 @@ class ProjectStore:
         result["blocking"] = bool(result["blocking"])
         return result
 
+    @store_operation
     def ask_agent_question(
         self, target: str, prompt: str, options: Iterable[dict[str, Any]],
         recommended_option: str | None = None, context: str = "",
@@ -3301,6 +3396,7 @@ class ProjectStore:
             ).fetchall()
         return [self._agent_question_row(row) for row in rows]
 
+    @store_operation
     def answer_agent_question(
         self, question_id: str, option_id: str, answered_by: str,
         answer_text: str = "",
@@ -3396,6 +3492,7 @@ class ProjectStore:
                 }
             time.sleep(min(0.25, max(timeout - elapsed, 0.0)))
 
+    @store_operation
     def review_workstream(self, workstream: str, verdict: str, reviewer: str, reason: str) -> dict[str, Any]:
         if verdict not in {"approve", "reject", "modify", "clarify"}:
             raise HarnessError("workstream verdict 必须是 approve/reject/modify/clarify")
@@ -3878,6 +3975,7 @@ class ProjectStore:
             "reviews": rows,
         }
 
+    @store_operation
     def review_node_plan_section(
         self, node_id: str, section: str, definition_digest: str, verdict: str,
         reviewer: str, reason: str,
@@ -3988,13 +4086,11 @@ class ProjectStore:
                     "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
                     (item_status, timestamp, item["id"]),
                 )
-                for child in self._vdoc_internal_desired(
-                    plan, parent_id=item["id"], parent_role="document-writing-plan",
-                ):
-                    connection.execute(
-                        "UPDATE nodes SET status=?,updated_at=? WHERE id=?",
-                        (item_status, timestamp, child["id"]),
+                self._update_node_statuses(connection, [
+                    child["id"] for child in self._vdoc_internal_desired(
+                        plan, parent_id=item["id"], parent_role="document-writing-plan",
                     )
+                ], item_status, timestamp)
         all_approved = bool(required_approvals) and all(required_approvals)
         lifecycle = "ACTIVE" if all_approved else ("REVISE" if has_changes_requested else "REVIEW")
         connection.execute(
@@ -4011,6 +4107,7 @@ class ProjectStore:
                  reviewer, "所有必需文档撰写方案节点均已由负责人审批通过", timestamp),
             )
 
+    @store_operation
     def complete_node_plan_review(
         self, node_id: str, definition_digest: str, reviewer: str, reason: str = "",
     ) -> dict[str, Any]:
@@ -4323,6 +4420,7 @@ class ProjectStore:
         core["reviews"] = reviews
         return core
 
+    @store_operation
     def review_node_closure(
         self, node_id: str, assessment_digest: str, verdict: str,
         reviewer: str, reason: str,
@@ -4657,6 +4755,7 @@ class ProjectStore:
                 ),
             )
 
+    @store_operation
     def complete_review_agent_check(
         self, review_id: str, checked_by: str, summary: str,
     ) -> dict[str, Any]:
@@ -4742,6 +4841,7 @@ class ProjectStore:
             row["change_items"] = change_items.get(row["review_id"], [])
         return rows
 
+    @store_operation
     def review_document_delivery(
         self, node_id: str, definition_digest: str, document_digest: str,
         verdict: str, reviewer: str, notes: str,
@@ -4920,6 +5020,27 @@ class ProjectStore:
             raise HarnessError("Dashboard 只预览 UTF-8 编码的验证文档") from exc
         return {"document": document, "content": content}
 
+    @store_operation
+    def approval_status(self, node_id: str) -> dict[str, Any]:
+        """Read one current approval without closure, exports, or a project snapshot."""
+        plan = self.workstream("VDOC")
+        desired = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
+        if desired is None:
+            raise HarnessError("当前项目或版本中找不到此审批节点，请返回节点列表")
+        if desired.get("role") == "document-writing-plan":
+            review = self.node_plan_review_state(node_id, plan, desired)
+            current = review["current_completion"]
+        elif desired.get("role") == "document-deliverable":
+            review = self.document_delivery_review_state(node_id, plan, desired)
+            current = review["current_review"]
+        else:
+            raise HarnessError("此节点不支持文档审批结果查询")
+        return {"node_id": node_id, "revision": plan["revision"],
+                "definition_digest": review["definition_digest"],
+                "document_digest": review.get("document_digest"),
+                "status": review["status"], "current_review": current}
+
+    @store_operation
     def sync_documents(
         self, selectors: Iterable[str] = (), *, require_active: bool = False,
     ) -> dict[str, Any]:
@@ -4931,15 +5052,27 @@ class ProjectStore:
                     "Agent 才能同步正文语义版本"
                 )
         requested = list(selectors)
-        rows = self.documents()
+        rows = self.documents(include_delivery_nodes=False)
         if requested:
             selected: list[dict[str, Any]] = []
             for selector in requested:
-                selected.extend(self.documents(selector))
+                matches = [row for row in rows if selector in {
+                    row["id"], row["path"], Path(row["path"]).name,
+                }]
+                if len(matches) != 1:
+                    raise HarnessError(f"文档选择不存在或不唯一，请使用完整路径或 ID: {selector}")
+                selected.extend(matches)
             unique = {row["id"]: row for row in selected}
             rows = [unique[key] for key in sorted(unique)]
         if not rows:
             raise HarnessError("尚未登记验证文档；先执行 plan VDOC")
+        for row in rows:
+            if (self.root / row["path"]).is_symlink():
+                raise HarnessError(f"拒绝跟随验证文档符号链接: {row['path']}")
+        if all(row["exists"] and not row["content_changed"]
+               and row["status"] != Validity.INVALID.value for row in rows):
+            return {"documents": self.documents(), "changed": [], "missing": [],
+                    "restored": [], "state_projection_written": False}
         try:
             plan = self.workstream("VDOC")
         except HarnessError:
@@ -4994,16 +5127,19 @@ class ProjectStore:
                         )
                     restored.append((row["path"], result["semantic_revision"]))
         for path, revision in changed:
-            self.record_change(path, "modify", f"document-r{revision}")
+            self.record_change(path, "modify", f"document-r{revision}", _reconcile=False)
         for path in newly_missing:
-            self.record_change(path, "delete", None)
+            self.record_change(path, "delete", None, _reconcile=False)
         for path, revision in restored:
-            self.record_change(path, "add", f"document-r{revision}")
+            self.record_change(path, "add", f"document-r{revision}", _reconcile=False)
+        if changed or newly_missing or restored:
+            self.reconcile()
         self.write_model_projection()
         return {"documents": self.documents(), "changed": [path for path, _revision in changed],
                 "missing": missing, "restored": [path for path, _revision in restored],
                 "state_projection_written": False}
 
+    @store_operation
     def review_document(
         self, selector: str, verdict: str, reviewer: str, notes: str,
     ) -> dict[str, Any]:
@@ -5054,6 +5190,7 @@ class ProjectStore:
                 "verdict": normalized, "reviewer": reviewer, "evidence": evidence,
                 "auto_closure": self.evaluate_closure("VDOC")}
 
+    @store_operation
     def track_document_item(
         self, selector: str, item_id: str, kind: str, title: str, status: str,
         owner: str | None, review_trigger: str | None, affects: list[str], anchor: str | None,
@@ -5199,6 +5336,7 @@ class ProjectStore:
                     document["snapshot_path"] = f"documents/{Path(document['path']).name}"
         return payload
 
+    @store_operation
     def freeze_workstream(self, workstream: str, reviewer: str, reason: str) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
         if name == "VDOC":
@@ -5243,6 +5381,7 @@ class ProjectStore:
         return {"workstream": name, "lifecycle": "BASELINED", "revision": plan["revision"],
                 "baseline_id": baseline_id, "digest": digest, "path": relative.as_posix()}
 
+    @store_operation
     def freeze_final(self, reviewer: str, reason: str) -> dict[str, Any]:
         plans = self.workstreams()
         present = {item["workstream"] for item in plans}
@@ -5271,6 +5410,7 @@ class ProjectStore:
                                (baseline_id, None, None, "FINAL", digest, relative.as_posix(), reviewer, reason, now()))
         return {"baseline_id": baseline_id, "kind": "FINAL", "digest": digest, "path": relative.as_posix()}
 
+    @store_operation
     def add_node(self, node_id: str, node_type: str, title: str, workstream: str | None = None,
                  status: Validity = Validity.UNKNOWN) -> dict[str, Any]:
         self.require()
@@ -5287,6 +5427,7 @@ class ProjectStore:
         return {"id": node_id, "type": node_type, "title": title, "workstream": name, "status": status.value,
                 "auto_closure": self.reconcile()}
 
+    @store_operation
     def add_edge(self, source: str, target: str, relation: str, origin: str, confidence: float) -> dict[str, Any]:
         self.require()
         if not 0 <= confidence <= 1:
@@ -5304,6 +5445,7 @@ class ProjectStore:
         return {"source": source, "target": target, "relation": relation.upper(), "origin": origin,
                 "confidence": confidence, "auto_closure": self.reconcile()}
 
+    @store_operation
     def add_dependency(self, subject: str, prerequisite: str) -> dict[str, Any]:
         """Record a node-scoped dependency as dependent -> prerequisite."""
         self.require()
@@ -5334,6 +5476,7 @@ class ProjectStore:
         return {"subject": subject, "requires": prerequisite, "relation": "DEPENDS_ON",
                 "semantics": "dependent-to-prerequisite", "auto_closure": self.reconcile()}
 
+    @store_operation
     def set_status(self, node_id: str, status: Validity) -> dict[str, Any]:
         self.require()
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
@@ -5359,6 +5502,7 @@ class ProjectStore:
         self.write_model_projection()
         return {"id": node_id, "status": status.value, "auto_closure": self.reconcile()}
 
+    @store_operation
     def waive_node(self, node_id: str, reviewer: str, reason: str) -> dict[str, Any]:
         self.require()
         with self.connect() as connection:
@@ -5390,6 +5534,7 @@ class ProjectStore:
         return {"review_id": review_id, "id": node_id, "status": Validity.WAIVED.value,
                 "reviewer": reviewer, "reason": reason, "auto_closure": self.reconcile()}
 
+    @store_operation
     def add_evidence(
         self, subject: str, kind: str, source: str, verdict: str,
         data: dict[str, Any] | None = None, contract_validated: bool = False,
@@ -5528,10 +5673,7 @@ class ProjectStore:
             if row is None:
                 return [f"未知 evidence subject: {subject}"]
             data = json.loads(row["data_json"])
-            current: dict[tuple[str, str], str] = {}
-            for workstream_row in connection.execute("SELECT name,desired_json FROM workstreams"):
-                for item in json.loads(workstream_row["desired_json"]):
-                    current[(workstream_row["name"], item["key"])] = item["id"]
+            current = {key: item["id"] for key, item in self._current_desired_nodes(connection).items()}
             expected = [
                 prerequisite for dependent, prerequisite in DEFAULT_DEPENDENCIES
                 if dependent == (row["workstream"], data.get("key"))
@@ -5562,13 +5704,9 @@ class ProjectStore:
         validation = data.get("validation")
         return validation if isinstance(validation, dict) else None
 
-    @staticmethod
-    def _current_desired_nodes(connection: sqlite3.Connection) -> dict[tuple[str, str], dict[str, Any]]:
-        current: dict[tuple[str, str], dict[str, Any]] = {}
-        for workstream_row in connection.execute("SELECT name,desired_json FROM workstreams"):
-            for item in json.loads(workstream_row["desired_json"]):
-                current[(workstream_row["name"], item["key"])] = item
-        return current
+    def _current_desired_nodes(self, connection: sqlite3.Connection) -> dict[tuple[str, str], dict[str, Any]]:
+        names = [row["name"] for row in connection.execute("SELECT name FROM workstreams ORDER BY name")]
+        return self._planned_nodes([self._read_workstream(connection, name) for name in names])
 
     def _cross_evidence_blockers(
         self, connection: sqlite3.Connection, workstream: str, claim: str,
@@ -5692,6 +5830,7 @@ class ProjectStore:
         summary["facts"]["required_nodes"] = derived
         return blockers
 
+    @store_operation
     def add_reachability_evidence(self, subject: str, source: str, claim: str | None = None) -> dict[str, Any]:
         self.require()
         source_path = resolved_path(self.root, source)
@@ -5762,6 +5901,7 @@ class ProjectStore:
         recorded["validation"] = summary
         return recorded
 
+    @store_operation
     def add_workstream_evidence(self, subject: str, source: str, claim: str | None = None) -> dict[str, Any]:
         self.require()
         source_path = resolved_path(self.root, source)
@@ -5830,7 +5970,30 @@ class ProjectStore:
         )]
         return direct + reverse_dependencies
 
-    def record_change(self, path: str, kind: str, revision: str | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _impact_graph(connection: sqlite3.Connection) -> dict[str, list[str]]:
+        direct: dict[str, list[str]] = {}
+        reverse: dict[str, list[str]] = {}
+        for row in connection.execute("SELECT source,target,relation FROM edges ORDER BY source,target"):
+            if row["relation"] == "DEPENDS_ON":
+                reverse.setdefault(row["target"], []).append(row["source"])
+            else:
+                direct.setdefault(row["source"], []).append(row["target"])
+        return {key: direct.get(key, []) + reverse.get(key, []) for key in direct.keys() | reverse.keys()}
+
+    @staticmethod
+    def _update_node_statuses(connection: sqlite3.Connection, identifiers: list[str],
+                              status: str, timestamp: str) -> None:
+        for offset in range(0, len(identifiers), 400):
+            chunk = identifiers[offset:offset + 400]
+            connection.execute(
+                "UPDATE nodes SET status=?,updated_at=? WHERE id IN (%s)"
+                % ",".join("?" for _ in chunk), [status, timestamp, *chunk],
+            )
+
+    @store_operation
+    def record_change(self, path: str, kind: str, revision: str | None = None,
+                      *, _reconcile: bool = True) -> dict[str, Any]:
         self.require()
         relative = self._project_or_declared_input_path(path)
         subject = f"file:{relative}"
@@ -5842,31 +6005,32 @@ class ProjectStore:
                 self.upsert_node(connection, subject, "artifact", relative, initial)
             connection.execute("INSERT INTO events VALUES(?,?,?,?,?,?)",
                                (event_id, kind, subject, revision, json_text({"path": relative}), now()))
-            queue = [subject]
+            graph = self._impact_graph(connection)
+            queue = deque([subject])
             visited: set[str] = set()
             while queue:
-                current = queue.pop(0)
+                current = queue.popleft()
                 if current in visited:
                     continue
                 visited.add(current)
                 affected.append(current)
-                queue.extend(self._impact_targets(connection, current))
+                queue.extend(graph.get(current, []))
+            timestamp = now()
+            self._update_node_statuses(connection, [subject], initial.value, timestamp)
+            self._update_node_statuses(connection, affected[1:], Validity.REVALIDATION_REQUIRED.value, timestamp)
+            details = f"{relative} 的 {kind} 事件使该节点需要重新验证"
+            existing_findings = {row["subject"] for row in connection.execute(
+                "SELECT subject FROM findings WHERE status='OPEN' AND details=?", (details,),
+            )}
             for index, node_id in enumerate(affected):
-                status = initial if index == 0 else Validity.REVALIDATION_REQUIRED
-                connection.execute("UPDATE nodes SET status=?,updated_at=? WHERE id=?", (status.value, now(), node_id))
-                details = f"{relative} 的 {kind} 事件使该节点需要重新验证"
-                duplicate = connection.execute(
-                    "SELECT 1 FROM findings WHERE subject=? AND status='OPEN' AND details=?",
-                    (node_id, details),
-                ).fetchone()
-                if duplicate is None:
+                if node_id not in existing_findings:
                     connection.execute("INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
                                        (f"finding:{uuid.uuid4().hex[:12]}", node_id,
                                         "HIGH" if index == 0 else "MEDIUM", "OPEN",
                                         event_id, details, now()))
             names = {row["workstream"] for row in connection.execute(
-                "SELECT DISTINCT workstream FROM nodes WHERE id IN (%s) AND workstream IS NOT NULL" % ",".join("?" * len(affected)), affected
-            )} if affected else set()
+                "SELECT id,workstream FROM nodes WHERE workstream IS NOT NULL"
+            ) if row["id"] in visited}
             for name in names:
                 connection.execute("UPDATE workstreams SET lifecycle='PARTIALLY_STALE',updated_at=? WHERE name=? AND lifecycle IN ('ACTIVE','SATISFIED','BASELINED')",
                                    (now(), name))
@@ -5874,8 +6038,9 @@ class ProjectStore:
         for name in names:
             self.write_workstream_projection(name)
         return {"event_id": event_id, "kind": kind, "subject": subject, "revision": revision,
-                "affected": affected, "auto_closure": self.reconcile()}
+                "affected": affected, "auto_closure": self.reconcile() if _reconcile else None}
 
+    @store_operation
     def scan(self) -> dict[str, Any]:
         self.require()
         document_sync = self.sync_documents() if self.documents() else {"changed": [], "missing": []}
@@ -5893,6 +6058,7 @@ class ProjectStore:
                 "open_findings": open_findings, "status": "FAIL" if failed else "PASS",
                 "auto_closure": self.reconcile()}
 
+    @store_operation
     def audit(self) -> dict[str, Any]:
         self.require()
         missing: list[str] = []
@@ -5914,6 +6080,7 @@ class ProjectStore:
     def _executable_exit_blockers(
         self, connection: sqlite3.Connection, workstream: str,
         current: dict[tuple[str, str], dict[str, Any]],
+        statuses: dict[str, str] | None = None,
     ) -> list[str]:
         """Evaluate cross-document and cross-evidence exit predicates."""
         blockers: list[str] = []
@@ -5938,8 +6105,12 @@ class ProjectStore:
         for (name, key), item in current.items():
             if name != workstream or not item.get("required", True):
                 continue
-            node = connection.execute("SELECT status FROM nodes WHERE id=?", (item["id"],)).fetchone()
-            if node is None or node["status"] != Validity.VALID.value:
+            status = statuses.get(item["id"]) if statuses is not None else (
+                node["status"] if (node := connection.execute(
+                    "SELECT status FROM nodes WHERE id=?", (item["id"],),
+                ).fetchone()) else None
+            )
+            if status != Validity.VALID.value:
                 continue
             contract_claim = item.get("evidence_claim")
             claim = (
@@ -5974,13 +6145,25 @@ class ProjectStore:
                 blockers.extend(self._derive_fresh_evidence(connection, item["id"], validation, current))
         return blockers
 
+    @store_operation
     def evaluate_closure(self, workstream: str, persist: bool = True) -> dict[str, Any]:
         name = self.normalize_workstream(workstream)
+        state = self._operation_state.get()
+        observed = self._operation_version()
+        cached = state["closures"].get((name, persist))
+        if cached is not None and cached[0] == observed:
+            return copy.deepcopy(cached[1])
         plans = self.workstreams()
         plan = next((item for item in plans if item["workstream"] == name), None)
         if plan is None:
             raise HarnessError(f"Workstream {name} 尚未设计")
-        return self._evaluate_closure(plan, self._planned_nodes(plans), persist=persist)
+        result = self._evaluate_closure(plan, self._planned_nodes(plans), persist=persist)
+        after = self._operation_version()
+        if observed == after:
+            state["closures"][(name, persist)] = (after, copy.deepcopy(result))
+        else:
+            state["closures"].pop((name, persist), None)
+        return result
 
     @staticmethod
     def _planned_nodes(plans: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
@@ -6135,7 +6318,7 @@ class ProjectStore:
                     actions.append({"kind": kind, "target": desired["id"], "priority": 10, "executor": executor,
                                     "suggested_mode": desired.get("suggested_mode"),
                                     "reason": VALIDITY_DESCRIPTIONS.get(status, "这项工作尚未完成")})
-            for index, blocker in enumerate(self._executable_exit_blockers(connection, name, current_nodes), 1):
+            for index, blocker in enumerate(self._executable_exit_blockers(connection, name, current_nodes, node_statuses), 1):
                 actions.append({
                     "kind": "EXIT_CRITERION_BLOCKED",
                     "target": f"workstream:{name}:exit:{index}",
@@ -6226,11 +6409,15 @@ class ProjectStore:
             actions = unique_actions
             lifecycle = plan["lifecycle"]
             if persist:
-                connection.execute("DELETE FROM actions WHERE workstream=? AND status='OPEN'", (name,))
-                for action in actions:
-                    connection.execute("INSERT INTO actions VALUES(?,?,?,?,?,?,?,?,?,?)",
-                                       (action["id"], name, action["kind"], action["target"], action["priority"], "OPEN",
-                                        action["executor"], action["suggested_mode"], action["reason"], now()))
+                existing_actions = {row["id"] for row in connection.execute(
+                    "SELECT id FROM actions WHERE workstream=? AND status='OPEN'", (name,),
+                )}
+                if existing_actions != {action["id"] for action in actions}:
+                    connection.execute("DELETE FROM actions WHERE workstream=? AND status='OPEN'", (name,))
+                    for action in actions:
+                        connection.execute("INSERT INTO actions VALUES(?,?,?,?,?,?,?,?,?,?)",
+                                           (action["id"], name, action["kind"], action["target"], action["priority"], "OPEN",
+                                            action["executor"], action["suggested_mode"], action["reason"], now()))
                 if not actions and lifecycle in {"ACTIVE", "PARTIALLY_STALE"}:
                     lifecycle = "SATISFIED"
                     connection.execute("UPDATE workstreams SET lifecycle='SATISFIED',updated_at=? WHERE name=?", (now(), name))
@@ -6244,6 +6431,7 @@ class ProjectStore:
             self.write_workstream_projection(name)
         return {"workstream": name, "ready": not actions, "lifecycle": lifecycle, "actions": actions}
 
+    @store_operation
     def reconcile(self) -> dict[str, Any]:
         closures = [self.evaluate_closure(item["workstream"]) for item in self.workstreams()]
         ranked = [
@@ -6404,28 +6592,36 @@ class ProjectStore:
     def impact(self, node_id: str) -> dict[str, Any]:
         self.model(node_id)
         with self.read_connect() as connection:
-            queue: list[tuple[str, int]] = [(node_id, 0)]
+            graph = self._impact_graph(connection)
+            nodes = {row["id"]: dict(row) for row in connection.execute(
+                "SELECT id,type,title,workstream,status FROM nodes"
+            )}
+            queue = deque([(node_id, 0)])
             visited: set[str] = set()
             affected: list[dict[str, Any]] = []
             while queue:
-                current, depth = queue.pop(0)
+                current, depth = queue.popleft()
                 if current in visited:
                     continue
                 visited.add(current)
                 if current != node_id:
-                    row = connection.execute("SELECT id,type,title,workstream,status FROM nodes WHERE id=?", (current,)).fetchone()
+                    row = nodes.get(current)
                     if row:
                         item = dict(row); item["depth"] = depth; affected.append(item)
-                queue.extend((target, depth + 1) for target in self._impact_targets(connection, current))
+                queue.extend((target, depth + 1) for target in graph.get(current, []))
         return {"source": node_id, "affected": affected}
 
+    @store_operation
     def status(self) -> dict[str, Any]:
         self.require()
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
-        model = self.model()
-        counts: dict[str, int] = {}
-        for node in model["nodes"]:
-            counts[node["status"]] = counts.get(node["status"], 0) + 1
+        with self.read_connect() as connection:
+            counts = {row["status"]: row["total"] for row in connection.execute(
+                "SELECT status,COUNT(*) total FROM nodes GROUP BY status"
+            )}
+            open_findings = connection.execute(
+                "SELECT COUNT(*) FROM findings WHERE status='OPEN'"
+            ).fetchone()[0]
         plans = self.workstreams()
         document_rows = self.documents()
         document_status: dict[str, int] = {}
@@ -6446,11 +6642,12 @@ class ProjectStore:
                 }
             ),
             "workstreams": plans, "closures": [self.evaluate_closure(item["workstream"], persist=False) for item in plans],
-            "node_status": counts, "open_findings": sum(item["status"] == "OPEN" for item in model["findings"]),
+            "node_status": counts, "open_findings": open_findings,
             "documents": {"count": len(document_rows), "status": document_status,
                           "content_changed": [row["path"] for row in document_rows if row["content_changed"]]},
         }
 
+    @store_operation
     def dashboard_snapshot(self) -> dict[str, Any]:
         """Return one coherent, Human-readable control-plane snapshot for the local dashboard."""
         self.require()
@@ -7197,9 +7394,27 @@ class ProjectStore:
         return payload
 
     def write_model_projection(self) -> None:
+        state = self._operation_state.get()
+        if state is not None and not state["flushing"]:
+            state["projections"].add("model")
+            return
+        self._write_model_projection()
+
+    def _write_model_projection(self) -> None:
         if not self.initialized:
             return
-        model = self.model()
+        with self.read_connect() as connection:
+            model = {
+                "nodes": [dict(row) for row in connection.execute(
+                    "SELECT id,type,title,status FROM nodes ORDER BY id"
+                )],
+                "edges": [dict(row) for row in connection.execute(
+                    "SELECT source,target,relation,origin,confidence FROM edges ORDER BY source,target,relation"
+                )],
+                "findings": [dict(row) for row in connection.execute(
+                    "SELECT subject,severity,details,status FROM findings WHERE status='OPEN' ORDER BY created_at"
+                )],
+            }
         lines = ["# Verification Knowledge Model", "", "> Verification Knowledge Model 生成的只读投影；SQLite 是机器事实源。", "", "## Nodes", ""]
         lines.extend(f"- `{item['id']}` · {item['type']} · **{item['status']}** · {item['title']}" for item in model["nodes"])
         if not model["nodes"]: lines.append("- 无")
@@ -7213,6 +7428,13 @@ class ProjectStore:
         (self.state / "model.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def write_workstream_projection(self, workstream: str) -> None:
+        state = self._operation_state.get()
+        if state is not None and not state["flushing"]:
+            state["projections"].add(self.normalize_workstream(workstream))
+            return
+        self._write_workstream_projection(workstream)
+
+    def _write_workstream_projection(self, workstream: str) -> None:
         plan = self.workstream(workstream)
         directory = self.state / "workstreams" / plan["workstream"].lower()
         directory.mkdir(parents=True, exist_ok=True)

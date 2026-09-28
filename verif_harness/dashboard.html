@@ -2423,6 +2423,15 @@
         refresh.hidden = true; form.dataset.pending = 'true';
         show(saved ? '审批已保存，正在刷新页面状态…' : '正在核对审批记录，不会重复提交…');
         try {
+          if (!saved) {
+            const receipt = await approvalRequest(`/api/approval-status?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}`, {headers:{'X-Verif-Token':token}});
+            if (!current()) return;
+            if (receipt.dashboard_project_id !== project || receipt.result?.node_id !== n.id) throw new Error('返回的审批对象与当前节点不一致');
+            if (receipt.result.definition_digest !== data.definition_digest || (data.document_digest && receipt.result.document_digest !== data.document_digest)) throw new Error('节点或正文版本已变化，请返回节点列表核对当前版本');
+            saved = receipt.result.current_review?.verdict === 'APPROVE';
+            if (saved) button.textContent = '批准记录已保存';
+            show(saved ? '已确认当前版本的批准记录已保存，正在刷新页面状态…' : '暂未查到当前版本的批准记录；不会自动重试提交，正在刷新页面状态…');
+          }
           const snapshot = await approvalRequest(`/api/snapshot?project=${encodeURIComponent(project)}`, {headers:{'X-Verif-Token':token}});
           if (!current()) return;
           if (snapshot.dashboard_project_id !== project) throw new Error('返回的项目与当前项目不一致');

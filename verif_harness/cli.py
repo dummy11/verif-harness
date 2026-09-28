@@ -63,6 +63,11 @@ def reviewer_identity(root: Path, explicit: str | None) -> str:
 
 
 def infer_workstream(store: ProjectStore, explicit: str | None, operation: str) -> str:
+    with store.operation():
+        return _infer_workstream(store, explicit, operation)
+
+
+def _infer_workstream(store: ProjectStore, explicit: str | None, operation: str) -> str:
     if explicit:
         return explicit
     plans = store.workstreams()
@@ -800,7 +805,8 @@ def main(arguments: list[str] | None = None) -> int:
                 )
                 emit(result)
         elif args.command == "status":
-            emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
+            with store.operation():
+                emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
         elif args.command == "dashboard":
             if args.snapshot:
                 emit(store.dashboard_snapshot())

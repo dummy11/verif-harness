@@ -233,14 +233,18 @@ class DashboardHTTPServer(ThreadingHTTPServer):
                 cached = self._snapshot_cache.get(project_id)
                 if cached and cached[0] == token:
                     return cached[1]
-            snapshot = {
-                **store.dashboard_snapshot(),
-                "dashboard_project_id": project_id,
-            }
-            final_token = str(snapshot.get("change_token") or store.dashboard_change_token())
-            with self._snapshot_cache_lock:
-                self._snapshot_cache[project_id] = (final_token, snapshot)
-            return snapshot
+            for _attempt in range(2):
+                token = store.dashboard_change_token()
+                snapshot = {
+                    **store.dashboard_snapshot(),
+                    "dashboard_project_id": project_id,
+                }
+                final_token = store.dashboard_change_token()
+                if token == final_token:
+                    with self._snapshot_cache_lock:
+                        self._snapshot_cache[project_id] = (final_token, snapshot)
+                    return snapshot
+            raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -347,6 +351,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 query = urllib.parse.parse_qs(parsed.query)
                 project_id = self._selected_project_id(query.get("project", [""])[0])
                 self._json(self._snapshot(self.server.project_store(project_id), project_id))
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/approval-status":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                result = self.server.project_store(project_id).approval_status(query.get("node", [""])[0])
+                self._json({"dashboard_project_id": project_id, "result": result})
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/document":
