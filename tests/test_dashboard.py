@@ -930,7 +930,17 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("默认每份文档对应一个正文验收节点", html)
         self.assertNotIn("这里验收本节点对应的正文内容，不是整份文档", html)
         self.assertIn("<h1>风险与变更</h1>", html)
-        self.assertIn("需要重新检查的内容", html)
+        self.assertIn("<th>相关节点</th><th>节点状态</th><th>风险或变更内容</th>", html)
+        risk_page = html[
+            html.index("function renderRiskChangesPage()"):
+            html.index("function bindAgentQuestionForms()")
+        ]
+        self.assertIn("<h2>相关工作节点</h2>", risk_page)
+        self.assertIn("${items.length} 个节点", risk_page)
+        self.assertIn("item.contents.map", risk_page)
+        self.assertNotIn("projectContextHtml", risk_page)
+        self.assertNotIn("shortTime", risk_page)
+        self.assertNotIn("item.detail", risk_page)
         self.assertIn("提交新增要求后，Agent 会分析它与当前 DUT、文档及已有节点的关系", html)
         self.assertIn("<h1>验收文档内容</h1>", html)
         self.assertIn("本次验收内容", html)
@@ -946,6 +956,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("'pushState'", html)
         self.assertIn("window.addEventListener('popstate'", html)
         self.assertIn("window.addEventListener('beforeunload'", html)
+        self.assertIn("&version=${encodeURIComponent(version)}", html)
         standalone_url = html[
             html.index("function standaloneUrl()"):
             html.index("function openPendingItemsTab")
@@ -1023,6 +1034,61 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("1 项评审", snapshot["project_agent"]["message"])
         self.assertNotIn("回答 1 个问题", snapshot["project_agent"]["message"])
         self.assertEqual(snapshot["version"], self.store.dashboard_snapshot()["version"])
+
+    def test_snapshot_cache_reuses_unchanged_authoritative_state(self) -> None:
+        self.server._snapshot_cache.clear()
+        original = ProjectStore.dashboard_snapshot
+
+        def build(store: ProjectStore) -> dict:
+            return original(store)
+
+        with mock.patch.object(
+            ProjectStore, "dashboard_snapshot", autospec=True, side_effect=build,
+        ) as generate:
+            with self.get("/api/snapshot") as response:
+                first = json.load(response)
+            with self.get("/api/snapshot") as response:
+                repeated = json.load(response)
+            self.assertEqual(generate.call_count, 1)
+            self.assertEqual(first["version"], repeated["version"])
+
+            self.store.create_activity(
+                self.plan["desired_state"][0]["id"], "cache-invalidation",
+                "Agent", "状态已变化",
+            )
+            with self.get("/api/snapshot") as response:
+                changed = json.load(response)
+            self.assertEqual(generate.call_count, 2)
+            self.assertNotEqual(first["version"], changed["version"])
+
+    def test_dashboard_snapshot_excludes_internal_vdoc_graph(self) -> None:
+        self.design_minimal_vdoc()
+        full_model = self.store.model()
+        snapshot = self.store.dashboard_snapshot()
+        dashboard_model = snapshot["model"]
+        visible_ids = {item["id"] for item in dashboard_model["nodes"]}
+
+        self.assertLess(len(dashboard_model["nodes"]), len(full_model["nodes"]))
+        self.assertFalse(any("--semantic--" in item for item in visible_ids))
+        self.assertTrue(all(
+            edge["source"] in visible_ids and edge["target"] in visible_ids
+            for edge in dashboard_model["edges"]
+        ))
+        vdoc = next(
+            item for item in snapshot["workstreams"] if item["workstream"] == "VDOC"
+        )
+        self.assertFalse(any(
+            node["role"] == "document-semantic-unit" for node in vdoc["nodes"]
+        ))
+        plan_node = next(
+            node for node in vdoc["nodes"] if node["role"] == "document-writing-plan"
+        )
+        self.assertTrue(all(
+            edge["source"] in visible_ids for edge in plan_node["incoming"]
+        ))
+        for repeated_detail in ("definition", "dependencies", "evidence", "findings"):
+            self.assertNotIn(repeated_detail, plan_node["closure_assessment"])
+        self.assertIn("digest", plan_node["closure_assessment"])
 
     def test_human_can_comment_and_review_without_waiting_for_closure(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]
@@ -1562,7 +1628,16 @@ class DashboardTest(unittest.TestCase):
         delivery_nodes = [node for node in vdoc["nodes"] if node["delivery_review"]]
         self.assertEqual(vdoc["plan_node_count"], 2)
         self.assertEqual(vdoc["delivery_node_count"], 0)
-        self.assertEqual(vdoc["progress"]["required"], 2)
+        self.assertEqual(vdoc["progress"]["required"], 4)
+        self.assertEqual(vdoc["progress"]["registered_required"], 2)
+        self.assertEqual(vdoc["progress"]["pending_registration"], 2)
+        self.assertEqual(vdoc["progress"]["vdoc"], {
+            "writing_plans": {"required": 2, "satisfied": 0},
+            "document_deliveries": {
+                "required": 2, "registered": 0, "satisfied": 0,
+                "pending_registration": 2,
+            },
+        })
         self.assertEqual(vdoc["exit_criteria"], [
             "每份必需文档的文档撰写方案节点和文档交付节点均已审批通过；暂定接受不计为完成",
             "所有文档交付节点中等待负责人确认的事项、修改要求和阻塞问题均已关闭",
@@ -1632,6 +1707,9 @@ class DashboardTest(unittest.TestCase):
         approved_vdoc = next(item for item in approved["workstreams"] if item["workstream"] == "VDOC")
         self.assertEqual(approved_vdoc["lifecycle"], "ACTIVE")
         self.assertEqual(approved_vdoc["delivery_node_count"], 0)
+        self.assertEqual(approved_vdoc["progress"]["required"], 4)
+        self.assertEqual(approved_vdoc["progress"]["satisfied"], 2)
+        self.assertEqual(approved_vdoc["progress"]["pending_registration"], 2)
         self.assertTrue(any(
             item["kind"] == "AUTHOR_DOCUMENT_CONTENT"
             for item in approved_vdoc["closure"]["actions"]
@@ -1655,6 +1733,12 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(final_vdoc["lifecycle"], "ACTIVE")
         self.assertEqual(final_vdoc["delivery_node_count"], 3)
         self.assertEqual(final_vdoc["progress"]["required"], 5)
+        self.assertEqual(final_vdoc["progress"]["registered_required"], 5)
+        self.assertEqual(final_vdoc["progress"]["pending_registration"], 0)
+        self.assertEqual(final_vdoc["progress"]["vdoc"]["document_deliveries"], {
+            "required": 3, "registered": 3, "satisfied": 0,
+            "pending_registration": 0,
+        })
         self.assertTrue(all(
             node["plan_review"]["status"] == "APPROVED"
             for node in final_vdoc["nodes"] if node["plan_review"] and node["required"]

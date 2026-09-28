@@ -194,6 +194,10 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.evaluate(snapshot => setSnapshot(snapshot), otherSnapshot);
     await page.locator('[data-nav="risk"]').click();
     await heading('风险与变更');
+    assert.deepEqual(
+      await page.locator('.risk-table th').allTextContents(),
+      ['相关节点', '节点状态', '风险或变更内容'],
+    );
     await page.waitForTimeout(450);
     await heading('风险与变更');
     await page.unroute('**/api/document?*');

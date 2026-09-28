@@ -198,12 +198,49 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         self.default_project_id = registration["id"]
         # Retained for small third-party integrations; request handling never routes through it.
         self.store = store
+        self._project_stores: dict[str, ProjectStore] = {registration["id"]: store}
+        self._snapshot_cache: dict[str, tuple[str, dict[str, Any]]] = {}
+        self._snapshot_cache_lock = threading.Lock()
+        self._snapshot_project_locks: dict[str, threading.Lock] = {}
 
     def projects(self) -> list[dict[str, Any]]:
         return registered_dashboard_projects(self.registry_dir)
 
     def project_store(self, project_id: str) -> ProjectStore:
-        return dashboard_project_store(project_id, self.registry_dir)
+        with self._snapshot_cache_lock:
+            cached = self._project_stores.get(project_id)
+        if cached is not None:
+            return cached
+        observed = dashboard_project_store(project_id, self.registry_dir)
+        with self._snapshot_cache_lock:
+            return self._project_stores.setdefault(project_id, observed)
+
+    def dashboard_snapshot(
+        self, project_id: str, store: ProjectStore,
+    ) -> dict[str, Any]:
+        """Reuse a snapshot until its database or tracked documents change."""
+        token = store.dashboard_change_token()
+        with self._snapshot_cache_lock:
+            cached = self._snapshot_cache.get(project_id)
+            if cached and cached[0] == token:
+                return cached[1]
+            project_lock = self._snapshot_project_locks.setdefault(
+                project_id, threading.Lock(),
+            )
+        with project_lock:
+            token = store.dashboard_change_token()
+            with self._snapshot_cache_lock:
+                cached = self._snapshot_cache.get(project_id)
+                if cached and cached[0] == token:
+                    return cached[1]
+            snapshot = {
+                **store.dashboard_snapshot(),
+                "dashboard_project_id": project_id,
+            }
+            final_token = str(snapshot.get("change_token") or store.dashboard_change_token())
+            with self._snapshot_cache_lock:
+                self._snapshot_cache[project_id] = (final_token, snapshot)
+            return snapshot
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -259,7 +296,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         raise HarnessError("请先选择一个项目")
 
     def _snapshot(self, store: ProjectStore, project_id: str) -> dict[str, Any]:
-        return {**store.dashboard_snapshot(), "dashboard_project_id": project_id}
+        return self.server.dashboard_snapshot(project_id, store)
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
@@ -324,7 +361,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 query = urllib.parse.parse_qs(parsed.query)
                 project_id = self._selected_project_id(query.get("project", [""])[0])
-                self._events(self.server.project_store(project_id), project_id)
+                self._events(
+                    self.server.project_store(project_id), project_id,
+                    query.get("version", [""])[0],
+                )
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/healthz":
@@ -340,14 +380,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
-    def _events(self, store: ProjectStore, project_id: str) -> None:
+    def _events(
+        self, store: ProjectStore, project_id: str, previous_version: str = "",
+    ) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        previous = ""
+        previous = previous_version
         last_ping = 0.0
         try:
             while True:

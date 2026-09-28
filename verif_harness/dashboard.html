@@ -293,6 +293,11 @@
     .node-table tr:hover td { background: var(--panel-2); }
     .node-table th:first-child { width: 46%; }
     .node-table th:nth-child(2) { width: 20%; }
+    .risk-table th:first-child { width: 28%; }
+    .risk-table th:nth-child(2) { width: 18%; }
+    .risk-content-list { margin: 0; padding-left: 18px; }
+    .risk-content-list li { margin: 0 0 6px; line-height: 1.5; }
+    .risk-content-list li:last-child { margin-bottom: 0; }
     .node-progress-cell { min-width: 240px; }
     .node-progress-head { display: flex; align-items: center; gap: 10px; }
     .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
@@ -400,7 +405,7 @@
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
     @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .btn { width: 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .btn { width: 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
   </style>
 </head>
 <body>
@@ -733,6 +738,17 @@
     const artifactLabel = value => ARTIFACT_LABELS[value] || CLAIM_LABELS[value] || humanText(value) || '未说明';
     const shortTime = (value) => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
     const percent = (progress) => progress.required ? Math.round(progress.satisfied * 100 / progress.required) : 0;
+    function workstreamProgressRemainingText(w) {
+      const remaining = Math.max(0, (w.progress?.required || 0) - (w.progress?.satisfied || 0));
+      const pending = w.workstream === 'VDOC' ? Number(w.progress?.pending_registration || 0) : 0;
+      return pending
+        ? `还有 ${remaining} 个工作节点尚未完成，其中 ${pending} 个正文交付节点将在正文同步后登记`
+        : `还有 ${remaining} 个工作节点尚未完成`;
+    }
+    function workstreamProgressPendingNote(w) {
+      const pending = w.workstream === 'VDOC' ? Number(w.progress?.pending_registration || 0) : 0;
+      return pending ? `；${pending} 个正文交付节点待登记` : '';
+    }
     const allNodes = () => state.snapshot?.model?.nodes || [];
     const workstream = (name) => state.snapshot?.workstreams?.find(w => w.workstream === name);
 
@@ -1000,7 +1016,8 @@
     }
     function connectProjectStream(projectId) {
       if (state.stream) state.stream.close();
-      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}`);
+      const version = state.snapshot?.version || '';
+      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}&version=${encodeURIComponent(version)}`);
       state.stream = stream;
       stream.addEventListener('snapshot', event => {
         const snapshot = JSON.parse(event.data);
@@ -1140,13 +1157,76 @@
       return `<span class="badge ${escapeHtml(item.status)}" title="事项状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`;
     }
     function riskItems(snapshot=state.snapshot) {
-      const risks = [], riskStatuses = new Set(['INVALID','BLOCKED','STALE','REVALIDATION_REQUIRED','PROVISIONAL']);
-      for (const w of snapshot.workstreams || []) for (const n of w.nodes || []) {
-        if (riskStatuses.has(n.status)) risks.push({id:`node:${n.id}`, status:n.status, title:n.title, detail:`${w.workstream} · ${nodeAttentionText(n) || humanText(n.closure_assessment?.reasons?.[0] || '需要检查')}`, target:n.id, created_at:n.updated_at});
-        if (n.document?.content_changed) risks.push({id:`document:${n.document.id}`, status:'STALE', title:`文档正文变化：${humanText(n.document.title || '当前验证文档')}`, detail:'旧评审不再适用于当前正文', target:n.id, created_at:n.document.updated_at});
+      const riskStatuses = new Set(['INVALID','BLOCKED','STALE','REVALIDATION_REQUIRED','PROVISIONAL']);
+      const workNodes = [];
+      for (const w of snapshot?.workstreams || []) for (const node of w.nodes || []) {
+        if (node.role === 'document-catalog' || node.definition_origin === 'template') continue;
+        workNodes.push({node, workstream:w.workstream});
       }
-      for (const f of (snapshot.model?.findings || []).filter(item => item.status === 'OPEN')) risks.push({id:`finding:${f.id}`, status:f.severity === 'CRITICAL' ? 'INVALID' : 'BLOCKED', title:humanText(f.details), detail:`${severityLabel(f.severity)} · 待处理问题`, target:f.subject, created_at:f.created_at});
-      return [...new Map(risks.map(item => [item.id, item])).values()];
+      const nodeById = new Map(workNodes.map(item => [item.node.id, item]));
+      const nodesByDocument = new Map();
+      for (const item of workNodes) {
+        const documentId = item.node.document?.id;
+        if (!documentId) continue;
+        if (!nodesByDocument.has(documentId)) nodesByDocument.set(documentId, []);
+        nodesByDocument.get(documentId).push(item);
+      }
+      const outward = new Map();
+      for (const edge of snapshot?.model?.edges || []) {
+        if (!['CHILD_OF','AFFECTS'].includes(edge.relation)) continue;
+        if (!outward.has(edge.source)) outward.set(edge.source, []);
+        outward.get(edge.source).push(edge.target);
+      }
+      function relatedWorkNodes(subject) {
+        const direct = nodeById.get(subject);
+        if (direct) return [direct];
+        if (nodesByDocument.has(subject)) return nodesByDocument.get(subject);
+        const resolved = new Map(), queue = [subject], visited = new Set();
+        while (queue.length && visited.size < 500) {
+          const current = queue.shift();
+          if (!current || visited.has(current)) continue;
+          visited.add(current);
+          const matched = nodeById.get(current);
+          if (matched) { resolved.set(matched.node.id, matched); continue; }
+          for (const target of outward.get(current) || []) queue.push(target);
+        }
+        return [...resolved.values()];
+      }
+      const grouped = new Map();
+      function add(item, content) {
+        const id = item.node.id;
+        if (!grouped.has(id)) grouped.set(id, {
+          id:`node:${id}`, target:id, title:humanText(item.node.title),
+          status:item.node.status, contents:new Set(), workstream:item.workstream,
+        });
+        const readable = humanText(content).trim();
+        if (readable) grouped.get(id).contents.add(readable);
+      }
+      for (const item of workNodes) {
+        const node = item.node;
+        if (riskStatuses.has(node.status)) add(
+          item,
+          node.closure_assessment?.reasons?.[0]
+            || `${STATUS_LABELS[node.status] || humanText(node.status)}，需要重新检查当前结论`,
+        );
+        if (node.document?.content_changed) add(
+          item,
+          `“${humanText(node.document.title || '当前验证文档')}”正文已经变化，旧评审不再适用于当前内容`,
+        );
+      }
+      for (const finding of (snapshot?.model?.findings || []).filter(item => item.status === 'OPEN')) {
+        for (const item of relatedWorkNodes(finding.subject)) add(
+          item, `${severityLabel(finding.severity)}：${humanText(finding.details)}`,
+        );
+      }
+      const priority = {INVALID:0,BLOCKED:1,STALE:2,REVALIDATION_REQUIRED:3,PROVISIONAL:4};
+      return [...grouped.values()]
+        .map(item => ({...item, contents:[...item.contents]}))
+        .sort((left, right) =>
+          (priority[left.status] ?? 9) - (priority[right.status] ?? 9)
+          || left.workstream.localeCompare(right.workstream)
+          || left.title.localeCompare(right.title, 'zh-CN')
+        );
     }
     function severityLabel(value) {
       return {CRITICAL:'严重', HIGH:'高', MEDIUM:'中', LOW:'低'}[value] || humanText(value || '未分级');
@@ -1213,7 +1293,7 @@
         : planReviewActive
         ? `<strong>已批准 ${approvedPlans} / ${writingPlans.length} 项</strong><span>${changedPlans ? `${changedPlans} 项需要修改，` : ''}还有 ${writingPlans.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
-          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>还有 ${Math.max(0, w.progress.required - w.progress.satisfied)} 个工作节点尚未完成</span>`
+          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>${escapeHtml(workstreamProgressRemainingText(w))}</span>`
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT 继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
       const next = pendingCount
@@ -1254,7 +1334,7 @@
           ? actionLabel(w.closure.actions[0].kind) : '继续按工作节点推进';
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}"><div class="ws-title"><div class="ws-title-copy"><small>${escapeHtml(w.workstream)}</small><strong>${escapeHtml(workstreamLabel(w.workstream))}</strong></div>${workstreamStatusBadge(w)}</div>
         <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter" data-motion="${motion}" style="--value:${p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--motion-color, var(--brand))'}" role="img" aria-label="${escapeHtml(w.workstream)} 当前版本已有 ${w.progress.satisfied} / ${w.progress.required} 个工作节点达到完成结论"><strong>${p}%</strong><span>工作节点</span></div>
-        <div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${w.progress.satisfied}/${w.progress.required} 个节点已有结论；不代表验证质量</div><span aria-hidden="true">→</span></div></article>`;
+        <div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${w.progress.satisfied}/${w.progress.required} 个节点已有结论${escapeHtml(workstreamProgressPendingNote(w))}；不代表验证质量</div><span aria-hidden="true">→</span></div></article>`;
     }
     function bindOverviewEntries() {
       document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab());
@@ -1366,11 +1446,10 @@
     function renderRiskChangesPage() {
       const items = riskItems(state.snapshot);
       const rows = items.length ? items.map(item => {
-        const target = findNode(item.target);
-        const title = target ? `<button class="node-link" data-open-node="${escapeHtml(item.target)}">${escapeHtml(item.title)}</button>` : `<div class="row-title">${escapeHtml(item.title)}</div>`;
-        return `<div class="list-row"><div>${title}<div class="row-meta">${escapeHtml(item.detail)} · ${shortTime(item.created_at)}</div></div>${statusBadge(item.status)}</div>`;
-      }).join('') : '<div class="empty">当前没有影响验证结论的重要变化</div>';
-      $('#main').innerHTML = `<div class="page-head"><div><h1>风险与变更</h1><p>只列出可能使当前结论失效、需要重新检查的 DUT、文档、工作节点和问题。</p></div></div>${projectContextHtml(true)}<section class="section"><div class="section-head"><h2>需要重新检查的内容</h2><span class="count">${items.length} 项</span></div><div class="card list-card">${rows}</div></section>`;
+        const contents = item.contents.map(content => `<li>${escapeHtml(content)}</li>`).join('');
+        return `<tr><td><button class="node-link" data-open-node="${escapeHtml(item.target)}">${escapeHtml(item.title)}</button></td><td>${statusBadge(item.status)}</td><td><ul class="risk-content-list">${contents}</ul></td></tr>`;
+      }).join('') : '<tr><td colspan="3" class="empty">当前没有影响验证结论的重要风险或变更</td></tr>';
+      $('#main').innerHTML = `<div class="page-head"><div><h1>风险与变更</h1><p>按相关工作节点汇总，只显示节点、当前状态以及需要了解的风险或变更内容。</p></div></div><section class="section"><div class="section-head"><h2>相关工作节点</h2><span class="count">${items.length} 个节点</span></div><div class="card" style="overflow:auto"><table class="node-table risk-table"><thead><tr><th>相关节点</th><th>节点状态</th><th>风险或变更内容</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
       bindNodeLinks();
     }
     function bindAgentQuestionForms() {
@@ -1716,7 +1795,7 @@
         : reviewingPlans
         ? `<strong>已批准 ${approvedPlans} / ${planNodes.length} 项文档撰写方案</strong><span>还有 ${planNodes.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
-          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>还有 ${Math.max(0, w.progress.required - w.progress.satisfied)} 个工作节点尚未完成</span>`
+          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>${escapeHtml(workstreamProgressRemainingText(w))}</span>`
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT、接口、功能和验证目标继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
       const next = waiting.length

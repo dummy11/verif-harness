@@ -73,6 +73,55 @@ vm.runInContext(`
   assert.match(wsCard(w), /class="ws-meter" data-motion="none" style="--value:100;/);
   assert.doesNotMatch(workstreamStatusBadge(w), /status-pulse/);
 
+  const vdoc = {
+    workstream:'VDOC', lifecycle:'ACTIVE', revision:2,
+    nodes:[{role:'document-writing-plan',required:true,plan_review:{status:'APPROVED'}}],
+    waiting_for_human:[],
+    progress:{required:16,satisfied:8,pending_registration:8},
+    closure:{ready:false,actions:[{kind:'AUTHOR_DOCUMENT_CONTENT',reason:'按批准方案撰写正文'}]},
+    objective:'形成并维护验证文档',
+  };
+  assert.match(wsCard(vdoc), /style="--value:50;/);
+  assert.ok(wsCard(vdoc).includes('8/16 个节点已有结论；8 个正文交付节点待登记'));
+  assert.ok(workstreamStatusCardHtml(vdoc).includes('8 / 16 个工作节点已有明确完成结论'));
+  assert.match(workstreamStatusCardHtml(vdoc), /其中 8 个正文交付节点将在正文同步后登记/);
+  vdoc.progress.pending_registration = 0;
+  vdoc.progress.satisfied = 16;
+  vdoc.closure.ready = true;
+  vdoc.closure.actions = [];
+  assert.match(wsCard(vdoc), /style="--value:100;/);
+  assert.doesNotMatch(wsCard(vdoc), /正文交付节点待登记/);
+
+  const riskNode = {
+    id:'risk-node', title:'验证计划正文验收', role:'document-deliverable',
+    definition_origin:'project-proposal', status:'STALE',
+    closure_assessment:{reasons:['当前正文版本已经变化']},
+    document:{id:'document:vdoc:verification-plan',title:'验证计划',content_changed:true},
+  };
+  const riskSnapshot = {
+    workstreams:[{workstream:'VDOC',nodes:[riskNode,{id:'catalog',role:'document-catalog',status:'STALE'}]}],
+    model:{edges:[],findings:[
+      {id:'finding-1',subject:'risk-node',status:'OPEN',severity:'HIGH',details:'接口范围需要重新核对'},
+      {id:'finding-2',subject:'risk-node',status:'OPEN',severity:'HIGH',details:'接口范围需要重新核对'},
+      {id:'finding-hidden',subject:'internal-node',status:'OPEN',severity:'MEDIUM',details:'内部记录'},
+    ]},
+  };
+  const groupedRisks = riskItems(riskSnapshot);
+  assert.equal(groupedRisks.length, 1);
+  assert.equal(groupedRisks[0].target, 'risk-node');
+  assert.equal(groupedRisks[0].status, 'STALE');
+  assert.deepEqual(groupedRisks[0].contents, [
+    '当前正文版本已经变化',
+    '“验证计划”正文已经变化，旧评审不再适用于当前内容',
+    '高：接口范围需要重新核对',
+  ]);
+  state.snapshot = riskSnapshot;
+  renderRiskChangesPage();
+  assert.ok($('#main').innerHTML.includes('<th>相关节点</th><th>节点状态</th><th>风险或变更内容</th>'));
+  assert.ok($('#main').innerHTML.includes('1 个节点'));
+  assert.ok($('#main').innerHTML.includes('data-open-node="risk-node"'));
+  assert.doesNotMatch($('#main').innerHTML, /finding-1|finding-2|finding-hidden|内部记录|项目与验证对象/);
+
   const n = {status:'UNKNOWN', workstream:'VCHK', progress_measures:[{id:'checks',label:'检查项',target:4,unit:'项',source:'test'}], progress_observation:{checks:0}, activities:[{status:'RUNNING'}]};
   for (const [count, ratio] of [[0,0],[2,50],[4,100]]) {
     n.progress_observation.checks = count;

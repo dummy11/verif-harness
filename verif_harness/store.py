@@ -2908,9 +2908,15 @@ class ProjectStore:
         if active_only:
             filters.append("status='ACTIVE'")
         where = " WHERE " + " AND ".join(filters) if filters else ""
-        with self.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            self._refresh_agent_assignments(connection)
+        with self.read_connect() as connection:
+            has_active = connection.execute(
+                "SELECT 1 FROM agent_assignments WHERE status='ACTIVE' LIMIT 1"
+            ).fetchone() is not None
+        connector = self.connect if has_active else self.read_connect
+        with connector() as connection:
+            if has_active:
+                connection.execute("BEGIN IMMEDIATE")
+                self._refresh_agent_assignments(connection)
             rows = connection.execute(
                 "SELECT * FROM agent_assignments" + where + " ORDER BY created_at DESC",
                 values,
@@ -6190,6 +6196,124 @@ class ProjectStore:
             item["data"] = json.loads(item.pop("data_json"))
         return {"schema_version": SCHEMA_VERSION, "nodes": nodes, "edges": edges, "findings": findings, "evidence": evidence}
 
+    def _dashboard_model(self, node_ids: set[str]) -> dict[str, Any]:
+        """Return Human-visible current/history nodes and their direct relations.
+
+        The durable model also contains hidden VDOC semantic units and per-file
+        provenance nodes.  Sending those rows to the Dashboard duplicated
+        thousands of nodes and edges that the Human-facing UI must not expose.
+        """
+        if not node_ids:
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "nodes": [], "edges": [], "findings": [], "evidence": [],
+            }
+        current = sorted(node_ids)
+        current_placeholders = ",".join("?" for _item in current)
+        with self.read_connect() as connection:
+            nodes = [dict(row) for row in connection.execute(
+                "SELECT id,type,title,workstream,status,updated_at FROM nodes "
+                f"WHERE id IN ({current_placeholders}) OR "
+                "(type='desired-state' AND id NOT LIKE '%--semantic--%') ORDER BY id",
+                current,
+            )]
+        selected = sorted(item["id"] for item in nodes)
+        # Leave ample room under SQLite's common 999-variable limit because the
+        # edge query binds the selected ids twice.
+        if len(selected) > 400:
+            model = self.model()
+            visible_ids = {
+                item["id"] for item in model["nodes"]
+                if item["id"] in node_ids
+                or (item["type"] == "desired-state" and "--semantic--" not in item["id"])
+            }
+            return {
+                "schema_version": model["schema_version"],
+                "nodes": [item for item in model["nodes"] if item["id"] in visible_ids],
+                "edges": [
+                    item for item in model["edges"]
+                    if item["source"] in visible_ids and item["target"] in visible_ids
+                ],
+                "findings": [
+                    item for item in model["findings"] if item["subject"] in visible_ids
+                ],
+                "evidence": [
+                    item for item in model["evidence"] if item["subject"] in visible_ids
+                ],
+            }
+        placeholders = ",".join("?" for _item in selected)
+        with self.read_connect() as connection:
+            edges = [dict(row) for row in connection.execute(
+                "SELECT source,target,relation,origin,confidence FROM edges "
+                f"WHERE source IN ({placeholders}) AND target IN ({placeholders}) "
+                "ORDER BY source,target,relation", [*selected, *selected],
+            )]
+            findings = [dict(row) for row in connection.execute(
+                "SELECT id,subject,severity,status,cause_event,details FROM findings "
+                f"WHERE subject IN ({placeholders}) ORDER BY created_at", selected,
+            )]
+            evidence = [dict(row) for row in connection.execute(
+                "SELECT id,subject,kind,source,digest,verdict,data_json,created_at "
+                f"FROM evidence WHERE subject IN ({placeholders}) ORDER BY created_at",
+                selected,
+            )]
+        for item in evidence:
+            item["data"] = json.loads(item.pop("data_json"))
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "nodes": nodes, "edges": edges, "findings": findings, "evidence": evidence,
+        }
+
+    def dashboard_change_token(self) -> str:
+        """Build a cheap token for facts that can change a Dashboard snapshot."""
+        self.require()
+        watched = [
+            self.database,
+            Path(str(self.database) + "-wal"),
+            Path(str(self.database) + "-journal"),
+            self.state / "project.json",
+        ]
+        active_assignments: list[sqlite3.Row] = []
+        try:
+            with self.read_connect() as connection:
+                rows = connection.execute("SELECT path FROM documents ORDER BY id").fetchall()
+                active_assignments = connection.execute(
+                    "SELECT id,lease_expires_at FROM agent_assignments "
+                    "WHERE status='ACTIVE' ORDER BY id"
+                ).fetchall()
+            watched.extend(self.root / str(row["path"]) for row in rows)
+        except sqlite3.OperationalError:
+            # Older bootstraps are upgraded by dashboard_snapshot(); the database
+            # and manifest stats are sufficient to invalidate that first cache.
+            pass
+        signatures = []
+        for path in watched:
+            try:
+                stat = path.stat()
+                signatures.append((str(path), stat.st_mtime_ns, stat.st_size))
+            except OSError:
+                signatures.append((str(path), None, None))
+        observed_at = dt.datetime.now(dt.timezone.utc)
+        for row in active_assignments:
+            try:
+                expires_at = dt.datetime.fromisoformat(row["lease_expires_at"])
+                expired = expires_at <= observed_at
+            except (TypeError, ValueError):
+                expired = True
+            signatures.append(("assignment", row["id"], row["lease_expires_at"], expired))
+        return hashlib.sha256(json_text(signatures).encode("utf-8")).hexdigest()[:24]
+
+    @staticmethod
+    def _dashboard_closure_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
+        """Keep the reviewable closure facts without repeating full node definitions."""
+        keys = (
+            "schema", "rule_version", "node_id", "workstream", "revision",
+            "current_revision", "node_status", "conclusion", "reasons",
+            "acceptance_results", "dependency_blockers", "open_findings",
+            "evaluated_at", "digest", "reviews",
+        )
+        return {key: assessment[key] for key in keys if key in assessment}
+
     def trace(self, node_id: str) -> dict[str, Any]:
         model = self.model(node_id)
         return {"node": model["nodes"][0], "incoming": [e for e in model["edges"] if e["target"] == node_id],
@@ -6251,14 +6375,53 @@ class ProjectStore:
         self.require()
         # Adding dashboard tables is a backward-compatible schema extension for existing v1 projects.
         self.ensure_dashboard_schema()
-        summary = self.status()
-        model = self.model()
+        manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        plans = self.workstreams()
+        dashboard_node_ids = {
+            item["id"]
+            for plan in plans for item in plan["desired_state"]
+            if item.get("role") != "document-semantic-unit"
+            and item.get("visible_to_human", True)
+        }
+        model = self._dashboard_model(dashboard_node_ids)
+        closures = [
+            self.evaluate_closure(item["workstream"], persist=False) for item in plans
+        ]
         agent_assignment_history = self.agent_assignments()
         activities = self.activities()
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
         agent_review_checks = self.review_agent_checks()
         documents = self.documents()
+        document_status: dict[str, int] = {}
+        for document in documents:
+            observed = document["effective_status"]
+            document_status[observed] = document_status.get(observed, 0) + 1
+        summary = {
+            "project": manifest["project_name"],
+            "baseline_revision": manifest.get("baseline_revision"),
+            "runtime": manifest.get("runtime"),
+            "lifecycle": "ACTIVE",
+            "dut": manifest.get("dut", {}),
+            "rtl_roots": manifest.get("rtl_roots", []),
+            "docs_roots": manifest.get("docs_roots", []),
+            "verif_root": manifest.get("verif_root"),
+            "verification_inputs": (
+                manifest.get("verification_inputs")
+                if isinstance(manifest.get("verification_inputs"), dict) else {
+                    "testbench_root": None, "reference_model": None, "scripts": [],
+                }
+            ),
+            "workstreams": plans,
+            "closures": closures,
+            "documents": {
+                "count": len(documents),
+                "status": document_status,
+                "content_changed": [
+                    row["path"] for row in documents if row["content_changed"]
+                ],
+            },
+        }
         documents_by_desired = {
             item["desired_id"]: item for item in documents if item.get("desired_id")
         }
@@ -6351,6 +6514,38 @@ class ProjectStore:
                 if plan["workstream"] == "VDOC"
                 and plan["lifecycle"] in {"ACTIVE", "PARTIALLY_STALE", "SATISFIED", "BASELINED"}
                 else set()
+            )
+            required_vdoc_plan_keys = {
+                item["key"] for item in plan["desired_state"]
+                if plan["workstream"] == "VDOC"
+                and item.get("role") == "document-writing-plan"
+                and item.get("required", True)
+            }
+            required_vdoc_deliveries = [
+                item for item in plan["desired_state"]
+                if item["id"] in vdoc_delivery_ids
+                and item.get("required", True)
+            ]
+            vdoc_items_by_key = {
+                item["key"]: item for item in plan["desired_state"]
+                if item.get("role") in PROJECT_NODE_ROLES["VDOC"]
+            }
+            covered_vdoc_plan_keys: set[str] = set()
+            for delivery in required_vdoc_deliveries:
+                cursor = str(delivery.get("parent_key") or "")
+                visited: set[str] = set()
+                while cursor and cursor not in visited:
+                    if cursor in required_vdoc_plan_keys:
+                        covered_vdoc_plan_keys.add(cursor)
+                        break
+                    visited.add(cursor)
+                    parent = vdoc_items_by_key.get(cursor)
+                    if parent is None:
+                        break
+                    cursor = str(parent.get("parent_key") or "")
+            pending_vdoc_delivery_nodes = (
+                len(required_vdoc_plan_keys - covered_vdoc_plan_keys)
+                if plan["workstream"] == "VDOC" else 0
             )
             implementation_ids = (
                 vdoc_plan_ids | vdoc_delivery_ids if plan["workstream"] == "VDOC" else {
@@ -6483,12 +6678,52 @@ class ProjectStore:
                     # This is the Engine's current, reproducible explanation for why the
                     # node is or is not closed.  It is deliberately separate from the raw
                     # status so a Human can review the reasoning rather than a badge.
-                    "closure_assessment": self.node_closure_assessment(desired["id"]),
+                    "closure_assessment": self._dashboard_closure_assessment(
+                        self.node_closure_assessment(desired["id"])
+                    ),
                     "next_actions": [
                         action for action in workstream_closure.get("actions", [])
                         if action.get("target") == desired["id"]
                     ],
                 })
+            registered_required_total = required_total
+            if plan["workstream"] == "VDOC":
+                # VDOC completion includes both plan approval and body acceptance.
+                # Delivery nodes cannot be registered before the body is written, so
+                # reserve one required delivery slot for every required plan that does
+                # not yet own a registered delivery descendant.
+                required_total += pending_vdoc_delivery_nodes
+                required_plan_nodes = [
+                    item for item in desired_nodes
+                    if item.get("role") == "document-writing-plan"
+                    and item.get("required", True)
+                ]
+                required_delivery_nodes = [
+                    item for item in desired_nodes
+                    if item.get("role") == "document-deliverable"
+                    and item.get("required", True)
+                ]
+                completed_statuses = {Validity.VALID.value, Validity.WAIVED.value}
+                vdoc_progress = {
+                    "writing_plans": {
+                        "required": len(required_plan_nodes),
+                        "satisfied": sum(
+                            item["status"] in completed_statuses
+                            for item in required_plan_nodes
+                        ),
+                    },
+                    "document_deliveries": {
+                        "required": len(required_delivery_nodes) + pending_vdoc_delivery_nodes,
+                        "registered": len(required_delivery_nodes),
+                        "satisfied": sum(
+                            item["status"] in completed_statuses
+                            for item in required_delivery_nodes
+                        ),
+                        "pending_registration": pending_vdoc_delivery_nodes,
+                    },
+                }
+            else:
+                vdoc_progress = None
             workstream_human_actions = [item for item in human_actions if (
                 item["target"] == plan["workstream"] or item["target"] in desired_ids
             )]
@@ -6561,6 +6796,16 @@ class ProjectStore:
                 *question_waiting, *closure_waiting, *document_waiting, *explicit_waiting,
             ]
             waiting_for_human.extend(workstream_waiting)
+            progress = {
+                "required": required_total,
+                "satisfied": satisfied,
+                "remaining": max(required_total - satisfied, 0),
+                "counts": counts,
+                "registered_required": registered_required_total,
+                "pending_registration": pending_vdoc_delivery_nodes,
+            }
+            if vdoc_progress is not None:
+                progress["vdoc"] = vdoc_progress
             workstream_views.append({
                 "workstream": plan["workstream"],
                 "display_name": plan["display_name"],
@@ -6569,12 +6814,7 @@ class ProjectStore:
                 "objective": plan["objective"],
                 "exit_criteria": plan["exit_criteria"],
                 "updated_at": plan["updated_at"],
-                "progress": {
-                    "required": required_total,
-                    "satisfied": satisfied,
-                    "remaining": max(required_total - satisfied, 0),
-                    "counts": counts,
-                },
+                "progress": progress,
                 "nodes": desired_nodes,
                 "plan_node_count": len(vdoc_plan_ids) if plan["workstream"] == "VDOC" else len(implementation_ids),
                 "writing_plan_node_count": len(vdoc_plan_ids),
@@ -6850,6 +7090,7 @@ class ProjectStore:
             "baselines": baselines,
             "events": events,
         }
+        payload["change_token"] = self.dashboard_change_token()
         payload["version"] = hashlib.sha256(json_text(payload).encode("utf-8")).hexdigest()[:16]
         payload["generated_at"] = now()
         return payload
