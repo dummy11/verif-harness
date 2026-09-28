@@ -47,17 +47,24 @@ def source_label(kind: str) -> str:
 def authoring_source_refs(
     root: Path, manifest: dict[str, Any], sources: list[dict[str, Any]],
 ) -> list[str]:
-    """Keep per-file provenance internally; list only RTL directories for readers."""
-    rtl_dirs = []
-    for value in manifest.get("rtl_roots", []):
-        path = _resolve(root, str(value))
-        rtl_dirs.append(path.parent if path.is_file() else path)
+    """Show code directories and individual documents; retain file provenance."""
+    inputs = manifest.get("verification_inputs") or {}
+    code_inputs = {
+        "rtl": ("RTL ", manifest.get("rtl_roots", [])),
+        "verification-testbench": ("验证环境", [inputs.get("testbench_root")]),
+        "reference-model-implementation": ("参考模型", [inputs.get("reference_model")]),
+        "verification-script": ("验证脚本", inputs.get("scripts", [])),
+    }
+    document_suffixes = {".md", ".rst", ".txt", ".pdf", ".doc", ".docx", ".html", ".htm", ".xlsx", ".xls", ".adoc"}
     refs = []
     for source in sources:
         path = _resolve(root, str(source["path"]))
-        if source["kind"] == "rtl":
-            directory = next((item for item in rtl_dirs if _within(path, item)), path.parent)
-            refs.append("RTL 目录：" + _display_path(root, directory))
+        if source["kind"] in code_inputs and path.suffix.lower() not in document_suffixes:
+            label, values = code_inputs[source["kind"]]
+            directories = [_resolve(root, str(value)) for value in values if value]
+            directories = [item.parent if item.is_file() else item for item in directories]
+            directory = next((item for item in directories if _within(path, item)), path.parent)
+            refs.append(label + "目录：" + _display_path(root, directory))
         else:
             refs.append(str(source["path"]))
     return list(dict.fromkeys(refs))

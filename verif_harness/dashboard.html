@@ -753,7 +753,7 @@
       const revision = snapshot.project.baseline_revision ? `代码版本 ${snapshot.project.baseline_revision.slice(0, 9)}` : '未记录代码版本';
       $('#project-meta').textContent = `${revision} · ${shortTime(snapshot.generated_at)}`;
       validateRoute();
-      if ($('#modal-backdrop').classList.contains('open') && $('#modal').dataset.scope !== draftScope()) {
+      if ($('#modal-backdrop').classList.contains('open') && $('#modal').dataset.scope !== draftScope(null, $('#modal').dataset.planNode)) {
         $('#modal').dataset.stale = 'true';
         $('#modal').querySelectorAll('button:not([type="button"])').forEach(button => button.disabled = true);
         if (!$('#modal .draft-notice')) $('#modal').insertAdjacentHTML('afterbegin', '<div class="notice draft-notice">操作对象或版本已变化。输入仍保留供复制，请关闭后重新核对；当前表单不能提交。</div>');
@@ -832,9 +832,9 @@
     function formId(form) {
       return form.id || ['planSectionForm','agentQuestionForm','deliveryConfirmation'].map(key => form.dataset[key] ? `${key}:${form.dataset[key]}` : '').find(Boolean);
     }
-    function draftScope(form=null) {
+    function draftScope(form=null, nodeId=null) {
       const question = form?.dataset.agentQuestionForm && (state.snapshot?.agent_questions || []).find(q => q.id === form.dataset.agentQuestionForm);
-      const node = findNode(state.reviewPlanNode || state.reviewDeliveryNode || state.node || question?.node_id || question?.target);
+      const node = findNode(nodeId || state.reviewPlanNode || state.reviewDeliveryNode || state.node || question?.node_id || question?.target);
       const w = workstream(node?.workstream || question?.workstream || state.workstream || state.reviewWorkstream || (state.reviseVdocPlan ? 'VDOC' : ''));
       return JSON.stringify([state.project, w?.revision, node?.id, node?.definition_digest,
         node?.plan_review?.definition_digest, node?.delivery_review?.definition_digest,
@@ -1745,7 +1745,7 @@
           : '<tr><td colspan="3" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
         $('#main').innerHTML = `<div class="page-head"><div><h1>VDOC · ${escapeHtml(workstreamLabel('VDOC'))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn primary" id="add-vdoc-node">添加节点</button><button class="btn" id="delete-vdoc-node">删除节点</button><button class="btn danger" id="restart-vdoc-workflow">重新启动工作流</button></div></div>
           ${workstreamStatusCardHtml(w)}
-          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称在侧边查看，审批进入完整页面</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案</span></div><div class="card" style="overflow:auto"><table class="node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>状态 / 进度</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
         $('#add-vdoc-node').onclick = () => openVdocRevisionRequestTab('add');
         $('#delete-vdoc-node').onclick = () => openVdocRevisionRequestTab('remove');
         $('#restart-vdoc-workflow').onclick = () => openVdocRestartModal(w);
@@ -1790,7 +1790,9 @@
       return filtered.map(([n, depth]) => {
         const children = byParent.get(n.id) || [];
         const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) ? '▸' : '▾'}</button>` : '';
-        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td></tr>`;
+        const approval = n.role === 'document-writing-plan' && n.plan_review
+          ? `<div style="margin-top:8px"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
+        return `<tr><td><div style="margin-left:${depth * 22}px">${toggle}<button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button></div></td><td><div>${escapeHtml(roleLabel(n.role))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}${approval}</td></tr>`;
       }).join('');
     }
     function closureRows(items) {
@@ -1809,6 +1811,12 @@
       }).join('');
     }
     function bindNodeLinks() {
+      document.querySelectorAll('[data-approve-plan-node]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        const n = findNode(button.dataset.approvePlanNode);
+        if (!planApprovalAvailable(n) || n.plan_review.completed) { toast('当前方案不能重复审批，请刷新后核对节点状态', true); return; }
+        openNodePlanCompletionModal(n);
+      });
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
       document.querySelectorAll('[data-open-workstream]').forEach(button => button.onclick = event => { event.stopPropagation(); openWorkstreamTab(button.dataset.openWorkstream); });
       document.querySelectorAll('[data-review-workstream]').forEach(button => button.onclick = event => {
@@ -1924,7 +1932,7 @@
 
     function writingPlanSources(n) {
       // Older plans retain their original file identities and approval digests.
-      // Only this read-only list is condensed to RTL directories.
+      // Only this read-only list is condensed; documents retain their full paths.
       const project = state.snapshot?.project || {};
       const normalize = value => {
         const parts = String(value).replaceAll('\\', '/').split('/');
@@ -1938,26 +1946,37 @@
       };
       const absolute = value => normalize(String(value).startsWith('/') || !project.root ? value : `${project.root}/${value}`);
       const isRtlFile = value => /\.(?:svh?|vh?|vhdl?)$/i.test(value);
+      const isDocument = value => /\.(?:md|rst|txt|pdf|docx?|html?|xlsx?|adoc)$/i.test(value);
+      const isCode = value => /\.(?:svh?|vh?|vhdl?|c|cc|cpp|cxx|h|hpp|py|sh|bash|tcl|pl|rb|js|ts|f|mk|cmake|json|ya?ml|toml)$/i.test(value) || /(?:^|\/)(?:Makefile|CMakeLists\.txt)$/.test(value);
       const parent = value => value.includes('/') ? value.slice(0, value.lastIndexOf('/')) || '/' : '.';
-      const roots = (project.rtl_roots || []).map(value => {
-        const path = absolute(value);
-        return isRtlFile(path) ? parent(path) : path;
-      });
-      const sources = new Map((n.authoring_contract?.source_snapshot || []).map(item => [item.path, item.kind]));
+      const inputs = project.verification_inputs || {};
+      const groups = {
+        rtl:['RTL ', project.rtl_roots || []],
+        'verification-testbench':['验证环境', [inputs.testbench_root]],
+        'reference-model-implementation':['参考模型', [inputs.reference_model]],
+        'verification-script':['验证脚本', inputs.scripts || []],
+      };
+      const sources = new Map((n.authoring_contract?.source_snapshot || []).map(item => [absolute(item.path), item.kind]));
       const result = (n.source_refs || []).map(ref => {
-        if (ref.startsWith('RTL 目录：')) return ref;
+        if (/^(?:RTL |验证环境|参考模型|验证脚本|代码)目录：/.test(ref)) return ref;
         if (ref.startsWith('gap:')) return null; // Listed under pending source questions, not inputs.
         const path = ref.replace(/^file:/, '').split('#')[0];
-        const kind = sources.get(path);
-        if (kind !== 'rtl' && (kind || !isRtlFile(path))) return ref;
+        const kind = sources.get(absolute(path));
+        if (isDocument(path) || (kind && !groups[kind]) || (!kind && !isCode(path))) return ref;
         const full = absolute(path);
-        let directory = roots.find(root => full.startsWith(root + '/')) || parent(full);
+        const [label, values] = groups[kind] || (isRtlFile(path) ? groups.rtl : ['代码', []]);
+        const roots = values.filter(Boolean).map(value => { const path = absolute(value); return isCode(path) ? parent(path) : path; });
+        let directory = roots.find(root => full === root || full.startsWith(root + '/')) || parent(full);
         const base = normalize(project.root || '');
         if (base && directory.startsWith(base + '/')) directory = directory.slice(base.length + 1);
         if (base && directory === base) directory = '.';
-        return `RTL 目录：${directory}`;
+        return `${label}目录：${directory}`;
       }).filter(Boolean);
       return [...new Set(result)];
+    }
+
+    function writingPlanSourcesHtml(n) {
+      return `<details class="detail-group writing-plan-inputs"><summary>输入依据</summary><div class="detail-group-body"><ul>${planListHtml(writingPlanSources(n))}</ul></div></details>`;
     }
 
     function workstreamPlanSnapshotHtml(w) {
@@ -1973,7 +1992,7 @@
           ? `<button class="btn primary" data-open-node="${escapeHtml(n.id)}">打开工作节点审批</button>`
           : '';
         const details = w.workstream === 'VDOC'
-          ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>输入依据</strong><ul>${planListHtml(writingPlanSources(n))}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul>`
+          ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul>${writingPlanSourcesHtml(n)}<strong>范围</strong><ul>${planListHtml(n.scope)}</ul>`
           : `<strong>工作范围</strong><ul>${planListHtml(n.scope)}</ul><strong>具体工作</strong><ul>${planListHtml(n.work_content)}</ul><strong>实现方式</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>交付内容</strong><ul>${planListHtml(n.deliverables)}</ul><strong>完成条件</strong><ul>${planListHtml(n.acceptance_criteria, '尚未登记完成条件')}</ul>`;
         return `<details class="detail-group"><summary>${escapeHtml(humanText(n.title))}${n.required ? '' : '（可选）'} ${reviewStatus}</summary><div class="detail-group-body"><div class="detail-card"><dl class="kv"><dt>要达到什么</dt><dd>${escapeHtml(humanText(n.statement || '未登记具体目标'))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd></dl>${document}${details}<div class="page-actions" style="margin-top:12px">${reviewAction}</div></div></div></details>`;
       }).join('') || '<div class="card empty">尚未根据当前 DUT、规格和验证目标形成方案工作节点，不能据此开始工作。请先由 Agent 完成验证对象分解。</div>';
@@ -2131,12 +2150,17 @@
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
         : '<div class="notice"><strong>当前方案还不能审批。</strong> Agent 需要先补齐当前 DUT 的文档工作分解。</div>';
       const canComplete = available && !n.plan_review.completed;
-      const completionLabel = n.plan_review.completed ? '已批准全部内容' : available ? '审批完成' : '方案待补齐';
+      const completionLabel = n.plan_review.completed ? '已批准全部内容' : available ? '批准全部内容' : '方案待补齐';
       const completionTitle = n.plan_review.completed
         ? '当前方案的全部内容已批准；提交新的审批意见后需要重新审批'
         : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
         : 'Agent 需要先补齐当前 DUT 的文档撰写方案';
       return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批文档撰写方案</summary><div class="detail-group-body">${body}</div></details><button type="button" class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(completionTitle)}">${completionLabel}</button></div>`;
+    }
+
+    function planApprovalAvailable(n) {
+      return Boolean(n?.role === 'document-writing-plan' && n.plan_review && workstream(n.workstream))
+        && !vdocPlanReviewState(workstream(n.workstream)).needsRefinement;
     }
 
     function documentWritingPlanNodeHtml(n, available) {
@@ -2167,15 +2191,87 @@
     }
 
     function openNodePlanCompletionModal(n) {
-      openModal(`<h2>批准当前文档撰写方案</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice"><strong>确认后，批准当前文档撰写方案的全部内容。</strong> 审批入口和审批历史会继续保留；之后提交新增、删除或修改意见时，本节点需要重新审批。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>批准说明</label><textarea name="reason" placeholder="说明批准当前方案全部内容的依据" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认审批完成</button></div></form>`);
+      openModal(`<h2>批准当前文档撰写方案</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice"><strong>确认后，批准当前文档撰写方案的全部内容。</strong> 审批入口和审批历史会继续保留；之后提交新增、删除或修改意见时，本节点需要重新审批。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>批准说明（选填）</label><textarea name="reason" placeholder="可补充说明，也可以留空直接确认"></textarea></div><div class="notice" data-submit-status role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button type="button" class="btn" data-refresh-approval hidden>刷新审批状态</button><button type="submit" class="btn primary">确认审批完成</button></div></form>`);
+      $('#modal').dataset.planNode = n.id;
+      $('#modal').dataset.scope = draftScope(null, n.id);
       $('#node-plan-complete-form').onsubmit = async event => {
         event.preventDefault();
-        const data = Object.fromEntries(new FormData(event.target));
-        data.node = n.id;
-        data.definition_digest = n.plan_review.definition_digest;
-        rememberReviewer(data.reviewer);
-        await post('/api/reviews/node-plan-complete', data, '当前文档撰写方案的全部内容已批准');
+        submittingForm = null;
+        await submitNodePlanCompletion(event.target, n);
       };
+    }
+
+    async function approvalRequest(url, options={}) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      try {
+        const response = await fetch(url, {...options, signal:controller.signal});
+        const body = await response.json();
+        if (!response.ok) {
+          const error = new Error(body.error || response.statusText);
+          error.rejected = response.status >= 400 && response.status < 500;
+          throw error;
+        }
+        return body;
+      } finally { clearTimeout(timer); }
+    }
+    async function submitNodePlanCompletion(form, n) {
+      if (form.dataset.submitted) return;
+      const project = state.project, sequence = modalSequence;
+      const current = () => state.project === project && modalSequence === sequence;
+      const button = form.querySelector('[type="submit"]');
+      const refresh = form.querySelector('[data-refresh-approval]');
+      const notice = form.querySelector('[data-submit-status]');
+      const show = text => { notice.hidden = false; notice.textContent = text; };
+      const data = Object.fromEntries(new FormData(form));
+      data.node = n.id; data.definition_digest = n.plan_review.definition_digest;
+      data.dashboard_project = project; data.include_snapshot = false;
+      rememberReviewer(data.reviewer);
+      form.dataset.submitted = 'true'; form.dataset.pending = 'true';
+      button.disabled = true; button.textContent = '正在提交…';
+      form.setAttribute('aria-busy', 'true');
+      form.querySelectorAll('input,textarea').forEach(field => field.readOnly = true);
+      show('正在保存审批，请勿重复点击。');
+      let saved = false;
+      const refreshState = async () => {
+        if (!current()) return;
+        refresh.hidden = true; form.dataset.pending = 'true';
+        show(saved ? '审批已保存，正在刷新页面状态…' : '正在核对审批记录，不会重复提交…');
+        try {
+          const snapshot = await approvalRequest(`/api/snapshot?project=${encodeURIComponent(project)}`, {headers:{'X-Verif-Token':token}});
+          if (!current()) return;
+          if (snapshot.dashboard_project_id !== project) throw new Error('返回的项目与当前项目不一致');
+          setSnapshot(snapshot);
+          closeModal(true);
+          if (saved) await navigateUrl(routeUrl({workstream:n.workstream}), {replace:true});
+          toast(saved ? '审批已保存，页面状态已刷新' : '已刷新，请查看当前节点的审批历史，确认上次提交结果');
+        } catch (error) {
+          if (current()) {
+            show((saved ? '审批已保存，但页面状态暂未刷新。' : '尚未确认审批结果，请勿重复提交。') + '可以点击“刷新审批状态”重新读取。' + (error.name === 'AbortError' ? '读取超时。' : String(error)));
+            refresh.hidden = false;
+          }
+        } finally { delete form.dataset.pending; form.removeAttribute('aria-busy'); }
+      };
+      refresh.onclick = refreshState;
+      try {
+        const body = await approvalRequest('/api/reviews/node-plan-complete', {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)});
+        if (!current()) return;
+        if (body.dashboard_project_id !== project || body.result?.node_id !== n.id || !body.result?.review_id) throw new Error('未收到当前节点的审批保存结果');
+        saved = true; delete form.dataset.dirty;
+        button.textContent = '审批已保存';
+        await refreshState();
+      } catch (error) {
+        if (!current()) return;
+        if (error.rejected) {
+          show(`未提交审批：${error.message}`);
+          delete form.dataset.submitted;
+          button.disabled = $('#modal').dataset.stale === 'true'; button.textContent = '确认审批完成';
+          form.querySelectorAll('input,textarea').forEach(field => field.readOnly = false);
+        } else {
+          show('暂未收到审批结果，可能已保存，请勿重复提交。请刷新审批状态核对。' + (error.name === 'AbortError' ? '请求超时。' : String(error)));
+          button.textContent = '等待核对审批结果'; refresh.hidden = false;
+        }
+      } finally { delete form.dataset.pending; form.removeAttribute('aria-busy'); }
     }
 
     function renderNodePlanReview(n) {
@@ -2438,7 +2534,7 @@
     function nodeRolePanelHtml(n) {
       const profile = nodeRoleProfile(n);
       if (n.role === 'document-writing-plan') {
-        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(writingPlanSources(n))}</ul>${verificationDocAuthoringContractHtml(n)}</div></section>`;
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul>${writingPlanSourcesHtml(n)}${verificationDocAuthoringContractHtml(n)}</div></section>`;
       }
       if (n.role === 'document-deliverable') {
         return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>默认每份文档对应一个正文验收节点。</strong> 只有已批准的撰写方案明确拆分时，才按独立正文内容分别验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;
@@ -2505,11 +2601,12 @@
     }
     function openModal(html) {
       ++modalSequence;
-      $('#modal').innerHTML = html; $('#modal').dataset.scope = draftScope(); delete $('#modal').dataset.stale;
+      $('#modal').innerHTML = html; $('#modal').dataset.scope = draftScope(); delete $('#modal').dataset.stale; delete $('#modal').dataset.planNode;
       $('#modal-backdrop').classList.add('open');
       document.querySelectorAll('[data-close-modal]').forEach(b => b.onclick = () => closeModal());
     }
     function closeModal(force=false) {
+      if (!force && $('#modal [data-pending="true"]')) { toast('正在处理审批，请等待保存结果或超时提示'); return false; }
       if (!force && $('#modal-backdrop').classList.contains('open') && $('#modal [data-dirty="true"]') && !window.confirm('这项操作有未提交的输入。放弃这些输入并离开？')) return false;
       $('#modal-backdrop').classList.remove('open'); $('#modal').innerHTML = '';
       ++modalSequence;

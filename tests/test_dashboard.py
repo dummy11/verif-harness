@@ -778,6 +778,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="plan-approval-controls"', html)
         self.assertIn('id="node-plan-complete"', html)
         self.assertIn("/api/reviews/node-plan-complete", html)
+        completion_modal = html[html.index("function openNodePlanCompletionModal"):
+                                html.index("async function approvalRequest")]
+        self.assertIn("批准说明（选填）", completion_modal)
+        self.assertNotIn('placeholder="说明批准当前方案全部内容的依据" required', completion_modal)
         self.assertNotIn("<strong>审批尚未完成</strong>", html)
         self.assertIn("本撰写方案已经审批通过", html)
         self.assertIn("本撰写方案仍待审批", html)
@@ -1399,6 +1403,47 @@ class DashboardTest(unittest.TestCase):
         reopened = ProjectStore(self.root)
         self.assertEqual(reopened.node_plan_review_state(node["id"]), approved["plan_review"])
         self.assertEqual(reopened.model(node["id"])["nodes"][0]["status"], "VALID")
+
+    def test_vdoc_completion_optional_reason_and_fast_receipt(self) -> None:
+        self.design_minimal_vdoc()
+        node = next(n for w in self.store.dashboard_snapshot()["workstreams"]
+                    if w["workstream"] == "VDOC" for n in w["nodes"] if n["plan_review"])
+        payload = {
+            "node": node["id"], "definition_digest": node["plan_review"]["definition_digest"],
+            "reviewer": "alice", "include_snapshot": False,
+        }
+        for change, status in (({"reviewer": " "}, 400), ({"definition_digest": "stale"}, 400)):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self.post("/api/reviews/node-plan-complete", {**payload, **change}, self.server.write_token)
+            self.assertEqual(caught.exception.code, status)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.post("/api/reviews/node-plan-complete", payload)
+        self.assertEqual(caught.exception.code, 403)
+        # The save response must not compute a full snapshot at all, even if
+        # refreshing that view is slow or unavailable. Missing reason is valid.
+        projections = []
+        write_projection = ProjectStore.write_workstream_projection
+        def track_projection(store, workstream):
+            projections.append(workstream)
+            return write_projection(store, workstream)
+        with mock.patch.object(ProjectStore, "dashboard_snapshot", side_effect=AssertionError("full snapshot on save")), \
+             mock.patch.object(ProjectStore, "write_workstream_projection", track_projection):
+            response = self.post("/api/reviews/node-plan-complete", payload, self.server.write_token)
+        self.assertNotIn("snapshot", response)
+        self.assertEqual(response["dashboard_project_id"], dashboard_project_id(self.root))
+        self.assertEqual(response["result"]["reason"], "")
+        self.assertEqual(projections, ["VDOC"])
+        reopened = ProjectStore(self.root)
+        review = reopened.node_plan_review_state(node["id"])
+        self.assertTrue(review["completed"])
+        self.assertEqual(len(review["completion_reviews"]), 1)
+        self.assertEqual(review["completion_reviews"][0]["reason"], "")
+        with self.get("/api/snapshot") as result:
+            snapshot = json.load(result)
+        refreshed = next(n for w in snapshot["workstreams"] for n in w["nodes"] if n["id"] == node["id"])
+        self.assertEqual(refreshed["plan_review"], review)
+        self.assertEqual(refreshed["status"], "VALID")
+        self.assertEqual(reopened.evaluate_closure("VDOC", persist=False), response["result"]["auto_closure"])
 
     def test_vdoc_plan_sections_are_reviewed_independently_and_aggregate(self) -> None:
         proposal = {

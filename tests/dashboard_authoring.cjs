@@ -22,6 +22,8 @@ vm.runInContext(`
     assert.match(rendered, /计划写入的内容/);
     assert.match(rendered, /撰写和修改方法/);
     assert.match(rendered, /RTL 目录：rtl/);
+    assert.match(rendered, /<details class="detail-group writing-plan-inputs"><summary>输入依据/);
+    assert.doesNotMatch(rendered, /writing-plan-inputs" open/);
     assert.match(rendered, /查看详细撰写要求/);
     assert.match(rendered, /查看输入文件版本记录/);
     assert.doesNotMatch(rendered, /预计正文交付|方案质量检查|工业级文档撰写合同/);
@@ -37,9 +39,14 @@ vm.runInContext(`
     authoring_contract:{source_snapshot:[{kind:'verification-testbench',path:'tb/tb_top.sv'}]},
   };
   const beforeLegacy = JSON.stringify(legacy);
-  assert.equal(JSON.stringify(writingPlanSources(legacy)), JSON.stringify(['RTL 目录：rtl','spec.md#reset','tb/tb_top.sv']));
+  assert.equal(JSON.stringify(writingPlanSources(legacy)), JSON.stringify(['RTL 目录：rtl','spec.md#reset','验证环境目录：tb']));
   assert.equal(JSON.stringify(legacy), beforeLegacy);
   state.snapshot.project.rtl_roots = ['/external/top.sv','rtl'];
   assert.equal(JSON.stringify(writingPlanSources({source_refs:['/external/top.sv','/project/rtl/dut.sv']})), JSON.stringify(['RTL 目录：/external','RTL 目录：rtl']));
+  state.snapshot.project.verification_inputs = {testbench_root:'tb',reference_model:'model',scripts:['scripts/run.py']};
+  const mixed = {source_refs:['tb/a.sv','tb/sub/b.sv','tb/README.md','model/src/ref.cpp','model/spec.pdf','scripts/run.py','specs/api.md'],
+    authoring_contract:{source_snapshot:[{path:'tb/a.sv',kind:'verification-testbench'},{path:'tb/sub/b.sv',kind:'verification-testbench'},
+      {path:'model/src/ref.cpp',kind:'reference-model-implementation'},{path:'scripts/run.py',kind:'verification-script'}]}};
+  assert.equal(JSON.stringify(writingPlanSources(mixed)), JSON.stringify(['验证环境目录：tb','tb/README.md','参考模型目录：model','model/spec.pdf','验证脚本目录：scripts','specs/api.md']));
 `, context);
 console.log('All eight authoring plans: readable text, directory-only RTL inputs and immutable provenance PASS');

@@ -392,6 +392,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     threading.Timer(0.2, self.server.shutdown).start()
                 return
             result = self._mutate(path, body, store)
+            if path == "/api/reviews/node-plan-complete" and body.get("include_snapshot") is False:
+                # A saved approval must not wait for the whole-project view. The
+                # caller separately rereads the authoritative project snapshot.
+                self._json({"result": result, "dashboard_project_id": project_id})
+                return
             self._json({"result": result, "snapshot": self._snapshot(store, project_id)})
         except HarnessError as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -489,8 +494,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             reviewer = str(body.get("reviewer", "")).strip()
             reason = str(body.get("reason", "")).strip()
             digest = str(body.get("definition_digest", "")).strip()
-            if not reviewer or not reason or not digest:
-                raise HarnessError("文档撰写方案审批完成必须填写审批人、完成说明和当前方案摘要")
+            if not reviewer or not digest:
+                raise HarnessError("文档撰写方案审批完成必须填写审批人并提供当前方案摘要")
             return store.complete_node_plan_review(
                 str(body.get("node", "")), digest, reviewer, reason,
             )

@@ -183,7 +183,8 @@ endmodule
                 self.assertIn("RTL 目录：rtl", node["source_refs"])
                 self.assertNotIn("rtl/dut.sv", node["source_refs"])
                 self.assertIn("specs/design_spec.md", node["source_refs"])
-                self.assertIn("tb/tb_top.sv", node["source_refs"])
+                self.assertIn("验证环境目录：tb", node["source_refs"])
+                self.assertNotIn("tb/tb_top.sv", node["source_refs"])
                 self.assertEqual(len(node["source_refs"]), len(set(node["source_refs"])))
                 self.assertFalse(any(ref.startswith("gap:") for ref in node["source_refs"]))
                 content = json.dumps({key: node[key] for key in (
@@ -215,7 +216,25 @@ endmodule
                 {"kind": "rtl", "path": str(external / "top.sv")},
                 {"kind": "verification-testbench", "path": "tb/tb_top.sv"},
             ])
-            self.assertEqual(refs, ["RTL 目录：rtl", f"RTL 目录：{external.resolve()}", "tb/tb_top.sv"])
+            self.assertEqual(refs, ["RTL 目录：rtl", f"RTL 目录：{external.resolve()}", "验证环境目录：tb"])
+
+    def test_code_directories_keep_documents_and_provenance(self) -> None:
+        sources = [
+            {"kind": "verification-testbench", "path": "tb/a.sv"},
+            {"kind": "verification-testbench", "path": "tb/nested/b.sv"},
+            {"kind": "verification-testbench", "path": "tb/README.md"},
+            {"kind": "reference-model-implementation", "path": "model/src/ref.cpp"},
+            {"kind": "reference-model-implementation", "path": "model/spec.pdf"},
+            {"kind": "verification-script", "path": "scripts/run.py"},
+            {"kind": "design-spec", "path": "specs/ports.md"},
+        ]
+        before = json.dumps(sources)
+        manifest = {"verification_inputs": {"testbench_root": "tb", "reference_model": "model"}}
+        self.assertEqual(authoring_source_refs(self.root, manifest, sources), [
+            "验证环境目录：tb", "tb/README.md", "参考模型目录：model", "model/spec.pdf",
+            "验证脚本目录：scripts", "specs/ports.md",
+        ])
+        self.assertEqual(json.dumps(sources), before)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js required for Dashboard renderer checks")
     def test_all_eight_plans_render_without_internal_jargon(self) -> None:

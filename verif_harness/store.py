@@ -4006,10 +4006,10 @@ class ProjectStore:
             )
 
     def complete_node_plan_review(
-        self, node_id: str, definition_digest: str, reviewer: str, reason: str,
+        self, node_id: str, definition_digest: str, reviewer: str, reason: str = "",
     ) -> dict[str, Any]:
-        if not reviewer.strip() or not reason.strip():
-            raise HarnessError("审批完成必须填写审批人和完成说明")
+        if not reviewer.strip():
+            raise HarnessError("审批完成必须填写审批人")
         plan = self.workstream("VDOC")
         desired = next(
             (item for item in self._vdoc_writing_plan_desired(plan) if item["id"] == node_id),
@@ -4041,7 +4041,8 @@ class ProjectStore:
             event_id = self._record_review_submitted_event(
                 connection, review_id, node_id, "approve", reviewer.strip(), [], timestamp,
             )
-        self.write_workstream_projection("VDOC")
+        # Closure persists the projection once; do not write the same plan twice.
+        auto_closure = self.evaluate_closure("VDOC")
         return {
             "review_id": review_id,
             "node_id": node_id,
@@ -4050,7 +4051,7 @@ class ProjectStore:
             "reason": reason.strip(),
             "event_id": event_id,
             "plan_review": self.node_plan_review_state(node_id),
-            "auto_closure": self.evaluate_closure("VDOC"),
+            "auto_closure": auto_closure,
         }
 
     def await_human_review(

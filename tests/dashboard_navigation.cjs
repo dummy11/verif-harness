@@ -128,6 +128,10 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const completedNode = completedSnapshot.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.id === node);
     assert.equal(completedNode.status, 'VALID');
     assert.equal(completedNode.plan_review.completed, true);
+    await page.locator('#drawer-backdrop').waitFor({state:'hidden'});
+    assert.equal(new URL(page.url()).searchParams.has('node'), false);
+    assert.equal(context.pages().length, 1);
+    await page.locator(`.node-table [data-open-node="${node}"]`).click();
     if (!(await page.locator('#drawer .node-plan-approval').evaluate(element => element.open))) {
       await page.locator('#drawer .node-plan-approval > summary').click();
     }

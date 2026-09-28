@@ -98,7 +98,9 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.getByText('无法打开这份文档', {exact:true}).waitFor();
     await page.goto(url({workstream:'VDOC', 'review-delivery-node':delivery.id}));
     await rendered();
-    assert.equal(await page.locator('#delivery-review-form').count(), 1);
+    // A snapshot event can rebuild the view just after rendered() returns.
+    // Wait for the rebuilt form and assert uniqueness in the same DOM read.
+    await page.waitForFunction(() => document.querySelectorAll('#delivery-review-form').length === 1);
     const popupPromise = context.waitForEvent('page');
     await page.locator('[data-view-delivery-document]').click();
     const popup = await popupPromise;

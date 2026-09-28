@@ -118,6 +118,12 @@ vm.runInContext(`
   assert.match(planHtml, /审批历史记录/);
   assert.doesNotMatch(planHtml, /id="node-plan-complete" disabled/);
   assert.match(planHtml, /批准当前文档撰写方案的全部内容/);
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" >批准全部内容/);
+  assert.match(planHtml, /writing-plan-inputs"><summary>输入依据/);
+  assert.doesNotMatch(planHtml, /writing-plan-inputs" open/);
+  state.snapshot.workstreams[0].closure.actions = [{kind:'REFINE_DESIRED_STATE'}];
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled/);
+  state.snapshot.workstreams[0].closure.actions = [];
   // Legacy section states must not recreate the old four-section approval gate.
   planNode.plan_review.sections = ['human-confirmations','planned-content','inputs-scope-deliverable','dependencies-impact']
     .map(section => ({section,status:'PENDING',reviews:[]}));
@@ -152,6 +158,7 @@ vm.runInContext(`
   const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
   assert.match(completedPlanHtml, /id="node-plan-complete" disabled/);
   assert.match(completedPlanHtml, /已批准全部内容/);
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled>已批准全部内容/);
   assert.match(completedPlanHtml, /data-plan-section-form=/);
 `, context);
 console.log('Dashboard motion renderers PASS');
