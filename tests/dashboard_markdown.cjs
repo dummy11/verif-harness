@@ -96,7 +96,14 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(await page.getByRole('heading', {name:'验证计划示例', exact:true}).count(), 0);
     await page.goto(url({document:'document:vdoc:missing'}));
     await page.getByText('无法打开这份文档', {exact:true}).waitFor();
-    await page.goto(url({workstream:'VDOC', 'review-delivery-node':delivery.id}));
+    assert.ok(before.waiting_for_human.some(a => a.source === 'closure' && a.target === delivery.id));
+    await page.goto(url({'pending-items':'1'}));
+    await page.locator(`.pending-status-list [data-open-node="${delivery.id}"]`).click();
+    await page.waitForURL(value => value.searchParams.get('node') === delivery.id);
+    assert.equal(new URL(page.url()).searchParams.get('project'), config.otherProject);
+    assert.equal(new URL(page.url()).searchParams.get('token'), config.token);
+    await page.reload();
+    await page.locator('#document-delivery-review-tab').click();
     await rendered();
     // A snapshot event can rebuild the view just after rendered() returns.
     // Wait for the rebuilt form and assert uniqueness in the same DOM read.
@@ -123,6 +130,8 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const reviewed = after.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.id === delivery.id);
     assert.equal(reviewed.delivery_review.status, 'AGENT_CHECKING');
     assert.equal(reviewed.delivery_review.current_review.document_digest, document.digest);
+    assert.ok(!after.waiting_for_human.some(a => a.source === 'closure' && a.target === delivery.id));
+    assert.ok(after.workstreams.find(w => w.workstream === 'VDOC').closure.actions.some(a => a.kind === 'CHECK_DOCUMENT_REVIEW' && a.target === delivery.id));
     // Renderer failure leaves readable source, never a blank acceptance surface.
     await page.route('**/assets/markdown-it.min.js?*', route => route.abort());
     await page.goto(url({document:docId}));

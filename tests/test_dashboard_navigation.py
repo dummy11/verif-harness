@@ -89,11 +89,10 @@ class DashboardNavigationTest(unittest.TestCase):
                 fixture.design_minimal_vdoc()
                 vdoc = next(w for w in other.dashboard_snapshot()["workstreams"] if w["workstream"] == "VDOC")
                 plan = next(n for n in vdoc["nodes"] if n["plan_review"])
-                for section in plan["plan_review"]["sections"]:
-                    other.review_node_plan_section(
-                        plan["id"], section["section"], plan["plan_review"]["definition_digest"],
-                        "approve", "fixture-reviewer", "仅供隔离浏览器测试",
-                    )
+                other.complete_node_plan_review(
+                    plan["id"], plan["plan_review"]["definition_digest"],
+                    "fixture-reviewer", "仅供隔离浏览器测试",
+                )
                 if script == "dashboard_markdown.cjs":
                     document = other.documents("verification_plan.md")[0]
                     (other.root / document["path"]).write_text(

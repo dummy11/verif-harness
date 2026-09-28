@@ -4475,6 +4475,10 @@ class ProjectStore:
                    WHERE target=? AND status='OPEN' ORDER BY created_at""",
                 (node_id,),
             )]
+            open_confirmations = [row["id"] for row in connection.execute(
+                "SELECT id FROM human_actions WHERE target=? AND status='OPEN'",
+                (node_id,),
+            )]
             observed_internal = {row["id"]: dict(row) for row in connection.execute(
                 "SELECT id,title,status FROM nodes WHERE id IN (%s) ORDER BY id"
                 % ",".join("?" for _ in internal_children),
@@ -4529,6 +4533,13 @@ class ProjectStore:
             "document_path": document["path"],
             "semantic_revision": document["semantic_revision"],
             "document_digest": document["digest"],
+            "document_available": document["exists"] and not document["content_changed"],
+            "acceptance_blockers": (
+                [item["id"] for item in document["governance_items"]
+                 if item["kind"] in {"human-decision", "external-open-question"}
+                 and item["status"] in {"PENDING", "ACTIVE"}]
+                + open_confirmations + [item["id"] for item in open_agent_questions]
+            ),
             "status": status,
             "current_review": current,
             "reviews": rows,
@@ -5971,6 +5982,16 @@ class ProjectStore:
             and vdoc_deliveries
             else []
         )
+        delivery_phase_ready = (
+            name == "VDOC"
+            and plan["lifecycle"] in {"ACTIVE", "PARTIALLY_STALE", "SATISFIED"}
+            and bool(vdoc_deliveries) and not vdoc_delivery_issues
+            and all(
+                self.node_plan_review_state(item["id"], plan, item)["status"] == "APPROVED"
+                for item in self._vdoc_writing_plan_desired(plan)
+                if item.get("required", True)
+            )
+        )
         connector = self.connect if persist else self.read_connect
         with connector() as connection:
             current_nodes = self._current_desired_nodes(connection)
@@ -6006,13 +6027,14 @@ class ProjectStore:
                 ]
                 missing_dependencies = [item for item in expected_dependencies if item not in current_desired]
                 delivery_agent_check = None
+                delivery_state = None
                 if name == "VDOC" and desired.get("role") == "document-deliverable":
-                    delivery_agent_check = connection.execute(
-                        """SELECT c.status,c.review_id FROM review_agent_checks c
-                           JOIN document_delivery_reviews r ON r.id=c.review_id
-                           WHERE r.node_id=? ORDER BY r.rowid DESC LIMIT 1""",
-                        (desired["id"],),
-                    ).fetchone()
+                    delivery_state = self.document_delivery_review_state(
+                        desired["id"], plan, desired,
+                    )
+                    # Only the review of this revision and these exact contents
+                    # may determine the next action; historical checks remain audit data.
+                    delivery_agent_check = delivery_state["agent_check"]
                 if desired.get("required", True) and missing_dependencies:
                     actions.append({
                         "kind": "PLAN_PREREQUISITE", "target": desired["id"], "priority": 3,
@@ -6026,6 +6048,22 @@ class ProjectStore:
                         "executor": "deterministic", "suggested_mode": "closure",
                         "reason": "请先完成下方列出的前置目标",
                         "blocked_by": [item["id"] for item in blockers],
+                    })
+                elif (
+                    desired.get("required", True) and delivery_phase_ready
+                    and delivery_state is not None
+                    and delivery_state["status"] == "PENDING"
+                    and delivery_state["document_available"]
+                    and not delivery_state["acceptance_blockers"]
+                ):
+                    actions.append({
+                        "kind": "HUMAN_REVIEW", "target": desired["id"],
+                        "priority": 1, "executor": "human", "suggested_mode": "review",
+                        "reason": f"“{desired['title']}”已准备好，等待负责人验收正文内容",
+                        "revision": plan["revision"],
+                        "definition_digest": delivery_state["definition_digest"],
+                        "document_digest": delivery_state["document_digest"],
+                        "semantic_revision": delivery_state["semantic_revision"],
                     })
                 elif (
                     desired.get("required", True)
@@ -6870,8 +6908,14 @@ class ProjectStore:
             item for item in agent_assignment_history
             if item["node_id"] in current_desired_ids
         ]
+        current_delivery_review_ids = {
+            review["id"]
+            for view in workstream_views for node in view["nodes"]
+            if (review := (node.get("delivery_review") or {}).get("current_review"))
+        }
         current_agent_review_checks = [
-            item for item in agent_review_checks if item["node_id"] in current_desired_ids
+            item for item in agent_review_checks
+            if item["review_id"] in current_delivery_review_ids
         ]
         pending_agent_review_checks = [
             item for item in current_agent_review_checks if item["status"] == "PENDING"
@@ -6930,21 +6974,29 @@ class ProjectStore:
             project_agent_message = (
                 f"需要你回答 {blocking_question_count} 个问题；回答后 Agent 才会继续相关工作"
             )
-        elif pending_agent_review_checks:
-            project_agent_status = "RUNNING"
-            project_agent_message = (
-                f"Agent 正在检查 {len(pending_agent_review_checks)} 项已提交的文档验收结论，"
-                "检查后自行判断是否需要你回答问题"
-            )
         elif pending_review_count or pending_confirmation_count:
             pending_parts = []
             if pending_review_count:
-                pending_parts.append(f"{pending_review_count} 项评审")
+                delivery_count = sum(
+                    item.get("source") == "closure"
+                    and item.get("target_role") == "document-deliverable"
+                    for item in waiting_for_human
+                )
+                if delivery_count:
+                    pending_parts.append(f"{delivery_count} 项文档正文验收")
+                if pending_review_count > delivery_count:
+                    pending_parts.append(f"{pending_review_count - delivery_count} 项方案审批")
             if pending_confirmation_count:
                 pending_parts.append(f"{pending_confirmation_count} 项文档确认")
             project_agent_status = "WAITING_FOR_HUMAN"
             project_agent_message = (
                 f"需要你处理 {'、'.join(pending_parts)}；处理后 Agent 才会继续相关工作"
+            )
+        elif pending_agent_review_checks:
+            project_agent_status = "RUNNING"
+            project_agent_message = (
+                f"Agent 正在检查 {len(pending_agent_review_checks)} 项已提交的文档验收结论，"
+                "检查后自行判断是否需要你回答问题"
             )
         elif waiting_activity_count:
             project_agent_status = "WAITING_FOR_HUMAN"

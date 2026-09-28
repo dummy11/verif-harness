@@ -673,6 +673,11 @@
         }
         if (planState.changesRequested) return '等待 Agent 修改文档撰写方案';
         if (planState.reviewPending) return '等待负责人审批文档撰写方案';
+        const deliveries = new Set((workstream.nodes || []).filter(n => n.role === 'document-deliverable').map(n => n.id));
+        const actions = (workstream.closure?.actions || []).filter(a => deliveries.has(a.target));
+        const pending = actions.filter(a => a.kind === 'HUMAN_REVIEW' && a.executor === 'human').length;
+        if (pending) return `等待负责人验收 ${pending} 份文档正文`;
+        if (actions.some(a => a.kind === 'CHECK_DOCUMENT_REVIEW')) return '等待 Agent 检查正文验收结论';
       }
       return WORKSTREAM_STATE_LABELS[workstream.workstream]?.[value] || STATUS_LABELS[value] || value;
     };
@@ -1596,7 +1601,12 @@
       }
       if (n.delivery_review?.status === 'AGENT_CHECKING') return 'Agent 正在检查你提交的验收结论';
       if (n.delivery_review?.status === 'PROVISIONAL') return '暂定内容允许带风险推进，但不能完成关闭';
-      if (n.delivery_review && n.delivery_review.status !== 'APPROVED') return '等待负责人验收文档内容';
+      if (n.delivery_review && n.delivery_review.status !== 'APPROVED') {
+        if ((n.delivery_review.open_agent_questions || []).length) return '等待负责人回答本节点的问题';
+        if (n.delivery_review.status === 'CHANGES_REQUESTED') return '等待 Agent 按验收意见修改正文';
+        const action = (n.next_actions || [])[0];
+        return action?.reason || '等待 Agent 检查正文和验收条件';
+      }
       const human = humanNeed(n);
       if (human !== '当前不需要负责人处理') return human;
       const assessment = n.closure_assessment || {};

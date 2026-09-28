@@ -1031,7 +1031,8 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(snapshot["project_agent"]["open_question_count"], 0)
         self.assertEqual(snapshot["project_agent"]["pending_review_count"], 1)
         self.assertEqual(snapshot["project_agent"]["pending_confirmation_count"], 0)
-        self.assertIn("1 项评审", snapshot["project_agent"]["message"])
+        self.assertIn("1 项方案审批", snapshot["project_agent"]["message"])
+        self.assertNotIn("1 项评审", snapshot["project_agent"]["message"])
         self.assertNotIn("回答 1 个问题", snapshot["project_agent"]["message"])
         self.assertEqual(snapshot["version"], self.store.dashboard_snapshot()["version"])
 
@@ -1681,7 +1682,8 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(
             snapshot["project_agent"]["pending_review_count"], len(all_pending_reviews),
         )
-        self.assertIn("项评审", snapshot["project_agent"]["message"])
+        self.assertIn("项方案审批", snapshot["project_agent"]["message"])
+        self.assertNotIn("项评审", snapshot["project_agent"]["message"])
         self.assertNotIn("个问题", snapshot["project_agent"]["message"])
 
         section = first["plan_review"]["sections"][0]["section"]
@@ -2072,7 +2074,18 @@ class DashboardTest(unittest.TestCase):
         )
         self.assertEqual(submitted_node["status"], "REVIEW_REQUIRED")
         self.assertEqual(submitted_node["delivery_review"]["status"], "AGENT_CHECKING")
-        self.assertEqual(submitted_snapshot["project_agent"]["status"], "RUNNING")
+        # The VCHK plan still needs its owner's approval. A simultaneous Agent
+        # check must not hide that actionable request in the project summary.
+        self.assertEqual(submitted_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
+        self.assertTrue(any(
+            item["target"] == "workstream:VCHK"
+            for item in submitted_snapshot["waiting_for_human"]
+        ))
+        self.assertEqual(submitted_snapshot["project_agent"]["pending_agent_review_check_count"], 1)
+        self.assertFalse(any(
+            item["target"] == delivery["id"]
+            for item in submitted_snapshot["waiting_for_human"]
+        ))
         self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
         self.assertEqual(self.store.model(delivery["id"])["nodes"][0]["status"], "REVIEW_REQUIRED")
         self.assertTrue(any(
@@ -2126,7 +2139,12 @@ class DashboardTest(unittest.TestCase):
             delivery_response["review_id"],
         )
         answered_snapshot = self.store.dashboard_snapshot()
-        self.assertEqual(answered_snapshot["project_agent"]["status"], "RUNNING")
+        self.assertEqual(answered_snapshot["project_agent"]["status"], "WAITING_FOR_HUMAN")
+        self.assertEqual(answered_snapshot["project_agent"]["pending_agent_review_check_count"], 1)
+        self.assertTrue(any(
+            item["target"] == "workstream:VCHK"
+            for item in answered_snapshot["waiting_for_human"]
+        ))
         self.assertEqual(self.store.workstream("VDOC")["lifecycle"], "ACTIVE")
         checked_modify = self.post("/api/reviews/agent-check", {
             "review_id": delivery_response["review_id"],

@@ -86,6 +86,16 @@ vm.runInContext(`
   assert.ok(workstreamStatusCardHtml(vdoc).includes('8 / 16 个工作节点已有明确完成结论'));
   assert.match(workstreamStatusCardHtml(vdoc), /其中 8 个正文交付节点将在正文同步后登记/);
   vdoc.progress.pending_registration = 0;
+  vdoc.lifecycle = 'PARTIALLY_STALE';
+  vdoc.nodes.push({id:'body',role:'document-deliverable',required:true});
+  vdoc.closure.actions = [{kind:'HUMAN_REVIEW',executor:'human',target:'body'}];
+  assert.equal(workstreamStatusLabel(vdoc), '等待负责人验收 1 份文档正文');
+  assert.doesNotMatch(workstreamStatusCardHtml(vdoc), /部分验证文档需要重新评审/);
+  assert.equal(vdoc.lifecycle, 'PARTIALLY_STALE');
+  vdoc.closure.actions = [{kind:'CHECK_DOCUMENT_REVIEW',executor:'reasoning',target:'body'}];
+  assert.equal(workstreamStatusLabel(vdoc), '等待 Agent 检查正文验收结论');
+  vdoc.lifecycle = 'ACTIVE';
+  vdoc.closure.actions = [];
   vdoc.progress.satisfied = 16;
   vdoc.closure.ready = true;
   vdoc.closure.actions = [];
