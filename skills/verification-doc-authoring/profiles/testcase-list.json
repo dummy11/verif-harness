@@ -4,34 +4,179 @@
   "filename": "testcase_list.md",
   "node_key": "testcase_list_authoring",
   "title": "用例清单撰写方案",
-  "purpose": "把当前 DUT verification features 转成可执行、可复现、可检查并可纳入回归的 testcase contracts。",
-  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture", "reference-model", "coverage-plan", "assertion-plan"],
+  "purpose": "把当前 DUT 的验证点安排成具体用例，说明如何运行、如何判断结果、如何复现，以及纳入哪些回归测试。",
+  "dependencies": [
+    "verification-plan",
+    "feature-matrix",
+    "tb-architecture",
+    "reference-model",
+    "coverage-plan",
+    "assertion-plan"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "用例分类、ID 与优先级", "purpose": "定义 smoke/directed/boundary/random/stress/error/reset/config 分类。", "required": true},
-    {"section": "Test intent 与场景合同", "purpose": "定义 precondition/config/stimulus/expected/checkers/coverage。", "required": true},
-    {"section": "可执行入口与复现", "purpose": "定义 class/sequence/config/seed/timeout/end condition/artifacts。", "required": true},
-    {"section": "负向、并发、reset 与压力场景", "purpose": "覆盖 illegal/error/recovery/contention/backpressure/resource exhaustion。", "required": true},
-    {"section": "回归分组、证据与缺口", "purpose": "定义 suites、selection、rerun/triage 和 evidence mapping。", "required": true}
+    {
+      "section": "用例分类、编号与优先级",
+      "purpose": "区分冒烟、定向、边界、随机、压力、错误、复位和配置测试。",
+      "required": true
+    },
+    {
+      "section": "每个用例要验证什么",
+      "purpose": "写明前提、配置、激励、预期结果、检查方法和覆盖目标。",
+      "required": true
+    },
+    {
+      "section": "运行入口与复现方法",
+      "purpose": "说明测试入口、参数、随机种子、超时、结束条件及输出结果。",
+      "required": true
+    },
+    {
+      "section": "异常、并发、复位与压力场景",
+      "purpose": "安排非法操作、错误恢复、资源争用、反压和资源耗尽测试。",
+      "required": true
+    },
+    {
+      "section": "回归分组、结果与未完成项",
+      "purpose": "说明用例选择、重复运行、失败分析及证据对应关系。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "用例分类、ID 与优先级", "instructions": ["Test ID 稳定且关联 Feature/Risk；priority 含义和 required/optional 条件可判定。", "smoke 只证明最小环境；directed/random/stress/negative 各自说明目的。"], "required_source_kinds": ["verification-document:verification-plan", "verification-document:feature-matrix"]},
-    {"section": "Test intent 与场景合同", "instructions": ["逐 test 写 preconditions、CSR/config/mode、stimulus sequence、DUT acceptance、expected oracle/checker、assertion/coverage goals。", "不臆造 sequence/class/path；未实现项保持 planned 并给实现 owner。"], "required_source_kinds": ["design-spec", "verification-document:tb-architecture", "verification-document:reference-model", "verification-document:coverage-plan", "verification-document:assertion-plan"]},
-    {"section": "可执行入口与复现", "instructions": ["定义 test entry、compile/runtime config、seed policy、timeout/end-of-test、log/wave/evidence artifact。", "随机失败保留原 seed/config/revision；同 seed rerun 不得被新随机 run 替代。"], "required_source_kinds": ["project-context", "verification-artifact"]},
-    {"section": "负向、并发、reset 与压力场景", "instructions": ["从 error/interrupt、illegal protocol/config、reset during traffic、backpressure、out-of-order、FIFO/resource limit 提取适用场景。", "未定义 expected behavior 记录 source gap，不用常识补写 DUT 反应。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "register-spec", "design-spec"]},
-    {"section": "回归分组、证据与缺口", "instructions": ["定义 smoke/nightly/full/targeted 等 suite 的选择规则和资源/重复策略，不硬编码未确认 farm/EDA。", "映射 run manifest、result、triage、coverage DB 和 typed evidence；文件存在不等于 PASS。"], "required_source_kinds": ["verification-artifact", "verification-document:coverage-plan"]}
+    {
+      "section": "用例分类、编号与优先级",
+      "instructions": [
+        "用例编号保持稳定，并关联验证点和风险；说明优先级及必需、可选的判定条件。",
+        "冒烟测试只检查最小环境；定向、随机、压力和异常测试各自说明目的。"
+      ],
+      "required_source_kinds": [
+        "verification-document:verification-plan",
+        "verification-document:feature-matrix"
+      ]
+    },
+    {
+      "section": "每个用例要验证什么",
+      "instructions": [
+        "逐个用例说明初始条件、寄存器配置、工作模式、激励顺序、DUT 接受输入的条件、预期结果、检查方法、断言和覆盖目标。",
+        "不编造尚不存在的测试类、序列或路径；未实现项标明待实现，并指定负责人。"
+      ],
+      "required_source_kinds": [
+        "design-spec",
+        "verification-document:tb-architecture",
+        "verification-document:reference-model",
+        "verification-document:coverage-plan",
+        "verification-document:assertion-plan"
+      ]
+    },
+    {
+      "section": "运行入口与复现方法",
+      "instructions": [
+        "列出测试入口、编译运行配置、种子选择、超时和结束判断，以及日志、波形和证据文件。",
+        "随机测试失败时保留原种子、配置和版本；重现失败必须使用原条件，不能用新随机运行替代。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "异常、并发、复位与压力场景",
+      "instructions": [
+        "按 DUT 实际功能安排错误中断、非法协议或配置、传输中复位、反压、乱序和 FIFO 或资源极限测试。",
+        "预期行为不明确时列为待确认问题，不凭常识决定 DUT 应如何响应。"
+      ],
+      "required_source_kinds": [
+        "interface-spec",
+        "micro-architecture-spec",
+        "register-spec",
+        "design-spec"
+      ]
+    },
+    {
+      "section": "回归分组、结果与未完成项",
+      "instructions": [
+        "定义冒烟、夜间、完整和定向回归的选择规则、资源和重复策略，不写入未经确认的计算集群或 EDA 配置。",
+        "关联运行清单、结果、失败分析、覆盖数据库和证据记录；文件存在不等于测试通过。"
+      ],
+      "required_source_kinds": [
+        "verification-artifact",
+        "verification-document:coverage-plan"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Testcase contract", "purpose": "定义每个 test 的可执行意图。", "required_columns": ["Test ID", "Feature/Risk", "priority/class", "precondition/config", "stimulus/scenario", "expected checker/oracle", "Assertion/Coverage IDs", "status/owner"]},
-    {"table": "Execution and reproducibility", "purpose": "保证可运行和可复现。", "required_columns": ["Test ID", "entry/sequence", "build/runtime config", "seed", "timeout/end condition", "artifacts/evidence"]},
-    {"table": "Regression mapping", "purpose": "把 test definition 与 batch policy 分开。", "required_columns": ["Test ID", "suite", "selection condition", "repeat/seed policy", "resource constraint", "rerun/triage policy"]}
+    {
+      "table": "用例清单",
+      "purpose": "逐个说明用例的目标和检查要求。",
+      "required_columns": [
+        "用例编号",
+        "验证点与风险",
+        "优先级和类别",
+        "前提与配置",
+        "激励与场景",
+        "预期结果及检查方法",
+        "断言和覆盖项编号",
+        "状态与负责人"
+      ]
+    },
+    {
+      "table": "运行与复现",
+      "purpose": "明确可执行入口和复现条件。",
+      "required_columns": [
+        "用例编号",
+        "入口与序列",
+        "编译运行配置",
+        "随机种子",
+        "超时与结束条件",
+        "结果文件与证据"
+      ]
+    },
+    {
+      "table": "回归安排",
+      "purpose": "将用例定义和批量运行策略分开。",
+      "required_columns": [
+        "用例编号",
+        "回归分组",
+        "选择条件",
+        "重复次数与种子策略",
+        "资源限制",
+        "重跑与失败分析方法"
+      ]
+    }
   ],
-  "domain_rules": ["每个 testcase 有明确 Feature/Risk、precondition、stimulus、expected oracle/checker、coverage/assertion goal 和 end condition。", "test definition 与 execution result 分开；未实现、未运行和失败不能被写成通过。", "随机/压力测试必须可复现，保留 seed、config、revision、timeout 和 artifact identity。", "负向、并发、reset/recovery、backpressure、out-of-order、resource limit 和 CSR/config 场景按 DUT 适用性展开。", "回归 suite 是选择策略，不改变 testcase 的 expected result 或 evidence requirement。"],
-  "cross_document_rules": ["Test expected checks 与 reference model/assertion 一致，coverage goals 与 coverage plan 一致，stimulus/observation path 与 TB architecture 一致。"],
-  "traceability_rules": ["每个 Test ID 追溯 Feature/Requirement、实现入口、suite/manifest、run/test/seed/config 和 typed evidence。"],
-  "review_roles": ["Test owner", "Regression owner", "Checker/Coverage owners"],
-  "review_criteria": ["每个 required feature/risk 有 testcase disposition，且每个 test 可执行、可终止、可判定、可复现。"],
-  "freeze_criteria": ["required tests 的定义、实现状态、suite mapping、expected checks 和 evidence path 绑定当前 revision。"],
-  "change_invalidation_rules": ["Feature/expected behavior、TB path、reference/compare、assertion/coverage goal、test implementation、suite/manifest/config 变化时重审。"]
+  "domain_rules": [
+    "每个用例都有对应验证点或风险，并写清前提、激励、预期结果、检查方法、覆盖和断言目标及结束条件。",
+    "用例定义与执行结果分开记录；未实现、未运行或失败都不能写成通过。",
+    "随机和压力测试必须能复现，保留种子、配置、版本、超时及结果文件信息。",
+    "异常、并发、复位恢复、反压、乱序、资源极限和寄存器配置场景按 DUT 适用性分别安排。",
+    "回归分组只决定运行哪些用例，不改变用例的预期结果或证据要求。"
+  ],
+  "cross_document_rules": [
+    "用例检查与参考模型和断言一致，覆盖目标与覆盖率计划一致，激励及观察路径与环境架构一致。"
+  ],
+  "traceability_rules": [
+    "每个用例关联需求、验证点、实现入口、回归分组和运行清单，并记录种子、配置及证据。"
+  ],
+  "review_roles": [
+    "用例负责人",
+    "回归负责人",
+    "检查器和覆盖率负责人"
+  ],
+  "review_criteria": [
+    "每个必需验证点和风险都有用例安排；每个用例能执行、能结束、能判断结果且可以复现。"
+  ],
+  "freeze_criteria": [
+    "必需用例的定义、实现状态、回归安排、预期检查和证据位置均对应当前版本。"
+  ],
+  "change_invalidation_rules": [
+    "验证点、预期行为、环境路径、参考模型或比较规则、断言覆盖目标、用例实现、回归清单或配置变化时重新评审。"
+  ]
 }

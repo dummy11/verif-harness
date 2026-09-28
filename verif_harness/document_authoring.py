@@ -19,6 +19,49 @@ AUTHORING_DOCUMENT_ORDER = (
     "assertion-plan", "testcase-list",
 )
 
+DOCUMENT_LABELS = dict(zip(AUTHORING_DOCUMENT_ORDER, (
+    "验证文档流程", "验证总计划", "验证点矩阵", "验证环境架构",
+    "参考模型与比较规则", "覆盖率计划", "断言计划", "用例清单",
+)))
+SOURCE_LABELS = {
+    "project-context": "项目配置", "rtl": "RTL 源码",
+    "design-spec": "设计规格", "micro-architecture-spec": "微架构规格",
+    "interface-spec": "接口规格", "register-spec": "寄存器规格",
+    "verification-artifact": "已有验证文档、环境和测试结果",
+}
+DUT_FIELD_LABELS = {
+    "dut_top": "DUT 顶层模块", "hierarchy": "模块层次", "ports": "端口",
+    "interfaces": "接口", "clock_reset": "时钟和复位",
+    "internal_structures": "内部结构", "protocols": "接口协议",
+    "registers": "寄存器", "error_interrupts": "错误处理和中断",
+}
+
+
+def source_label(kind: str) -> str:
+    if kind.startswith("verification-document:"):
+        key = kind.split(":", 1)[1]
+        return DOCUMENT_LABELS.get(key, key)
+    return SOURCE_LABELS.get(kind, kind)
+
+
+def authoring_source_refs(
+    root: Path, manifest: dict[str, Any], sources: list[dict[str, Any]],
+) -> list[str]:
+    """Keep per-file provenance internally; list only RTL directories for readers."""
+    rtl_dirs = []
+    for value in manifest.get("rtl_roots", []):
+        path = _resolve(root, str(value))
+        rtl_dirs.append(path.parent if path.is_file() else path)
+    refs = []
+    for source in sources:
+        path = _resolve(root, str(source["path"]))
+        if source["kind"] == "rtl":
+            directory = next((item for item in rtl_dirs if _within(path, item)), path.parent)
+            refs.append("RTL 目录：" + _display_path(root, directory))
+        else:
+            refs.append(str(source["path"]))
+    return list(dict.fromkeys(refs))
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "verification-doc-authoring"
 PROFILE_ROOT = SKILL_ROOT / "profiles"
@@ -360,7 +403,7 @@ def _parse_top_ports(text: str, top: str) -> tuple[list[dict[str, str]], list[st
     source = _strip_sv_comments(text)
     match = re.search(rf"\bmodule\s+{re.escape(top)}\b", source)
     if match is None:
-        return [], [f"DUT top module {top} 未在登记的 top file 中找到"], False
+        return [], [f"登记的顶层文件中未找到 DUT 顶层模块 {top}"], False
     index = match.end()
     while index < len(source) and source[index].isspace():
         index += 1
@@ -370,7 +413,7 @@ def _parse_top_ports(text: str, top: str) -> tuple[list[dict[str, str]], list[st
             index += 1
         parameter_block = _balanced(source, index)
         if parameter_block is None:
-            return [], [f"DUT top module {top} parameter header 无法解析"], False
+            return [], [f"无法解析 DUT 顶层模块 {top} 的参数声明"], False
         index = parameter_block[1]
     while index < len(source) and source[index].isspace():
         index += 1
@@ -378,7 +421,7 @@ def _parse_top_ports(text: str, top: str) -> tuple[list[dict[str, str]], list[st
         return [], [], True
     port_block = _balanced(source, index)
     if port_block is None:
-        return [], [f"DUT top module {top} port header 无法解析"], False
+        return [], [f"无法解析 DUT 顶层模块 {top} 的端口声明"], False
     ports: list[dict[str, str]] = []
     gaps: list[str] = []
     last_direction: str | None = None
@@ -399,7 +442,7 @@ def _parse_top_ports(text: str, top: str) -> tuple[list[dict[str, str]], list[st
         if bare is not None and last_direction is not None:
             ports.append({"name": bare.group(1), "direction": last_direction, "width": last_width})
         else:
-            gaps.append(f"未解析 top port declaration: {token[:200]}")
+            gaps.append(f"无法解析的顶层端口声明：{token[:200]}")
     return ports, gaps, True
 
 
@@ -515,8 +558,8 @@ def _merge_source_requirements(common: dict[str, Any], profile: dict[str, Any]) 
         merged[f"verification-document:{dependency}"] = {
             "source_kind": f"verification-document:{dependency}",
             "required": True,
-            "purpose": f"继承 {dependency} 已形成的项目级范围、术语、ID 和工程决定。",
-            "selection_rule": "只使用当前 revision 已登记的正文；template-only 或过期内容必须记录为 source gap。",
+            "purpose": f"依据{DOCUMENT_LABELS[dependency]}中已确定的范围、术语、编号和工程决定。",
+            "selection_rule": "只使用当前版本已登记的正文；只有模板或内容已过期时，列为待补充资料。",
         }
     return list(merged.values())
 
@@ -532,7 +575,7 @@ def _dut_scope(
     top_display = _display_path(root, top_path) if top_path is not None else ""
     top_source = source_by_path.get(top_display)
     top_refs = [str(top_source["id"])] if top_source is not None else []
-    top_fact = _fact(top or "unresolved", f"DUT top file: {top_display or 'unresolved'}", top_refs)
+    top_fact = _fact(top or "unresolved", f"DUT 顶层文件：{top_display or '尚未确认'}", top_refs)
     result: dict[str, Any] = {
         "dut_top": top_fact,
         "hierarchy": [], "ports": [], "interfaces": [], "clock_reset": [],
@@ -543,30 +586,31 @@ def _dut_scope(
     if top_path is None or not top_path.is_file() or not top:
         gaps.append({
             "id": "gap:dut-top", "missing_source": "rtl",
-            "impact": "无法把 authoring plan 绑定到明确 DUT top 与顶层接口。",
-            "required_review": "负责人补齐 bootstrap 的 dut top 和 dut top file。",
+            "impact": "尚未确认 DUT 顶层模块和接口，无法确定文档撰写范围。",
+            "required_review": "请负责人补充项目配置中的 DUT 顶层模块名和对应文件。",
             "blocks_document_authoring": True,
         })
         return result, gaps
     text = _read_text(top_path) or ""
     ports, port_gaps, parsed = _parse_top_ports(text, top)
     for port in ports:
-        detail = f"{port['direction']} width={port['width']}"
+        direction = {"input": "输入", "output": "输出", "inout": "双向"}[port["direction"]]
+        detail = f"{direction}端口，位宽：{port['width']}"
         result["ports"].append(_fact(port["name"], detail, top_refs))
         lowered = port["name"].lower()
         if re.search(r"(^|_)(clk|clock|rst|reset)(_|$)", lowered):
             result["clock_reset"].append(_fact(
                 port["name"],
-                f"name-based clock/reset candidate; direction={port['direction']}, width={port['width']}; semantics require spec review",
+                f"名称提示可能是时钟或复位信号；{detail}；具体作用需对照规格确认",
                 top_refs,
             ))
     if not parsed:
-        port_gaps.append("顶层 port 列表未形成可靠解析结果")
+        port_gaps.append("尚未可靠解析顶层端口列表")
     for index, message in enumerate(port_gaps, 1):
         gaps.append({
             "id": f"gap:rtl-port-{index}", "missing_source": "rtl-port-analysis",
             "impact": message,
-            "required_review": "由验证架构负责人对照 RTL 与 Interface Spec 补齐端口语义。",
+            "required_review": "由验证架构负责人对照 RTL 和接口规格补充端口定义。",
             "blocks_document_authoring": False,
         })
 
@@ -588,7 +632,7 @@ def _dut_scope(
         )
         if instance is not None:
             result["hierarchy"].append(_fact(
-                instance.group(1), f"direct child module {module_name}", [*top_refs, source_id],
+                instance.group(1), f"直接实例化的子模块：{module_name}", [*top_refs, source_id],
             ))
 
     categorized: dict[str, set[tuple[str, str, str]]] = {
@@ -619,7 +663,7 @@ def _dut_scope(
                 categorized[target].add((name, statement, str(source["id"])))
     for target, values in categorized.items():
         result[target].extend(
-            _fact(name, f"explicit source statement: {statement}", [source_id])
+            _fact(name, f"资料原文：{statement}", [source_id])
             for name, statement, source_id in sorted(values)
         )
     return result, gaps
@@ -630,7 +674,7 @@ def _gap_for_requirement(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": "gap:source:" + re.sub(r"[^a-z0-9]+", "-", source_kind.lower()).strip("-"),
         "missing_source": source_kind,
-        "impact": f"当前项目没有可用的 {source_kind}，无法把相关撰写指令绑定到项目事实。",
+        "impact": f"当前项目缺少可用的{source_label(source_kind)}，相关内容需要补充依据后才能确定。",
         "required_review": (
             "负责人补充来源，或明确记录该来源对当前 DUT 不适用及替代依据；Agent 不得补写不存在的事实。"
         ),
@@ -642,8 +686,8 @@ def _gap_for_dut_fact(field: str, blocking: bool = False) -> dict[str, Any]:
     return {
         "id": f"gap:dut-fact:{field.replace('_', '-')}",
         "missing_source": f"dut-scope.{field}",
-        "impact": f"当前来源尚未形成 DUT-specific {field} 事实，相关章节只能保留待确认项。",
-        "required_review": "由 DV/Design/Interface owner 对照 RTL 与对应规格补齐或确认不适用。",
+        "impact": f"现有资料尚不能确定当前 DUT 的{DUT_FIELD_LABELS[field]}，相关章节需保留待确认项。",
+        "required_review": "由验证、设计或接口负责人对照 RTL 和规格补充说明，或确认该项不适用。",
         "blocks_document_authoring": blocking,
     }
 
@@ -750,8 +794,7 @@ def build_authoring_proposal(
                 *common["change_invalidation_rules"], *profile["change_invalidation_rules"],
             ],
         }
-        source_refs = [str(item["path"]) for item in relevant_sources]
-        source_refs.extend(str(item["id"]) for item in contract["source_gaps"])
+        source_refs = authoring_source_refs(root, manifest, relevant_sources)
         nodes.append({
             "key": profile["node_key"],
             "title": profile["title"],
@@ -759,36 +802,36 @@ def build_authoring_proposal(
             "parent_key": key,
             "document_key": key,
             "required": True,
-            "statement": f"为当前 DUT 定义 {profile['filename']} 的项目级撰写方法、结构、表格、追溯和签核约束。",
+            "statement": f"说明当前 DUT 的{DOCUMENT_LABELS[key]}要写哪些内容、依据哪些资料，以及如何检查正文是否完整。",
             "purpose": profile["purpose"],
             "scope": [
-                f"DUT top: {dut_scope['dut_top']['name']}",
+                f"DUT 顶层模块：{dut_scope['dut_top']['name'] if dut_scope['dut_top']['name'] != 'unresolved' else '尚未确认'}",
                 *[str(item["purpose"]) for item in sections],
             ],
             "acceptance_criteria": [
-                "来源快照绑定真实文件与 SHA-256；缺失或冲突的信息已进入 source_gaps",
-                "DUT scope、章节级指令、required tables、领域规则、追溯和变更失效规则完整",
+                "已记录实际输入文件及其版本；缺失或相互矛盾的资料已列为待确认项",
+                "已写清验证范围、各章内容、所需表格、检查要求、来源，以及变更后需要重新检查的内容",
                 "节点只定义如何撰写，不包含最终正文、正文验收或验证通过结论",
             ],
-            "source_refs": source_refs or ["gap:source:no-usable-source"],
+            "source_refs": source_refs or ["尚未登记可用输入资料，需要负责人补充"],
             "work_content": [
                 *[f"{item['section']}: {item['purpose']}" for item in sections],
-                *[f"领域规则: {item}" for item in profile["domain_rules"]],
+                *profile["domain_rules"],
             ],
             "implementation_approach": list(contract["rtl_spec_analysis_method"]),
             "deliverables": [
-                f"结构化 {profile['node_key']} authoring node",
-                f"供后续 {profile['filename']} 正文节点使用的 {AUTHORING_CONTRACT_SCHEMA}",
+                f"{DOCUMENT_LABELS[key]}的撰写方案",
+                f"撰写 {profile['filename']} 所需的章节安排、输入依据和检查要求",
             ],
             "progress_measures": [{
                 "id": f"{profile['node_key']}-reviewed",
-                "label": f"已审批的 {profile['filename']} 撰写合同",
-                "unit": "authoring contract", "target": "1",
+                "label": f"{DOCUMENT_LABELS[key]}撰写方案已获负责人批准",
+                "unit": "份方案", "target": "1",
                 "source": AUTHORING_CONTRACT_SCHEMA,
             }],
             "quality_checks": [
                 *contract["review"]["criteria"],
-                "不存在没有 source ref 的 DUT 事实，也不把 source gap 改写成确定语义",
+                "有关 DUT 的结论均有出处；无法确认的内容保留为问题，不写成已确定的事实",
             ],
             "suggested_mode": "review",
             "evidence_claim": "document-review",

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +11,7 @@ from pathlib import Path
 from verif_harness.document_authoring import (
     AUTHORING_CONTRACT_SCHEMA,
     AUTHORING_DOCUMENT_ORDER,
+    authoring_source_refs,
     load_authoring_profiles,
 )
 from verif_harness.store import ProjectStore, VDOC_DOCUMENTS
@@ -155,7 +158,7 @@ endmodule
         )
         self.assertEqual(
             {(item["name"], item["detail"]) for item in contract["dut_scope"]["hierarchy"]},
-            {("u_child", "direct child module child")},
+            {("u_child", "直接实例化的子模块：child")},
         )
         self.assertTrue(any(
             item["name"].upper() == "INTF-001"
@@ -165,12 +168,64 @@ endmodule
             item["name"].upper() == "CSR-001"
             for item in contract["dut_scope"]["registers"]
         ))
-        joined_rules = " ".join(contract["domain_rules"]).lower()
+        joined_rules = " ".join(contract["domain_rules"])
         for required in (
-            "temporal", "invariant", "assert/assume/cover", "sim/formal",
-            "vacuity", "activation", "x/illegal",
+            "时序", "状态约束", "检查设计、约束环境还是统计场景", "仿真还是形式验证",
+            "触发条件出现过", "条件始终未满足而直接通过", "未知值", "审批记录",
         ):
             self.assertIn(required, joined_rules)
+
+    def test_all_eight_plans_use_readable_instructions_and_rtl_directories(self) -> None:
+        proposal = self.authoring_proposal()
+        self.assertEqual(len(proposal["nodes"]), 8)
+        for node in proposal["nodes"]:
+            with self.subTest(document=node["document_key"]):
+                self.assertIn("RTL 目录：rtl", node["source_refs"])
+                self.assertNotIn("rtl/dut.sv", node["source_refs"])
+                self.assertIn("specs/design_spec.md", node["source_refs"])
+                self.assertIn("tb/tb_top.sv", node["source_refs"])
+                self.assertEqual(len(node["source_refs"]), len(set(node["source_refs"])))
+                self.assertFalse(any(ref.startswith("gap:") for ref in node["source_refs"]))
+                content = json.dumps({key: node[key] for key in (
+                    "title", "statement", "purpose", "scope", "work_content",
+                    "implementation_approach", "acceptance_criteria", "quality_checks", "deliverables",
+                )}, ensure_ascii=False)
+                for jargon in (
+                    "authoring node", "source gap", "source inventory", "required tables",
+                    "property intent", "source anchor", "撰写合同", "领域规则",
+                    "DUT-specific", "fabricate", "unresolved/", "verification artifacts",
+                ):
+                    self.assertNotIn(jargon.lower(), content.lower())
+                snapshots = node["authoring_contract"]["source_snapshot"]
+                self.assertTrue(any(s["path"] == "rtl/dut.sv" and len(s["sha256"]) == 64 for s in snapshots))
+                if node["document_key"] != "verification-workflow":
+                    self.assertTrue(any(
+                        gap["id"] == "gap:dut-fact:interfaces"
+                        for gap in node["authoring_contract"]["source_gaps"]
+                    ))
+
+    def test_rtl_input_directories_preserve_external_and_file_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            external = Path(temporary)
+            (external / "top.sv").write_text("module top; endmodule\n")
+            manifest = {"rtl_roots": ["rtl", str(external / "top.sv")]}
+            refs = authoring_source_refs(self.root, manifest, [
+                {"kind": "rtl", "path": "rtl/dut.sv"},
+                {"kind": "rtl", "path": "rtl/child/child.sv"},
+                {"kind": "rtl", "path": str(external / "top.sv")},
+                {"kind": "verification-testbench", "path": "tb/tb_top.sv"},
+            ])
+            self.assertEqual(refs, ["RTL 目录：rtl", f"RTL 目录：{external.resolve()}", "tb/tb_top.sv"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js required for Dashboard renderer checks")
+    def test_all_eight_plans_render_without_internal_jargon(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            ["node", str(repo / "tests/dashboard_authoring.cjs")],
+            input=json.dumps(self.authoring_proposal(), ensure_ascii=False),
+            text=True, capture_output=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_specs_are_explicit_gaps_not_fabricated_facts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

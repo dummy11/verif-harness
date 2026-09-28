@@ -4,34 +4,166 @@
   "filename": "feature_matrix.md",
   "node_key": "feature_matrix_authoring",
   "title": "验证点矩阵撰写方案",
-  "purpose": "把当前 DUT requirements 分解为稳定、可判定、可追溯的 verification features 和闭环映射。",
-  "dependencies": ["verification-plan"],
+  "purpose": "把当前 DUT 的需求拆成可独立检查的验证点，说明每一点用什么测试、如何判断对错，以及怎样证明已完成。",
+  "dependencies": [
+    "verification-plan"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "Feature 分解与 ID 规则", "purpose": "定义 requirement-to-feature decomposition 和稳定 ID。", "required": true},
-    {"section": "功能、边界与异常验证点", "purpose": "覆盖 normal/boundary/error/reset/config/concurrency 场景。", "required": true},
-    {"section": "可控性、可观察性与 Oracle", "purpose": "说明 stimulus reachability、观察点和判定方法。", "required": true},
-    {"section": "检查、覆盖、用例与证据映射", "purpose": "建立 feature 到 assertion/coverage/test/reference/evidence 的闭环。", "required": true},
-    {"section": "未闭合关系与处置", "purpose": "记录 defer/not-applicable/gap/waiver candidate。", "required": true}
+    {
+      "section": "验证点划分与编号",
+      "purpose": "说明怎样把需求拆成验证点，并为每一点保留稳定编号。",
+      "required": true
+    },
+    {
+      "section": "功能、边界与异常场景",
+      "purpose": "列出正常、边界、错误、复位、配置和并发情况下需要验证的行为。",
+      "required": true
+    },
+    {
+      "section": "如何产生场景和检查结果",
+      "purpose": "说明激励入口、设计接受输入的位置、结果观察位置及判断依据。",
+      "required": true
+    },
+    {
+      "section": "检查、覆盖、用例与证据对应关系",
+      "purpose": "列出各验证点对应的检查方法、覆盖项、用例和测试证据。",
+      "required": true
+    },
+    {
+      "section": "遗漏项与处理安排",
+      "purpose": "记录尚未完成、暂缓、不适用或需要申请豁免的内容。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "Feature 分解与 ID 规则", "instructions": ["每个 Feature ID 对应一个可判定行为或约束，不把整个 block 写成一个 feature。", "同一 requirement 的 mode/reset/error variants 使用明确 parent/variant 关系。"], "required_source_kinds": ["design-spec", "verification-document:verification-plan"]},
-    {"section": "功能、边界与异常验证点", "instructions": ["从接口、FSM/FIFO/pipeline/resource、CSR/config、error/interrupt 和 reset 提取正向与负向场景。", "对未定义行为保留 open question，不自行给出 expected result。"], "required_source_kinds": ["rtl", "micro-architecture-spec", "interface-spec", "register-spec"]},
-    {"section": "可控性、可观察性与 Oracle", "instructions": ["为每个 feature 写 stimulus entry、DUT acceptance point、observation point 和 expected oracle。", "标出需要 internal observation、reference model、scoreboard 或 assertion 的原因。"], "required_source_kinds": ["rtl", "verification-artifact"]},
-    {"section": "检查、覆盖、用例与证据映射", "instructions": ["使用稳定 Checker/Assertion/Coverage/Test/Evidence ID；未设计项明确为 gap。", "禁止用空占位 ID 或文件存在表示已实现/已覆盖。"], "required_source_kinds": ["verification-artifact"]},
-    {"section": "未闭合关系与处置", "instructions": ["每个 gap 写 impact、owner、target document/workstream 和 review trigger。", "not-applicable 必须有规格或负责人依据。"], "required_source_kinds": ["project-context", "design-spec"]}
+    {
+      "section": "验证点划分与编号",
+      "instructions": [
+        "每个验证点对应一个可判断对错的行为或约束，不把整个模块笼统写成一个验证点。",
+        "同一需求在不同模式、复位和错误条件下的验证点，要说明相互关系。"
+      ],
+      "required_source_kinds": [
+        "design-spec",
+        "verification-document:verification-plan"
+      ]
+    },
+    {
+      "section": "功能、边界与异常场景",
+      "instructions": [
+        "根据接口、状态机、FIFO、流水线、资源限制、寄存器配置、错误、中断和复位规则安排正常及异常场景。",
+        "规格未定义的行为保留为问题，不自行填写预期结果。"
+      ],
+      "required_source_kinds": [
+        "rtl",
+        "micro-architecture-spec",
+        "interface-spec",
+        "register-spec"
+      ]
+    },
+    {
+      "section": "如何产生场景和检查结果",
+      "instructions": [
+        "每个验证点写明如何施加激励、DUT 何时接受输入、在哪里观察结果以及预期结果来源。",
+        "需要观察内部信号或使用参考模型、结果比较器、断言时，说明原因。"
+      ],
+      "required_source_kinds": [
+        "rtl",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "检查、覆盖、用例与证据对应关系",
+      "instructions": [
+        "使用一致的检查器、断言、覆盖项、用例和证据编号；尚未设计的部分明确列出。",
+        "不得用占位编号或文件存在表示已经实现或覆盖。"
+      ],
+      "required_source_kinds": [
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "遗漏项与处理安排",
+      "instructions": [
+        "每个遗漏项说明影响、负责人、对应文档或工作流，以及重新评审条件。",
+        "标为不适用时，必须给出规格依据或负责人决定。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "design-spec"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Feature inventory", "purpose": "形成稳定验证点事实表。", "required_columns": ["Feature ID", "behavior/expected", "source anchor", "scenario class", "priority", "scope status"]},
-    {"table": "闭环映射", "purpose": "表达 requirement 到 evidence 的路径。", "required_columns": ["Feature ID", "stimulus", "checker/assertion", "coverage", "test", "evidence"]},
-    {"table": "Gap disposition", "purpose": "防止静默遗漏。", "required_columns": ["Feature/edge", "missing item", "impact", "owner", "disposition", "review trigger"]}
+    {
+      "table": "验证点清单",
+      "purpose": "列出每个可检查的行为和预期结果。",
+      "required_columns": [
+        "验证点编号",
+        "行为与预期结果",
+        "规格出处",
+        "场景类别",
+        "优先级",
+        "是否纳入本轮验证"
+      ]
+    },
+    {
+      "table": "验证点与测试证据",
+      "purpose": "说明每个验证点如何验证及提供证据。",
+      "required_columns": [
+        "验证点编号",
+        "激励",
+        "检查器或断言",
+        "覆盖项",
+        "用例",
+        "测试证据"
+      ]
+    },
+    {
+      "table": "遗漏项与处理安排",
+      "purpose": "明确还有什么没有安排以及由谁处理。",
+      "required_columns": [
+        "验证点或对应关系",
+        "缺少内容",
+        "影响",
+        "负责人",
+        "处理方式",
+        "重审条件"
+      ]
+    }
   ],
-  "domain_rules": ["Feature 必须可判定、可追溯、可分配验证责任；不得只复述章节标题。", "normal、boundary、illegal/error、concurrency、reset/recovery、configuration variants 分开建模。", "RTL observation 只用于发现实现对象或差异，不能代替 spec expected behavior。", "每个 required feature 都必须有闭环映射或显式 gap/disposition。"],
-  "cross_document_rules": ["Feature ID 是 assertion、coverage、testcase、reference model 和 regression evidence 的共同 join key。"],
-  "traceability_rules": ["每个 Feature ID 至少有一个 requirement/source anchor，并关联所有适用验证手段。"],
-  "review_roles": ["Feature owner", "Checker/Coverage/Test owners"],
-  "review_criteria": ["当前 DUT 的功能、边界、错误、并发、reset 和配置行为没有被大粒度 feature 隐藏。"],
-  "freeze_criteria": ["所有 required features 有当前 disposition 和闭环路径。"],
-  "change_invalidation_rules": ["Requirement、feature semantics、interface/mode/reset/error behavior 或任何映射边变化时重审受影响 rows。"]
+  "domain_rules": [
+    "每个验证点必须能判断对错、找到需求出处，并分配检查责任，不能只重复章节标题。",
+    "正常、边界、非法或错误、并发、复位恢复及不同配置的场景分别列出。",
+    "RTL 分析用于查明实现和发现差异，不能替代规格规定的预期行为。",
+    "每个必需验证点都要有测试和证据安排；尚未安排的部分必须明确列出并说明处理方式。"
+  ],
+  "cross_document_rules": [
+    "断言、覆盖项、用例、参考模型检查和回归证据通过同一验证点编号关联。"
+  ],
+  "traceability_rules": [
+    "每个验证点至少保留一项需求或规格出处，并关联所有适用检查方法。"
+  ],
+  "review_roles": [
+    "验证点负责人",
+    "检查器、覆盖率和用例负责人"
+  ],
+  "review_criteria": [
+    "功能、边界、错误、并发、复位和配置行为均有明确验证点，没有被过于笼统的条目遗漏。"
+  ],
+  "freeze_criteria": [
+    "所有必需验证点均有当前处理结论和对应测试证据。"
+  ],
+  "change_invalidation_rules": [
+    "需求、验证点含义、接口、模式、复位、错误行为或验证对应关系变化时，重新评审受影响条目。"
+  ]
 }

@@ -1922,6 +1922,44 @@
       return (items || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || `<li>${escapeHtml(empty)}</li>`;
     }
 
+    function writingPlanSources(n) {
+      // Older plans retain their original file identities and approval digests.
+      // Only this read-only list is condensed to RTL directories.
+      const project = state.snapshot?.project || {};
+      const normalize = value => {
+        const parts = String(value).replaceAll('\\', '/').split('/');
+        const result = [];
+        for (const part of parts) {
+          if (part === '.' || !part) continue;
+          if (part === '..' && result.length && result.at(-1) !== '..') result.pop();
+          else result.push(part);
+        }
+        return (String(value).startsWith('/') ? '/' : '') + result.join('/');
+      };
+      const absolute = value => normalize(String(value).startsWith('/') || !project.root ? value : `${project.root}/${value}`);
+      const isRtlFile = value => /\.(?:svh?|vh?|vhdl?)$/i.test(value);
+      const parent = value => value.includes('/') ? value.slice(0, value.lastIndexOf('/')) || '/' : '.';
+      const roots = (project.rtl_roots || []).map(value => {
+        const path = absolute(value);
+        return isRtlFile(path) ? parent(path) : path;
+      });
+      const sources = new Map((n.authoring_contract?.source_snapshot || []).map(item => [item.path, item.kind]));
+      const result = (n.source_refs || []).map(ref => {
+        if (ref.startsWith('RTL 目录：')) return ref;
+        if (ref.startsWith('gap:')) return null; // Listed under pending source questions, not inputs.
+        const path = ref.replace(/^file:/, '').split('#')[0];
+        const kind = sources.get(path);
+        if (kind !== 'rtl' && (kind || !isRtlFile(path))) return ref;
+        const full = absolute(path);
+        let directory = roots.find(root => full.startsWith(root + '/')) || parent(full);
+        const base = normalize(project.root || '');
+        if (base && directory.startsWith(base + '/')) directory = directory.slice(base.length + 1);
+        if (base && directory === base) directory = '.';
+        return `RTL 目录：${directory}`;
+      }).filter(Boolean);
+      return [...new Set(result)];
+    }
+
     function workstreamPlanSnapshotHtml(w) {
       const planNodes = w.workstream === 'VDOC'
         ? (w.nodes || []).filter(n => n.plan_review)
@@ -1935,7 +1973,7 @@
           ? `<button class="btn primary" data-open-node="${escapeHtml(n.id)}">打开工作节点审批</button>`
           : '';
         const details = w.workstream === 'VDOC'
-          ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul><strong>交付对象</strong><ul>${planListHtml(n.deliverables)}</ul>`
+          ? `<strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>输入依据</strong><ul>${planListHtml(writingPlanSources(n))}</ul><strong>范围</strong><ul>${planListHtml(n.scope)}</ul>`
           : `<strong>工作范围</strong><ul>${planListHtml(n.scope)}</ul><strong>具体工作</strong><ul>${planListHtml(n.work_content)}</ul><strong>实现方式</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>交付内容</strong><ul>${planListHtml(n.deliverables)}</ul><strong>完成条件</strong><ul>${planListHtml(n.acceptance_criteria, '尚未登记完成条件')}</ul>`;
         return `<details class="detail-group"><summary>${escapeHtml(humanText(n.title))}${n.required ? '' : '（可选）'} ${reviewStatus}</summary><div class="detail-group-body"><div class="detail-card"><dl class="kv"><dt>要达到什么</dt><dd>${escapeHtml(humanText(n.statement || '未登记具体目标'))}</dd><dt>节点类型</dt><dd>${escapeHtml(roleLabel(n.role))}</dd></dl>${document}${details}<div class="page-actions" style="margin-top:12px">${reviewAction}</div></div></div></details>`;
       }).join('') || '<div class="card empty">尚未根据当前 DUT、规格和验证目标形成方案工作节点，不能据此开始工作。请先由 Agent 完成验证对象分解。</div>';
@@ -2350,40 +2388,57 @@
         ...(NODE_ROLE_PROFILES[n.role] || {}),
       };
     }
+    function authoringLabel(value) {
+      const labels = {
+        'verification-workflow':'验证文档流程', 'verification-plan':'验证总计划',
+        'feature-matrix':'验证点矩阵', 'tb-architecture':'验证环境架构',
+        'reference-model':'参考模型与比较规则', 'coverage-plan':'覆盖率计划',
+        'assertion-plan':'断言计划', 'testcase-list':'用例清单',
+        'project-context':'项目配置', 'rtl':'RTL 源码', 'design-spec':'设计规格',
+        'micro-architecture-spec':'微架构规格', 'interface-spec':'接口规格',
+        'register-spec':'寄存器规格', 'verification-artifact':'已有验证文档、环境和测试结果',
+        'dut_top':'DUT 顶层模块', 'hierarchy':'模块层次', 'ports':'端口',
+        'interfaces':'接口', 'clock_reset':'时钟和复位', 'internal_structures':'内部结构',
+        'protocols':'接口协议', 'registers':'寄存器', 'error_interrupts':'错误处理和中断',
+        'rtl-port-analysis':'顶层端口分析',
+      };
+      const key = String(value || '').replace(/^verification-document:|^dut-scope\./, '');
+      return labels[key] || key;
+    }
     function verificationDocAuthoringContractHtml(n) {
       const contract = n.authoring_contract;
       if (!contract || contract.schema !== 'VerificationDocumentAuthoringContract/1') return '';
       const sourceRequirements = (contract.source_requirements || []).map(item =>
-        `${item.source_kind}${item.required ? '（必需）' : '（可选）'}：${item.purpose}；选择规则：${item.selection_rule}`
+        `${authoringLabel(item.source_kind)}${item.required ? '（必需）' : '（可选）'}：${item.purpose}；选择规则：${item.selection_rule}`
       );
       const sourceSnapshot = (contract.source_snapshot || []).map(item =>
         `${item.kind} · ${item.path} · ${item.status} · SHA-256 ${item.sha256}`
       );
       const sourceGaps = (contract.source_gaps || []).map(item =>
-        `${item.missing_source}${item.blocks_document_authoring ? '（阻塞正文）' : '（需评审）'}：${item.impact}；处理：${item.required_review}`
+        `${authoringLabel(item.missing_source)}${item.blocks_document_authoring ? '（阻塞正文）' : '（需评审）'}：${item.impact}；处理：${item.required_review}`
       );
       const structure = (contract.document_structure || []).map(item =>
         `${item.section}${item.required ? '（必需）' : '（可选）'}：${item.purpose}`
       );
       const sectionInstructions = (contract.section_authoring_instructions || []).map(item =>
-        `${item.section}：${(item.instructions || []).join('；')}；输入 ${(item.required_source_kinds || []).join('、')}`
+        `${item.section}：${(item.instructions || []).join('；')}；输入 ${(item.required_source_kinds || []).map(authoringLabel).join('、')}`
       );
       const tables = (contract.required_tables || []).map(item =>
         `${item.table}：${item.purpose}；列 ${(item.required_columns || []).join('、')}`
       );
       const dutFacts = Object.entries(contract.dut_scope || {}).flatMap(([kind, value]) => {
         const items = Array.isArray(value) ? value : value ? [value] : [];
-        return items.map(item => `${kind} · ${item.name}：${item.detail}`);
+        return items.map(item => `${authoringLabel(kind)} · ${item.name}：${item.detail}`);
       });
       const dependencies = (contract.document_dependencies || []).map(item =>
-        `先完成并保持有效：${item}`
+        `先完成并保持有效：${authoringLabel(item)}`
       );
-      return `<details class="detail-group"><summary>查看工业级文档撰写合同</summary><div class="detail-group-body"><dl class="kv"><dt>Profile</dt><dd>${escapeHtml(contract.profile?.document_key || '未登记')}</dd><dt>目标文件</dt><dd class="mono">${escapeHtml(contract.profile?.filename || '未登记')}</dd><dt>结构化合同</dt><dd class="mono">${escapeHtml(contract.schema)}</dd></dl><strong>来源要求</strong><ul>${planListHtml(sourceRequirements)}</ul><strong>来源快照</strong><ul>${planListHtml(sourceSnapshot)}</ul><strong>来源缺口与待评审项</strong><ul>${planListHtml(sourceGaps, '当前未登记来源缺口')}</ul><strong>DUT-specific 范围</strong><ul>${planListHtml(dutFacts)}</ul><strong>RTL/spec 分析方法</strong><ul>${planListHtml(contract.rtl_spec_analysis_method)}</ul><strong>文档依赖</strong><ul>${planListHtml(dependencies, '无上游文档依赖')}</ul><strong>文档结构</strong><ul>${planListHtml(structure)}</ul><strong>逐节撰写指令</strong><ul>${planListHtml(sectionInstructions)}</ul><strong>必需表格</strong><ul>${planListHtml(tables)}</ul><strong>领域规则</strong><ul>${planListHtml(contract.domain_rules)}</ul><strong>跨文档一致性</strong><ul>${planListHtml(contract.cross_document_consistency_rules)}</ul><strong>追溯要求</strong><ul>${planListHtml(contract.traceability_requirements)}</ul><strong>评审角色</strong><ul>${planListHtml(contract.review?.roles)}</ul><strong>方案评审条件</strong><ul>${planListHtml(contract.review?.criteria)}</ul><strong>后续正文冻结条件</strong><ul>${planListHtml(contract.freeze?.criteria)}</ul><strong>变更失效规则</strong><ul>${planListHtml(contract.change_invalidation_rules)}</ul></div></details>`;
+      return `<details class="detail-group"><summary>查看详细撰写要求</summary><div class="detail-group-body"><dl class="kv"><dt>文档类型</dt><dd>${escapeHtml(authoringLabel(contract.profile?.document_key || '未登记'))}</dd><dt>目标文件</dt><dd class="mono">${escapeHtml(contract.profile?.filename || '未登记')}</dd></dl><strong>来源要求</strong><ul>${planListHtml(sourceRequirements)}</ul><details><summary>查看输入文件版本记录</summary><div class="detail-group-body"><p class="mono">${escapeHtml(contract.schema)}</p><ul>${planListHtml(sourceSnapshot)}</ul></div></details><strong>缺少的资料与待确认问题</strong><ul>${planListHtml(sourceGaps, '当前没有登记待补充资料')}</ul><strong>当前 DUT 的已知信息</strong><ul>${planListHtml(dutFacts)}</ul><strong>RTL 与规格分析方法</strong><ul>${planListHtml(contract.rtl_spec_analysis_method)}</ul><strong>文档依赖</strong><ul>${planListHtml(dependencies, '无上游文档依赖')}</ul><strong>文档结构</strong><ul>${planListHtml(structure)}</ul><strong>各章撰写方法</strong><ul>${planListHtml(sectionInstructions)}</ul><strong>需要填写的表格</strong><ul>${planListHtml(tables)}</ul><strong>具体检查要求</strong><ul>${planListHtml(contract.domain_rules)}</ul><strong>与其他文档的核对要求</strong><ul>${planListHtml(contract.cross_document_consistency_rules)}</ul><strong>需求、实现和测试结果的对应关系</strong><ul>${planListHtml(contract.traceability_requirements)}</ul><strong>参与评审的负责人</strong><ul>${planListHtml(contract.review?.roles)}</ul><strong>方案评审条件</strong><ul>${planListHtml(contract.review?.criteria)}</ul><strong>后续正文冻结条件</strong><ul>${planListHtml(contract.freeze?.criteria)}</ul><strong>变更后的重新检查要求</strong><ul>${planListHtml(contract.change_invalidation_rules)}</ul></div></details>`;
     }
     function nodeRolePanelHtml(n) {
       const profile = nodeRoleProfile(n);
       if (n.role === 'document-writing-plan') {
-        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>预计正文交付</strong><ul>${planListHtml(n.deliverables)}</ul><strong>方案质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记方案质量检查')}</ul>${verificationDocAuthoringContractHtml(n)}</div></section>`;
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul><strong>输入依据</strong><ul>${planListHtml(writingPlanSources(n))}</ul>${verificationDocAuthoringContractHtml(n)}</div></section>`;
       }
       if (n.role === 'document-deliverable') {
         return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>正文内容验收范围</h3><div class="notice"><strong>默认每份文档对应一个正文验收节点。</strong> 只有已批准的撰写方案明确拆分时，才按独立正文内容分别验收。</div><div class="detail-card"><dl class="kv"><dt>验收用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>正文版本</dt><dd>${n.document?.semantic_revision || '未登记'}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review?.status || 'PENDING')}</dd></dl><strong>本节点验收的正文内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>内容验收标准</strong><ul>${planListHtml(n.acceptance_criteria)}</ul><strong>正文位置或来源依据</strong><ul>${planListHtml(n.source_refs)}</ul><strong>本节点验收输出</strong><ul>${planListHtml(n.deliverables)}</ul><strong>正文质量检查</strong><ul>${planListHtml(n.quality_checks, '尚未登记正文质量检查')}</ul></div></section>`;

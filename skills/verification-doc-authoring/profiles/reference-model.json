@@ -4,34 +4,171 @@
   "filename": "reference_model_spec.md",
   "node_key": "reference_model_authoring",
   "title": "参考模型接入与比较规则撰写方案",
-  "purpose": "定义当前 DUT reference model 的适用范围、数据/状态/数值语义、同步对齐、compare policy 和独立可信度验证。",
-  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture"],
+  "purpose": "说明参考模型能检查当前 DUT 的哪些行为，怎样处理数据、状态和数值结果，如何与 DUT 对齐，以及怎样验证模型本身可靠。",
+  "dependencies": [
+    "verification-plan",
+    "feature-matrix",
+    "tb-architecture"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "模型目标、来源与适用范围", "purpose": "定义 golden/reference 身份、版本、抽象级别与 unsupported scope。", "required": true},
-    {"section": "输入、配置、状态与输出语义", "purpose": "定义 transaction/config/state transfer 和 reset/flush。", "required": true},
-    {"section": "数值、格式与异常规则", "purpose": "定义 precision/rounding/saturation/overflow/X/invalid/error。", "required": true},
-    {"section": "时间、顺序与对齐", "purpose": "定义 latency/order/tag/queue/buffer/flush 和 compare window。", "required": true},
-    {"section": "API、adapter、compare 与模型验证", "purpose": "定义接口合同、mismatch 诊断和模型自身可信度。", "required": true}
+    {
+      "section": "模型目标、来源与适用范围",
+      "purpose": "明确参考模型的来源、版本、抽象层次和不支持的功能。",
+      "required": true
+    },
+    {
+      "section": "输入、配置、状态与输出",
+      "purpose": "说明 DUT 的事务和配置如何传给模型，以及复位、清空如何影响状态。",
+      "required": true
+    },
+    {
+      "section": "数值、数据格式与异常处理",
+      "purpose": "规定精度、舍入、饱和、溢出、未知值、无效输入和错误处理。",
+      "required": true
+    },
+    {
+      "section": "时序、顺序与结果对齐",
+      "purpose": "说明延迟、事务编号、队列、清空操作和比较时机。",
+      "required": true
+    },
+    {
+      "section": "接口接入、结果比较与模型自检",
+      "purpose": "说明接入方式、不一致时的诊断，以及模型可靠性的独立检查。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "模型目标、来源与适用范围", "instructions": ["记录模型 source/version/owner/license/build/run identity 和 supported features。", "区分 transaction-level、cycle-aware、bit-accurate 和 approximate；无来源不得自行选择。"], "required_source_kinds": ["project-context", "design-spec", "verification-document:verification-plan", "verification-document:feature-matrix"]},
-    {"section": "输入、配置、状态与输出语义", "instructions": ["逐字段映射 DUT transaction/CSR/config 到模型 API，并写 source anchor。", "定义 state initialization、reset、flush、warm-up、multi-context 和 side effect。"], "required_source_kinds": ["interface-spec", "register-spec", "micro-architecture-spec"]},
-    {"section": "数值、格式与异常规则", "instructions": ["明确 width/signedness/endian/layout/quantization/rounding/saturation/overflow/mask。", "错误、invalid、NaN/X/Z、unsupported input 的 expected handling 必须有来源。"], "required_source_kinds": ["design-spec", "register-spec"]},
-    {"section": "时间、顺序与对齐", "instructions": ["定义 input acceptance、expected production、actual observation、tag/sequence/order 与 compare time。", "可变 latency、out-of-order、drop/flush/backpressure 不得用固定 FIFO 假设掩盖。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "verification-document:tb-architecture"]},
-    {"section": "API、adapter、compare 与模型验证", "instructions": ["定义 adapter ownership、错误返回、determinism、version logging 和 replay。", "设计 independent vectors/metamorphic/cross-model checks，避免 DUT 与模型共享同一错误假设。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+    {
+      "section": "模型目标、来源与适用范围",
+      "instructions": [
+        "记录模型来源、版本、负责人、许可、构建和运行信息，以及支持的功能。",
+        "说明模型是事务级、反映周期时序、逐位精确还是近似计算；必须有依据，不能自行选择。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "design-spec",
+        "verification-document:verification-plan",
+        "verification-document:feature-matrix"
+      ]
+    },
+    {
+      "section": "输入、配置、状态与输出",
+      "instructions": [
+        "逐字段对应 DUT 事务、寄存器配置与模型接口，并注明出处。",
+        "说明初始化、复位、清空、预热、多上下文和读写副作用的处理。"
+      ],
+      "required_source_kinds": [
+        "interface-spec",
+        "register-spec",
+        "micro-architecture-spec"
+      ]
+    },
+    {
+      "section": "数值、数据格式与异常处理",
+      "instructions": [
+        "写清位宽、符号、字节序、数据布局、量化、舍入、饱和、溢出和掩码规则。",
+        "错误、无效输入、非数值、X/Z 未知或高阻值及不支持输入的处理必须有依据。"
+      ],
+      "required_source_kinds": [
+        "design-spec",
+        "register-spec"
+      ]
+    },
+    {
+      "section": "时序、顺序与结果对齐",
+      "instructions": [
+        "写清输入接受、模型产生预期结果、DUT 输出观察和比较的时机，以及编号和顺序对应方法。",
+        "可变延迟、乱序、丢弃、清空和反压必须明确处理，不能一律假设先入先出。"
+      ],
+      "required_source_kinds": [
+        "interface-spec",
+        "micro-architecture-spec",
+        "verification-document:tb-architecture"
+      ]
+    },
+    {
+      "section": "接口接入、结果比较与模型自检",
+      "instructions": [
+        "明确适配代码负责人、错误返回、结果确定性、版本记录和复现方法。",
+        "使用独立测试向量、输入变换后的结果关系或多个模型交叉检查，避免模型与 DUT 采用同一错误假设。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Support matrix", "purpose": "限定模型适用性。", "required_columns": ["Feature/operation", "model support", "abstraction/accuracy", "unsupported disposition", "source"]},
-    {"table": "I/O and state mapping", "purpose": "固定 DUT/model 语义转换。", "required_columns": ["DUT field/event", "model field/API", "format", "config/state", "reset/flush", "source"]},
-    {"table": "Compare policy", "purpose": "定义可判定 oracle。", "required_columns": ["data/behavior class", "alignment", "mask/valid", "precision/tolerance", "timing/order", "mismatch action"]}
+    {
+      "table": "模型支持范围",
+      "purpose": "限定模型可验证的功能和精度。",
+      "required_columns": [
+        "功能或操作",
+        "支持情况",
+        "抽象层次与精度",
+        "不支持内容的处理",
+        "依据"
+      ]
+    },
+    {
+      "table": "输入输出与状态对应",
+      "purpose": "写清 DUT 和模型之间的数据转换。",
+      "required_columns": [
+        "DUT 字段或事件",
+        "模型字段或接口",
+        "格式",
+        "配置与状态",
+        "复位及清空",
+        "出处"
+      ]
+    },
+    {
+      "table": "结果比较规则",
+      "purpose": "给出明确的结果判定方法。",
+      "required_columns": [
+        "数据或行为类别",
+        "对齐方式",
+        "掩码与有效条件",
+        "精度及容差",
+        "时序与顺序",
+        "不一致时的处理"
+      ]
+    }
   ],
-  "domain_rules": ["bit-exact、tolerance、rounding、saturation、latency 和 ordering policy 必须有规格或负责人决定。", "模型适用范围与 unsupported behavior 显式列出，不把跳过比较算 PASS。", "reset/flush/config/state engagement 必须由运行证据证明，文件存在或 API 可调用不等于模型已参与检查。", "compare diagnostics 至少包含 transaction identity、expected/actual、model version、config、test/seed 和 source digest。"],
-  "cross_document_rules": ["compare policy 与 TB data flow、Feature expected result、Test checks 和 Regression evidence 必须一致。"],
-  "traceability_rules": ["每条 compare rule 关联 Feature/Requirement、model code/API、scoreboard implementation 和 evidence。"],
-  "review_roles": ["Reference model owner", "Scoreboard owner", "Algorithm/design owner"],
-  "review_criteria": ["适用范围、数值/状态/时间语义和 compare policy 对当前 DUT 可执行且无默认猜测。"],
-  "freeze_criteria": ["模型版本、adapter、compare policy、支持矩阵和 independent validation evidence 均绑定当前 revision。"],
-  "change_invalidation_rules": ["算法、format/width、CSR/config、latency/order/reset/flush、model/API/adapter 或 compare policy 变化时重审。"]
+  "domain_rules": [
+    "逐位一致、容差、舍入、饱和、延迟和顺序规则必须有规格或负责人决定作为依据。",
+    "明确列出模型适用范围和不支持的行为，不能把跳过比较算作通过。",
+    "运行证据必须说明模型确实处理了复位、清空、配置和状态变化；文件存在或接口可调用不等于参与检查。",
+    "比较失败时至少记录事务编号、预期和实际结果、模型版本、配置、用例、随机种子和输入版本。"
+  ],
+  "cross_document_rules": [
+    "比较规则与环境数据流、验证点预期结果、用例检查和回归证据一致。"
+  ],
+  "traceability_rules": [
+    "每条比较规则关联需求、验证点、模型实现或接口、结果比较器及运行证据。"
+  ],
+  "review_roles": [
+    "参考模型负责人",
+    "结果比较器负责人",
+    "算法或设计负责人"
+  ],
+  "review_criteria": [
+    "适用范围、数值、状态、时序和比较规则针对当前 DUT 明确可用，不依赖未经确认的默认假设。"
+  ],
+  "freeze_criteria": [
+    "模型、适配代码、比较规则、支持范围和独立自检证据均对应当前版本。"
+  ],
+  "change_invalidation_rules": [
+    "算法、格式、位宽、寄存器配置、延迟、顺序、复位、清空、模型接口或比较规则变化时重新评审。"
+  ]
 }

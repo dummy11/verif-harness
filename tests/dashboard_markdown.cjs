@@ -28,13 +28,28 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     return response.json();
   };
   const rendered = async (tab=page, scope='.markdown-body') => {
-    await tab.locator(scope + ' h1').filter({hasText:'验证计划示例'}).waitFor();
-    assert.equal(await tab.locator(scope + ' table tbody tr').count(), 2);
-    assert.ok((await tab.locator(scope + ' pre code').textContent()).includes('$stable(payload)'));
-    assert.equal(await tab.locator(scope + ' script, ' + scope + ' img, ' + scope + ' form, ' + scope + ' input').count(), 0);
-    assert.equal(await tab.evaluate(() => globalThis.markdownInjection), undefined);
-    assert.equal(await tab.locator(scope + ' a[href^="javascript:"], ' + scope + ' a[href^="file:"]').count(), 0);
-    assert.equal(await tab.locator(scope + ' .document-link-unavailable').filter({hasText:'未登记文档'}).count(), 1);
+    // SSE may replace the page between awaits. Observe one complete render in
+    // a single browser task; keep all content/security assertions unchanged.
+    const handle = await tab.waitForFunction(selector => {
+      const body = document.querySelector(selector);
+      if (!body?.querySelector('h1')?.textContent.includes('验证计划示例')) return null;
+      return {
+        rows:body.querySelectorAll('table tbody tr').length,
+        code:body.querySelector('pre code')?.textContent || '',
+        forbidden:body.querySelectorAll('script, img, form, input').length,
+        injection:globalThis.markdownInjection,
+        unsafeLinks:body.querySelectorAll('a[href^="javascript:"], a[href^="file:"]').length,
+        unavailable:[...body.querySelectorAll('.document-link-unavailable')].filter(el => el.textContent.includes('未登记文档')).length,
+      };
+    }, scope);
+    const observed = await handle.jsonValue();
+    await handle.dispose();
+    assert.equal(observed.rows, 2);
+    assert.ok(observed.code.includes('$stable(payload)'));
+    assert.equal(observed.forbidden, 0);
+    assert.equal(observed.injection, undefined);
+    assert.equal(observed.unsafeLinks, 0);
+    assert.equal(observed.unavailable, 1);
   };
   try {
     const before = await snapshot();

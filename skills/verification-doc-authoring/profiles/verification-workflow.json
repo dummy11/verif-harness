@@ -3,35 +3,155 @@
   "document_key": "verification-workflow",
   "filename": "verification_workflow.md",
   "node_key": "verification_workflow_authoring",
-  "title": "验证文档治理流程撰写方案",
-  "purpose": "定义当前 DUT 验证文档的事实源、职责、串行评审门禁、变更传播和基线治理方法。",
+  "title": "验证文档流程撰写方案",
+  "purpose": "说明当前 DUT 的验证文档由谁编写和审批、按什么顺序推进，以及资料变化后如何重审和保留记录。",
   "dependencies": [],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top"],
+  "dut_fact_requirements": [
+    "dut_top"
+  ],
   "document_structure": [
-    {"section": "项目事实源与适用范围", "purpose": "绑定当前 DUT、输入来源、验证输出和治理边界。", "required": true},
-    {"section": "角色、权限与评审门禁", "purpose": "区分负责人、Main Agent、subagent、Engine 和工具的权限。", "required": true},
-    {"section": "文档依赖与推进流程", "purpose": "定义 8 份文档的 authoring/deliverable 依赖和串行 review。", "required": true},
-    {"section": "变更、失效与重验", "purpose": "定义 RTL/spec/document 变化后的 impact、invalidation 和 re-review。", "required": true},
-    {"section": "证据、冻结与审计", "purpose": "定义 evidence provenance、freeze/signoff 和历史保留。", "required": true}
+    {
+      "section": "项目资料与适用范围",
+      "purpose": "列出当前 DUT、输入资料、验证输出和各类记录的用途。",
+      "required": true
+    },
+    {
+      "section": "职责、权限与审批顺序",
+      "purpose": "说明负责人、主 Agent、子 Agent、控制面和工具分别能做什么。",
+      "required": true
+    },
+    {
+      "section": "文档依赖与推进流程",
+      "purpose": "说明八份文档的先后依赖，以及方案审批和正文验收的顺序。",
+      "required": true
+    },
+    {
+      "section": "变更影响与重新检查",
+      "purpose": "说明 RTL、规格和正文变化后要重新检查哪些内容。",
+      "required": true
+    },
+    {
+      "section": "证据、冻结与审计记录",
+      "purpose": "说明证据来源、冻结和签核条件，以及必须保留的历史。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "项目事实源与适用范围", "instructions": ["列出当前 DUT top、只读 RTL/spec roots、验证输出根和 authoritative stores。", "区分工程语义 Markdown、ProjectStore 状态与 raw tool artifacts。"], "required_source_kinds": ["project-context", "rtl", "design-spec"]},
-    {"section": "角色、权限与评审门禁", "instructions": ["写清负责人批准计划、验收正文、waiver 和 freeze 的独占权限。", "明确 authoring plan approval 不等于正文验收，Agent/subagent/tool 完成不等于证据或批准。"], "required_source_kinds": ["project-context"]},
-    {"section": "文档依赖与推进流程", "instructions": ["绘制 Requirement -> Feature -> checking/coverage/test -> evidence 的文档依赖图。", "列出每份 authoring node 与对应 document-deliverable 的 gate。"], "required_source_kinds": ["project-context", "verification-artifact"]},
-    {"section": "变更、失效与重验", "instructions": ["按 RTL/spec/interface/register/document 类型写明触发、影响分析和重审对象。", "保留 revision/digest/history，不用全量重建掩盖局部变化。"], "required_source_kinds": ["project-context", "rtl", "design-spec"]},
-    {"section": "证据、冻结与审计", "instructions": ["区分 raw artifact、typed evidence、Human review、closure 和 freeze。", "定义审计所需 identity、digest、revision、tool/config/test/seed 字段。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+    {
+      "section": "项目资料与适用范围",
+      "instructions": [
+        "列出当前 DUT 顶层模块、只读 RTL 和规格目录、验证输出目录及状态记录位置。",
+        "说明 Markdown 保存正文、项目数据库保存工作状态、工具输出保存原始结果，三者不能互相替代。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "rtl",
+        "design-spec"
+      ]
+    },
+    {
+      "section": "职责、权限与审批顺序",
+      "instructions": [
+        "写清方案批准、正文验收、豁免和冻结只能由负责人作出决定。",
+        "方案批准不等于正文验收；Agent 或工具执行完成不等于证据已被认可。"
+      ],
+      "required_source_kinds": [
+        "project-context"
+      ]
+    },
+    {
+      "section": "文档依赖与推进流程",
+      "instructions": [
+        "说明需求如何关联验证点、检查方法、覆盖项、用例和证据。",
+        "列出每份文档在撰写和验收前需要满足的条件。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "变更影响与重新检查",
+      "instructions": [
+        "按代码、规格、接口、寄存器和文档变化，列出影响分析与重审对象。",
+        "保留版本、摘要和历史记录，不用全部重建掩盖局部变化。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "rtl",
+        "design-spec"
+      ]
+    },
+    {
+      "section": "证据、冻结与审计记录",
+      "instructions": [
+        "区分原始工具结果、已登记证据、负责人审批、完成条件检查和冻结决定。",
+        "记录操作人、版本、文件摘要、工具、配置、用例和随机种子，便于核查及复现。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "事实源与权限矩阵", "purpose": "防止多个事实源和越权写入。", "required_columns": ["对象", "authoritative source", "writer", "reviewer", "禁止事项"]},
-    {"table": "文档依赖与门禁矩阵", "purpose": "表达 authoring、正文、下游消费者和失效传播。", "required_columns": ["document", "authoring dependency", "body gate", "consumers", "invalidation trigger"]},
-    {"table": "变更与重验矩阵", "purpose": "按输入变化选择受影响节点。", "required_columns": ["change type", "affected facts", "affected nodes", "required review", "evidence refresh"]}
+    {
+      "table": "资料与权限",
+      "purpose": "明确各类内容保存在哪里、由谁修改和审批。",
+      "required_columns": [
+        "对象",
+        "权威记录位置",
+        "修改人",
+        "审批人",
+        "禁止事项"
+      ]
+    },
+    {
+      "table": "文档依赖与审批条件",
+      "purpose": "说明撰写、验收和下游使用的前提。",
+      "required_columns": [
+        "文档",
+        "撰写前所需资料",
+        "正文验收条件",
+        "哪些工作依赖此文档",
+        "何种变化需要重审"
+      ]
+    },
+    {
+      "table": "变更与重新检查",
+      "purpose": "按输入变化确定受影响内容。",
+      "required_columns": [
+        "变更类型",
+        "受影响结论",
+        "受影响节点",
+        "需要的审批",
+        "需要更新的证据"
+      ]
+    }
   ],
-  "domain_rules": ["VDOC 必须先审批 document-writing-plan，再由 Agent 撰写/同步正文，最后独立验收 document-deliverable。", "ProjectStore 是治理状态事实源；Markdown 是工程语义事实源；Dashboard/CLI 只是同一状态投影。", "文档治理不能被改造成线性 Stage 或通用项目管理模板，节点必须指向当前 DUT 验证对象。", "review、provisional、waiver、freeze 和 public release authorization 是不同决定，不得互相替代。"],
-  "cross_document_rules": ["文档治理流程必须列出 registry 中全部 8 个实际文件名和稳定 document_key。"],
-  "traceability_rules": ["每个治理动作追溯到 actor、revision、definition/document digest 和时间。"],
-  "review_roles": ["Project owner"],
-  "review_criteria": ["所有文档的 owner、输入、输出、gate 和 change impact 已明确。"],
-  "freeze_criteria": ["治理流程与当前 registry、CLI、Dashboard 和 ProjectStore 行为一致。"],
-  "change_invalidation_rules": ["registry、review policy、role boundary 或 state projection 变化时本节点及全部文档治理说明重审。"]
+  "domain_rules": [
+    "文档流程必须先批准撰写方案，再由 Agent 编写和同步正文，最后单独验收正文。",
+    "项目数据库是工作状态的依据，Markdown 是正文内容的依据；Dashboard 和 CLI 显示同一份状态。",
+    "工作节点必须对应当前 DUT 的验证对象，不套用与设计无关的通用项目流程。",
+    "评审、暂定接受、豁免、冻结和公开发布授权是不同决定，不能互相替代。"
+  ],
+  "cross_document_rules": [
+    "流程说明必须包含已登记的全部八份文档及其实际文件名。"
+  ],
+  "traceability_rules": [
+    "每次操作都要记录操作人、版本、方案或正文摘要，以及时间。"
+  ],
+  "review_roles": [
+    "项目负责人"
+  ],
+  "review_criteria": [
+    "每份文档的负责人、输入、输出、审批条件及变更影响均已明确。"
+  ],
+  "freeze_criteria": [
+    "文档流程与实际登记的文档、CLI、Dashboard 和项目数据库行为一致。"
+  ],
+  "change_invalidation_rules": [
+    "文档种类、审批规则、职责或状态展示方式变化时，重新评审相关流程说明。"
+  ]
 }

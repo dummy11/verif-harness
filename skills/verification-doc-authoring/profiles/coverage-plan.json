@@ -4,34 +4,171 @@
   "filename": "coverage_plan.md",
   "node_key": "coverage_plan_authoring",
   "title": "覆盖率计划撰写方案",
-  "purpose": "把当前 DUT features、场景、状态、配置和风险转成可采样、可达、可关闭的 functional/code/assertion coverage 撰写合同。",
-  "dependencies": ["verification-plan", "feature-matrix", "tb-architecture"],
+  "purpose": "说明当前 DUT 要统计哪些功能、代码和断言覆盖情况，在哪里采样，以及怎样分析未覆盖项和确认完成。",
+  "dependencies": [
+    "verification-plan",
+    "feature-matrix",
+    "tb-architecture"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "覆盖目标、类型与统计口径", "purpose": "定义 functional/code/assertion coverage 的用途和分母。", "required": true},
-    {"section": "Functional coverage model", "purpose": "定义 covergroup/coverpoint/bin/sample/gating。", "required": true},
-    {"section": "Cross、状态空间与可达性", "purpose": "定义有工程意义的 crosses、legal/illegal/unreachable。", "required": true},
-    {"section": "Code/Assertion coverage 与 exclusions", "purpose": "定义结构覆盖、断言 attempts/vacuity 和 exclusion governance。", "required": true},
-    {"section": "收集、合并、补洞与关闭", "purpose": "定义数据库 identity、merge、hole analysis 和 closure evidence。", "required": true}
+    {
+      "section": "覆盖目标、类型与统计方法",
+      "purpose": "说明功能、代码和断言覆盖率各自的用途及统计范围。",
+      "required": true
+    },
+    {
+      "section": "功能覆盖模型",
+      "purpose": "列出覆盖组、覆盖点、取值分组和采样条件。",
+      "required": true
+    },
+    {
+      "section": "交叉覆盖与场景可达性",
+      "purpose": "说明哪些条件需要组合统计，以及哪些组合合法、非法或不可达。",
+      "required": true
+    },
+    {
+      "section": "代码、断言覆盖与排除项",
+      "purpose": "明确代码覆盖范围、断言执行检查和覆盖排除的审批要求。",
+      "required": true
+    },
+    {
+      "section": "收集、合并、补充测试与完成条件",
+      "purpose": "说明覆盖数据库来源、合并要求、未覆盖项分析及完成证据。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "覆盖目标、类型与统计口径", "instructions": ["按 Feature/Risk 说明 functional/code/assertion coverage 的目的，不预设 100%。", "阈值、denominator、per-instance 和 exclusion policy 必须有来源/负责人决定。"], "required_source_kinds": ["verification-document:verification-plan", "verification-document:feature-matrix", "design-spec"]},
-    {"section": "Functional coverage model", "instructions": ["逐项写 Coverage ID、sample object/event、iff/gating、bins/boundaries 和 observation success condition。", "采样 DUT accepted/observed behavior，不把 stimulus generated 当成 DUT executed。"], "required_source_kinds": ["verification-document:tb-architecture", "interface-spec", "register-spec"]},
-    {"section": "Cross、状态空间与可达性", "instructions": ["只建立能回答风险问题的 cross；控制笛卡尔积和自动 bins。", "illegal/ignore/unreachable 必须分别有 spec、design constraint 或 reachability evidence。"], "required_source_kinds": ["micro-architecture-spec", "design-spec", "verification-artifact"]},
-    {"section": "Code/Assertion coverage 与 exclusions", "instructions": ["定义 line/toggle/branch/FSM scope、generated logic、reset/X 和 hierarchy filtering。", "定义 assertion attempts/success/failure/vacuity/cover；exclusion 只登记 candidate，不预批准。"], "required_source_kinds": ["rtl", "verification-artifact"]},
-    {"section": "收集、合并、补洞与关闭", "instructions": ["绑定 RTL/TB/test/seed/config/tool/database digests 和 merge compatibility。", "区分 stimulus gap、observability gap、checker gap、unreachable candidate 和 waiver candidate。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+    {
+      "section": "覆盖目标、类型与统计方法",
+      "instructions": [
+        "按验证点和风险说明各类覆盖率的用途，不预设所有目标都必须达到 100%。",
+        "目标值、统计分母、是否按实例统计及排除规则必须有依据或负责人决定。"
+      ],
+      "required_source_kinds": [
+        "verification-document:verification-plan",
+        "verification-document:feature-matrix",
+        "design-spec"
+      ]
+    },
+    {
+      "section": "功能覆盖模型",
+      "instructions": [
+        "逐项说明覆盖项编号、采样对象和时机、允许采样的条件、取值分组、边界值及有效观察条件。",
+        "采样 DUT 实际接受或产生的行为，不把生成激励当作设计已经执行。"
+      ],
+      "required_source_kinds": [
+        "verification-document:tb-architecture",
+        "interface-spec",
+        "register-spec"
+      ]
+    },
+    {
+      "section": "交叉覆盖与场景可达性",
+      "instructions": [
+        "只建立与风险有关的交叉覆盖，控制组合数量和自动分组，避免无意义的组合爆炸。",
+        "非法、忽略和不可达情况分别提供规格、设计约束或可达性检查证据。"
+      ],
+      "required_source_kinds": [
+        "micro-architecture-spec",
+        "design-spec",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "代码、断言覆盖与排除项",
+      "instructions": [
+        "定义代码行、翻转、分支、状态机的统计范围，以及生成逻辑、复位、未知值和层次过滤规则。",
+        "检查断言的执行、成功、失败、未触发而通过及场景覆盖情况；排除项只能先申请，不能自动批准。"
+      ],
+      "required_source_kinds": [
+        "rtl",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "收集、合并、补充测试与完成条件",
+      "instructions": [
+        "记录 RTL、环境、用例、随机种子、配置、工具和数据库版本，核对是否允许合并。",
+        "区分激励不足、无法观察、缺少检查、可能不可达和拟申请豁免的情况，分别安排处理。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Functional coverage items", "purpose": "定义可实现采样合同。", "required_columns": ["Coverage ID", "Feature ID", "sample event/object", "iff/gating", "bins/boundaries", "expected stimulus"]},
-    {"table": "Cross and reachability", "purpose": "治理组合空间。", "required_columns": ["Cross ID", "dimensions", "purpose", "legal combinations", "illegal/unreachable basis", "size control"]},
-    {"table": "Closure and exclusions", "purpose": "防止 false green。", "required_columns": ["coverage target", "current evidence", "gap class", "action/owner", "exclusion/waiver ref", "recheck trigger"]}
+    {
+      "table": "功能覆盖项",
+      "purpose": "明确每项覆盖的实现和采样要求。",
+      "required_columns": [
+        "覆盖项编号",
+        "验证点编号",
+        "采样对象与时机",
+        "采样条件",
+        "取值分组与边界",
+        "需要的激励"
+      ]
+    },
+    {
+      "table": "交叉覆盖与可达性",
+      "purpose": "控制组合数量并记录合法性依据。",
+      "required_columns": [
+        "交叉覆盖编号",
+        "组合维度",
+        "目的",
+        "合法组合",
+        "非法或不可达依据",
+        "规模限制"
+      ]
+    },
+    {
+      "table": "未覆盖项与排除申请",
+      "purpose": "避免因漏测或不当排除而误报完成。",
+      "required_columns": [
+        "覆盖目标",
+        "当前证据",
+        "未覆盖原因",
+        "处理措施与负责人",
+        "排除或豁免记录",
+        "重新检查条件"
+      ]
+    }
   ],
-  "domain_rules": ["Functional coverage 采样点必须证明 DUT 已接受或产生目标行为，不能只在 sequence 随机化时采样。", "bins/crosses 由 Feature/Risk 驱动；边界、illegal/ignore/unreachable 都有来源和审查。", "Code coverage exclusion 与 functional coverage closure 分开治理，未证明不可达的项保持 open。", "Assertion coverage 同时检查 attempts、activation、vacuity 和 cover reachability，零 failure 不是 closure。"],
-  "cross_document_rules": ["Coverage IDs 映射 Feature/Test/Assertion；sampling/gating 与 TB monitor、clock/reset 和 protocol acceptance 一致。"],
-  "traceability_rules": ["每个 Coverage/Cross/Exclusion ID 关联 Feature/Requirement、实现位置、测试来源和 coverage database evidence。"],
-  "review_roles": ["Coverage owner", "Feature owner", "Formal/assertion owner"],
-  "review_criteria": ["覆盖模型针对当前 DUT 的状态、配置、边界、错误与并发风险，且 sampling/reachability 可证明。"],
-  "freeze_criteria": ["当前数据库 identity、目标分母、所有 gap disposition 和 exclusion/waiver review 完整。"],
-  "change_invalidation_rules": ["Feature/bin/cross/sample/gating、RTL hierarchy/FSM、test/config、tool/database 或 exclusion 变化时重审。"]
+  "domain_rules": [
+    "功能覆盖率必须统计 DUT 已接受或产生的目标行为，不能只在测试序列生成随机激励时采样。",
+    "取值分组和交叉覆盖依据验证点及风险设计；边界、非法、忽略和不可达情况均需有依据并经过检查。",
+    "代码覆盖排除与功能覆盖完成条件分别管理；尚未证明不可达的项目仍须处理。",
+    "断言覆盖不仅看是否报错，还要检查实际执行、触发条件、未触发而通过的情况，以及关键场景是否出现。"
+  ],
+  "cross_document_rules": [
+    "覆盖项关联验证点、用例和断言；采样条件与监测器、时钟、复位及协议接受条件一致。"
+  ],
+  "traceability_rules": [
+    "每个覆盖项、交叉覆盖和排除项关联需求、实现位置、测试来源及覆盖数据库证据。"
+  ],
+  "review_roles": [
+    "覆盖率负责人",
+    "验证点负责人",
+    "形式验证或断言负责人"
+  ],
+  "review_criteria": [
+    "覆盖模型针对当前 DUT 的状态、配置、边界、错误和并发风险，采样有效性及场景可达性可以检查。"
+  ],
+  "freeze_criteria": [
+    "当前数据库版本、统计分母、未覆盖项处理及排除和豁免审批均记录完整。"
+  ],
+  "change_invalidation_rules": [
+    "验证点、取值分组、交叉组合、采样条件、RTL 层次或状态机、用例配置、工具数据库或排除规则变化时重新评审。"
+  ]
 }

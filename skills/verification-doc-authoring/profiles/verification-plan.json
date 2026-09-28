@@ -4,34 +4,171 @@
   "filename": "verification_plan.md",
   "node_key": "verification_plan_authoring",
   "title": "验证总计划撰写方案",
-  "purpose": "从当前 DUT 规格、RTL 结构、风险和工程约束形成可验证、可关闭的项目总计划撰写合同。",
-  "dependencies": ["verification-workflow"],
+  "purpose": "说明当前 DUT 验证哪些功能、重点风险是什么、采用哪些检查方法，以及满足什么条件才算完成。",
+  "dependencies": [
+    "verification-workflow"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "hierarchy", "ports", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "hierarchy",
+    "ports",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "DUT 概览与来源基线", "purpose": "绑定 top、版本、spec 集、hierarchy 与接口边界。", "required": true},
-    {"section": "验证范围、非目标与风险", "purpose": "按 block/interface/feature/mode/error/reset 划分 scope 和 risk。", "required": true},
-    {"section": "总体验证策略", "purpose": "协调 stimulus、checking、reference model、assertion、coverage、testcase 和 regression。", "required": true},
-    {"section": "配置、时钟复位与运行矩阵", "purpose": "定义 mode/CSR/clock/reset/parameter/compile/runtime 组合。", "required": true},
-    {"section": "完成条件与开放问题", "purpose": "定义可检查 exit criteria、evidence 和 owner decisions。", "required": true}
+    {
+      "section": "DUT 概况与输入资料",
+      "purpose": "列出顶层模块、规格版本、模块层次和接口范围。",
+      "required": true
+    },
+    {
+      "section": "验证范围、不验证的内容与风险",
+      "purpose": "按模块、接口、功能、模式、错误和复位划分范围及风险。",
+      "required": true
+    },
+    {
+      "section": "总体验证策略",
+      "purpose": "安排激励、结果检查、参考模型、断言、覆盖率、用例和回归。",
+      "required": true
+    },
+    {
+      "section": "配置、时钟、复位与运行组合",
+      "purpose": "列出工作模式、寄存器、时钟、复位、参数及编译运行配置的组合。",
+      "required": true
+    },
+    {
+      "section": "完成条件与待确认问题",
+      "purpose": "明确检查标准、所需证据和需要负责人决定的事项。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "DUT 概览与来源基线", "instructions": ["列出真实 top、关键 child blocks、ports/interfaces 和所有规格版本。", "把 RTL observation、spec requirement 和负责人决定分别标注。"], "required_source_kinds": ["project-context", "rtl", "design-spec", "micro-architecture-spec", "interface-spec"]},
-    {"section": "验证范围、非目标与风险", "instructions": ["按 normal/boundary/error/concurrent/reset/config/performance 场景定义 in/out/defer。", "每个高风险项说明 failure impact、observability、controllability 和验证手段。"], "required_source_kinds": ["design-spec", "micro-architecture-spec", "register-spec"]},
-    {"section": "总体验证策略", "instructions": ["为每类 feature 指定 stimulus、oracle/checker、coverage、test 和 regression strategy。", "指出算法正确性、时序正确性、协议性质和安全 invariant 各自的 owner。"], "required_source_kinds": ["design-spec", "verification-artifact"]},
-    {"section": "配置、时钟复位与运行矩阵", "instructions": ["列出 parameter/CSR/mode/clock/reset 组合及合法性来源。", "不臆造 simulator capability、latency、timeout 或 coverage threshold。"], "required_source_kinds": ["rtl", "interface-spec", "register-spec"]},
-    {"section": "完成条件与开放问题", "instructions": ["把自然语言 exit criterion 落为 required desired node 和 typed evidence。", "每个 unresolved item 写明 owner、影响、阻塞程度和 review trigger。"], "required_source_kinds": ["project-context", "verification-artifact"]}
+    {
+      "section": "DUT 概况与输入资料",
+      "instructions": [
+        "列出实际顶层模块、关键子模块、端口、接口及所用规格版本。",
+        "分别标明规格要求、RTL 实际实现和负责人决定。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "rtl",
+        "design-spec",
+        "micro-architecture-spec",
+        "interface-spec"
+      ]
+    },
+    {
+      "section": "验证范围、不验证的内容与风险",
+      "instructions": [
+        "分别说明正常、边界、错误、并发、复位、配置和性能场景哪些要验证、哪些不验证、哪些暂缓。",
+        "每个高风险项说明错误后果、能否施加所需激励、在哪里观察结果，以及如何检查。"
+      ],
+      "required_source_kinds": [
+        "design-spec",
+        "micro-architecture-spec",
+        "register-spec"
+      ]
+    },
+    {
+      "section": "总体验证策略",
+      "instructions": [
+        "为每类验证点安排激励、预期结果依据、检查方法、覆盖目标和回归策略。",
+        "说明算法结果、时序、协议和状态约束分别由谁负责检查。"
+      ],
+      "required_source_kinds": [
+        "design-spec",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "配置、时钟、复位与运行组合",
+      "instructions": [
+        "列出参数、寄存器配置、模式、时钟和复位组合，并注明合法性依据。",
+        "不得臆造仿真器能力、延迟、超时或覆盖率目标。"
+      ],
+      "required_source_kinds": [
+        "rtl",
+        "interface-spec",
+        "register-spec"
+      ]
+    },
+    {
+      "section": "完成条件与待确认问题",
+      "instructions": [
+        "把完成条件对应到具体工作节点和需要提交的证据。",
+        "每个未解决问题写明负责人、影响、是否阻塞工作，以及何时重新评审。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "verification-artifact"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Scope 与风险矩阵", "purpose": "把项目范围变成可评审对象。", "required_columns": ["scope ID", "DUT object", "requirement/source", "risk", "priority", "disposition"]},
-    {"table": "验证策略矩阵", "purpose": "协调各验证手段。", "required_columns": ["feature/risk", "stimulus", "oracle/checker", "assertion", "coverage", "test/regression"]},
-    {"table": "Exit criteria", "purpose": "提供可执行关闭条件。", "required_columns": ["criterion ID", "condition", "desired node", "evidence", "owner", "waiver rule"]}
+    {
+      "table": "验证范围与风险",
+      "purpose": "列出本轮需要评审的范围和风险。",
+      "required_columns": [
+        "范围编号",
+        "验证对象",
+        "需求出处",
+        "风险",
+        "优先级",
+        "处理安排"
+      ]
+    },
+    {
+      "table": "验证策略",
+      "purpose": "说明每项功能采用哪些验证手段。",
+      "required_columns": [
+        "验证点或风险",
+        "激励",
+        "预期结果与检查方法",
+        "断言",
+        "覆盖目标",
+        "用例与回归"
+      ]
+    },
+    {
+      "table": "完成条件",
+      "purpose": "列出可检查的完成标准。",
+      "required_columns": [
+        "条件编号",
+        "具体条件",
+        "对应工作节点",
+        "所需证据",
+        "负责人",
+        "豁免规则"
+      ]
+    }
   ],
-  "domain_rules": ["总计划覆盖 scope、risk、strategy 和 closure，不复制专题文档细节。", "性能、latency、throughput、coverage threshold 和 simulator support 必须有来源或负责人决定。", "VENV/VSTIM/VCHK/VCOV/VCASE/VREG 是并行可重入 Workstreams，不写成固定阶段序列。", "每个高风险 feature 必须有至少一种可判定 checker/oracle 和可达场景策略。"],
-  "cross_document_rules": ["verification_plan 是 feature_matrix 和所有专题文档的 scope/risk/exit 上游。"],
-  "traceability_rules": ["每个 scope/risk/exit criterion 追溯到 requirement/source 和具体 desired/evidence node。"],
-  "review_roles": ["Project verification lead"],
-  "review_criteria": ["范围、非目标、风险、验证手段和完成条件覆盖当前 DUT 的实际 block/interface/mode。"],
-  "freeze_criteria": ["所有必需 scope 与 exit criteria 已映射到当前 desired/evidence graph。"],
-  "change_invalidation_rules": ["DUT hierarchy/interface、feature、risk、clock/reset、CSR/mode 或 exit criterion 变化时重审。"]
+  "domain_rules": [
+    "总计划说明验证范围、风险、策略和完成条件，不重复各专题文档的实现细节。",
+    "性能、延迟、吞吐量、覆盖率目标和仿真器支持情况必须有规格、实测或负责人决定作为依据。",
+    "环境、激励、检查、覆盖率、用例和回归工作可以并行并反复调整，不规定成必须逐阶段完成的固定流程。",
+    "每个高风险验证点至少有一种能够判断对错的检查方法，并说明如何产生相应测试场景。"
+  ],
+  "cross_document_rules": [
+    "验证点矩阵及各专题文档的范围、风险和完成条件应与验证总计划一致。"
+  ],
+  "traceability_rules": [
+    "每项验证范围、风险和完成条件都要关联需求出处、具体工作节点和所需证据。"
+  ],
+  "review_roles": [
+    "项目验证负责人"
+  ],
+  "review_criteria": [
+    "验证范围、不验证的内容、风险、方法和完成条件覆盖当前 DUT 的实际模块、接口和模式。"
+  ],
+  "freeze_criteria": [
+    "所有必需验证范围和完成条件都有当前版本的工作节点及证据安排。"
+  ],
+  "change_invalidation_rules": [
+    "模块层次、接口、功能、风险、时钟、复位、寄存器、模式或完成条件变化时重新评审。"
+  ]
 }

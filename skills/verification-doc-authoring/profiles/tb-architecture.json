@@ -4,34 +4,173 @@
   "filename": "tb_architecture.md",
   "node_key": "tb_architecture_authoring",
   "title": "验证环境架构撰写方案",
-  "purpose": "从真实 RTL hierarchy/interfaces/clock-reset 与验证策略形成可实现、可观察、职责分层的 TB architecture 撰写合同。",
-  "dependencies": ["verification-plan", "feature-matrix"],
+  "purpose": "说明验证环境怎样连接当前 DUT、如何施加激励和观察结果，以及各组件分别承担什么检查职责。",
+  "dependencies": [
+    "verification-plan",
+    "feature-matrix"
+  ],
   "source_requirements": [],
-  "dut_fact_requirements": ["dut_top", "hierarchy", "ports", "interfaces", "clock_reset", "internal_structures", "protocols", "registers", "error_interrupts"],
+  "dut_fact_requirements": [
+    "dut_top",
+    "hierarchy",
+    "ports",
+    "interfaces",
+    "clock_reset",
+    "internal_structures",
+    "protocols",
+    "registers",
+    "error_interrupts"
+  ],
   "document_structure": [
-    {"section": "DUT 集成边界与拓扑", "purpose": "定义 tb_top/harness/interface/DUT/bind/UVM 层次。", "required": true},
-    {"section": "接口、时钟、复位与配置", "purpose": "定义每个真实接口的 role、clocking、reset、CSR/config 责任。", "required": true},
-    {"section": "Stimulus 与 observation 数据流", "purpose": "定义 sequence/driver/monitor/transaction 与 DUT acceptance/observation path。", "required": true},
-    {"section": "Checking、reference model 与 coverage 连接", "purpose": "定义 predictor/scoreboard/assertion/coverage 的输入与同步。", "required": true},
-    {"section": "构建、运行、诊断与扩展", "purpose": "定义 package/filelist/elaboration/config/log/wave/timeout/seed。", "required": true}
+    {
+      "section": "DUT 接入范围与环境结构",
+      "purpose": "说明顶层测试平台、DUT 连接层、接口、检查器和 UVM 组件的关系。",
+      "required": true
+    },
+    {
+      "section": "接口、时钟、复位与配置",
+      "purpose": "说明每个接口的驱动、监测、采样、复位和寄存器配置方式。",
+      "required": true
+    },
+    {
+      "section": "激励与监测数据流",
+      "purpose": "说明测试序列如何转为接口操作，以及如何还原 DUT 实际执行的事务。",
+      "required": true
+    },
+    {
+      "section": "检查、参考模型与覆盖率连接",
+      "purpose": "说明参考模型、结果比较器、断言和覆盖率组件接收什么数据及如何同步。",
+      "required": true
+    },
+    {
+      "section": "构建、运行与故障定位",
+      "purpose": "说明编译顺序、启动方式、配置、日志、波形、超时和随机种子。",
+      "required": true
+    }
   ],
   "section_authoring_instructions": [
-    {"section": "DUT 集成边界与拓扑", "instructions": ["从实际 top/hierarchy/ports 画出结构图并列出验证组件实例。", "DUT RTL 只读；tie-off/adapter/bind 放在 harness/checker 层并说明来源。"], "required_source_kinds": ["rtl", "verification-document:verification-plan", "verification-document:feature-matrix"]},
-    {"section": "接口、时钟、复位与配置", "instructions": ["逐接口列 driver/monitor、clock/reset domain、采样/驱动 edge、handshake/backpressure/ordering。", "逐项列 parameter/CSR/config 来源、更新时机、side effect 和 reset value gap。"], "required_source_kinds": ["interface-spec", "register-spec", "rtl"]},
-    {"section": "Stimulus 与 observation 数据流", "instructions": ["定义 sequence item 到 pin/transaction、DUT acceptance、monitor reconstruction 的全链路。", "说明并发、out-of-order、tag/ID、flush、residual transaction、timeout 和 end-of-test。"], "required_source_kinds": ["interface-spec", "micro-architecture-spec", "verification-artifact"]},
-    {"section": "Checking、reference model 与 coverage 连接", "instructions": ["列出 actual/expected 流、alignment key、reset/flush、mask/tolerance 和采样事件。", "区分 scoreboard、assertion、coverage 与 TB sanity 的职责。"], "required_source_kinds": ["verification-artifact", "design-spec"]},
-    {"section": "构建、运行、诊断与扩展", "instructions": ["写明 package/filelist 顺序、top、bind、config_db、plusarg、seed、wave/log 和错误出口。", "未实际验证的 simulator/EDA capability 标记 configured/unknown，不声称 supported。"], "required_source_kinds": ["project-context", "rtl", "verification-artifact"]}
+    {
+      "section": "DUT 接入范围与环境结构",
+      "instructions": [
+        "按实际顶层模块、模块层次和端口绘制结构图，并列出验证组件实例。",
+        "DUT RTL 只读；信号固定连接、接口适配和检查器挂接放在验证环境中，并说明依据。"
+      ],
+      "required_source_kinds": [
+        "rtl",
+        "verification-document:verification-plan",
+        "verification-document:feature-matrix"
+      ]
+    },
+    {
+      "section": "接口、时钟、复位与配置",
+      "instructions": [
+        "逐接口列出驱动器、监测器、时钟复位域、驱动和采样边沿、握手、反压与顺序要求。",
+        "列出参数和寄存器配置的依据、更新时间、读写副作用；复位值不明确时列为问题。"
+      ],
+      "required_source_kinds": [
+        "interface-spec",
+        "register-spec",
+        "rtl"
+      ]
+    },
+    {
+      "section": "激励与监测数据流",
+      "instructions": [
+        "写清测试事务如何驱动引脚、DUT 何时接受输入、监测器如何恢复实际事务。",
+        "说明并发、乱序、事务编号、清空操作、残留事务、超时和测试结束处理。"
+      ],
+      "required_source_kinds": [
+        "interface-spec",
+        "micro-architecture-spec",
+        "verification-artifact"
+      ]
+    },
+    {
+      "section": "检查、参考模型与覆盖率连接",
+      "instructions": [
+        "列出预期和实际结果的数据流、对齐标识、复位和清空处理、比较掩码、容差及采样事件。",
+        "区分结果比较、断言、覆盖统计和验证环境自检的职责。"
+      ],
+      "required_source_kinds": [
+        "verification-artifact",
+        "design-spec"
+      ]
+    },
+    {
+      "section": "构建、运行与故障定位",
+      "instructions": [
+        "写清包和文件列表顺序、顶层入口、bind 挂接、UVM 配置数据库、运行参数、随机种子、波形和错误退出方式。",
+        "未实际验证的仿真器或 EDA 能力标为仅完成配置或尚未确认，不能声称已经支持。"
+      ],
+      "required_source_kinds": [
+        "project-context",
+        "rtl",
+        "verification-artifact"
+      ]
+    }
   ],
   "required_tables": [
-    {"table": "Component responsibility", "purpose": "保持 UVM/harness/checker 分层。", "required_columns": ["component", "instance/path", "responsibility", "input/output", "owner", "implementation status"]},
-    {"table": "Interface and timing", "purpose": "绑定真实端口与协议。", "required_columns": ["interface", "RTL ports", "driver", "monitor", "clock/reset", "handshake/sampling"]},
-    {"table": "Data/control flow", "purpose": "说明端到端 transaction 路径。", "required_columns": ["flow", "source", "transform", "destination", "alignment", "reset/flush/error handling"]}
+    {
+      "table": "组件职责",
+      "purpose": "明确各层验证组件的分工。",
+      "required_columns": [
+        "组件",
+        "实例或路径",
+        "职责",
+        "输入与输出",
+        "负责人",
+        "实现状态"
+      ]
+    },
+    {
+      "table": "接口与时序",
+      "purpose": "对应实际端口和协议要求。",
+      "required_columns": [
+        "接口",
+        "RTL 端口",
+        "驱动器",
+        "监测器",
+        "时钟和复位",
+        "握手与采样"
+      ]
+    },
+    {
+      "table": "数据与控制流",
+      "purpose": "说明事务从输入到结果检查的完整过程。",
+      "required_columns": [
+        "数据流",
+        "来源",
+        "转换方式",
+        "目的组件",
+        "对齐方式",
+        "复位、清空和错误处理"
+      ]
+    }
   ],
-  "domain_rules": ["tb_top 负责 elaboration/test startup；harness 负责 DUT structural integration；UVM 负责 behavior。", "VENV 最小 smoke 不依赖完整 business stimulus/checking/coverage/regression closure。", "每个 protocol interface 都必须有明确 driver/monitor ownership、clock/reset 和 sampling semantics。", "多时钟、reset sequencing、backpressure、out-of-order、flush 和 residual data 必须有显式架构处理。"],
-  "cross_document_rules": ["TB observation/stimulus paths 必须满足 feature、assertion、coverage、reference model 和 testcase 的实际需要。"],
-  "traceability_rules": ["每个 TB component/interface path 关联使用它的 Feature/Checker/Coverage/Test IDs。"],
-  "review_roles": ["TB architect", "UVC owner", "Build/integration owner"],
-  "review_criteria": ["架构图、component table、interface timing 与实际 RTL ports/hierarchy 一致。"],
-  "freeze_criteria": ["所有必需 stimulus/observation/checking path 有实现位置或明确 blocked gap。"],
-  "change_invalidation_rules": ["Top/hierarchy/port/interface/clock/reset/config、transaction format 或 component topology 变化时重审。"]
+  "domain_rules": [
+    "测试平台顶层负责设计展开和启动测试；DUT 连接层负责结构连接；UVM 组件负责激励和监测行为。",
+    "最小环境冒烟测试不依赖完整业务激励、检查、覆盖率和回归全部完成。",
+    "每个协议接口都要明确驱动和监测职责、时钟、复位及采样规则。",
+    "多时钟、复位顺序、反压、乱序、清空和残留数据都必须有明确处理方式。"
+  ],
+  "cross_document_rules": [
+    "激励和观察路径必须满足验证点、断言、覆盖率、参考模型和用例的实际需要。"
+  ],
+  "traceability_rules": [
+    "每个环境组件和接口路径关联使用它的验证点、检查器、覆盖项和用例编号。"
+  ],
+  "review_roles": [
+    "验证架构负责人",
+    "接口验证组件负责人",
+    "构建与集成负责人"
+  ],
+  "review_criteria": [
+    "结构图、组件表、接口时序与实际 RTL 端口和模块层次一致。"
+  ],
+  "freeze_criteria": [
+    "每条必需激励、观察和检查路径都有实现位置；尚未实现的部分明确列为阻塞项。"
+  ],
+  "change_invalidation_rules": [
+    "顶层、模块层次、端口、接口、时钟、复位、配置、事务格式或组件连接变化时重新评审。"
+  ]
 }
