@@ -119,6 +119,95 @@ print('fake runtime: no verification change')
             with self.assertRaises(HarnessError):
                 service.interactive(self.store, "codex", None)
 
+    def test_interactive_codex_submits_continuation_not_inventory(self):
+        with mock.patch.object(service, "runtime_command", return_value=['codex']), \
+             mock.patch.object(service.subprocess, "call", return_value=0) as launch:
+            self.assertEqual(service.interactive(self.store, 'codex', None), 0)
+        command = launch.call_args.args[0]
+        self.assertEqual(command[0], 'codex')
+        self.assertNotIn('exec', command)
+        self.assertIn(str(self.store.root), command[-1])
+        self.assertIn('每项完成后重新读取 closure', command[-1])
+        self.assertIn('不要只报状态', command[-1])
+        self.assertIn('不得代替负责人批准', command[-1])
+        self.assertEqual(launch.call_args.kwargs['cwd'], self.store.root)
+        self.assertTrue(launch.call_args.kwargs['pass_fds'])
+
+    def test_interactive_kimi_keeps_tui_and_submits_startup_turn(self):
+        with mock.patch.object(service, "runtime_command", return_value=['kimi']), \
+             mock.patch('verif_harness.interactive_cli.run_kimi', return_value=0) as launch:
+            self.assertEqual(service.interactive(self.store, 'kimi', None), 0)
+        command, root, prompt, fd = launch.call_args.args
+        self.assertEqual(command, ['kimi', '--yolo'])
+        self.assertEqual(root, self.store.root)
+        self.assertIn('若尚未 bootstrap', prompt)
+        self.assertIn('await/checkpoint', prompt)
+        self.assertNotIn('\n', prompt)
+        self.assertIsInstance(fd, int)
+        self.assertFalse(self.store.agent_service_status()['online'])
+
+    def test_reopened_dashboard_does_not_turn_activity_record_into_execution(self):
+        activity = self.store.create_activity(self.node['id'], '检查审批', 'project-agent')
+        # CLI registration and HTTP snapshots share one projection, without
+        # erasing the recorded audit status or manufacturing a service launch.
+        listed = next(a for a in self.store.activities() if a['id'] == activity['id'])
+        self.assertEqual(listed['status'], 'UNCONFIRMED')
+        for _ in range(2):
+            with self.fixture.get('/api/snapshot') as response:
+                snapshot = json.load(response)
+            observed = next(a for a in snapshot['activities'] if a['id'] == activity['id'])
+            self.assertEqual(observed, listed)
+            self.assertNotEqual(snapshot['project_agent']['status'], 'RUNNING')
+        self.assertEqual(self.store.activity(activity['id'])['status'], 'RUNNING')
+        self.assertFalse(self.store.agent_service_status()['online'])
+
+    def test_service_online_is_not_proof_of_a_current_running_task(self):
+        activity = self.store.create_activity(self.node['id'], '检查审批', 'project-agent')
+        revision = self.store.workstream('VDOC')['revision']
+        with self.store.connect() as connection:
+            connection.execute("INSERT INTO agent_service VALUES(1,'kimi',?,1,'RUNNING',?,0,'处理中')",
+                               (service.OWNER, time.time()))
+            connection.execute("INSERT INTO agent_service_runs "
+                               "(id,task_key,revision,action_json,status,activity_id,created_at) "
+                               "VALUES('current','current',?,'{}','RUNNING',?,?)", (revision, activity['id'], now()))
+        self.assertTrue(self.store.agent_service_status()['execution_confirmed'])
+        for column, value in (('status', 'COMPLETED'), ('revision', revision - 1), ('ended_at', now())):
+            with self.subTest(column=column):
+                with self.store.connect() as connection:
+                    connection.execute("UPDATE agent_service_runs SET status='RUNNING',revision=?,ended_at=NULL", (revision,))
+                    connection.execute(f'UPDATE agent_service_runs SET {column}=?', (value,))
+                observed = self.store.agent_service_status()
+                self.assertTrue(observed['online'])
+                self.assertFalse(observed['execution_confirmed'])
+                listed = next(a for a in self.store.activities() if a['id'] == activity['id'])
+                self.assertEqual(listed['status'], 'DISCONNECTED')
+
+    def test_cached_snapshot_expires_execution_when_heartbeat_expires(self):
+        activity = self.store.create_activity(self.node['id'], '检查审批', 'project-agent')
+        timestamp = time.time()
+        revision = self.store.workstream('VDOC')['revision']
+        with self.store.connect() as connection:
+            connection.execute("INSERT INTO agent_service VALUES(1,'kimi',?,1,'RUNNING',?,0,'处理中')",
+                               (service.OWNER, timestamp))
+            connection.execute("INSERT INTO agent_service_runs "
+                               "(id,task_key,revision,action_json,status,activity_id,created_at) "
+                               "VALUES('current','current',?,'{}','RUNNING',?,?)", (revision, activity['id'], now()))
+        with self.fixture.get('/api/snapshot') as response:
+            first = json.load(response)
+        self.assertTrue(next(a for a in first['activities'] if a['id'] == activity['id'])['execution_confirmed'])
+        # Both the projection and cache's liveness token observe the same clock.
+        import datetime as dt
+        future = dt.datetime.fromtimestamp(timestamp + 31, dt.timezone.utc)
+        with mock.patch('verif_harness.store.time.time', return_value=timestamp + 31), \
+             mock.patch('verif_harness.store.dt.datetime', wraps=dt.datetime) as clock:
+            clock.now.return_value = future
+            with self.fixture.get('/api/snapshot') as response:
+                after = json.load(response)
+            listed = self.store.activities()
+        observed = next(a for a in after['activities'] if a['id'] == activity['id'])
+        self.assertEqual(observed['status'], 'DISCONNECTED')
+        self.assertIn(observed, listed)
+
     def test_inherited_lock_survives_parent_handle_close(self):
         with service.project_lock(self.store) as fd:
             child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], pass_fds=(fd,))

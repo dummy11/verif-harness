@@ -10,19 +10,26 @@ runtime; it never grants approvals or treats a process exit as verification evid
 
 ## CLI 重启与自动接续
 
-已 bootstrap 的项目再次运行 `scripts/setup --runtime kimi|codex --workspace-root PATH`
-会启动或复用项目级自动接续服务，不再打开一个没有等待任务的新 CLI 输入框。
+运行 `scripts/setup --runtime kimi|codex --workspace-root PATH` 默认进入交互 CLI，
+不因项目已经 bootstrap 而切换到后台服务。启动时自动提交一次接续任务：新项目
+收集缺失输入；已有项目读取当前 revision、closure、审批和问题回答，执行允许的
+下一项工作，直至需要负责人决定、工作完成或遇到明确阻塞。不是仅显示工具清单后等待。
+Codex 使用原生交互启动提示；Kimi 在新建 TUI 输入框就绪后提交一次可见任务，
+仍保留交互界面，不使用会在首轮后退出的 `--prompt`。需要真实终端和已登录的 CLI；
+若无法识别输入框，明确提示手动提交，不向登录提示或旧会话发送任务。
+`--interactive` 保留为兼容参数；`--no-agent` 只安装配置，不启动 CLI 或服务。
+
+需要后台自动接续时，退出交互 CLI 后显式运行 `agent-service start`。
 服务从同一个 SQLite 数据库读取当前 VDOC closure，串行调用所选 CLI 的非交互模式。
 审批意见提交、批准全部内容及工程问题回答都先保存；服务随后重新检查当前版本并
 执行允许的动作。注销或重新注册 Dashboard 不删除这些记录，也不终止该服务。
-尚未 bootstrap 的项目仍进入交互 CLI；`--no-agent` 不启动服务或 CLI。
 
 ```bash
 verif-harness agent-service status
 verif-harness agent-service stop
 # 等 status 显示 STOPPED 后，可按需重新启动或转入交互 CLI：
 verif-harness agent-service start --runtime kimi
-./scripts/setup --runtime kimi --workspace-root /path/to/project --interactive
+./scripts/setup --runtime kimi --workspace-root /path/to/project
 ```
 
 服务与通过 setup 启动的交互 CLI 共用项目执行锁。切换前必须退出另一方；直接从
@@ -38,11 +45,16 @@ Kimi 使用非交互 `--prompt`，探测到旧版 `--print` 时一并使用；�
 同一输入只尝试一次，失败、未推进或意外中断会保留日志，不无限重试。
 确认文件与记录后，先 stop 并等待停止，再运行 `agent-service retry` 和 start。
 revision 改变时停止旧任务。重启后仍有旧子进程存活时拒绝另起，防止并行修改。
-主机重启后须再次 setup；本服务不是系统开机启动项。
+主机重启后须显式 start 恢复后台服务，或 setup 进入交互 CLI；服务不是系统开机启动项。
 
 “Agent 交互”依次显示待回答问题、Agent 工作状态和交互历史。无负责人待办并不
 代表 Agent 在线；服务失联会明确显示，运行日志保留在项目的
 `.verif-harness/agent-service/`，成功退出也不代替 Main Agent 验收后检查与 closure。
+重新打开 Dashboard 只读取状态，不会启动或唤醒 Agent。工作流 `ACTIVE` 表示方案已批准、
+相关工作尚待完成，不表示 CLI 正在执行。只有当前 revision 的受管任务和新鲜心跳，
+或仍有效的 assignment lease，才能确认活动正在执行；只有 `RUNNING` 历史登记而无
+执行依据时显示“执行状态待核实”。原始登记保留用于审计，CLI 活动列表与 Dashboard
+使用同一有效状态投影。已结束的子 Agent 不代表 Main Agent 当前正在处理。
 
 ## 文档撰写方案审批
 

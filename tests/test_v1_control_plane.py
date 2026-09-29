@@ -1012,7 +1012,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             self.assertEqual(checkpoint["question"]["answer_option"], "start")
             self.assertEqual(
                 self.run_cli("dashboard", "--snapshot")["activities"][0]["status"],
-                "RUNNING",
+                "UNCONFIRMED",
             )
         finally:
             if waiter.poll() is None:
@@ -1058,7 +1058,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertTrue(checkpoint["resume"])
         self.assertEqual(checkpoint["question"]["answer_option"], "dpi")
         refreshed = self.run_cli("dashboard", "--snapshot")
-        self.assertEqual(refreshed["activities"][0]["status"], "RUNNING")
+        self.assertEqual(refreshed["activities"][0]["status"], "UNCONFIRMED")
+        self.assertEqual(refreshed["activities"][0]["recorded_status"], "RUNNING")
+        self.assertFalse(refreshed["activities"][0]["execution_confirmed"])
+        self.assertEqual(self.run_cli("activity", "list")["activities"], refreshed["activities"])
         self.assertFalse(any(
             item["source"] == "agent-question" for item in refreshed["waiting_for_human"]
         ))
@@ -1159,9 +1162,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
         self.assertEqual(answered["status"], "ANSWERED")
         refreshed = self.run_cli("dashboard", "--snapshot")
-        self.assertEqual(refreshed["activities"][0]["status"], "RUNNING")
+        self.assertEqual(refreshed["activities"][0]["status"], "UNCONFIRMED")
+        self.assertEqual(refreshed["activities"][0]["recorded_status"], "RUNNING")
         self.assertEqual(refreshed["agent_questions"][0]["status"], "ANSWERED")
-        self.assertEqual(refreshed["project_agent"]["status"], "RUNNING")
+        self.assertEqual(refreshed["project_agent"]["status"], "UNCONFIRMED")
 
     def test_await_human_is_revision_bound_and_only_formal_review_unblocks(self) -> None:
         self.bootstrap()

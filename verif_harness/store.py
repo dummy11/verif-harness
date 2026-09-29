@@ -2677,6 +2677,8 @@ class ProjectStore:
     def activities(
         self, workstream: str | None = None, node_id: str | None = None,
         active_only: bool = False,
+        *, _service_state: dict[str, Any] | None = None,
+        _assignments: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         self.require()
         self.ensure_dashboard_schema()
@@ -2693,10 +2695,41 @@ class ProjectStore:
                 "status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT')"
             )
         where = " WHERE " + " AND ".join(filters) if filters else ""
+        service = self.agent_service_status() if _service_state is None else _service_state
+        assignments = self.agent_assignments() if _assignments is None else _assignments
+        leased_activities = {
+            item["activity_id"] for item in assignments if item["status"] == "ACTIVE"
+        }
         with self.read_connect() as connection:
-            return [dict(row) for row in connection.execute(
+            items = [dict(row) for row in connection.execute(
                 "SELECT * FROM activities" + where + " ORDER BY created_at DESC", values,
             )]
+            managed_activities = {row[0] for row in connection.execute(
+                "SELECT activity_id FROM agent_service_runs"
+            )}
+        latest = service.get("latest_run") or {}
+        for item in items:
+            item["execution_confirmed"] = False
+            if item["status"] != "RUNNING":
+                continue
+            managed = item["id"] in managed_activities
+            confirmed = (
+                bool(service.get("execution_confirmed"))
+                and item["id"] == latest.get("activity_id")
+            ) if managed else item["id"] in leased_activities
+            item["execution_confirmed"] = confirmed
+            if not confirmed:
+                item["recorded_status"] = item["status"]
+                item["status"] = "DISCONNECTED" if managed else "UNCONFIRMED"
+                item["execution_message"] = (
+                    "无法确认本轮受管 Agent 仍在执行，请检查服务状态和任务日志"
+                    if managed else "这项工作只有活动登记，尚无有效的执行心跳；请在 Agent CLI 中核对"
+                )
+        if active_only:
+            items = [item for item in items if item["status"] in {
+                "PENDING", "RUNNING", "WAITING_FOR_HUMAN", "WAITING_FOR_PARENT",
+            }]
+        return items
 
     def agent_service_status(self) -> dict[str, Any]:
         """Service liveness is not an approval, Activity, or verification result."""
@@ -2709,12 +2742,22 @@ class ProjectStore:
                 "SELECT id,task_key,revision,status,activity_id,created_at,ended_at,summary,retry_requested "
                 "FROM agent_service_runs ORDER BY created_at DESC,rowid DESC LIMIT 1"
             ).fetchone()
+            revision = connection.execute(
+                "SELECT revision FROM workstream_read_headers WHERE name='VDOC'"
+            ).fetchone()
         result = dict(row) if row else {"status": "NOT_STARTED", "message": "未启动自动接续服务；提交记录不会唤醒已退出的 CLI"}
         result["online"] = bool(row and row["status"] not in {"STOPPED", "FAILED"}
                                 and time.time() - row["heartbeat"] < 30)
         if row and not result["online"] and row["status"] not in {"STOPPED", "FAILED"}:
             result.update(status="DISCONNECTED", message="自动接续服务已失联；待处理记录仍保留，请重新 setup")
         result["latest_run"] = dict(latest) if latest else None
+        result["execution_confirmed"] = bool(
+            result["online"] and row["status"] == "RUNNING" and not row["stop_requested"]
+            and latest and latest["status"] == "RUNNING" and latest["ended_at"] is None
+            and revision and latest["revision"] == revision[0]
+        )
+        if result["online"] and row["status"] == "RUNNING" and not result["execution_confirmed"]:
+            result["message"] = "自动接续服务在线；尚未确认当前版本有正在执行的任务"
         return result
 
     def create_agent_service_run(self, task: dict[str, Any], run_id: str, log_path: str) -> str:
@@ -7217,18 +7260,10 @@ class ProjectStore:
             ) for item in plans
         ]
         agent_assignment_history = self.agent_assignments()
-        activities = self.activities()
         service_state = self.agent_service_status()
-        if not service_state["online"]:
-            with self.read_connect() as connection:
-                disconnected = {row[0] for row in connection.execute(
-                    "SELECT activity_id FROM agent_service_runs WHERE status='RUNNING'"
-                )}
-            for item in activities:
-                if item["id"] in disconnected and item["status"] == "RUNNING":
-                    item["recorded_status"] = item["status"]
-                    item["status"] = "DISCONNECTED"
-                    item["message"] = "受管 Agent 服务失联；无法确认本轮是否仍在执行"
+        activities = self.activities(
+            _service_state=service_state, _assignments=agent_assignment_history,
+        )
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
         agent_review_checks = self.review_agent_checks()
@@ -7755,9 +7790,6 @@ class ProjectStore:
         waiting_activity_count = sum(
             item["status"] == "WAITING_FOR_HUMAN" for item in active_agent_activities
         )
-        running_activity_count = sum(
-            item["status"] == "RUNNING" for item in active_agent_activities
-        )
         pending_activity_count = sum(
             item["status"] == "PENDING" for item in active_agent_activities
         )
@@ -7771,6 +7803,13 @@ class ProjectStore:
             item for item in current_activities
             if item["id"] not in assignment_activity_ids
         ]
+        running_activity_count = sum(
+            item["execution_confirmed"] for item in current_main_activities
+        )
+        unconfirmed_activity_count = sum(
+            item["status"] in {"UNCONFIRMED", "DISCONNECTED"}
+            for item in current_main_activities
+        )
         main_activity_history = [
             item for item in activities
             if item["id"] not in assignment_activity_ids
@@ -7802,7 +7841,7 @@ class ProjectStore:
             project_agent_message = (
                 f"需要你处理 {'、'.join(pending_parts)}；处理后 Agent 才会继续相关工作"
             )
-        elif service_state["online"] and service_state["status"] == "RUNNING":
+        elif service_state["execution_confirmed"]:
             project_agent_status = "RUNNING"
             project_agent_message = service_state["message"]
         elif pending_agent_feedback_count:
@@ -7815,7 +7854,7 @@ class ProjectStore:
             project_agent_status = "PENDING"
             project_agent_message = (
                 f"有 {len(pending_agent_review_checks)} 项已提交的文档验收结论等待 Main Agent 检查；"
-                "检查尚未登记为正在运行，当前无需负责人重复提交"
+                "尚无可确认的当前执行记录，无需负责人重复提交"
             )
         elif waiting_activity_count:
             project_agent_status = "WAITING_FOR_HUMAN"
@@ -7829,7 +7868,7 @@ class ProjectStore:
                 f"Agent 正在处理 {running_activity_count} 项验证工作，当前无需你操作"
             )
         elif waiting_for_parent_count:
-            project_agent_status = "RUNNING"
+            project_agent_status = "WAITING_FOR_PARENT"
             project_agent_message = (
                 f"有 {waiting_for_parent_count} 个 subagent 等待 Main Agent 协调；"
                 "当前不需要负责人处理"
@@ -7838,6 +7877,12 @@ class ProjectStore:
             project_agent_status = "PENDING"
             project_agent_message = (
                 f"有 {pending_activity_count} 项验证工作等待 Agent 开始处理，当前无需你操作"
+            )
+        elif unconfirmed_activity_count:
+            project_agent_status = "UNCONFIRMED"
+            project_agent_message = (
+                f"有 {unconfirmed_activity_count} 项历史活动尚未登记结束，但无法确认仍在执行；"
+                "请在 Agent CLI 中核对当前验证工作"
             )
         elif latest_activity and latest_activity["status"] == "FAILED":
             project_agent_status = "FAILED"
@@ -7863,6 +7908,7 @@ class ProjectStore:
             "status": project_agent_status,
             "message": project_agent_message,
             "active_activity_count": len(active_agent_activities),
+            "unconfirmed_activity_count": unconfirmed_activity_count,
             "open_question_count": len(open_agent_questions),
             "pending_review_count": pending_review_count,
             "pending_confirmation_count": pending_confirmation_count,

@@ -480,15 +480,15 @@
     const STATUS_LABELS = {
       VALID:'已通过检查', UNKNOWN:'尚无完成材料', INVALID:'检查未通过', STALE:'内容变化后尚未重新检查',
       REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'等待负责人复核', PROVISIONAL:'暂定接受', BLOCKED:'当前受阻', WAIVED:'已接受例外',
-      REVIEW:'等待负责人评审方案', REVISE:'方案需要修改', ACTIVE:'正在执行验证工作', SATISFIED:'完成条件已满足', BASELINED:'当前基线已保存',
+      REVIEW:'等待负责人评审方案', REVISE:'方案需要修改', ACTIVE:'方案已批准，验证工作待完成', SATISFIED:'完成条件已满足', BASELINED:'当前基线已保存',
       RUNNING:'正在执行', PENDING:'等待执行', AGENT_CHECKING:'等待 Agent 检查审批', WAITING_FOR_HUMAN:'等待负责人决定', WAITING_FOR_PARENT:'等待主 Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
       OPEN:'待回答', ANSWERED:'已回答', RESOLVED:'已处理', CLOSED:'已满足', NOT_SATISFIED:'尚未满足', STALE_REVISION:'不是当前版本',
       SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查',
-      APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改'
+      APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改', UNCONFIRMED:'执行状态待核实', DISCONNECTED:'执行连接已断开'
     };
     const AGENT_STATUS_LABELS = {
       IDLE:'无需你处理', WAITING_FOR_HUMAN:'等待你处理', RUNNING:'Agent 正在处理',
-      WAITING_FOR_PARENT:'等待主 Agent 协调', PENDING:'等待 Agent 处理', FAILED:'Agent 工作失败', COMPLETED:'最近已完成', CANCELLED:'已取消'
+      WAITING_FOR_PARENT:'等待主 Agent 协调', PENDING:'等待 Agent 处理', FAILED:'Agent 工作失败', COMPLETED:'最近已完成', CANCELLED:'已取消', UNCONFIRMED:'Agent 执行状态待核实'
     };
     const ROLE_LABELS = {
       capability:'通用工作汇总', 'closure-evidence':'需要核对的运行结果', 'project-goal':'项目目标',
@@ -553,13 +553,13 @@
       VCOV:'验证覆盖率', VCASE:'测试用例', VREG:'回归验证'
     };
     const WORKSTREAM_STATE_LABELS = {
-      VDOC:{REVIEW:'等待负责人审批文档撰写方案',REVISE:'文档撰写方案需要修改',ACTIVE:'正在编写和验收验证文档',SATISFIED:'计划要求的验证文档已通过验收',BASELINED:'验证文档基线已保存',PARTIALLY_STALE:'部分验证文档需要重新评审'},
-      VENV:{REVIEW:'等待负责人确认验证环境方案',REVISE:'验证环境方案需要修改',ACTIVE:'正在搭建和检查验证环境',SATISFIED:'验证环境完成条件已满足',BASELINED:'验证环境基线已保存',PARTIALLY_STALE:'部分验证环境结论需要重新检查'},
-      VSTIM:{REVIEW:'等待负责人确认激励方案',REVISE:'激励方案需要修改',ACTIVE:'正在实现和运行验证激励',SATISFIED:'计划要求的激励场景已具备',BASELINED:'验证激励基线已保存',PARTIALLY_STALE:'部分激励结论需要重新检查'},
-      VCHK:{REVIEW:'等待负责人确认结果检查方案',REVISE:'结果检查方案需要修改',ACTIVE:'正在实现和验证检查机制',SATISFIED:'计划要求的检查机制已具备',BASELINED:'结果检查基线已保存',PARTIALLY_STALE:'部分检查结论需要重新验证'},
-      VCOV:{REVIEW:'等待负责人确认覆盖率方案',REVISE:'覆盖率方案需要修改',ACTIVE:'正在收集覆盖率并处理未覆盖项',SATISFIED:'覆盖目标已按计划处理',BASELINED:'覆盖率基线已保存',PARTIALLY_STALE:'部分覆盖率结论需要重新检查'},
-      VCASE:{REVIEW:'等待负责人确认测试用例方案',REVISE:'测试用例方案需要修改',ACTIVE:'正在实现和运行测试用例',SATISFIED:'计划要求的测试用例已有结论',BASELINED:'测试用例基线已保存',PARTIALLY_STALE:'部分测试用例结论需要重新检查'},
-      VREG:{REVIEW:'等待负责人确认回归方案',REVISE:'回归方案需要修改',ACTIVE:'正在运行回归并分析失败',SATISFIED:'计划要求的回归结果已完成处理',BASELINED:'回归验证基线已保存',PARTIALLY_STALE:'部分回归结论需要重新检查'}
+      VDOC:{REVIEW:'等待负责人审批文档撰写方案',REVISE:'文档撰写方案需要修改',ACTIVE:'文档撰写方案已批准，正文撰写与验收待完成',SATISFIED:'计划要求的验证文档已通过验收',BASELINED:'验证文档基线已保存',PARTIALLY_STALE:'部分验证文档需要重新评审'},
+      VENV:{REVIEW:'等待负责人确认验证环境方案',REVISE:'验证环境方案需要修改',ACTIVE:'验证环境方案已批准，搭建与检查待完成',SATISFIED:'验证环境完成条件已满足',BASELINED:'验证环境基线已保存',PARTIALLY_STALE:'部分验证环境结论需要重新检查'},
+      VSTIM:{REVIEW:'等待负责人确认激励方案',REVISE:'激励方案需要修改',ACTIVE:'激励方案已批准，实现与检查待完成',SATISFIED:'计划要求的激励场景已具备',BASELINED:'验证激励基线已保存',PARTIALLY_STALE:'部分激励结论需要重新检查'},
+      VCHK:{REVIEW:'等待负责人确认结果检查方案',REVISE:'结果检查方案需要修改',ACTIVE:'检查方案已批准，实现与验证待完成',SATISFIED:'计划要求的检查机制已具备',BASELINED:'结果检查基线已保存',PARTIALLY_STALE:'部分检查结论需要重新验证'},
+      VCOV:{REVIEW:'等待负责人确认覆盖率方案',REVISE:'覆盖率方案需要修改',ACTIVE:'覆盖率方案已批准，采集与缺口处理待完成',SATISFIED:'覆盖目标已按计划处理',BASELINED:'覆盖率基线已保存',PARTIALLY_STALE:'部分覆盖率结论需要重新检查'},
+      VCASE:{REVIEW:'等待负责人确认测试用例方案',REVISE:'测试用例方案需要修改',ACTIVE:'用例方案已批准，实现与运行待完成',SATISFIED:'计划要求的测试用例已有结论',BASELINED:'测试用例基线已保存',PARTIALLY_STALE:'部分测试用例结论需要重新检查'},
+      VREG:{REVIEW:'等待负责人确认回归方案',REVISE:'回归方案需要修改',ACTIVE:'回归方案已批准，执行与分析待完成',SATISFIED:'计划要求的回归结果已完成处理',BASELINED:'回归验证基线已保存',PARTIALLY_STALE:'部分回归结论需要重新检查'}
     };
     const DOCUMENT_ITEM_LABELS = {
       'human-decision':'工程决定', 'external-open-question':'待回答问题',
@@ -655,7 +655,7 @@
     };
     // Motion decorates the recorded state; it is neither a heartbeat nor a progress source.
     function statusMotion(value) {
-      if (['RUNNING', 'ACTIVE'].includes(value)) return 'active';
+      if (value === 'RUNNING') return 'active';
       if (['PENDING', 'REVIEW', 'REVISE', 'REVIEW_REQUIRED', 'HUMAN_REVIEW_REQUIRED', 'AGENT_CHECKING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT', 'OPEN', 'CHANGES_REQUESTED', 'PROVISIONAL', 'BLOCKED', 'NOT_SATISFIED'].includes(value)) return 'waiting';
       return 'none';
     }
@@ -673,9 +673,10 @@
       ? 'Agent 正在检查审批'
       : DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
     const deliveryReviewStatusBadge = (value, running=false) => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${statusPulse(running && value === 'AGENT_CHECKING' ? 'active' : statusMotion(value))}${escapeHtml(deliveryReviewStatusLabel(value, running))}</span>`;
+    const activityIsRunning = item => item.status === 'RUNNING' && item.execution_confirmed === true;
     const deliveryReviewIsRunning = n => n.delivery_review?.status === 'AGENT_CHECKING'
       && (n.next_actions || []).some(item => item.kind === 'CHECK_DOCUMENT_REVIEW')
-      && (n.activities || []).some(item => item.status === 'RUNNING');
+      && (n.activities || []).some(activityIsRunning);
     function vdocPlanReviewState(workstream) {
       const plans = workstream?.workstream === 'VDOC'
         ? (workstream.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required)
@@ -709,10 +710,10 @@
       return WORKSTREAM_STATE_LABELS[workstream.workstream]?.[value] || STATUS_LABELS[value] || value;
     };
     function workstreamMotion(w) {
-      const motion = statusMotion(w.lifecycle);
-      if (w.closure?.ready || motion === 'none') return 'none';
-      return humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length
-        ? 'waiting' : motion;
+      if (w.closure?.ready) return 'none';
+      if (humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length) return 'waiting';
+      if ((w.activities || []).some(activityIsRunning)) return 'active';
+      return statusMotion(w.lifecycle);
     }
     const workstreamStatusBadge = (workstream) => `<span class="badge ${escapeHtml(workstream.lifecycle)}" title="系统值：${escapeHtml(workstream.lifecycle)}">${statusPulse(workstreamMotion(workstream))}${escapeHtml(workstreamStatusLabel(workstream))}</span>`;
     const agentStatusBadge = (value) => { const label = AGENT_STATUS_LABELS[value] || STATUS_LABELS[value] || value; return `<span class="badge ${escapeHtml(value)}" title="当前状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`; };
@@ -1277,7 +1278,7 @@
       )[0]?.item || null;
     }
     function activeProjectActivity(snapshot=state.snapshot) {
-      const activeStatuses = new Set(['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT']);
+      const activeStatuses = new Set(['PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT','UNCONFIRMED','DISCONNECTED']);
       return (snapshot.activities || []).find(item =>
         item.node_id === 'project' && activeStatuses.has(item.status)
       ) || null;
@@ -1288,16 +1289,17 @@
       const description = `${activity.operation || ''} ${activity.message || ''}`;
       const isVdoc = /\bVDOC\b|文档撰写方案/.test(description);
       const waiting = activity.status === 'WAITING_FOR_HUMAN';
+      const running = activityIsRunning(activity);
       return {
         activity,
         isVdoc,
         title: isVdoc
-          ? (waiting ? 'VDOC 规划等待负责人处理' : 'VDOC 文档撰写方案编制中')
-          : (waiting ? '验证工作规划等待负责人处理' : 'Agent 正在规划验证工作'),
+          ? (waiting ? 'VDOC 规划等待负责人处理' : running ? 'VDOC 文档撰写方案编制中' : '等待 Agent 继续形成文档撰写方案')
+          : (waiting ? '验证工作规划等待负责人处理' : running ? 'Agent 正在规划验证工作' : '等待 Agent 继续形成验证工作方案'),
         formal: isVdoc
           ? '正式状态：尚未形成可审批的文档撰写方案'
           : '正式状态：尚未建立可执行的验证工作流',
-        actual: `实际进度：${humanText(activity.message || activity.operation || 'Agent 已开始分析当前验证对象')}`,
+        actual: `最近登记：${humanText(activity.execution_message || activity.message || activity.operation || '尚无执行记录')}`,
         next: waiting
           ? '从侧边栏“需要你处理”回答当前问题；回答后 Agent 继续形成验证工作方案。'
           : isVdoc
@@ -1348,10 +1350,10 @@
       const workstreamCount = s.workstreams.length
         ? `${s.workstreams.length} 条工作流 · 点击查看工作流`
         : planning
-          ? '0 条已登记工作流 · Agent 已开始形成方案'
+          ? '0 条已登记工作流 · 已登记方案编制活动'
           : '0 条工作流';
       const emptyWorkstreams = planning
-        ? `<div class="card empty"><div class="planning-indicator">${statusPulse(statusMotion(planning.activity.status))}<strong>${planning.isVdoc ? 'VDOC 文档撰写方案正在编制' : '验证工作方案正在编制'}</strong></div><p>Agent 提交可审批方案后，这里才会出现正式工作流和工作节点。</p></div>`
+        ? `<div class="card empty"><div class="planning-indicator">${statusPulse(activityIsRunning(planning.activity) ? 'active' : 'waiting')}<strong>${escapeHtml(planning.title)}</strong></div><p>Agent 提交可审批方案后，这里才会出现正式工作流和工作节点。</p></div>`
         : '<div class="card empty">尚未规划工作流</div>';
       $('#main').innerHTML = `<div class="overview-main">${projectStatusCardHtml(s)}<section class="section"><div class="section-head"><h2>验证工作流</h2><span class="count">${escapeHtml(workstreamCount)}</span></div><div class="grid workstream-grid">${s.workstreams.map(wsCard).join('') || emptyWorkstreams}</div></section>${projectContextHtml()}</div>`;
       bindWorkstreamCards(); bindNodeLinks();
@@ -1405,7 +1407,7 @@
     }
     function activityRows(items) {
       if (!items.length) return '<div class="empty">当前没有正在进行的 Agent 工作</div>';
-      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = agentTarget(a); return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta">${target.html} · ${escapeHtml(a.actor)} · ${escapeHtml(a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true, statusMotion(a.status))}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
+      return items.map(a => { const p = a.progress_total ? Math.round((a.progress_current || 0) * 100 / a.progress_total) : null; const target = agentTarget(a); return `<div class="list-row"><div><div class="row-title">${escapeHtml(a.operation)}</div><div class="row-meta">${target.html} · ${escapeHtml(a.actor)} · ${escapeHtml(a.execution_message || a.message || '无进度说明')}</div></div><div class="node-progress-head">${p === null ? '' : progressRing(p, `${a.operation} 进度 ${p}%`, true, statusMotion(a.status))}<div>${statusBadge(a.status)}<div class="row-meta">${p === null ? '' : `${a.progress_current}/${a.progress_total}`}</div></div></div></div>`; }).join('');
     }
     function agentTarget(item) {
       const raw = item?.node_id || item?.target || 'project';
@@ -1458,7 +1460,7 @@
       const service = agent.service || {};
       const serviceLabel = service.online ? '自动接续服务在线' : '自动接续服务未连接';
       const serviceMessage = service.message || '未启动自动接续服务；提交记录不会唤醒已退出的 CLI';
-      const serviceSection = `<section class="section agent-section"><div class="card agent-panel"><h2>Agent 工作状态</h2><p><strong>${escapeHtml(serviceLabel)}</strong></p><p>${escapeHtml(serviceMessage)}</p><p>${escapeHtml(agent.message || '')}</p><details><summary>CLI 恢复与运行记录</summary><p>已初始化项目重新运行 setup 会恢复自动接续。交互式 CLI 与服务不能同时运行。服务状态和日志可用 agent-service status 查看。</p>${service.latest_run ? `<p>${escapeHtml(service.latest_run.summary || '')}</p>` : ''}</details></div></section>`;
+      const serviceSection = `<section class="section agent-section"><div class="card agent-panel"><h2>Agent 工作状态</h2><p>${agentStatusBadge(agent.status || 'UNCONFIRMED')}</p><p>${escapeHtml(agent.message || '尚无可确认的执行记录')}</p><details><summary>CLI 恢复与运行记录</summary><p>setup 默认进入交互 CLI，并自动读取当前项目状态、继续允许的下一项工作。后台自动接续须显式运行 agent-service start；交互 CLI 与服务不能同时运行。打开 Dashboard 不会启动 Agent。</p><p>${escapeHtml(serviceLabel)} · ${escapeHtml(serviceMessage)}</p>${service.latest_run ? `<p>${escapeHtml(service.latest_run.summary || '')}</p>` : ''}</details></div></section>`;
       const questionSection = questions.length
         ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>等待你回答的问题</h2><p>主 Agent 正在等待你的工程判断；回答保存后，由在线的自动接续服务或仍在等待的 CLI 继续处理。</p></div><span class="badge WAITING_FOR_HUMAN">${questions.length} 项待回答</span></div><div class="agent-question-list">${agentQuestionCardsHtml(questions)}</div><div class="agent-side-note"><strong>你也可以在当前主 Agent 对话中回答，两处会自动同步。</strong> 回答只用于继续当前工作，不会自动确认工作节点或验证结论。</div></article></section>`
         : '<section class="section agent-section"><div class="card agent-priority-clear"><div class="agent-priority-clear-copy"><strong>当前没有等待你回答的问题</strong><span>主 Agent 提出新的工程问题后，会在这里显示回答框。</span></div><span class="badge IDLE">无需你处理</span></div></section>';
@@ -1715,7 +1717,7 @@
       const review = n.delivery_review?.status || n.plan_review?.status;
       if (review === 'AGENT_CHECKING' && deliveryReviewIsRunning(n)) return 'active';
       if (review && review !== 'APPROVED') return statusMotion(review);
-      const activity = (n.activities || []).find(a => ['RUNNING', 'PENDING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT'].includes(a.status));
+      const activity = (n.activities || []).find(a => activityIsRunning(a) || ['PENDING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT'].includes(a.status));
       return statusMotion(activity?.status || status);
     }
     function nodeProgressBarHtml(progress, motion) {
@@ -1817,7 +1819,7 @@
         : !plansApproved
           ? '等待负责人审批文档撰写方案'
           : contentAuthoring
-            ? 'Agent 正在按已批准方案撰写正文'
+            ? '等待 Agent 完成已批准方案的正文撰写'
           : openAgentQuestions.length
             ? 'Agent 等待你回答文档验收问题'
           : agentChecking.length

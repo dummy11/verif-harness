@@ -367,10 +367,28 @@ def retry(store: ProjectStore) -> dict:
 def interactive(store: ProjectStore, runtime: str, startup_prompt: str | None) -> int:
     with project_lock(store) as lock_fd:
         command = runtime_command(runtime)
+        if startup_prompt is None:
+            cli = shlex.join([sys.executable, str(CLI)])
+            startup_prompt = (
+                f"请使用 verif-harness Skill，继续当前项目的验证工作。项目根目录是 {store.root}，"
+                f"控制面 CLI 入口是 {cli}，各命令使用 --project-root 指定当前项目。"
+                "若尚未 bootstrap，按 Skill 向我收集缺失输入，不猜测 DUT 或目录。"
+                "若已经初始化，先重读 status、closure、当前 revision、节点定义和正文摘要、"
+                "未处理审批意见、验收后检查及 agent-question 的问题和回答，"
+                "然后从当前允许的下一项动作继续执行；每项完成后重新读取 closure，"
+                "不要只报状态、列工具或给出 Dashboard 地址后停住。"
+                "需要负责人回答或审批时，绑定当前节点并按交互模式建立 await/checkpoint，"
+                "把具体问题显示在当前 CLI，收到回答后继续；没有可执行动作时解释当前对象和缺口。"
+                "历史中断任务先核对已有文件和持久化结果，避免重复执行已完成动作。"
+                "保持 DUT 和规格只读，遵守 VDOC 方案审批、正文撰写和正文验收的顺序；"
+                "不得代替负责人批准、豁免、冻结，不自动运行 EDA、提交、推送或发布。"
+                "不要启动或停止 agent-service，也不要另开 Main Agent。请用中文继续。"
+            )
         if runtime == "codex":
             command += ["--sandbox", "workspace-write", "-c", 'approval_policy="never"']
+            command.append(startup_prompt)
         else:
+            from .interactive_cli import run_kimi
             command += ["--yolo"]
-        if startup_prompt:
-            command += [startup_prompt]
+            return run_kimi(command, store.root, startup_prompt, lock_fd)
         return subprocess.call(command, cwd=store.root, pass_fds=(lock_fd,))

@@ -206,7 +206,15 @@ Stage 0–5 state machine, or legacy project initialization command.
 
 ### Managed VDOC continuation
 
-For an initialized project, setup starts/reuses the explicit `agent-service`.
+Setup defaults to an interactive CLI with an initial continuation request, for both
+new and initialized projects. Read current state and keep executing allowed closure
+actions until an owner decision, completion, or concrete blocker; do not stop after
+an inventory, status report, or Dashboard link. Collect missing bootstrap inputs for
+a new project. Reconcile persisted results before repeating interrupted work.
+Use the interactive question/await rules above when waiting for the owner.
+Do not infer execution from an old RUNNING activity or ACTIVE workstream lifecycle.
+
+The optional background `agent-service` is started only by an explicit owner command.
 It serializes current VDOC closure actions from SQLite using the selected runtime;
 it does not resume a dead TUI or approve gates. In a managed one-action invocation,
 read current revision/digests first, handle only the supplied action, and exit.

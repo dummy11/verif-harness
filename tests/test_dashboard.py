@@ -604,9 +604,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('<div class="project-status-label">当前项目状态</div>', html)
         self.assertIn("VDOC 文档撰写方案编制中", html)
         self.assertIn("正式状态：尚未形成可审批的文档撰写方案", html)
-        self.assertIn("实际进度：${humanText(activity.message", html)
-        self.assertIn("0 条已登记工作流 · Agent 已开始形成方案", html)
-        self.assertIn("VDOC 文档撰写方案正在编制", html)
+        self.assertIn("最近登记：${humanText(activity.execution_message", html)
+        self.assertIn("0 条已登记工作流 · 已登记方案编制活动", html)
+        self.assertNotIn("VDOC 文档撰写方案正在编制", html)
+        self.assertIn("等待 Agent 继续形成文档撰写方案", html)
         self.assertIn("Agent 提交可审批方案后，这里才会出现正式工作流和工作节点", html)
         self.assertIn("VDOC · 文档撰写方案", html)
         self.assertIn("const revisionLabel = value =>", html)
@@ -1200,7 +1201,8 @@ class DashboardTest(unittest.TestCase):
         answered = response["result"]
         self.assertEqual(answered["status"], "ANSWERED")
         self.assertEqual(answered["answer_option"], "dpi")
-        self.assertEqual(response["snapshot"]["activities"][0]["status"], "RUNNING")
+        self.assertEqual(response["snapshot"]["activities"][0]["status"], "UNCONFIRMED")
+        self.assertEqual(response["snapshot"]["activities"][0]["recorded_status"], "RUNNING")
         self.assertFalse(any(
             item["source"] == "agent-question"
             for item in response["snapshot"]["waiting_for_human"]
@@ -1249,7 +1251,8 @@ class DashboardTest(unittest.TestCase):
             item for item in after["agent_question_history"] if item["id"] == question["id"]
         )
         self.assertEqual(answered["status"], "ANSWERED")
-        self.assertEqual(after["activities"][0]["status"], "RUNNING")
+        self.assertEqual(after["activities"][0]["status"], "UNCONFIRMED")
+        self.assertFalse(after["activities"][0]["execution_confirmed"])
         self.assertFalse(any(
             item["source"] == "agent-question" and item["question_id"] == question["id"]
             for item in after["waiting_for_human"]

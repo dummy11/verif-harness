@@ -88,7 +88,7 @@ class DeliveryPendingTest(unittest.TestCase):
         self.assertEqual(snapshot["project_agent"]["pending_agent_review_check_count"], 1)
         self.assertEqual(snapshot["project_agent"]["status"], "PENDING")
         self.assertIn("等待 Main Agent 检查", snapshot["project_agent"]["message"])
-        self.assertIn("尚未登记为正在运行", snapshot["project_agent"]["message"])
+        self.assertIn("尚无可确认的当前执行记录", snapshot["project_agent"]["message"])
         f.complete_vdoc_internal_work()
         self.cli("agent-review-check", "complete", delivery["delivery_review"]["current_review"]["id"],
                  "--summary", "已检查测试正文、审批和依赖影响")

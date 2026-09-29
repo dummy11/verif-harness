@@ -59,6 +59,10 @@ class MultiAgentControlTest(unittest.TestCase):
         self.assertEqual(len(collaboration["active_subagents"]), 1)
         self.assertEqual(collaboration["active_subagents"][0]["id"], "checker-1")
         self.assertEqual(snapshot["project_agent"]["active_subagent_count"], 1)
+        self.assertNotEqual(snapshot["project_agent"]["status"], "RUNNING")
+        activity = next(a for a in snapshot["activities"] if a["id"] == assignment["activity_id"])
+        self.assertTrue(activity["execution_confirmed"])
+        self.assertEqual(activity["status"], "RUNNING")
 
         finished = self.store.finish_agent_work(
             assignment["id"], "checker-1", "COMPLETED", "只读检查完成",
@@ -97,7 +101,7 @@ class MultiAgentControlTest(unittest.TestCase):
         snapshot = self.store.dashboard_snapshot()
         self.assertFalse(snapshot["waiting_for_human"])
         self.assertEqual(snapshot["project_agent"]["waiting_subagent_count"], 1)
-        self.assertEqual(snapshot["project_agent"]["status"], "RUNNING")
+        self.assertEqual(snapshot["project_agent"]["status"], "WAITING_FOR_PARENT")
 
         with self.assertRaisesRegex(HarnessError, "subagent 的工作记录不能直接绑定"):
             self.store.ask_agent_question(
@@ -174,6 +178,8 @@ class MultiAgentControlTest(unittest.TestCase):
         observed = self.store.agent_assignment(assignment["id"])
         self.assertEqual(observed["status"], "EXPIRED")
         self.assertEqual(observed["activity"]["status"], "CANCELLED")
+        activity = next(a for a in self.store.activities() if a["id"] == assignment["activity_id"])
+        self.assertFalse(activity["execution_confirmed"])
         node = self.store.model(assignment["node_id"])["nodes"][0]
         self.assertEqual(node["status"], "UNKNOWN")
 

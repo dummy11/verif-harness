@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -132,7 +134,6 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn("check_runtime_versions.py", source)
         self.assertIn("--require-agent", source)
         self.assertIn('agent-service interactive', source)
-        self.assertIn('agent_args+=(--yolo)', source)
         self.assertIn('.codex/config.toml', source)
         self.assertIn('.kimi-code/local.toml', source)
         self.assertIn('configure_response_language.py', source)
@@ -154,18 +155,65 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn('"$package_root/.kimi-code/agents"', source)
         self.assertIn('cd "$workspace_root"', source)
         self.assertIn('Starting $runtime CLI here: $(pwd)', source)
-        self.assertIn("codex_startup_inventory_prompt=", source)
-        self.assertIn("configured, connection pending", source)
-        self.assertIn('agent_args=(--startup-prompt "$codex_startup_inventory_prompt")', source)
-        self.assertIn("Kimi starts directly without a blocking inventory turn", source)
-        self.assertIn("use /skills and /mcp for the live inventory", source)
+        self.assertNotIn("codex_startup_inventory_prompt=", source)
+        self.assertNotIn("列完后等待下一条用户指令", source)
+        self.assertIn("读取当前项目状态并接续验证工作", source)
         self.assertNotIn("kimi_inventory_args", source)
         self.assertNotIn('"$agent_cli" --prompt', source)
         self.assertNotIn('exec "$agent_cli" "${agent_args[@]}"', source)
         self.assertIn('agent-service interactive', source)
-        self.assertIn('agent-service start', source)
+        self.assertNotIn('agent-service start', source)
         self.assertIn('--interactive', source)
         self.assertIn('workspace disappeared before Agent launch', source)
+
+    def test_setup_launches_interactive_for_new_and_existing_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / 'package'
+            scripts = package / 'scripts'
+            scripts.mkdir(parents=True)
+            shutil.copy2(SETUP, scripts / 'setup.sh')
+            for name in ('.codex', '.kimi-code', 'skills'):
+                shutil.copytree(ROOT / name, package / name, symlinks=True)
+            binary = package / 'bin'
+            binary.mkdir()
+            calls = package / 'calls.jsonl'
+            fake_python = binary / 'python'
+            fake_python.write_text(f'#!{sys.executable}\n' +
+                                   'import os,sys,json\n' +
+                                   f'with open({str(calls)!r}, "a") as f:\n' +
+                                   ' f.write(json.dumps({"args":sys.argv[1:],"cwd":os.getcwd()})+"\\n")\n')
+            fake_python.chmod(0o755)
+            installer = scripts / 'setup_managed.sh'
+            installer.write_text(f'#!/bin/sh\necho "{fake_python}"\n')
+            installer.chmod(0o755)
+            for runtime in ('codex', 'kimi'):
+                executable = binary / runtime
+                executable.write_text('#!/bin/sh\nexit 0\n')
+                executable.chmod(0o755)
+                for initialized, flags in ((False, []), (True, []), (True, ['--interactive']), (True, ['--no-agent'])):
+                    with self.subTest(runtime=runtime, initialized=initialized, flags=flags):
+                        workspace = Path(tempfile.mkdtemp(dir=directory, prefix='workspace-'))
+                        if initialized:
+                            state = workspace / '.verif-harness'
+                            state.mkdir()
+                            (state / 'project.json').write_text('{}')
+                            (state / 'model.sqlite3').touch()
+                        calls.write_text('')
+                        result = subprocess.run(
+                            ['bash', str(scripts / 'setup.sh'), '--workspace-root', str(workspace), '--runtime', runtime, *flags],
+                            env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ['PATH']},
+                            capture_output=True, text=True, timeout=20,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        launches = [json.loads(line) for line in calls.read_text().splitlines() if 'agent-service' in line]
+                        if '--no-agent' in flags:
+                            self.assertEqual(launches, [])
+                        else:
+                            self.assertEqual(len(launches), 1)
+                            self.assertEqual(launches[0]['args'][1:], [
+                                'agent-service', 'interactive', '--project-root', str(workspace), '--runtime', runtime,
+                            ])
+                            self.assertEqual(launches[0]['cwd'], str(workspace.resolve()))
 
     def test_runtime_subagent_profiles_keep_human_interaction_on_main_agent(self) -> None:
         codex_profiles = sorted((ROOT / ".codex/agents").glob("verification-*.toml"))

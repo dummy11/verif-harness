@@ -7,7 +7,6 @@ install_verilator=false
 runtime=auto
 isolation=managed
 launch_agent=true
-interactive_agent=false
 
 usage() {
   echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--isolation managed] [--no-agent] [--interactive]" >&2
@@ -45,7 +44,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --isolation=*) isolation="${1#*=}" ;;
     --no-agent) launch_agent=false ;;
-    --interactive) interactive_agent=true ;;
+    --interactive) : ;; # Compatibility: interactive CLI is already the default.
     --help|-h)
       usage
       exit 0
@@ -84,8 +83,6 @@ export PYTHON="$python_cmd"
 export PATH="$managed_bin:$PATH"
 
 agent_cli=""
-agent_args=()
-codex_startup_inventory_prompt='启动清单：请只列出当前会话实际可用的 Skill 名称，以及 MCP server 的 configured、connected 和 tools available 状态；setup 已配置 xverif，如果它的 tool schema 尚未出现，请标记为“configured, connection pending”，不要误报为未安装或无 MCP。不要调用工具，不要修改文件，列完后等待下一条用户指令。'
 
 if [[ "$install_verilator" == true ]] && ! command -v verilator >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
@@ -258,7 +255,6 @@ else
   fi
   install_agent_profiles \
     "$package_root/.kimi-code/agents" "$workspace_root/.kimi-code/agents" "Kimi"
-  agent_args+=(--yolo)
 fi
 
 "$python_cmd" "$package_root/scripts/configure_response_language.py" \
@@ -321,20 +317,8 @@ if [[ ! -d "$workspace_root" ]]; then
 fi
 echo "Changing directory to workspace: $workspace_root"
 cd "$workspace_root"
-if [[ "$interactive_agent" != true && -f "$workspace_root/.verif-harness/project.json" && -f "$workspace_root/.verif-harness/model.sqlite3" ]]; then
-  echo "恢复验证文档自动接续服务：审批、意见和回答保存后会从当前数据库继续，不依赖旧 CLI 的 await。"
-  echo "服务与交互 CLI 互斥；如需对话，请先 agent-service stop，再用 setup --interactive。"
-  exec "$python_cmd" "$package_root/scripts/verif_harness.py" agent-service start \
-    --project-root "$workspace_root" --runtime "$runtime"
-fi
 echo "Starting $runtime CLI here: $(pwd)"
-echo "Inside the Agent CLI, invoke: $invocation"
-if [[ "$runtime" == "codex" ]]; then
-  agent_args=(--startup-prompt "$codex_startup_inventory_prompt")
-else
-  agent_args=()
-  echo "Kimi starts directly without a blocking inventory turn."
-  echo "After the TUI is ready, use /skills and /mcp for the live inventory."
-fi
+echo "启动任务将使用 Skill：$invocation"
+echo "进入交互 CLI 后，将读取当前项目状态并接续验证工作；需要你的决定时在当前会话等待。"
 exec "$python_cmd" "$package_root/scripts/verif_harness.py" agent-service interactive \
-  --project-root "$workspace_root" --runtime "$runtime" "${agent_args[@]}"
+  --project-root "$workspace_root" --runtime "$runtime"

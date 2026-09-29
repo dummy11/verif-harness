@@ -36,13 +36,13 @@ const context = vm.createContext({
 });
 vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclick")), context);
 vm.runInContext(`
-  for (const value of ['RUNNING', 'ACTIVE']) {
+  for (const value of ['RUNNING']) {
     assert.match(statusBadge(value), /data-motion="active"/);
   }
   for (const value of ['REVIEW', 'PENDING', 'AGENT_CHECKING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT']) {
     assert.match(statusBadge(value), /data-motion="waiting"/);
   }
-  for (const value of ['CLOSED', 'VALID', 'APPROVED', 'COMPLETED', 'FAILED', 'INVALID', 'CANCELLED', 'STALE', 'EXPIRED', 'SUPERSEDED', 'UNKNOWN']) {
+  for (const value of ['ACTIVE', 'UNCONFIRMED', 'DISCONNECTED', 'CLOSED', 'VALID', 'APPROVED', 'COMPLETED', 'FAILED', 'INVALID', 'CANCELLED', 'STALE', 'EXPIRED', 'SUPERSEDED', 'UNKNOWN']) {
     assert.doesNotMatch(statusBadge(value), /status-pulse/);
   }
   assert.match(planReviewStatusBadge('PENDING'), /data-motion="waiting"/);
@@ -65,19 +65,28 @@ vm.runInContext(`
   assert.match($('#main').innerHTML, /自动接续服务在线/);
   assert.doesNotMatch($('#main').innerHTML, /自动接续服务未连接/);
 
-  state.snapshot = {workstreams: [], activities: [{node_id:'project', status:'RUNNING', operation:'plan VDOC'}], project:{}};
+  state.snapshot = {workstreams: [], activities: [{node_id:'project', status:'RUNNING', execution_confirmed:true, operation:'plan VDOC'}], project:{}};
   const before = JSON.stringify(state.snapshot);
   renderOverview();
   assert.match($('#main').innerHTML, /0 条已登记工作流/);
   assert.match($('#main').innerHTML, /planning-indicator.*data-motion="active"/);
   assert.doesNotMatch($('#main').innerHTML, /data-workstream=/);
   assert.equal(JSON.stringify(state.snapshot), before);
+  state.snapshot.activities[0].status = 'UNCONFIRMED';
+  state.snapshot.activities[0].execution_confirmed = false;
+  renderOverview();
+  assert.match($('#main').innerHTML, /等待 Agent 继续形成文档撰写方案/);
+  assert.doesNotMatch($('#main').innerHTML, /正在编制|编制中|Agent 正在|data-motion="active"/);
   state.snapshot.activities[0].status = 'WAITING_FOR_HUMAN';
   renderOverview();
   assert.match($('#main').innerHTML, /planning-indicator.*data-motion="waiting"/);
 
   const w = {workstream:'VCHK', lifecycle:'ACTIVE', revision:1, nodes:[], progress:{required:4,satisfied:1}, closure:{ready:false,actions:[]}};
+  assert.match(wsCard(w), /class="ws-meter" data-motion="none" style="--value:25;/);
+  assert.doesNotMatch(workstreamStatusBadge(w), /正在/);
+  w.activities = [{status:'RUNNING', execution_confirmed:true}];
   assert.match(wsCard(w), /class="ws-meter" data-motion="active" style="--value:25;/);
+  w.activities = [];
   w.waiting_for_human = [{source:'agent-question'}];
   assert.match(wsCard(w), /class="ws-meter" data-motion="waiting" style="--value:25;/);
   w.waiting_for_human = [];
@@ -147,7 +156,7 @@ vm.runInContext(`
   assert.ok($('#main').innerHTML.includes('data-open-node="risk-node"'));
   assert.doesNotMatch($('#main').innerHTML, /finding-1|finding-2|finding-hidden|内部记录|项目与验证对象/);
 
-  const n = {status:'UNKNOWN', workstream:'VCHK', progress_measures:[{id:'checks',label:'检查项',target:4,unit:'项',source:'test'}], progress_observation:{checks:0}, activities:[{status:'RUNNING'}]};
+  const n = {status:'UNKNOWN', workstream:'VCHK', progress_measures:[{id:'checks',label:'检查项',target:4,unit:'项',source:'test'}], progress_observation:{checks:0}, activities:[{status:'RUNNING', execution_confirmed:true}]};
   for (const [count, ratio] of [[0,0],[2,50],[4,100]]) {
     n.progress_observation.checks = count;
     const beforeNode = JSON.stringify(n);
@@ -279,6 +288,8 @@ vm.runInContext(`
   assert.match(nodeStatusHtml(deliveryNode), /等待 Agent 检查你提交的验收结论/);
   assert.doesNotMatch(nodeStatusHtml(deliveryNode), /尚未满足|Agent 正在检查你提交的验收结论/);
   deliveryNode.activities = [{status:'RUNNING'}];
+  assert.doesNotMatch(nodeStatusHtml(deliveryNode), /Agent 正在检查审批/);
+  deliveryNode.activities[0].execution_confirmed = true;
   assert.match(nodeStatusHtml(deliveryNode), /Agent 正在检查审批/);
   assert.match(nodeStatusHtml(deliveryNode), /Agent 正在检查你提交的验收结论/);
   deliveryNode.delivery_review.status = 'APPROVED';

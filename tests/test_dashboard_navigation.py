@@ -36,6 +36,9 @@ class DashboardNavigationTest(unittest.TestCase):
     def test_work_node_alignment_document_names_and_progress_rings(self) -> None:
         self.run_browser_script("dashboard_node_list.cjs")
 
+    def test_reopen_does_not_claim_idle_agent_is_processing(self) -> None:
+        self.run_browser_script("dashboard_agent_state.cjs")
+
     def run_browser_script(self, script: str) -> None:
         if not shutil.which("node"):
             self.skipTest("Node.js is required for browser navigation tests")
@@ -104,6 +107,10 @@ class DashboardNavigationTest(unittest.TestCase):
                     )
                     other.sync_documents([document["id"]])
                 fixture.register_minimal_vdoc_delivery()
+                if script == "dashboard_agent_state.cjs":
+                    delivery = next(n for n in other.workstream('VDOC')['desired_state']
+                                    if n['role'] == 'document-deliverable')
+                    other.create_activity(delivery['id'], '检查验证文档审批', 'Project Main Agent')
             finally:
                 fixture.root, fixture.store = original_root, original_store
             config = {

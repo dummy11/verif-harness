@@ -43,14 +43,15 @@ Human：回答问题，作出 approve/modify/clarify/reject 等决定
 Agent：根据明确回答继续调用 CLI 并报告结果
 ```
 
-首次使用时，Human 可输入“`$verif-harness 为当前项目开始验证治理`”（Codex）或
+setup 进入交互 CLI 后会自动提交首轮接续任务。也可手动输入“`$verif-harness 为当前项目开始验证治理`”（Codex）或
 “`/skill:verif-harness 为当前项目开始验证治理`”（Kimi）。Agent 发现项目尚未
 bootstrap 后，会询问必填 [DUT 信息](glossary.md#project-setup)，并自行调用
 [`bootstrap`](glossary.md#project-setup) 建立项目知识模型。
-只有传入 `--no-agent` 时 setup 才跳过启动。已 bootstrap 项目再次 setup 默认恢复
-VDOC 自动接续服务，从当前数据库处理审批意见、正文检查及问题回答，不依赖旧会话
-的 await。需要对话时，先用 `agent-service stop` 停止服务并确认 STOPPED，再运行
-`setup --interactive`。两种模式共用项目锁，不同时写入。直接手工启动的旧 CLI 不受
+只有传入 `--no-agent` 时 setup 才跳过启动。新旧项目默认都进入交互 CLI；已有项目
+自动读取当前数据库，从允许的下一项动作继续，不会仅列出工具后等待。Kimi 需在
+真实终端中启动；无法识别输入框时会提示手动提交接续任务，不会切换成非交互模式。
+需要后台运行时，退出交互 CLI 后显式 `agent-service start`；需要返回交互时，先
+`agent-service stop` 并确认 STOPPED，再运行 setup。两种模式共用项目锁，不同时写入。直接手工启动的旧 CLI 不受
 此锁管理，切换前应退出。
 
 服务状态使用 `verif-harness agent-service status` 查看；恢复使用
@@ -61,6 +62,8 @@ VDOC 自动接续服务，从当前数据库处理审批意见、正文检查及
 `agent-service retry`、start。日志在 `.verif-harness/agent-service/`。
 Dashboard 的“Agent 交互”显示在线、失联和本轮结果；“没有需要你处理的事项”
 不等于 Agent 正在运行。注销 Dashboard 不删除审批记录，也不停止自动接续服务。
+重新打开 Dashboard 不会启动 Agent。工作流方案已批准、历史活动标记 RUNNING 或
+服务在线都不单独证明正在执行；缺少有效心跳或任务租约时显示执行状态待核实。
 
 例如：“`$verif-harness 规划 VDOC，并只询问模型无法确定的决策`”。Agent 会读取
 Skill 约束，再调用项目级 CLI。[Human review、waiver](glossary.md#human-gate) 和
@@ -115,7 +118,7 @@ setup 会：
 2. 安装并校验 Python、xverif、WavePeek 等锁定依赖；
 3. 向目标 workspace 安装项目级 Skill 链接与中文响应配置；
 4. 为选定的 Codex/Kimi runtime 配置项目级 xverif MCP；
-5. 切换到 workspace；新项目启动交互 Agent，已有项目启动或复用 VDOC 自动接续服务。
+5. 切换到 workspace 并进入交互 Agent，自动读取当前项目状态、继续允许的下一项工作。
 
 [`runtime`、`dependency`、`backend`](glossary.md#runtime) 是三个不同概念：
 
@@ -134,7 +137,7 @@ setup 参数：
 | `--install-verilator` | 关闭 | 缺少 Verilator 时尝试通过 Homebrew/apt 安装 |
 | `--isolation managed` | `managed` | 依赖隔离实现；当前只支持 managed |
 | `--no-agent` | 关闭 | 只安装/配置，不启动 Agent |
-| `--interactive` | 关闭 | 进入交互 CLI；已有自动接续服务必须先停止 |
+| `--interactive` | 已是默认行为 | 兼容旧参数；已有自动接续服务必须先停止 |
 
 setup 已经知道 workspace 和 runtime，所以后续在项目根目录执行 CLI 时不需要重复传
 `--project-root` 或 `--runtime`。xverif MCP 注册也由 setup 完成；Agent 刚启动、MCP
