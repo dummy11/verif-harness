@@ -4,9 +4,45 @@ The v1 control plane uses five cooperating subsystems: VPlan, VModel, VCheck,
 VClosure, and VReason. See the [mode catalog](skill_modes.md) for commands and
 the [architecture summary](architecture.md) for authority boundaries.
 
-There is no long-lived workflow worker. The Agent remains in the foreground for
-questions; deterministic commands are short-lived and persist their result
-before returning.
+Deterministic commands persist their result before returning. The explicit
+`agent-service` supervisor can continue current VDOC actions using the selected
+runtime; it never grants approvals or treats a process exit as verification evidence.
+
+## CLI 重启与自动接续
+
+已 bootstrap 的项目再次运行 `scripts/setup --runtime kimi|codex --workspace-root PATH`
+会启动或复用项目级自动接续服务，不再打开一个没有等待任务的新 CLI 输入框。
+服务从同一个 SQLite 数据库读取当前 VDOC closure，串行调用所选 CLI 的非交互模式。
+审批意见提交、批准全部内容及工程问题回答都先保存；服务随后重新检查当前版本并
+执行允许的动作。注销或重新注册 Dashboard 不删除这些记录，也不终止该服务。
+尚未 bootstrap 的项目仍进入交互 CLI；`--no-agent` 不启动服务或 CLI。
+
+```bash
+verif-harness agent-service status
+verif-harness agent-service stop
+# 等 status 显示 STOPPED 后，可按需重新启动或转入交互 CLI：
+verif-harness agent-service start --runtime kimi
+./scripts/setup --runtime kimi --workspace-root /path/to/project --interactive
+```
+
+服务与通过 setup 启动的交互 CLI 共用项目执行锁。切换前必须退出另一方；直接从
+其他终端手动启动、不经过 setup 的旧 CLI 不受此锁管理，应先退出。服务不会向
+旧 TUI 注入按键，也不会复活旧会话；每一轮从当前版本、审批和回答重新建立上下文。
+Kimi 使用非交互 `--prompt`，探测到旧版 `--print` 时一并使用；它按 CLI 的非交互权限执行。Codex 使用
+`exec --sandbox workspace-write`。使用前应确认项目可信、CLI 已登录且权限符合预期。
+新版 Kimi 的受管轮次显式加载同版本随包提供的 Main Agent profile；不会覆盖你自定义的
+交互 profile，也不依赖旧 profile 中仍可能存在的后台 await 指令。
+
+服务只自动处理 VDOC，不自动推进其他验证工作流、运行 EDA、批准、冻结或发布。
+存在阻塞问题时持久化问题并结束本轮，不依赖内存中的 await；回答后重新取任务。
+同一输入只尝试一次，失败、未推进或意外中断会保留日志，不无限重试。
+确认文件与记录后，先 stop 并等待停止，再运行 `agent-service retry` 和 start。
+revision 改变时停止旧任务。重启后仍有旧子进程存活时拒绝另起，防止并行修改。
+主机重启后须再次 setup；本服务不是系统开机启动项。
+
+“Agent 交互”依次显示待回答问题、Agent 工作状态和交互历史。无负责人待办并不
+代表 Agent 在线；服务失联会明确显示，运行日志保留在项目的
+`.verif-harness/agent-service/`，成功退出也不代替 Main Agent 验收后检查与 closure。
 
 ## 文档撰写方案审批
 
@@ -18,7 +54,8 @@ before returning.
 当前尚未处理的全部意见。提交意见不产生批准结论。Main Agent 分析、修改并登记
 处理结果后，负责人重新查看当前内容，“批准全部内容”才恢复可用。
 提交动作会解除仍在运行的 `await-human` 检查点并返回 `APPLY_REVIEW_FEEDBACK`；
-若 Agent 进程已退出，批次会持久化等待下一次 Main Agent 运行，不会伪装成已经处理。
+若交互 Agent 已退出，在线的自动接续服务会取走当前批次；服务未启动时，批次
+持久化等待下次 setup，不会伪装成已经处理。
 
 输入依据默认折叠。RTL、验证环境、参考模型和验证脚本只列目录；规格和其他文档
 保留完整文件列表。代码的逐文件版本记录仍保留在折叠的审计详情中。
@@ -39,7 +76,9 @@ VDOC 工作流进度同时统计必需的文档撰写方案节点和正文交付
 文件名，可按文档名称或文件名搜索。列表进度使用带百分比的圆环，旁边保留计算指标，
 悬停圆环可查看计算依据；运行和等待状态有轻微呼吸效果，完成或失效后停止，系统
 启用“减少动态效果”时不播放动画。动画不代表 Agent 正在运行，也不改变完成比例；
-负责人批准正文但 Agent 尚未检查完成时，仍不计为正文验收通过。
+负责人批准正文但 Agent 尚未检查完成时，仍不计为正文验收通过。状态徽标显示当前
+方案审批或正文验收状态，进度单独显示完成比例；仅存在待执行的 Agent 检查动作时
+显示“等待 Agent 检查”，不能在没有运行中 Activity 的情况下显示为“正在检查”。
 
 如果审批已经保存但页面刷新失败，会明确显示“审批已保存”，可点击“刷新审批
 状态”重新读取，不会重复提交审批。请求超过 30 秒或连接中断时，可能已经写入，

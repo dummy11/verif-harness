@@ -645,7 +645,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("return '待验收'", html)
         self.assertIn("return '待评审'", html)
         self.assertIn("pendingItemStatusBadge(a, targetNode)", html)
-        self.assertNotIn("s.project_agent", html)
+        self.assertIn("s.project_agent", html)
         self.assertNotIn("s.agent_collaboration", html)
         self.assertIn("/api/agent-questions/answer", html)
         self.assertIn("主 Agent 正在等待你的工程判断", html)
@@ -663,6 +663,9 @@ class DashboardTest(unittest.TestCase):
             html.index("function renderPendingItemsPage()")
         ]
         self.assertLess(agent_page.index("${questionSection}"), agent_page.index("${historySection}"))
+        self.assertLess(agent_page.index("${questionSection}"), agent_page.index("${serviceSection}"))
+        self.assertLess(agent_page.index("${serviceSection}"), agent_page.index("${historySection}"))
+        self.assertIn("Agent 工作状态", agent_page)
         self.assertNotIn("projectContextHtml", agent_page)
         self.assertNotIn("activity_history", agent_page)
         self.assertIn("agent_question_history", agent_page)

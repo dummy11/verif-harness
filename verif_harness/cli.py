@@ -118,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
+    service = commands.add_parser("agent-service", help="启动、查看或停止验证文档自动接续服务（不代替负责人审批）")
+    service.add_argument("operation", choices=("start", "status", "stop", "retry", "run", "interactive"))
+    project_argument(service)
+    service.add_argument("--runtime", choices=("codex", "kimi"))
+    service.add_argument("--startup-prompt", help=argparse.SUPPRESS)
+
     bootstrap = commands.add_parser("bootstrap", help="根据明确的 DUT 输入建立最小验证控制状态；不生成验证文档或验证内容")
     project_argument(bootstrap)
     bootstrap.add_argument("--project-name")
@@ -798,7 +804,21 @@ def main(arguments: list[str] | None = None) -> int:
                       "executed": False})
             return 0
         store = ProjectStore(args.project_root.resolve())
-        if args.command == "bootstrap":
+        if args.command == "agent-service":
+            from . import agent_service
+            if args.operation in {"start", "run", "interactive"} and not args.runtime:
+                raise HarnessError("请显式选择项目已配置的 --runtime codex 或 kimi")
+            if args.operation == "interactive":
+                return agent_service.interactive(store, args.runtime, args.startup_prompt)
+            store.require()
+            store.ensure_dashboard_schema()
+            if args.operation == "status":
+                emit(store.agent_service_status())
+            elif args.operation in {"start", "run"}:
+                emit(getattr(agent_service, args.operation)(store, args.runtime))
+            else:
+                emit(getattr(agent_service, args.operation)(store))
+        elif args.command == "bootstrap":
             supplied_reconfiguration = any((
                 args.project_name, args.rtl_root, args.docs_root, args.clear_docs_root,
                 args.verif_root, args.testbench_root, args.clear_testbench_root,

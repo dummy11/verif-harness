@@ -1060,6 +1060,20 @@ def capabilities() -> dict[str, Any]:
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agent_service_changes (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL);
+INSERT OR IGNORE INTO agent_service_changes VALUES(1,0);
+CREATE TABLE IF NOT EXISTS agent_service (
+  id INTEGER PRIMARY KEY CHECK(id=1), runtime TEXT NOT NULL, owner TEXT NOT NULL,
+  pid INTEGER NOT NULL, status TEXT NOT NULL, heartbeat REAL NOT NULL,
+  stop_requested INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_service_runs (
+  id TEXT PRIMARY KEY, task_key TEXT NOT NULL, revision INTEGER NOT NULL,
+  action_json TEXT NOT NULL, status TEXT NOT NULL, activity_id TEXT,
+  created_at TEXT NOT NULL, ended_at TEXT, summary TEXT NOT NULL DEFAULT '',
+  retry_requested INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS agent_service_task ON agent_service_runs(task_key,status);
 CREATE TABLE IF NOT EXISTS nodes (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL, workstream TEXT,
   status TEXT NOT NULL, data_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -1235,6 +1249,20 @@ CREATE INDEX IF NOT EXISTS review_feedback_batch
   ON review_feedback_items(batch_id,status);
 CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
+"""
+
+# Heartbeats and runtime logs must not cause another expensive closure read.
+for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documents",
+               "document_reviews", "document_items", "agent_questions", "human_actions",
+               "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
+               "review_feedback_items", "review_agent_checks", "node_closure_reviews",
+               "review_change_items", "reviews", "agent_assignments"):
+    for _operation in ("INSERT", "UPDATE", "DELETE"):
+        SCHEMA += f"""
+CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
+AFTER {_operation} ON {_table} BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
 """
 
 
@@ -2669,6 +2697,52 @@ class ProjectStore:
             return [dict(row) for row in connection.execute(
                 "SELECT * FROM activities" + where + " ORDER BY created_at DESC", values,
             )]
+
+    def agent_service_status(self) -> dict[str, Any]:
+        """Service liveness is not an approval, Activity, or verification result."""
+        import time
+        self.require()
+        self.ensure_dashboard_schema()
+        with self.read_connect() as connection:
+            row = connection.execute("SELECT * FROM agent_service WHERE id=1").fetchone()
+            latest = connection.execute(
+                "SELECT id,task_key,revision,status,activity_id,created_at,ended_at,summary,retry_requested "
+                "FROM agent_service_runs ORDER BY created_at DESC,rowid DESC LIMIT 1"
+            ).fetchone()
+        result = dict(row) if row else {"status": "NOT_STARTED", "message": "未启动自动接续服务；提交记录不会唤醒已退出的 CLI"}
+        result["online"] = bool(row and row["status"] not in {"STOPPED", "FAILED"}
+                                and time.time() - row["heartbeat"] < 30)
+        if row and not result["online"] and row["status"] not in {"STOPPED", "FAILED"}:
+            result.update(status="DISCONNECTED", message="自动接续服务已失联；待处理记录仍保留，请重新 setup")
+        result["latest_run"] = dict(latest) if latest else None
+        return result
+
+    def create_agent_service_run(self, task: dict[str, Any], run_id: str, log_path: str) -> str:
+        """Atomically bind an invocation to its Activity and current VDOC revision."""
+        activity_id = f"activity:{uuid.uuid4().hex[:12]}"
+        timestamp = now()
+        normalized_log = relative_path(self.root, log_path)
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            revision = connection.execute(
+                "SELECT revision FROM workstream_read_headers WHERE name='VDOC'"
+            ).fetchone()
+            if revision is None or revision[0] != task["revision"]:
+                raise HarnessError("自动接续动作已不是当前 VDOC 版本，请重新读取")
+            target = task["action"]["target"]
+            node = connection.execute("SELECT workstream FROM nodes WHERE id=?", (target,)).fetchone()
+            connection.execute(
+                "INSERT INTO activities(id,node_id,workstream,operation,status,actor,message,log_path,created_at,updated_at) "
+                "VALUES(?,?,?,'处理验证文档待办','RUNNING',?,?,?,?,?)",
+                (activity_id, target if node else PROJECT_TARGET, node[0] if node else PROJECT_WORKSTREAM,
+                 PROJECT_AGENT_ACTOR, task["action"]["reason"], normalized_log, timestamp, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO agent_service_runs(id,task_key,revision,action_json,status,activity_id,created_at) "
+                "VALUES(?,?,?,?,'RUNNING',?,?)",
+                (run_id, task["key"], task["revision"], json_text(task), activity_id, timestamp),
+            )
+        return activity_id
 
     def update_activity(
         self, activity_id: str, status: str, message: str | None = None,
@@ -7034,6 +7108,14 @@ class ProjectStore:
             except (TypeError, ValueError):
                 expired = True
             signatures.append(("assignment", row["id"], row["lease_expires_at"], expired))
+        try:
+            with self.read_connect() as connection:
+                service = connection.execute("SELECT heartbeat,status FROM agent_service WHERE id=1").fetchone()
+            if service:
+                signatures.append(("agent-service", service["status"],
+                                   observed_at.timestamp() - service["heartbeat"] >= 30))
+        except sqlite3.OperationalError:
+            pass
         return hashlib.sha256(json_text(signatures).encode("utf-8")).hexdigest()[:24]
 
     @staticmethod
@@ -7095,6 +7177,7 @@ class ProjectStore:
         return {
             "project": manifest["project_name"], "baseline_revision": manifest.get("baseline_revision"),
             "runtime": manifest.get("runtime"), "lifecycle": "ACTIVE",
+            "agent_service": self.agent_service_status(),
             "dut": manifest.get("dut", {}),
             "rtl_roots": manifest.get("rtl_roots", []),
             "docs_roots": manifest.get("docs_roots", []),
@@ -7135,6 +7218,17 @@ class ProjectStore:
         ]
         agent_assignment_history = self.agent_assignments()
         activities = self.activities()
+        service_state = self.agent_service_status()
+        if not service_state["online"]:
+            with self.read_connect() as connection:
+                disconnected = {row[0] for row in connection.execute(
+                    "SELECT activity_id FROM agent_service_runs WHERE status='RUNNING'"
+                )}
+            for item in activities:
+                if item["id"] in disconnected and item["status"] == "RUNNING":
+                    item["recorded_status"] = item["status"]
+                    item["status"] = "DISCONNECTED"
+                    item["message"] = "受管 Agent 服务失联；无法确认本轮是否仍在执行"
         human_actions = self.human_actions()
         agent_questions = self.agent_questions()
         agent_review_checks = self.review_agent_checks()
@@ -7708,6 +7802,9 @@ class ProjectStore:
             project_agent_message = (
                 f"需要你处理 {'、'.join(pending_parts)}；处理后 Agent 才会继续相关工作"
             )
+        elif service_state["online"] and service_state["status"] == "RUNNING":
+            project_agent_status = "RUNNING"
+            project_agent_message = service_state["message"]
         elif pending_agent_feedback_count:
             project_agent_status = "PENDING"
             project_agent_message = (
@@ -7715,10 +7812,10 @@ class ProjectStore:
                 "当前无需负责人重复提交"
             )
         elif pending_agent_review_checks:
-            project_agent_status = "RUNNING"
+            project_agent_status = "PENDING"
             project_agent_message = (
-                f"Agent 正在检查 {len(pending_agent_review_checks)} 项已提交的文档验收结论，"
-                "检查后自行判断是否需要你回答问题"
+                f"有 {len(pending_agent_review_checks)} 项已提交的文档验收结论等待 Main Agent 检查；"
+                "检查尚未登记为正在运行，当前无需负责人重复提交"
             )
         elif waiting_activity_count:
             project_agent_status = "WAITING_FOR_HUMAN"
@@ -7772,6 +7869,7 @@ class ProjectStore:
             "pending_agent_review_check_count": len(pending_agent_review_checks),
             "pending_agent_feedback_count": pending_agent_feedback_count,
             "latest_activity": latest_activity,
+            "service": service_state,
         }
 
         def subagent_view(item: dict[str, Any]) -> dict[str, Any]:

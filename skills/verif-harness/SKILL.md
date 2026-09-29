@@ -201,8 +201,21 @@ Prefer the human-facing spellings in interactive work: `plan VDOC`, `review
 --reason ...`, `dashboard --open-browser`, and `freeze VDOC|final`. Use the expanded `plan
 design|review|freeze` and `record ...` forms only when automation needs explicit
 fields. The older `model` and `v*` spellings are compatibility-only and must not
-be presented as the interactive interface. There is no detached worker,
-task-resume protocol, linear Stage 0–5 state machine, or legacy project initialization command.
+be presented as the interactive interface. There is no hidden worker, linear
+Stage 0–5 state machine, or legacy project initialization command.
+
+### Managed VDOC continuation
+
+For an initialized project, setup starts/reuses the explicit `agent-service`.
+It serializes current VDOC closure actions from SQLite using the selected runtime;
+it does not resume a dead TUI or approve gates. In a managed one-action invocation,
+read current revision/digests first, handle only the supplied action, and exit.
+For a blocking question, persist `agent-question ask ... --no-wait` and exit:
+the service is the persistent checkpoint and reads the saved answer next time.
+Do not start `await-human`, background waits, another service, or another Main Agent
+in that mode. The interactive question/await rules above still apply outside it.
+Runtime success is not evidence or node completion. Do not auto-retry a failed or
+unadvanced action. See `docs/user_guide.md` for service status, stop, and recovery.
 
 ## Capability dispatch
 

@@ -25,7 +25,13 @@ question must name the DUT, Workstream, node, or document involved and the
 concrete next action; do not emit vague labels such as `等待计划评审`, `空闲`, or
 `未登记活动` without that context.
 
-For every blocking `agent-question`, use this Kimi interaction bridge:
+In a managed `agent-service` one-action invocation, persist blocking questions
+with `agent-question ask ... --no-wait` and exit. The service is the checkpoint;
+it reads the persisted answer and current closure before the next invocation.
+Do not start background awaits or another Main Agent in this mode. Handle only
+the supplied current-version action and never approve a gate on the user's behalf.
+
+For every blocking `agent-question` in an interactive session, use this Kimi interaction bridge:
 
 1. Call `verif-harness agent-question ask ... --no-wait` in the foreground.
    Treat `--no-wait` as safe only inside this complete bridge; never leave an

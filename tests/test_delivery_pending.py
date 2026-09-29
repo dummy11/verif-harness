@@ -61,6 +61,7 @@ class DeliveryPendingTest(unittest.TestCase):
 
     def test_cli_dashboard_and_agent_share_current_acceptance_action(self) -> None:
         f = self.fixture
+        f.store.review_workstream("VCHK", "approve", "fixture-owner", "隔离本测试的负责人待办")
         findings = f.store.model()["findings"]
         self.assertTrue(findings)
         persisted = self.cli("closure", "evaluate", "--workstream", "VDOC")
@@ -85,6 +86,9 @@ class DeliveryPendingTest(unittest.TestCase):
         delivery = next(n for n in workstream["nodes"] if n["id"] == self.node["id"])
         self.assertEqual(delivery["delivery_review"]["status"], "AGENT_CHECKING")
         self.assertEqual(snapshot["project_agent"]["pending_agent_review_check_count"], 1)
+        self.assertEqual(snapshot["project_agent"]["status"], "PENDING")
+        self.assertIn("等待 Main Agent 检查", snapshot["project_agent"]["message"])
+        self.assertIn("尚未登记为正在运行", snapshot["project_agent"]["message"])
         f.complete_vdoc_internal_work()
         self.cli("agent-review-check", "complete", delivery["delivery_review"]["current_review"]["id"],
                  "--summary", "已检查测试正文、审批和依赖影响")

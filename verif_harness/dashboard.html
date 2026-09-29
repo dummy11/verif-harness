@@ -481,7 +481,7 @@
       VALID:'已通过检查', UNKNOWN:'尚无完成材料', INVALID:'检查未通过', STALE:'内容变化后尚未重新检查',
       REVALIDATION_REQUIRED:'需要重新检查', REVIEW_REQUIRED:'等待负责人复核', PROVISIONAL:'暂定接受', BLOCKED:'当前受阻', WAIVED:'已接受例外',
       REVIEW:'等待负责人评审方案', REVISE:'方案需要修改', ACTIVE:'正在执行验证工作', SATISFIED:'完成条件已满足', BASELINED:'当前基线已保存',
-      RUNNING:'正在执行', PENDING:'等待执行', AGENT_CHECKING:'Agent 正在检查审批', WAITING_FOR_HUMAN:'等待负责人决定', WAITING_FOR_PARENT:'等待主 Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
+      RUNNING:'正在执行', PENDING:'等待执行', AGENT_CHECKING:'等待 Agent 检查审批', WAITING_FOR_HUMAN:'等待负责人决定', WAITING_FOR_PARENT:'等待主 Agent 协调', COMPLETED:'已完成', FAILED:'执行失败', CANCELLED:'已取消', EXPIRED:'同步已过期', SUPERSEDED:'已被新计划替代', IDLE:'无需你处理',
       OPEN:'待回答', ANSWERED:'已回答', RESOLVED:'已处理', CLOSED:'已满足', NOT_SATISFIED:'尚未满足', STALE_REVISION:'不是当前版本',
       SUPPORTED:'条件已满足', NOT_SUPPORTED:'条件未满足', HUMAN_REVIEW_REQUIRED:'等待负责人确认', RECORDED:'已记录', PARTIALLY_STALE:'部分内容需要重新检查',
       APPROVED:'方案已批准', CHANGES_REQUESTED:'方案需要修改'
@@ -655,8 +655,8 @@
     };
     // Motion decorates the recorded state; it is neither a heartbeat nor a progress source.
     function statusMotion(value) {
-      if (['RUNNING', 'ACTIVE', 'AGENT_CHECKING'].includes(value)) return 'active';
-      if (['PENDING', 'REVIEW', 'REVISE', 'REVIEW_REQUIRED', 'HUMAN_REVIEW_REQUIRED', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT', 'OPEN', 'CHANGES_REQUESTED', 'PROVISIONAL', 'BLOCKED', 'NOT_SATISFIED'].includes(value)) return 'waiting';
+      if (['RUNNING', 'ACTIVE'].includes(value)) return 'active';
+      if (['PENDING', 'REVIEW', 'REVISE', 'REVIEW_REQUIRED', 'HUMAN_REVIEW_REQUIRED', 'AGENT_CHECKING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT', 'OPEN', 'CHANGES_REQUESTED', 'PROVISIONAL', 'BLOCKED', 'NOT_SATISFIED'].includes(value)) return 'waiting';
       return 'none';
     }
     const statusPulse = motion => ['active', 'waiting'].includes(motion)
@@ -666,11 +666,16 @@
       PENDING:'待审批', APPROVED:'已审批通过', CHANGES_REQUESTED:'需要修改'
     };
     const DELIVERY_REVIEW_STATUS_LABELS = {
-      PENDING:'待验收', AGENT_CHECKING:'Agent 正在检查审批', WAITING_FOR_HUMAN:'Agent 等待你回答', APPROVED:'已验收通过', PROVISIONAL:'暂定接受', CHANGES_REQUESTED:'需要修改'
+      PENDING:'待验收', AGENT_CHECKING:'等待 Agent 检查审批', WAITING_FOR_HUMAN:'Agent 等待你回答', APPROVED:'已验收通过', PROVISIONAL:'暂定接受', CHANGES_REQUESTED:'需要修改'
     };
     const planReviewStatusBadge = (value) => `<span class="badge ${escapeHtml(value)}" title="方案审批状态：${escapeHtml(value)}">${statusPulse(statusMotion(value))}${escapeHtml(PLAN_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value)}</span>`;
-    const deliveryReviewStatusLabel = value => DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
-    const deliveryReviewStatusBadge = value => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${statusPulse(statusMotion(value))}${escapeHtml(deliveryReviewStatusLabel(value))}</span>`;
+    const deliveryReviewStatusLabel = (value, running=false) => running && value === 'AGENT_CHECKING'
+      ? 'Agent 正在检查审批'
+      : DELIVERY_REVIEW_STATUS_LABELS[value] || STATUS_LABELS[value] || value;
+    const deliveryReviewStatusBadge = (value, running=false) => `<span class="badge ${escapeHtml(value)}" title="文档内容验收状态：${escapeHtml(value)}">${statusPulse(running && value === 'AGENT_CHECKING' ? 'active' : statusMotion(value))}${escapeHtml(deliveryReviewStatusLabel(value, running))}</span>`;
+    const deliveryReviewIsRunning = n => n.delivery_review?.status === 'AGENT_CHECKING'
+      && (n.next_actions || []).some(item => item.kind === 'CHECK_DOCUMENT_REVIEW')
+      && (n.activities || []).some(item => item.status === 'RUNNING');
     function vdocPlanReviewState(workstream) {
       const plans = workstream?.workstream === 'VDOC'
         ? (workstream.nodes || []).filter(node => node.role === 'document-writing-plan' && node.required)
@@ -1449,12 +1454,17 @@
       const s = state.snapshot;
       const questions = (s.agent_questions || []).filter(question => question.status === 'OPEN');
       const history = s.agent_question_history || s.agent_questions || [];
+      const agent = s.project_agent || {};
+      const service = agent.service || {};
+      const serviceLabel = service.online ? '自动接续服务在线' : '自动接续服务未连接';
+      const serviceMessage = service.message || '未启动自动接续服务；提交记录不会唤醒已退出的 CLI';
+      const serviceSection = `<section class="section agent-section"><div class="card agent-panel"><h2>Agent 工作状态</h2><p><strong>${escapeHtml(serviceLabel)}</strong></p><p>${escapeHtml(serviceMessage)}</p><p>${escapeHtml(agent.message || '')}</p><details><summary>CLI 恢复与运行记录</summary><p>已初始化项目重新运行 setup 会恢复自动接续。交互式 CLI 与服务不能同时运行。服务状态和日志可用 agent-service status 查看。</p>${service.latest_run ? `<p>${escapeHtml(service.latest_run.summary || '')}</p>` : ''}</details></div></section>`;
       const questionSection = questions.length
-        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>等待你回答的问题</h2><p>主 Agent 正在等待你的工程判断；提交回答后会继续相关工作。</p></div><span class="badge WAITING_FOR_HUMAN">${questions.length} 项待回答</span></div><div class="agent-question-list">${agentQuestionCardsHtml(questions)}</div><div class="agent-side-note"><strong>你也可以在当前主 Agent 对话中回答，两处会自动同步。</strong> 回答只用于继续当前工作，不会自动确认工作节点或验证结论。</div></article></section>`
+        ? `<section class="section agent-section"><article class="card agent-panel agent-priority" id="agent-questions"><div class="agent-panel-head"><div><h2>等待你回答的问题</h2><p>主 Agent 正在等待你的工程判断；回答保存后，由在线的自动接续服务或仍在等待的 CLI 继续处理。</p></div><span class="badge WAITING_FOR_HUMAN">${questions.length} 项待回答</span></div><div class="agent-question-list">${agentQuestionCardsHtml(questions)}</div><div class="agent-side-note"><strong>你也可以在当前主 Agent 对话中回答，两处会自动同步。</strong> 回答只用于继续当前工作，不会自动确认工作节点或验证结论。</div></article></section>`
         : '<section class="section agent-section"><div class="card agent-priority-clear"><div class="agent-priority-clear-copy"><strong>当前没有等待你回答的问题</strong><span>主 Agent 提出新的工程问题后，会在这里显示回答框。</span></div><span class="badge IDLE">无需你处理</span></div></section>';
       const answeredCount = history.filter(question => question.status === 'ANSWERED').length;
       const historySection = `<section class="section agent-section"><div class="section-head"><h2>历史交互记录</h2><span class="count">最近 ${Math.min(20, answeredCount)} 条</span></div><div class="card agent-panel"><div class="agent-timeline">${agentInteractionHistoryHtml(history)}</div></div></section>`;
-      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>这里只处理主 Agent 等待你回答的问题，并保留已经完成的问答记录。</p></div></div>${questionSection}${historySection}`;
+      $('#main').innerHTML = `<div class="page-head"><div><h1>Agent 交互</h1><p>处理工程问题、查看自动接续状态和已完成的问答记录。</p></div></div>${questionSection}${serviceSection}${historySection}`;
       bindNodeLinks();
     }
     function renderPendingItemsPage() {
@@ -1491,7 +1501,7 @@
           const data = Object.fromEntries(new FormData(event.target));
           data.id = form.dataset.agentQuestionForm;
           rememberReviewer(data.reviewer);
-          await post('/api/agent-questions/answer', data, '回答已保存；正在等待的主 Agent 会继续当前工作');
+          await post('/api/agent-questions/answer', data, '回答已保存；请在 Agent 工作状态中查看是否已接续');
         };
       });
     }
@@ -1594,7 +1604,7 @@
     }
     function progressBrief(n) {
       if (n.role === 'document-deliverable' && n.delivery_review) {
-        return `所属文档 ${humanText(n.document?.title || n.document_key || '未登记')} · ${deliveryReviewStatusLabel(n.delivery_review.status)}`;
+        return `所属文档 ${humanText(n.document?.title || n.document_key || '未登记')} · ${deliveryReviewStatusLabel(n.delivery_review.status, deliveryReviewIsRunning(n))}`;
       }
       if (n.role === 'document-catalog' && n.document) {
         const pending = (n.document.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status)).length;
@@ -1623,7 +1633,16 @@
         }
         return '等待负责人审批文档撰写方案';
       }
-      if (n.delivery_review?.status === 'AGENT_CHECKING') return 'Agent 正在检查你提交的验收结论';
+      if (n.delivery_review?.status === 'AGENT_CHECKING') {
+        const checkAction = (n.next_actions || []).find(item => item.kind === 'CHECK_DOCUMENT_REVIEW');
+        const checkingNow = deliveryReviewIsRunning(n);
+        if (checkingNow) return 'Agent 正在检查你提交的验收结论';
+        if (checkAction) return '等待 Agent 检查你提交的验收结论';
+        const internalBlockers = n.delivery_review.internal_work?.blockers || [];
+        if (internalBlockers.length) return `Agent 还需完成 ${internalBlockers.length} 项正文检查工作`;
+        const action = (n.next_actions || [])[0];
+        return action?.reason || '等待 Agent 完成当前验收处理';
+      }
       if (n.delivery_review?.status === 'PROVISIONAL') return '暂定内容允许带风险推进，但不能完成关闭';
       if (n.delivery_review && n.delivery_review.status !== 'APPROVED') {
         if ((n.delivery_review.open_agent_questions || []).length) return '等待负责人回答本节点的问题';
@@ -1694,6 +1713,7 @@
       if (['INVALID', 'FAILED', 'STALE', 'REVALIDATION_REQUIRED', 'EXPIRED', 'SUPERSEDED', 'CANCELLED'].includes(n.status)) return 'none';
       if ((n.agent_questions || []).some(q => q.status === 'OPEN')) return 'waiting';
       const review = n.delivery_review?.status || n.plan_review?.status;
+      if (review === 'AGENT_CHECKING' && deliveryReviewIsRunning(n)) return 'active';
       if (review && review !== 'APPROVED') return statusMotion(review);
       const activity = (n.activities || []).find(a => ['RUNNING', 'PENDING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT'].includes(a.status));
       return statusMotion(activity?.status || status);
@@ -1716,7 +1736,12 @@
       const attentionHtml = !attention ? '' : openQuestion
         ? `<div class="node-attention">⚠ <button class="node-attention-link" data-agent-question="${escapeHtml(openQuestion.id)}" title="前往 Agent 交互页面回答问题">${escapeHtml(attention)}</button></div>`
         : `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>`;
-      return `${statusBadge(status, motion)}<div class="node-progress-text" title="${escapeHtml(progress.basis)}">${escapeHtml(progress.metric)}</div>${attentionHtml}`;
+      const badge = n.role === 'document-writing-plan' && n.plan_review
+        ? planReviewStatusBadge(n.plan_review.status)
+        : n.role === 'document-deliverable' && n.delivery_review
+          ? deliveryReviewStatusBadge(n.delivery_review.status, deliveryReviewIsRunning(n))
+          : statusBadge(status, motion);
+      return `${badge}<div class="node-progress-text" title="${escapeHtml(progress.basis)}">${escapeHtml(progress.metric)}</div>${attentionHtml}`;
     }
     function progressHtml(n) {
       const measures = n.progress_measures || [];
@@ -1745,6 +1770,11 @@
       if (openAgentQuestions.length) return `Agent 等待你回答 ${openAgentQuestions.length} 个问题`;
       if (pendingDocumentItems.length) return `需要处理文档中的 ${pendingDocumentItems.length} 个问题或决定`;
       if ((n.activities || []).some(item => item.status === 'WAITING_FOR_HUMAN')) return '当前工作正在等待负责人决定';
+      const humanAction = (n.next_actions || []).find(item => item.executor === 'human');
+      if (humanAction) return humanText(humanAction.reason || actionLabel(humanAction.kind));
+      if (['CLOSED','VALID','WAIVED','APPROVED'].includes(n.closure_assessment?.conclusion || n.status)) {
+        return '当前不需要负责人处理';
+      }
       if (criteria.some(item => item.status === 'HUMAN_REVIEW_REQUIRED')) return '有完成条件需要负责人阅读内容后确认';
       return '当前不需要负责人处理';
     }
@@ -1791,7 +1821,7 @@
           : openAgentQuestions.length
             ? 'Agent 等待你回答文档验收问题'
           : agentChecking.length
-            ? 'Agent 正在检查你提交的文档验收结论'
+            ? '等待 Agent 检查你提交的文档验收结论'
           : !deliveriesApproved
             ? '等待负责人验收文档内容'
             : !engineClosed
@@ -2379,7 +2409,7 @@
     }
 
     function documentDeliveryNodeHtml(n) {
-      return `<section class="detail-block role-node-panel" data-node-role="document-deliverable"><h3>文档正文</h3><div class="detail-card"><dl class="kv"><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key))}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review.status)}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || n.delivery_review.document_path)}</dd></dl><div data-delivery-body class="document-node-body"><div class="empty">正在读取文档正文…</div></div>${writingPlanSourcesHtml(n)}<a class="node-link" data-view-delivery-document href="${escapeHtml(routeUrl({document:n.delivery_review.document_id}))}" target="_blank" rel="noopener">对照阅读文档 ↗</a></div></section>${deliveryApprovalPanelHtml(n)}`;
+      return `<section class="detail-block role-node-panel" data-node-role="document-deliverable"><h3>文档正文</h3><div class="detail-card"><dl class="kv"><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key))}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review.status, deliveryReviewIsRunning(n))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || n.delivery_review.document_path)}</dd></dl><div data-delivery-body class="document-node-body"><div class="empty">正在读取文档正文…</div></div>${writingPlanSourcesHtml(n)}<a class="node-link" data-view-delivery-document href="${escapeHtml(routeUrl({document:n.delivery_review.document_id}))}" target="_blank" rel="noopener">对照阅读文档 ↗</a></div></section>${deliveryApprovalPanelHtml(n)}`;
     }
 
     function bindDeliveryApproval(n, root) {
@@ -2713,7 +2743,7 @@
       const deliveries = (document.delivery_nodes || []).map(item => {
         const node = findNode(item.id);
         const state = node?.delivery_review?.status || 'PENDING';
-        return `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(item.id)}">${escapeHtml(humanText(item.title))}</button><div class="row-meta">${item.required ? '计划要求完成' : '补充内容'}</div></div>${deliveryReviewStatusBadge(state)}</div>`;
+        return `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(item.id)}">${escapeHtml(humanText(item.title))}</button><div class="row-meta">${item.required ? '计划要求完成' : '补充内容'}</div></div>${deliveryReviewStatusBadge(state, deliveryReviewIsRunning(item))}</div>`;
       }).join('') || '<div class="empty">这份文档尚未分解出独立验收内容</div>';
       return `<div class="detail-card"><dl class="kv"><dt>文档</dt><dd>${escapeHtml(humanText(document.title || '当前验证文档'))}</dd><dt>正文版本</dt><dd>${document.semantic_revision}</dd><dt>正文状态</dt><dd>${statusBadge(document.effective_status)}</dd><dt>验收工作节点</dt><dd>${(document.delivery_nodes || []).length} 个</dd><dt>待回答问题</dt><dd>${pending.length}</dd><dt>内容是否变化</dt><dd>${document.content_changed ? '是，需要重新同步和评审' : '否'}</dd></dl><details><summary>查看文档内部信息</summary><div class="detail-group-body"><dl class="kv"><dt>文档路径</dt><dd class="mono">${escapeHtml(document.path)}</dd><dt>文档标识</dt><dd class="mono">${escapeHtml(document.document_key)}</dd></dl></div></details></div><strong>该文档的正文验收工作节点</strong><div class="card list-card">${deliveries}</div><strong>文档中的问题和决定</strong><div class="card list-card">${items}</div><details class="detail-group"><summary>查看整篇正文评审记录</summary><div class="detail-group-body card list-card">${reviews}</div></details>`;
     }

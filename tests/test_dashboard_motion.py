@@ -36,10 +36,10 @@ const context = vm.createContext({
 });
 vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclick")), context);
 vm.runInContext(`
-  for (const value of ['RUNNING', 'ACTIVE', 'AGENT_CHECKING']) {
+  for (const value of ['RUNNING', 'ACTIVE']) {
     assert.match(statusBadge(value), /data-motion="active"/);
   }
-  for (const value of ['REVIEW', 'PENDING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT']) {
+  for (const value of ['REVIEW', 'PENDING', 'AGENT_CHECKING', 'WAITING_FOR_HUMAN', 'WAITING_FOR_PARENT']) {
     assert.match(statusBadge(value), /data-motion="waiting"/);
   }
   for (const value of ['CLOSED', 'VALID', 'APPROVED', 'COMPLETED', 'FAILED', 'INVALID', 'CANCELLED', 'STALE', 'EXPIRED', 'SUPERSEDED', 'UNKNOWN']) {
@@ -47,8 +47,23 @@ vm.runInContext(`
   }
   assert.match(planReviewStatusBadge('PENDING'), /data-motion="waiting"/);
   assert.doesNotMatch(planReviewStatusBadge('APPROVED'), /status-pulse/);
-  assert.match(deliveryReviewStatusBadge('AGENT_CHECKING'), /data-motion="active"/);
+  assert.match(deliveryReviewStatusBadge('AGENT_CHECKING'), /data-motion="waiting"/);
+  assert.match(deliveryReviewStatusBadge('AGENT_CHECKING', true), /data-motion="active".*Agent 正在检查审批/);
   assert.doesNotMatch(deliveryReviewStatusBadge('APPROVED'), /status-pulse/);
+
+  state.snapshot = {agent_questions:[], project_agent:{message:'等待 Main Agent 检查', service:{
+    online:false, message:'自动接续服务已失联', latest_run:{summary:'执行中断'}
+  }}};
+  renderAgentInteractionPage();
+  let agentPage = $('#main').innerHTML;
+  assert.match(agentPage, /自动接续服务未连接/);
+  assert.match(agentPage, /自动接续服务已失联/);
+  assert.ok(agentPage.indexOf('当前没有等待你回答的问题') < agentPage.indexOf('Agent 工作状态'));
+  assert.ok(agentPage.indexOf('Agent 工作状态') < agentPage.indexOf('历史交互记录'));
+  state.snapshot.project_agent.service.online = true;
+  renderAgentInteractionPage();
+  assert.match($('#main').innerHTML, /自动接续服务在线/);
+  assert.doesNotMatch($('#main').innerHTML, /自动接续服务未连接/);
 
   state.snapshot = {workstreams: [], activities: [{node_id:'project', status:'RUNNING', operation:'plan VDOC'}], project:{}};
   const before = JSON.stringify(state.snapshot);
@@ -148,7 +163,10 @@ vm.runInContext(`
   assert.equal(nodeMotion(n), 'waiting');
   n.agent_questions = [];
   n.delivery_review = {status:'AGENT_CHECKING'};
+  assert.equal(nodeMotion(n), 'waiting');
+  n.next_actions = [{kind:'CHECK_DOCUMENT_REVIEW'}];
   assert.equal(nodeMotion(n), 'active');
+  n.next_actions = [];
   n.delivery_review.status = 'PENDING';
   assert.equal(nodeMotion(n), 'waiting');
   n.delivery_review.status = 'APPROVED'; n.status = 'VALID';
@@ -229,23 +247,40 @@ vm.runInContext(`
   }
   assert.ok(!planHtml.includes('<strong>审批完成</strong>'));
   planNode.plan_review.completed = true;
+  planNode.plan_review.status = 'APPROVED';
+  planNode.plan_review.sections = [{section:'writing-plan',status:'APPROVED',reviews:[]}];
+  planNode.closure_assessment = {
+    conclusion:'CLOSED',
+    acceptance_results:[{status:'HUMAN_REVIEW_REQUIRED'}],
+  };
   const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
   assert.match(completedPlanHtml, /id="node-plan-complete" disabled/);
   assert.match(completedPlanHtml, /已批准全部内容/);
   assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled>已批准全部内容/);
+  assert.match(nodeStatusHtml(planNode), /已审批通过/);
+  assert.doesNotMatch(nodeStatusHtml(planNode), /已满足|有完成条件需要负责人阅读内容后确认/);
   assert.match(completedPlanHtml, /data-plan-section-form=/);
 
   const deliveryNode = {
     id:'vdoc-body', parent_id:planNode.id, title:'正文验收', role:'document-deliverable',
     document_key:'verification-plan', document:{title:'验证计划',path:'docs/verification_plan.md'},
     status:'REVIEW_REQUIRED', delivery_review:{status:'PENDING'}, required:true,
+    closure_assessment:{conclusion:'NOT_SATISFIED'}, activities:[], agent_questions:[],
+    next_actions:[],
   };
   assert.equal(nodeDocumentLabel(deliveryNode), '验证总计划 · verification_plan.md');
   assert.match(nodeRows([planNode, deliveryNode]), /文档：验证总计划 · verification_plan.md/);
   assert.doesNotMatch(nodeRows([planNode, deliveryNode]), /margin-left:|node-progress-bar/);
   assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="0"/);
   deliveryNode.delivery_review.status = 'AGENT_CHECKING';
+  deliveryNode.next_actions = [{kind:'CHECK_DOCUMENT_REVIEW',executor:'reasoning'}];
   assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="0"/);
+  assert.match(nodeStatusHtml(deliveryNode), /等待 Agent 检查审批/);
+  assert.match(nodeStatusHtml(deliveryNode), /等待 Agent 检查你提交的验收结论/);
+  assert.doesNotMatch(nodeStatusHtml(deliveryNode), /尚未满足|Agent 正在检查你提交的验收结论/);
+  deliveryNode.activities = [{status:'RUNNING'}];
+  assert.match(nodeStatusHtml(deliveryNode), /Agent 正在检查审批/);
+  assert.match(nodeStatusHtml(deliveryNode), /Agent 正在检查你提交的验收结论/);
   deliveryNode.delivery_review.status = 'APPROVED';
   deliveryNode.status = 'VALID';
   assert.match(nodeProgressHtml(deliveryNode), /aria-valuenow="100"/);

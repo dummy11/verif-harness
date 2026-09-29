@@ -7,9 +7,10 @@ install_verilator=false
 runtime=auto
 isolation=managed
 launch_agent=true
+interactive_agent=false
 
 usage() {
-  echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--isolation managed] [--no-agent]" >&2
+  echo "usage: $0 [--workspace-root PATH] [--install-verilator] [--runtime codex|kimi] [--isolation managed] [--no-agent] [--interactive]" >&2
   echo "       workspace-root receives the v1 project model; DUT paths are selected by bootstrap/VPlan." >&2
 }
 
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --isolation=*) isolation="${1#*=}" ;;
     --no-agent) launch_agent=false ;;
+    --interactive) interactive_agent=true ;;
     --help|-h)
       usage
       exit 0
@@ -319,12 +321,20 @@ if [[ ! -d "$workspace_root" ]]; then
 fi
 echo "Changing directory to workspace: $workspace_root"
 cd "$workspace_root"
+if [[ "$interactive_agent" != true && -f "$workspace_root/.verif-harness/project.json" && -f "$workspace_root/.verif-harness/model.sqlite3" ]]; then
+  echo "恢复验证文档自动接续服务：审批、意见和回答保存后会从当前数据库继续，不依赖旧 CLI 的 await。"
+  echo "服务与交互 CLI 互斥；如需对话，请先 agent-service stop，再用 setup --interactive。"
+  exec "$python_cmd" "$package_root/scripts/verif_harness.py" agent-service start \
+    --project-root "$workspace_root" --runtime "$runtime"
+fi
 echo "Starting $runtime CLI here: $(pwd)"
 echo "Inside the Agent CLI, invoke: $invocation"
 if [[ "$runtime" == "codex" ]]; then
-  agent_args+=("$codex_startup_inventory_prompt")
+  agent_args=(--startup-prompt "$codex_startup_inventory_prompt")
 else
+  agent_args=()
   echo "Kimi starts directly without a blocking inventory turn."
   echo "After the TUI is ready, use /skills and /mcp for the live inventory."
 fi
-exec "$agent_cli" "${agent_args[@]}"
+exec "$python_cmd" "$package_root/scripts/verif_harness.py" agent-service interactive \
+  --project-root "$workspace_root" --runtime "$runtime" "${agent_args[@]}"
