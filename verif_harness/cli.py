@@ -197,6 +197,10 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--open-browser", action="store_true")
     dashboard_mode = dashboard.add_mutually_exclusive_group()
     dashboard_mode.add_argument(
+        "--ensure-ready", action="store_true",
+        help="进入 Agent CLI 前恢复并核对 Dashboard；保留原端口，失败时不继续",
+    )
+    dashboard_mode.add_argument(
         "--status", action="store_true", help="检查后台 Dashboard 状态后退出",
     )
     dashboard_mode.add_argument(
@@ -851,7 +855,25 @@ def main(arguments: list[str] | None = None) -> int:
             with store.operation():
                 emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
         elif args.command == "dashboard":
-            if args.snapshot:
+            if args.ensure_ready:
+                from .dashboard_startup import ensure_dashboard_ready
+                ready = ensure_dashboard_ready(store, args.host, args.port)
+                print(ready["message"], flush=True)
+                if ready["status"] == "READY":
+                    print(f"当前项目：{store.root}", flush=True)
+                    print(f"访问地址：{ready['url']}", flush=True)
+                    if ready["launch_status"] == "STARTED":
+                        print("Dashboard 独立后台运行，退出 Agent CLI 不会停止它。", flush=True)
+                    else:
+                        print("已复用现有 Dashboard，未重启服务。", flush=True)
+                    if ready.get("warning"):
+                        print(f"注意：{ready['warning']}", flush=True)
+                    if _remote_session():
+                        access = dashboard_access_instructions(ready["url"], True)
+                        print("已有 SSH 转发仍连接时无需重新配置；否则在本机另开终端执行：", flush=True)
+                        print(access["command"], flush=True)
+                        print("以上只验证远端服务；本机 SSH 端口转发需要保持连接。", flush=True)
+            elif args.snapshot:
                 emit(store.dashboard_snapshot())
             elif args.status:
                 from .dashboard import dashboard_status

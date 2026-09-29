@@ -131,6 +131,11 @@ This repository contains public, reusable verification infrastructure.
   SSH tunnel 存在不代表服务可访问；直接启动 Dashboard 与 `bootstrap` 必须
   使用一致的后台 start-or-reuse 语义。共享端口上的项目、账号、数据库和写入
   token 必须严格隔离，注销项目不得删除项目文件或验证历史。
+- setup 进入交互 Agent CLI 前必须检查已有项目的 Dashboard，优先保留原端口，
+  启动或复用独立后台服务、补齐项目注册，并实际验证授权访问。检查不得加载整份
+  大方案或重新计算审批；端口冲突、权限或数据异常时明确阻止启动，不抢占其他服务。
+  新项目由 bootstrap 首次注册，`--no-agent` 不启动 Dashboard；远端服务可用与
+  本机 SSH 端口转发连通必须分开说明。
 
 ### 控制面状态一致性
 

@@ -19,6 +19,24 @@ Codex 使用原生交互启动提示；Kimi 在新建 TUI 输入框就绪后提�
 若无法识别输入框，明确提示手动提交，不向登录提示或旧会话发送任务。
 `--interactive` 保留为兼容参数；`--no-agent` 只安装配置，不启动 CLI 或服务。
 
+setup 在进入交互 CLI 前先检查 Dashboard。已有项目优先复用运行记录中的原端口，
+服务停止时独立后台启动，项目注册缺失时补登记；然后核对服务所属账号、当前项目、
+状态数据库可读性，以及带授权的项目接口、页面和脚本文件。检查不读取整份方案或
+重新计算完成状态，正常服务可直接复用。没有旧运行记录时才按现有规则选择端口。
+旧端口被其他服务或账号占用、权限不正确、数据不可读或页面检查失败时，setup 明确
+报错并停止在进入 CLI 之前，不抢占端口、不停止其他项目、不静默切换端口。项目尚未
+初始化时跳过此检查，由 bootstrap 完成首次注册；初始化记录不完整时不能当成新项目。
+`--no-agent` 保持仅安装配置，也不启动 Dashboard。退出 Agent CLI 不会停止独立的
+Dashboard。远端检查不代表本机 SSH 隧道正常，已有端口转发需保持连接。
+
+Agent 已经在工作时，可在框架目录的另一个终端运行以下命令恢复 Dashboard，无需
+打断 Agent，也不重新执行 bootstrap（请替换项目路径）：
+
+```bash
+.deps/runtime/venv/bin/python scripts/verif_harness.py dashboard \
+  --project-root /path/to/project --ensure-ready
+```
+
 需要后台自动接续时，退出交互 CLI 后显式运行 `agent-service start`。
 服务从同一个 SQLite 数据库读取当前 VDOC closure，串行调用所选 CLI 的非交互模式。
 审批意见提交、批准全部内容及工程问题回答都先保存；服务随后重新检查当前版本并

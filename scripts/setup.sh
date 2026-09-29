@@ -317,6 +317,12 @@ if [[ ! -d "$workspace_root" ]]; then
 fi
 echo "Changing directory to workspace: $workspace_root"
 cd "$workspace_root"
+echo "进入 Agent CLI 前检查 Dashboard；已有项目会先恢复服务和项目注册。"
+if ! "$python_cmd" "$package_root/scripts/verif_harness.py" dashboard \
+  --project-root "$workspace_root" --ensure-ready; then
+  echo "ERROR: Dashboard 尚未就绪；已停止本次启动，未进入 Agent CLI。请按上方提示处理后重试。" >&2
+  exit 1
+fi
 echo "Starting $runtime CLI here: $(pwd)"
 echo "启动任务将使用 Skill：$invocation"
 echo "进入交互 CLI 后，将读取当前项目状态并接续验证工作；需要你的决定时在当前会话等待。"

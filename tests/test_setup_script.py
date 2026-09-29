@@ -181,7 +181,8 @@ class SetupScriptTest(unittest.TestCase):
             fake_python.write_text(f'#!{sys.executable}\n' +
                                    'import os,sys,json\n' +
                                    f'with open({str(calls)!r}, "a") as f:\n' +
-                                   ' f.write(json.dumps({"args":sys.argv[1:],"cwd":os.getcwd()})+"\\n")\n')
+                                   ' f.write(json.dumps({"args":sys.argv[1:],"cwd":os.getcwd()})+"\\n")\n' +
+                                   'if "--ensure-ready" in sys.argv and os.environ.get("TEST_DASHBOARD_FAIL") == "1": sys.exit(2)\n')
             fake_python.chmod(0o755)
             installer = scripts / 'setup_managed.sh'
             installer.write_text(f'#!/bin/sh\necho "{fake_python}"\n')
@@ -190,8 +191,8 @@ class SetupScriptTest(unittest.TestCase):
                 executable = binary / runtime
                 executable.write_text('#!/bin/sh\nexit 0\n')
                 executable.chmod(0o755)
-                for initialized, flags in ((False, []), (True, []), (True, ['--interactive']), (True, ['--no-agent'])):
-                    with self.subTest(runtime=runtime, initialized=initialized, flags=flags):
+                for initialized, flags, failed in ((False, [], False), (True, [], False), (True, ['--interactive'], False), (True, ['--no-agent'], False), (True, [], True)):
+                    with self.subTest(runtime=runtime, initialized=initialized, flags=flags, failed=failed):
                         workspace = Path(tempfile.mkdtemp(dir=directory, prefix='workspace-'))
                         if initialized:
                             state = workspace / '.verif-harness'
@@ -201,15 +202,28 @@ class SetupScriptTest(unittest.TestCase):
                         calls.write_text('')
                         result = subprocess.run(
                             ['bash', str(scripts / 'setup.sh'), '--workspace-root', str(workspace), '--runtime', runtime, *flags],
-                            env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ['PATH']},
+                            env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ['PATH'],
+                                 'TEST_DASHBOARD_FAIL': '1' if failed else '0'},
                             capture_output=True, text=True, timeout=20,
                         )
-                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                        launches = [json.loads(line) for line in calls.read_text().splitlines() if 'agent-service' in line]
+                        self.assertEqual(result.returncode, 1 if failed else 0, result.stdout + result.stderr)
+                        recorded = [json.loads(line) for line in calls.read_text().splitlines()]
+                        launches = [call for call in recorded if 'agent-service' in call['args']]
+                        probes = [call for call in recorded if '--ensure-ready' in call['args']]
                         if '--no-agent' in flags:
                             self.assertEqual(launches, [])
+                            self.assertEqual(probes, [])
+                        elif failed:
+                            self.assertEqual(launches, [])
+                            self.assertEqual(len(probes), 1)
+                            self.assertIn('Dashboard 尚未就绪', result.stderr)
                         else:
+                            self.assertEqual(len(probes), 1)
+                            self.assertEqual(probes[0]['args'][1:], [
+                                'dashboard', '--project-root', str(workspace), '--ensure-ready',
+                            ])
                             self.assertEqual(len(launches), 1)
+                            self.assertLess(recorded.index(probes[0]), recorded.index(launches[0]))
                             self.assertEqual(launches[0]['args'][1:], [
                                 'agent-service', 'interactive', '--project-root', str(workspace), '--runtime', runtime,
                             ])
