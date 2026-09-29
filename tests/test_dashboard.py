@@ -165,21 +165,11 @@ class DashboardTest(unittest.TestCase):
     def complete_vdoc_internal_work(
         self, parent_ids: set[str] | None = None,
     ) -> list[dict]:
-        children = [
-            item for item in self.store.workstream("VDOC")["desired_state"]
-            if item.get("role") == "document-semantic-unit"
-            and item.get("parent_role") == "document-deliverable"
-            and (parent_ids is None or item.get("parent_id") in parent_ids)
-        ]
-        for child in children:
-            self.store.add_evidence(
-                child["id"], "document-review", "rtl/dut.sv", "pass",
-                {
-                    "semantic_unit_id": child["semantic_unit_id"],
-                    "definition_digest": child["semantic_digest"],
-                },
-            )
-        return children
+        # Read-only preparation; the mandatory Main-Agent check completes the list.
+        return [entry for item in self.store.workstream("VDOC")["desired_state"]
+                if item.get("role") == "document-deliverable"
+                and (parent_ids is None or item["id"] in parent_ids)
+                for entry in self.store.document_manifest(item["id"])["items"]]
 
     def test_background_launcher_reuses_same_project_dashboard(self) -> None:
         port = self.server.server_address[1]
@@ -1319,10 +1309,13 @@ class DashboardTest(unittest.TestCase):
         plan_node = next(node for node in vdoc["nodes"] if node["plan_review"])
         for section in plan_node["plan_review"]["sections"]:
             self.store.review_node_plan_section(
-                plan_node["id"], section["section"],
-                plan_node["plan_review"]["definition_digest"],
-                "approve", "alice", "当前 DUT 的文档范围已经确认",
+                plan_node["id"], section["section"], plan_node["plan_review"]["definition_digest"],
+                "approve", "alice", "保留旧入口提交的审批历史",
             )
+        self.store.complete_node_plan_review(
+            plan_node["id"], plan_node["plan_review"]["definition_digest"],
+            "alice", "当前 DUT 的文档撰写方案全部内容已经确认",
+        )
         self.register_minimal_vdoc_delivery()
         before = self.store.dashboard_snapshot()
         before_vdoc = next(
@@ -1796,7 +1789,7 @@ class DashboardTest(unittest.TestCase):
         })
         self.assertGreater(len(internal_delivery_work), len(delivery_specs))
         self.assertTrue(all(
-            item["id"] not in {node["id"] for node in final_vdoc["nodes"]}
+            item["key"] not in {node["id"] for node in final_vdoc["nodes"]}
             for item in internal_delivery_work
         ))
         confirmation = self.store.add_human_action(
@@ -1931,18 +1924,8 @@ class DashboardTest(unittest.TestCase):
             if item.get("role") == "document-semantic-unit"
             and item.get("parent_id") == plan_node["id"]
         ]
-        self.assertEqual(len(internal_children), len(semantic_units))
-        self.assertTrue(all(not item["visible_to_human"] for item in internal_children))
-        self.assertTrue(all(item["visibility"] == "internal" for item in internal_children))
-        self.assertTrue(all(item["acceptance_criteria"] for item in internal_children))
-        self.assertTrue(all(item["progress_measures"] for item in internal_children))
-        self.assertTrue(all(
-            any(
-                edge["relation"] == "CHILD_OF" and edge["target"] == plan_node["id"]
-                for edge in self.store.trace(item["id"])["outgoing"]
-            )
-            for item in internal_children
-        ))
+        self.assertEqual(internal_children, [])
+        self.assertEqual(len(self.store.document_manifest(plan_node["id"])["items"]), len(semantic_units))
         compare_policy = next(
             item for item in self.store.workstream("VCHK")["desired_state"]
             if item["key"] == "compare-policy"
@@ -1951,18 +1934,15 @@ class DashboardTest(unittest.TestCase):
             edge["target"] for edge in self.store.trace(compare_policy["id"])["outgoing"]
             if edge["relation"] == "DEPENDS_ON"
         }
-        self.assertTrue(
-            {item["id"] for item in internal_children}.issubset(compare_dependencies)
-        )
+        self.assertIn("cap.doc:verification-plan", compare_dependencies)
+        self.assertNotIn(plan_node["id"], compare_dependencies)
         public_vdoc = next(
             item for item in self.store.dashboard_snapshot()["workstreams"]
             if item["workstream"] == "VDOC"
         )
         public_node_ids = {item["id"] for item in public_vdoc["nodes"]}
         self.assertTrue(all(item["id"] not in public_node_ids for item in internal_children))
-        assessment = self.store.node_closure_assessment(internal_children[0]["id"])
-        self.assertEqual(assessment["node_id"], internal_children[0]["id"])
-        self.assertEqual(assessment["conclusion"], "NOT_SATISFIED")
+        self.assertEqual(self.store.model("cap.doc:verification-plan")["nodes"][0]["status"], "REVIEW_REQUIRED")
         section = plan_node["plan_review"]["sections"][0]["section"]
         changes = [
             {
@@ -2088,31 +2068,16 @@ class DashboardTest(unittest.TestCase):
             node for node in content_vdoc["nodes"]
             if node["role"] == "document-deliverable"
         )
-        delivery_children = [
-            item for item in self.store.workstream("VDOC")["desired_state"]
-            if item.get("role") == "document-semantic-unit"
-            and item.get("parent_id") == delivery["id"]
-        ]
+        delivery_children = self.store.document_manifest(delivery["id"])["items"]
         self.assertGreater(len(delivery_children), 5)
-        self.assertTrue(all(
-            item["id"] not in {node["id"] for node in content_vdoc["nodes"]}
-            for item in delivery_children
-        ))
-        self.assertTrue(all(
-            self.store.node_closure_assessment(item["id"])["conclusion"]
-            == "NOT_SATISFIED"
-            for item in delivery_children
-        ))
+        self.assertFalse(delivery["delivery_review"]["internal_work"]["ready"])
+        self.assertFalse(any(n.get("role") == "document-semantic-unit"
+                             for n in self.store.workstream("VDOC")["desired_state"]))
         refreshed_dependencies = {
             edge["target"] for edge in self.store.trace(compare_policy["id"])["outgoing"]
             if edge["relation"] == "DEPENDS_ON"
         }
-        self.assertTrue(
-            {item["id"] for item in delivery_children}.issubset(refreshed_dependencies)
-        )
-        self.assertTrue(
-            {item["id"] for item in internal_children}.isdisjoint(refreshed_dependencies)
-        )
+        self.assertEqual(refreshed_dependencies, compare_dependencies)
         delivery_changes = [{
             "operation": "modify",
             "target": "DUT 接口范围表",
@@ -2274,17 +2239,14 @@ class DashboardTest(unittest.TestCase):
             "checked_by": "Project Main Agent",
             "summary": "已检查审批结论和当前正文，所有问题均已解决",
         }, self.server.write_token)["result"]
-        self.assertEqual(checked["delivery_review"]["status"], "AGENT_CHECKING")
-        self.assertEqual(checked["document"]["effective_status"], "REVIEW_REQUIRED")
+        self.assertEqual(checked["delivery_review"]["status"], "APPROVED")
+        self.assertEqual(checked["document"]["effective_status"], "VALID")
         completed_children = self.complete_vdoc_internal_work({delivery["id"]})
         self.assertEqual(
-            {item["id"] for item in completed_children},
-            {item["id"] for item in delivery_children},
+            {item["key"] for item in completed_children},
+            {item["key"] for item in delivery_children},
         )
-        self.assertTrue(all(
-            self.store.node_closure_assessment(item["id"])["conclusion"] == "CLOSED"
-            for item in completed_children
-        ))
+        self.assertTrue(checked["delivery_review"]["internal_work"]["ready"])
         final_snapshot = self.store.dashboard_snapshot()
         final_vdoc = next(
             item for item in final_snapshot["workstreams"]

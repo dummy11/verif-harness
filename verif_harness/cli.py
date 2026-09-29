@@ -323,6 +323,12 @@ def build_parser() -> argparse.ArgumentParser:
     docs_commands = docs.add_subparsers(dest="docs_command", required=True)
     docs_status = docs_commands.add_parser("status", help="查看一个或全部验证文档的评审和内容状态")
     project_argument(docs_status); docs_status.add_argument("document", nargs="?")
+    docs_artifacts = docs_commands.add_parser("artifacts", help="查看批准后的文档方案、正文版本及下游可用状态")
+    project_argument(docs_artifacts)
+    docs_artifacts.add_argument("--artifact", help="读取指定文档产物的历史内容")
+    docs_artifacts.add_argument("--version", type=int, help="与 --artifact 一起指定版本号")
+    docs_manifest = docs_commands.add_parser("manifest", help="查看当前文档节点的内容检查清单")
+    project_argument(docs_manifest); docs_manifest.add_argument("node_id")
     docs_sync = docs_commands.add_parser("sync", help="重新计算正文摘要；变化会触发失效和重新评审")
     project_argument(docs_sync); docs_sync.add_argument("documents", nargs="*")
     docs_render = docs_commands.add_parser("render", help="按需生成状态、决策、评审和修订投影")
@@ -956,6 +962,12 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "docs":
             if args.docs_command == "status":
                 emit({"documents": store.documents(args.document)})
+            elif args.docs_command == "artifacts":
+                if bool(args.artifact) != (args.version is not None):
+                    raise HarnessError("--artifact 和 --version 必须一起提供")
+                emit(store.document_artifacts(args.artifact, args.version))
+            elif args.docs_command == "manifest":
+                emit(store.document_manifest(args.node_id))
             elif args.docs_command == "sync":
                 emit(store.sync_documents(args.documents, require_active=True))
             elif args.docs_command == "render":

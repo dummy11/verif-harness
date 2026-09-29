@@ -96,22 +96,12 @@ class V1ControlPlaneTest(unittest.TestCase):
         return self.design("VDOC", "--desired-file", str(path))
 
     def complete_vdoc_internal_work(self, plan: dict | None = None) -> list[dict]:
+        # Inspect the checklist; only the later Main-Agent check records completion.
         store = ProjectStore(self.root)
         current = plan or store.workstream("VDOC")
-        children = [
-            item for item in current["desired_state"]
-            if item.get("role") == "document-semantic-unit"
-            and item.get("parent_role") == "document-deliverable"
-        ]
-        for child in children:
-            store.add_evidence(
-                child["id"], "document-review", "rtl/dut.sv", "pass",
-                {
-                    "semantic_unit_id": child["semantic_unit_id"],
-                    "definition_digest": child["semantic_digest"],
-                },
-            )
-        return children
+        return [entry for item in current["desired_state"]
+                if item.get("role") == "document-deliverable"
+                for entry in store.document_manifest(item["id"])["items"]]
 
     @staticmethod
     def minimal_vdoc_delivery_proposal() -> dict:
@@ -1918,12 +1908,39 @@ class V1ControlPlaneTest(unittest.TestCase):
     def test_vcase_matrix_and_implementation_are_cross_checked(self) -> None:
         self.bootstrap()
         plans = {name: self.design(name) for name in ("VDOC", "VREG", "VSTIM", "VCASE")}
+        # v2 downstream admission requires accepted document artifacts, not a
+        # waived catalog. Build both fixture documents through the real gates.
+        base_plan = next(n for n in self.design_minimal_vdoc()["desired_state"]
+                         if n["role"] == "document-writing-plan")
+        keys = ("feature-matrix", "testcase-list")
+        proposal_path = self.root / "vcase-doc-plans.json"
+        proposal_path.write_text(json.dumps({
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{**base_plan, "key": key + "-plan", "parent_key": key,
+                       "document_key": key} for key in keys],
+        }), encoding="utf-8")
+        self.design("VDOC", "--desired-file", str(proposal_path))
+        self.run_cli("review", "VDOC", "--reviewer", "alice")
+        base_delivery = self.minimal_vdoc_delivery_proposal()["nodes"][0]
+        proposal_path.write_text(json.dumps({
+            "schema": "DesiredStateProposal/1", "workstream": "VDOC",
+            "nodes": [{**base_delivery, "key": key + "-body", "parent_key": key + "-plan",
+                       "document_key": key} for key in keys],
+        }), encoding="utf-8")
+        plans["VDOC"] = self.design("VDOC", "--desired-file", str(proposal_path))
+        store = ProjectStore(self.root)
+        for delivery in store.workstream("VDOC")["desired_state"]:
+            if delivery["role"] != "document-deliverable":
+                continue
+            state = store.document_delivery_review_state(delivery["id"])
+            reviewed = store.review_document_delivery(delivery["id"], state["definition_digest"],
+                state["document_digest"], "approve", "alice", "fixture document reviewed")
+            store.complete_review_agent_check(reviewed["review_id"], "Project Main Agent", "fixture checklist checked")
         nodes = {
             name: {item["key"]: item["id"] for item in plan["desired_state"]}
             for name, plan in plans.items()
         }
         for node in (
-            nodes["VDOC"]["feature-matrix"], nodes["VDOC"]["testcase-list"],
             nodes["VSTIM"]["stimulus-implementation"], nodes["VREG"]["executor-ready"],
         ):
             self.run_cli("waive", node, "--reviewer", "alice", "--reason", "cross-check fixture")

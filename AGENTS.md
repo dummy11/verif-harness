@@ -58,10 +58,15 @@ This repository contains public, reusable verification infrastructure.
   再单独登记对应内容节点供负责人验收。
 - 对本轮实际纳入的 N 份文档，VDOC 默认建立 N 个公开的
   `document-writing-plan` 节点和 N 个公开的 `document-deliverable` 节点，
-  每份文档各一个。章节、审批变更项和依赖影响必须映射为负责人不可见的内部
-  工作子节点；这些子节点与其他工作节点使用同一状态、依赖、Activity、Agent
-  assignment、问题、支持材料、失效传播和 closure 机制，只是不单独形成负责人
-  待办或审批结论。只有确有不同负责人或独立 gate 时才拆分更多公开节点。
+  每份文档各一个。章节、来源和验收要求作为文档产物内部清单，不再机械生成
+  隐藏工作节点。Activity、assignment、问题和审批意见绑定对应公开文档节点；
+  Main Agent 的验收后检查必须覆盖当前版本的全部清单。只有确有不同负责人或
+  独立 gate 时才拆分更多公开节点。
+- v2 中，方案批准形成 `art.doc_plan` 的不可变版本；正文由负责人批准、Main
+  Agent 检查完成且没有阻塞后形成 `art.doc` 版本，Engine 再派生 `cap.doc`。
+  三者是产物与可用状态，不增加公开工作节点、审批入口或进度。下游依赖
+  `cap.doc`，不得用方案批准、模板存在、目录状态或 `PROVISIONAL` 代替正文可用。
+  旧内部节点与检查历史保留；迁移后仍需重新核对未完成检查，不能自动批准。
 - `document-writing-plan` 节点详情只展示本节点的文档撰写方案、节点审批和
   审批历史；“审批完成”必须紧邻可展开的审批入口，并且只改变当前工作节点
   状态。“审批完成”表示批准当前方案节点的全部内容，无需先提交审批意见，

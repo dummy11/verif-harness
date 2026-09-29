@@ -27,22 +27,14 @@ def main():
     try:
         store = fixture.fixture.store
         plan = store.workstream("VDOC")
-        prototype = next(n for n in plan["desired_state"] if n["role"] == "document-semantic-unit")
+        delivery = next(n for n in plan["desired_state"] if n["role"] == "document-deliverable")
+        prototype = delivery["internal_semantic_units"][0]
         padding = "x" * (args.payload_mib * 1024 * 1024 // args.units)
-        units = [{**prototype, "key": f"scale-{i}", "id": f"scale--semantic--{i}",
-                  "fixture_provenance": padding} for i in range(args.units)]
-        plan["desired_state"].extend(units)
+        units = [{**prototype, "id": f"scale-entry-{i}", "content": padding} for i in range(args.units)]
+        delivery["internal_semantic_units"].extend(units)
         with store.connect() as connection:
             connection.execute("UPDATE workstreams SET desired_json=? WHERE name='VDOC'",
                                (json.dumps(plan["desired_state"]),))
-            connection.executemany("INSERT INTO nodes VALUES(?,?,?,?,?,?,?,?)", [
-                (n["id"], "desired-state", n["title"], "VDOC", "UNKNOWN", "{}",
-                 plan["updated_at"], plan["updated_at"]) for n in units
-            ])
-            connection.executemany("INSERT INTO edges VALUES(?,?,?,?,?,?,?)", [
-                (f"file:{fixture.document['path']}", n["id"], "AFFECTS", "fixture",
-                 1.0, "{}", plan["updated_at"]) for n in units
-            ])
         writing = next(n for n in plan["desired_state"] if n["role"] == "document-writing-plan")
         delivery = next(n for n in plan["desired_state"] if n["role"] == "document-deliverable")
         review = store.document_delivery_review_state(delivery["id"])

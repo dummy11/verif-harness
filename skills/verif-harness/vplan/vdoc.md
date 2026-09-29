@@ -77,12 +77,20 @@ freeze record. A later `document-deliverable` uses its corresponding authoring
 node as `parent_key` and an explicit dependency. If a bound RTL/spec source or
 upstream authoring contract changes, existing invalidation propagation reopens
 the authoring node and every dependent delivery/downstream node.
-Within either public node, the Engine materializes hidden, digest-bound semantic
-work nodes for sections, review change items, source anchors, and dependency
-impact. They are real desired-state nodes with the same validity, dependency,
-Activity, Agent assignment, question, evidence, invalidation, and closure
-mechanisms as other work nodes. They are not separate Human tasks or approval
-targets; Human acceptance is always aggregated at the public node.
+In v2, sections, source anchors and acceptance requirements are entries inside
+the versioned artifact manifest, not hidden WorkNodes. Activities, assignments,
+questions and review feedback belong to the public document node. Inspect its
+current checklist with `docs manifest NODE`. Never create one worker/node for
+each copied requirement or source path.
+
+Plan approval creates an immutable `art.doc_plan:<document_key>` version. The
+delivery consumes that approved plan. Owner acceptance plus the Main-Agent check
+of the current body and manifest creates `art.doc:<document_key>`. Reconciliation
+derives `cap.doc:<document_key>` only while the accepted body, plan and dependencies
+are current and have no blockers. These are graph results, not public WorkNodes,
+extra approval forms, or progress items. Existing public node content and forms
+remain unchanged. Downstream Workstreams consume CAP.doc, never plan approval or
+the catalog as a substitute. Use `docs artifacts` to inspect heads and history.
 
 Engineering questions use the existing Agent-question interaction. They are not
 an additional writing-plan approval section, including when there are no questions.
@@ -183,8 +191,11 @@ revision. Submitting the Human review creates a mandatory Main-Agent inspection
 checkpoint; it does not immediately mark the node accepted. The Main Agent reads
 `agent-review-check list --status PENDING`, checks the review, body, and dependency
 impact, and decides whether a node-bound `agent-question` is needed. After all
-questions are answered, the Agent re-analyses before completing the checkpoint
-with `agent-review-check complete`. A delivery node is approved only when the
+questions are answered, the Agent re-analyses, reads `docs manifest NODE`, and
+checks every requirement, source mapping and body section before completing the
+checkpoint with `agent-review-check complete`. That operation records the exact
+definition, body and manifest digests with the Agent's inspection summary. Do not
+complete it while any checklist item remains unchecked. A delivery node is approved only when the
 current body has a Human approval, its Agent checkpoint is complete, and it has
 no open Agent question. Only then may the Engine mark the document approved. Do
 not use file existence or a bare template as passing evidence.
@@ -252,11 +263,14 @@ convergence. A later edit preserves the historical review record but reopens the
 affected current target.
 
 A Human may mark a delivery node `PROVISIONAL` only with a named owner and a
-concrete re-review trigger. This makes the document usable as a conditional
-prerequisite so downstream implementation may start, but it never counts as an
-approved delivery, document completion, Workstream closure, or freeze evidence.
-Downstream work must remain traceable to that provisional dependency and be
-revalidated if the provisional semantics change.
+concrete re-review trigger. It does not establish CAP.doc or authorize downstream
+implementation, approved delivery, document completion, closure, or freeze.
+
+Opening a v1 project with v2 archives mechanical internal nodes and their history
+without changing public definitions or owner approvals. Open questions/findings
+move to the public owner; active legacy assignments are superseded. Old Agent
+checks are preserved in migration audit and reopened for a manifest-aware check.
+Never mark the new result ready merely because legacy nodes were removed.
 
 When the Human wants to add, change, or remove VDOC scope, use the Dashboard's
 **调整文档** entry, then select the document, public node type, and add/modify/

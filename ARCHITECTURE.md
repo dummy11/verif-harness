@@ -1,5 +1,21 @@
 # Architecture
 
+## VDOC v2 results and dependencies
+
+VDOC retains its two public WorkNodes: `document-writing-plan` and
+`document-deliverable`. Approved plans produce versioned `art.doc_plan` results;
+accepted bodies with a completed Main-Agent checklist inspection produce
+`art.doc` results. The reconciler derives `cap.doc` for downstream consumers.
+Artifact and capability graph objects are not executable WorkNodes or approvals.
+Content, source and acceptance mappings are internal manifests, not mechanically
+expanded hidden WorkNodes. Markdown remains the editable source; accepted artifact
+versions preserve immutable content and approval/check references in ProjectStore.
+All required plan approvals still precede authoring. A current document capability
+does not require unrelated documents to finish. Body changes revoke its accepted
+head and downstream capability without automatically reopening an unchanged plan.
+Plan/input changes revoke the affected plan, delivery and capabilities. Old results
+remain auditable; no approval or Agent check is silently copied to a new version.
+
 ## Purpose
 
 For an implementation-grounded walkthrough in Chinese, read

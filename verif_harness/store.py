@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .store_operation import StoreConnection, store_operation
+from . import vdoc_artifacts
 
 from .document_authoring import (
     AUTHORING_CONTRACT_SCHEMA,
@@ -472,7 +473,7 @@ def desired_definition(
 def vdoc_internal_semantic_units(
     key: str, role: str, fields: dict[str, list[str]],
 ) -> tuple[list[dict[str, Any]], str]:
-    """Create stable, non-Human-facing units for fine-grained VDOC work."""
+    """Create internal checklist entries; these are not executable WorkNodes."""
     units: list[dict[str, Any]] = []
     for field in (
         "scope", "work_content", "acceptance_criteria", "source_refs",
@@ -499,70 +500,6 @@ def vdoc_internal_semantic_units(
     ]).encode("utf-8")).hexdigest()
     return units, manifest_digest
 
-
-def vdoc_internal_child_specs(parent: dict[str, Any]) -> list[dict[str, Any]]:
-    """Materialize hidden semantic units as full desired-state child nodes."""
-    field_labels = {
-        "scope": "范围",
-        "work_content": "工作内容",
-        "acceptance_criteria": "验收条件",
-        "source_refs": "输入依据",
-        "deliverables": "交付内容",
-        "quality_checks": "质量检查",
-    }
-    children: list[dict[str, Any]] = []
-    for unit in parent.get("internal_semantic_units", []):
-        field = str(unit["field"])
-        sequence = int(unit["sequence"])
-        content = str(unit["content"])
-        key = f"{parent['key']}--semantic--{field}--{sequence}"
-        label = field_labels.get(field, field)
-        children.append({
-            "key": key,
-            "title": f"{parent['title']} · {label} {sequence}",
-            "role": "document-semantic-unit",
-            "visibility": "internal",
-            "visible_to_human": False,
-            "required": parent.get("required", True),
-            "suggested_mode": parent.get("suggested_mode", "review"),
-            "evidence_claim": "document-review",
-            "parent_key": parent["key"],
-            "parent_role": parent["role"],
-            "document_key": parent.get("document_key"),
-            "content_kind": "internal-semantic-work",
-            "semantic_unit_id": unit["id"],
-            "semantic_field": field,
-            "semantic_sequence": sequence,
-            "semantic_digest": unit["digest"],
-            "statement": content,
-            "purpose": (
-                f"独立跟踪公开文档节点“{parent['title']}”中的{label}，"
-                "使其能够参与执行、依赖、证据、问题和失效传播。"
-            ),
-            "scope": [content],
-            "acceptance_criteria": [
-                f"当前版本的{label}已经完成，并与对应规格、正文和依赖工作一致",
-            ],
-            "source_refs": list(parent.get("source_refs", [])),
-            "work_content": [content],
-            "implementation_approach": list(parent.get("implementation_approach", [])),
-            "deliverables": [f"公开文档节点“{parent['title']}”中的{label}完成结果"],
-            "progress_measures": [{
-                "id": f"semantic-{field}-{sequence}",
-                "label": f"已完成{label}",
-                "unit": "项",
-                "target": "1",
-                "source": str(unit["id"]),
-            }],
-            "quality_checks": list(parent.get("quality_checks", [])),
-            "definition_origin": "engine-derived",
-            "definition_status": "REVIEW_CANDIDATE",
-            "role_description": (
-                "负责人不可见的文档内部工作节点；与其他工作节点使用同一状态、"
-                "依赖、证据、Activity、Agent assignment、问题和 closure 机制"
-            ),
-        })
-    return children
 
 # Stored as dependent (workstream, key) -> prerequisite (workstream, key).
 # These are capability/evidence dependencies, never whole-Workstream gates.
@@ -1251,12 +1188,14 @@ CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
 
+SCHEMA += vdoc_artifacts.SCHEMA
+
 # Heartbeats and runtime logs must not cause another expensive closure read.
 for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documents",
                "document_reviews", "document_items", "agent_questions", "human_actions",
                "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
                "review_feedback_items", "review_agent_checks", "node_closure_reviews",
-               "review_change_items", "reviews", "agent_assignments"):
+               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks"):
     for _operation in ("INSERT", "UPDATE", "DELETE"):
         SCHEMA += f"""
 CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
@@ -1389,6 +1328,10 @@ class ProjectStore:
                 connection.close()
                 raise HarnessError("检测到不兼容的 v1 开发态数据库；请移走 .verif-harness 后重新 bootstrap")
             connection.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
+            vdoc_artifacts.migrate(connection, now())
+            if not connection.execute("SELECT 1 FROM meta WHERE key='vdoc_cap_dependencies'").fetchone():
+                self._reconcile_default_dependencies(connection)
+                connection.execute("INSERT INTO meta VALUES('vdoc_cap_dependencies','1')")
             connection.commit()
             self._dashboard_schema_ready = True
         return connection
@@ -1555,14 +1498,9 @@ class ProjectStore:
 
     def _reconcile_default_dependencies(self, connection: sqlite3.Connection) -> int:
         current: dict[tuple[str, str], str] = {}
-        vdoc_semantic: dict[str, list[dict[str, str]]] = {}
-        for (name, key), desired in self._current_desired_nodes(connection).items():
-            current[(name, key)] = desired["id"]
-            if (name == "VDOC" and desired.get("role") == "document-semantic-unit"
-                    and desired.get("document_key")):
-                vdoc_semantic.setdefault(str(desired["document_key"]), []).append({
-                    "id": desired["id"], "parent_role": str(desired.get("parent_role") or ""),
-                })
+        for row in connection.execute("SELECT name,desired_json FROM workstreams"):
+            for desired in json.loads(row["desired_json"]):
+                current[(row["name"], desired["key"])] = desired["id"]
         connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
         count = 0
         timestamp = now()
@@ -1573,16 +1511,11 @@ class ProjectStore:
                 continue
             prerequisites = [prerequisite]
             if prerequisite_key[0] == "VDOC":
-                candidates = vdoc_semantic.get(prerequisite_key[1], [])
-                delivery_candidates = [
-                    item["id"] for item in candidates
-                    if item["parent_role"] == "document-deliverable"
-                ]
-                plan_candidates = [
-                    item["id"] for item in candidates
-                    if item["parent_role"] == "document-writing-plan"
-                ]
-                prerequisites = delivery_candidates or plan_candidates or prerequisites
+                cap_id = vdoc_artifacts.ids(prerequisite_key[1])[2]
+                if connection.execute("SELECT 1 FROM nodes WHERE id=?", (cap_id,)).fetchone() is None:
+                    self.upsert_node(connection, cap_id, "capability", "文档尚未验收通过",
+                                     Validity.UNKNOWN, data={"document_key": prerequisite_key[1], "derived": True})
+                prerequisites = [cap_id]
             for resolved_prerequisite in prerequisites:
                 connection.execute(
                     "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
@@ -2061,6 +1994,7 @@ class ProjectStore:
                 "必须先批准所有必需文档撰写方案，再登记正文内容验收节点: "
                 + ", ".join(sorted(unapproved))
             )
+        self._require_current_vdoc_plans(current_plan)
         reserved = {
             item["key"] for item in current_plan["desired_state"]
             if item.get("role") != "document-deliverable"
@@ -2148,31 +2082,13 @@ class ProjectStore:
             }
             delivery_rows.append(row)
 
-        internal_rows: list[dict[str, Any]] = []
-        for parent in delivery_rows:
-            for spec in vdoc_internal_child_specs(parent):
-                node_id = f"workstream:VDOC:r{revision}:desired:{spec['key']}"
-                internal_rows.append({
-                    **spec,
-                    "id": node_id,
-                    "parent_id": parent["id"],
-                    "evidence_contract": {
-                        "version": "DocumentReviewPolicy/1",
-                        "claim": "document-review",
-                        "required": [
-                            "已保存当前语义工作单元的完成材料",
-                            "完成材料与当前文档版本和节点定义一致",
-                        ],
-                    },
-                })
-
         previous_deliveries = self._vdoc_delivery_desired(current_plan)
         previous_internal = [
             item for item in current_plan["desired_state"]
             if item.get("role") == "document-semantic-unit"
             and item.get("parent_role") == "document-deliverable"
         ]
-        next_desired = [*retained, *delivery_rows, *internal_rows]
+        next_desired = [*retained, *delivery_rows]
         timestamp = now()
         with self.connect() as connection:
             for item in [*previous_deliveries, *previous_internal]:
@@ -2188,7 +2104,7 @@ class ProjectStore:
                     "DELETE FROM edges WHERE source=? AND origin='authoring-contract'",
                     (item["id"],),
                 )
-            for row in [*delivery_rows, *internal_rows]:
+            for row in delivery_rows:
                 self.upsert_node(
                     connection, row["id"], "desired-state", row["title"],
                     Validity.REVIEW_REQUIRED, "VDOC", row,
@@ -2324,12 +2240,6 @@ class ProjectStore:
                     "VDOC 文档撰写方案不能进入审批：" + "；".join(issues)
                 )
         desired_specs.extend(proposal_nodes)
-        if name == "VDOC":
-            desired_specs.extend(
-                child
-                for parent in proposal_nodes
-                for child in vdoc_internal_child_specs(parent)
-            )
         exit_values = exit_criteria or list(template["exit"])
         context = self.planning_context(name)
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
@@ -2637,6 +2547,7 @@ class ProjectStore:
     ) -> dict[str, Any]:
         """Record bounded Agent/tool work without changing verification validity."""
         self.require()
+        self._require_work_target(node_id)
         if not operation.strip() or not actor.strip():
             raise HarnessError("activity operation 和 actor 不能为空")
         self._validate_progress(0 if total is not None else None, total)
@@ -4778,6 +4689,9 @@ class ProjectStore:
     ) -> dict[str, Any]:
         """Build a reproducible Human-reviewable explanation of one node conclusion."""
         self.require()
+        if _plan is None:
+            self.ensure_dashboard_schema()
+            vdoc_artifacts.reconcile(self, self.workstreams())
         with self.read_connect() as connection:
             row = connection.execute(
                 "SELECT id,type,title,workstream,status,data_json,updated_at FROM nodes WHERE id=?",
@@ -5020,6 +4934,69 @@ class ProjectStore:
             ]
         return rows
 
+    def document_manifest(
+        self, node_id: str, plan: dict[str, Any] | None = None,
+        desired: dict[str, Any] | None = None, document: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Read the current result checklist; entries are not executable nodes."""
+        self.ensure_dashboard_schema()
+        plan = plan if plan is not None else self.workstream("VDOC")
+        desired = desired if desired is not None else next(
+            (item for item in plan["desired_state"] if item["id"] == node_id), None,
+        )
+        if desired is None or desired.get("role") not in PROJECT_NODE_ROLES["VDOC"]:
+            raise HarnessError("请选择当前文档撰写方案或正文验收节点")
+        body = ""
+        if desired["role"] == "document-deliverable":
+            if document is None:
+                document = self.documents(f"document:vdoc:{desired['document_key']}", include_delivery_nodes=False)[0]
+            try:
+                path = self.root / document["path"]
+                if path.is_symlink() or self.root not in path.resolve().parents:
+                    raise HarnessError("正文路径已变化，请恢复项目内登记的文档文件")
+                body = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                pass
+        with self.read_connect() as connection:
+            content = vdoc_artifacts.content_manifest(connection, desired, body)
+        return {"node_id": node_id, "revision": plan["revision"],
+                "definition_digest": self._node_plan_digest(plan, desired),
+                "document_digest": document["digest"] if document else None,
+                **content}
+
+    @store_operation
+    def document_artifacts(self, artifact_id: str | None = None, version: int | None = None) -> dict[str, Any]:
+        """Audit-only graph results; Dashboard work/progress remains public nodes."""
+        self.ensure_dashboard_schema()
+        vdoc_artifacts.reconcile(self, self.workstreams())
+        with self.read_connect() as connection:
+            if artifact_id is not None:
+                if not artifact_id.startswith(("art.doc:", "art.doc_plan:")) or version is None or version < 1:
+                    raise HarnessError("请指定文档产物 ID 和正整数版本号")
+                row = connection.execute("SELECT * FROM vdoc_artifact_versions WHERE artifact_id=? AND version=?",
+                                         (artifact_id, version)).fetchone()
+                if row is None:
+                    raise HarnessError("该文档产物版本不存在")
+                return {"artifact_id": artifact_id, "version": version, "signature": row["signature"],
+                        "created_at": row["created_at"], "content": json.loads(row["payload_json"])}
+            heads = [{**dict(row), "data": json.loads(row["data_json"])} for row in connection.execute(
+                "SELECT id,type,status,data_json FROM nodes WHERE id LIKE 'art.doc:%' "
+                "OR id LIKE 'art.doc_plan:%' OR id LIKE 'cap.doc:%' ORDER BY id")]
+            versions = [{"artifact_id": row["artifact_id"], "version": row["version"],
+                         "signature": row["signature"], "created_at": row["created_at"]}
+                        for row in connection.execute("SELECT artifact_id,version,signature,created_at FROM vdoc_artifact_versions ORDER BY artifact_id,version")]
+        for head in heads:
+            head.pop("data_json")
+        return {"heads": heads, "versions": versions}
+
+    def _require_current_vdoc_plans(self, plan: dict[str, Any]) -> None:
+        vdoc_artifacts.reconcile(self, [plan])
+        keys = {item["document_key"] for item in self._vdoc_writing_plan_desired(plan) if item.get("required", True)}
+        with self.read_connect() as connection:
+            valid = {row[0] for row in connection.execute("SELECT id FROM nodes WHERE id LIKE 'art.doc_plan:%' AND status='VALID'")}
+        if not keys or any(f"art.doc_plan:{key}" not in valid for key in keys):
+            raise HarnessError("文档撰写方案或输入已经失效；请先完成当前方案的检查和审批")
+
     def document_delivery_review_state(
         self, node_id: str, plan: dict[str, Any] | None = None,
         desired: dict[str, Any] | None = None,
@@ -5041,7 +5018,7 @@ class ProjectStore:
             f"document:vdoc:{document_key}", include_delivery_nodes=False,
         )[0]
         definition_digest = self._node_plan_digest(plan, desired)
-        internal_children = self._vdoc_internal_desired(plan, parent_id=node_id)
+        content_manifest = self.document_manifest(node_id, plan, desired, document)
         with self.read_connect() as connection:
             rows = [dict(row) for row in connection.execute(
                 """SELECT id,node_id,workstream,revision,definition_digest,document_id,
@@ -5072,21 +5049,14 @@ class ProjectStore:
                 "SELECT id FROM human_actions WHERE target=? AND status='OPEN'",
                 (node_id,),
             )]
-            observed_internal = {row["id"]: dict(row) for row in connection.execute(
-                "SELECT id,title,status FROM nodes WHERE id IN (%s) ORDER BY id"
-                % ",".join("?" for _ in internal_children),
-                [item["id"] for item in internal_children],
-            )} if internal_children else {}
-        internal_statuses = [
-            observed_internal.get(item["id"], {
-                "id": item["id"], "title": item["title"], "status": "MISSING",
-            })
-            for item in internal_children
-        ]
-        internal_blockers = [
-            item for item in internal_statuses
-            if item["status"] not in {Validity.VALID.value, Validity.WAIVED.value}
-        ]
+            open_findings = [row["id"] for row in connection.execute(
+                "SELECT id FROM findings WHERE subject=? AND status='OPEN'", (node_id,),
+            )]
+            dependency_blockers = [row[0] for row in connection.execute(
+                "SELECT edges.target FROM edges LEFT JOIN nodes ON nodes.id=edges.target "
+                "WHERE edges.source=? AND edges.relation='DEPENDS_ON' "
+                "AND (nodes.status IS NULL OR nodes.status!='VALID')", (node_id,),
+            )]
         feedback = self.review_feedback_state(node_id, plan, desired)
         feedback_by_review: dict[str, list[dict[str, Any]]] = {}
         for item in feedback["items"]:
@@ -5103,12 +5073,20 @@ class ProjectStore:
             and row["semantic_revision"] == document["semantic_revision"]
             and row["document_digest"] == document["digest"]
         )), None)
+        with self.read_connect() as connection:
+            manifest_checked = bool(current and vdoc_artifacts.check_ready(
+                connection, current["id"], definition_digest, document["digest"],
+                content_manifest["digest"],
+            ))
+        internal_blockers = [] if manifest_checked else [{
+            "id": node_id, "title": "当前正文及内容清单尚未完成 Agent 检查", "status": "PENDING",
+        }]
         status = "PENDING"
         if current is not None:
             check = current.get("agent_check")
             if open_agent_questions:
                 status = "WAITING_FOR_HUMAN"
-            elif check is not None and check["status"] != "COMPLETED":
+            elif check is None or check["status"] != "COMPLETED":
                 status = "AGENT_CHECKING"
             else:
                 status = (
@@ -5134,6 +5112,8 @@ class ProjectStore:
         if not document["exists"] or document["content_changed"]:
             status = "PENDING"
             current = None
+        elif status in {"APPROVED", "PROVISIONAL"} and (open_findings or open_confirmations or dependency_blockers):
+            status = "AGENT_CHECKING"
         return {
             "node_id": node_id,
             "workstream": "VDOC",
@@ -5149,7 +5129,8 @@ class ProjectStore:
                 [item["id"] for item in document["governance_items"]
                  if item["kind"] in {"human-decision", "external-open-question"}
                  and item["status"] in {"PENDING", "ACTIVE"}]
-                + open_confirmations + [item["id"] for item in open_agent_questions]
+                + open_confirmations + open_findings + dependency_blockers
+                + [item["id"] for item in open_agent_questions]
             ),
             "status": status,
             "current_review": current,
@@ -5158,8 +5139,8 @@ class ProjectStore:
             "feedback": feedback,
             "open_agent_questions": open_agent_questions,
             "internal_work": {
-                "total": len(internal_statuses),
-                "complete": len(internal_statuses) - len(internal_blockers),
+                "total": len(content_manifest["items"]),
+                "complete": len(content_manifest["items"]) if manifest_checked else 0,
                 "ready": not internal_blockers,
                 "blockers": internal_blockers,
             },
@@ -5213,25 +5194,15 @@ class ProjectStore:
                 check = self._review_agent_check(
                     connection, latest["id"] if latest is not None else None,
                 )
-                internal_children = self._vdoc_internal_desired(
-                    plan, parent_id=item["id"],
-                )
-                internal_statuses = {
-                    row["id"]: row["status"] for row in connection.execute(
-                        "SELECT id,status FROM nodes WHERE id IN (%s)"
-                        % ",".join("?" for _ in internal_children),
-                        [child["id"] for child in internal_children],
-                    )
-                } if internal_children else {}
-                internal_blockers = sum(
-                    internal_statuses.get(child["id"])
-                    not in {Validity.VALID.value, Validity.WAIVED.value}
-                    for child in internal_children
-                )
-                agent_checked = check is None or check["status"] == "COMPLETED"
+                content_manifest = self.document_manifest(item["id"], plan, item, document)
+                internal_blockers = not (latest and vdoc_artifacts.check_ready(
+                    connection, latest["id"], digest, document["digest"], content_manifest["digest"],
+                ))
+                agent_checked = check is not None and check["status"] == "COMPLETED"
                 eligible = (
                     latest is not None and not open_questions and agent_checked
                     and not internal_blockers and not unresolved_feedback
+                    and document["exists"] and not document["content_changed"]
                 )
                 item_status = (
                     Validity.VALID.value
@@ -5266,6 +5237,18 @@ class ProjectStore:
                     document["desired_id"], f"file:{document['path']}",
                 ),
             )
+            if all_approved:
+                # The new owner review and Main-Agent inspection discharge only
+                # this body's recorded edit notifications, not unrelated findings.
+                subjects = [document["id"], document["desired_id"], f"file:{document['path']}",
+                            *[item["id"] for item in related],
+                            f"art.doc:{document_key}", f"cap.doc:{document_key}"]
+                connection.execute(
+                    "UPDATE findings SET status='RESOLVED' WHERE status='OPEN' AND subject IN (%s) "
+                    "AND cause_event IN (SELECT id FROM events WHERE subject=? AND created_at<=?)"
+                    % ",".join("?" for _ in subjects),
+                    [*subjects, f"file:{document['path']}", timestamp],
+                )
 
     @store_operation
     def complete_review_agent_check(
@@ -5279,9 +5262,28 @@ class ProjectStore:
             raise HarnessError(
                 f"正文验收检查只能由 {PROJECT_AGENT_ACTOR} 完成；负责人不能代替 Agent 检查"
             )
+        with self.read_connect() as connection:
+            submitted = connection.execute("SELECT * FROM document_delivery_reviews WHERE id=?", (review_id,)).fetchone()
+        if submitted is None:
+            raise HarnessError("审批记录不存在")
+        current = self.document_delivery_review_state(submitted["node_id"])
+        if (not current["document_available"] or current["current_review"] is None
+                or current["current_review"]["id"] != review_id):
+            raise HarnessError("正文或审批版本已变化，请重新检查当前版本")
+        content_manifest = self.document_manifest(submitted["node_id"])
         timestamp = now()
         open_question_ids: list[str] = []
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            latest = connection.execute("SELECT id FROM document_delivery_reviews WHERE node_id=? ORDER BY rowid DESC LIMIT 1",
+                                        (submitted["node_id"],)).fetchone()
+            definition = connection.execute("SELECT revision,desired_json FROM workstreams WHERE name='VDOC'").fetchone()
+            matching = next((item for item in json.loads(definition["desired_json"]) if item["id"] == submitted["node_id"]), None)
+            live_digest = self._node_plan_digest({"workstream": "VDOC", "revision": definition["revision"]}, matching) if matching else None
+            path = self.root / current["document_path"]
+            if (latest is None or latest[0] != review_id or live_digest != current["definition_digest"]
+                    or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != current["document_digest"]):
+                raise HarnessError("检查期间正文或审批版本发生变化，请重新读取")
             check = connection.execute(
                 "SELECT * FROM review_agent_checks WHERE review_id=?", (review_id,),
             ).fetchone()
@@ -5300,6 +5302,10 @@ class ProjectStore:
                     (checked_by.strip(), summary.strip(), timestamp, review_id),
                 )
             else:
+                connection.execute("INSERT OR REPLACE INTO vdoc_manifest_checks VALUES(?,?,?,?,?,?,?,?,?)", (
+                    review_id, check["node_id"], current["definition_digest"], current["document_digest"],
+                    content_manifest["digest"], json_text(content_manifest), checked_by.strip(), summary.strip(), timestamp,
+                ))
                 connection.execute(
                     """UPDATE review_agent_checks SET status='COMPLETED',checked_by=?,summary=?,
                        updated_at=?,checked_at=? WHERE review_id=?""",
@@ -5588,6 +5594,7 @@ class ProjectStore:
                     "必须先由负责人批准当前 VDOC 文档撰写方案，"
                     "Agent 才能同步正文语义版本"
                 )
+            self._require_current_vdoc_plans(plan)
         requested = list(selectors)
         rows = self.documents(include_delivery_nodes=False)
         if requested:
@@ -5947,10 +5954,21 @@ class ProjectStore:
                                (baseline_id, None, None, "FINAL", digest, relative.as_posix(), reviewer, reason, now()))
         return {"baseline_id": baseline_id, "kind": "FINAL", "digest": digest, "path": relative.as_posix()}
 
+    def _require_work_target(self, node_id: str) -> None:
+        node_id = node_id.strip()
+        if vdoc_artifacts.protected(node_id):
+            raise HarnessError("文档产物和可用状态由审批、正文检查及依赖自动确定，不能直接执行或修改")
+        self.ensure_dashboard_schema()
+        with self.read_connect() as connection:
+            legacy = connection.execute("SELECT parent_id FROM vdoc_legacy_units WHERE node_id=?", (node_id,)).fetchone()
+        if legacy:
+            raise HarnessError(f"该内部节点已保留为历史记录，请在所属文档节点继续处理: {legacy[0]}")
+
     @store_operation
     def add_node(self, node_id: str, node_type: str, title: str, workstream: str | None = None,
                  status: Validity = Validity.UNKNOWN) -> dict[str, Any]:
         self.require()
+        self._require_work_target(node_id)
         if not node_id.strip() or any(character.isspace() for character in node_id):
             raise HarnessError("node ID 不能为空或包含空白")
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
@@ -5967,6 +5985,9 @@ class ProjectStore:
     @store_operation
     def add_edge(self, source: str, target: str, relation: str, origin: str, confidence: float) -> dict[str, Any]:
         self.require()
+        self._require_work_target(source)
+        if vdoc_artifacts.protected(target):
+            raise HarnessError("文档产物和可用状态只能通过依赖关系引用")
         if not 0 <= confidence <= 1:
             raise HarnessError("confidence 必须在 0 到 1 之间")
         if relation.upper() == "DEPENDS_ON":
@@ -5986,6 +6007,7 @@ class ProjectStore:
     def add_dependency(self, subject: str, prerequisite: str) -> dict[str, Any]:
         """Record a node-scoped dependency as dependent -> prerequisite."""
         self.require()
+        self._require_work_target(subject)
         if subject == prerequisite:
             raise HarnessError("node 不能依赖自身")
         with self.connect() as connection:
@@ -5995,6 +6017,13 @@ class ProjectStore:
             missing = [item for item in (subject, prerequisite) if item not in known]
             if missing:
                 raise HarnessError("未知 node: " + ", ".join(missing))
+            dependent = connection.execute("SELECT workstream FROM nodes WHERE id=?", (subject,)).fetchone()
+            source = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (prerequisite,)).fetchone()
+            if dependent[0] != "VDOC" and (source[0] == "VDOC" or prerequisite.startswith(("art.doc:", "art.doc_plan:"))):
+                data = json.loads(source["data_json"])
+                key = data.get("document_key") or data.get("key")
+                if key:
+                    raise HarnessError(f"下游工作必须依赖已验收文档的可用状态，请改用 cap.doc:{key}")
             queue = [prerequisite]
             visited: set[str] = set()
             while queue:
@@ -6016,6 +6045,7 @@ class ProjectStore:
     @store_operation
     def set_status(self, node_id: str, status: Validity) -> dict[str, Any]:
         self.require()
+        self._require_work_target(node_id)
         if status in {Validity.VALID, Validity.PROVISIONAL, Validity.WAIVED}:
             raise HarnessError("VALID（已通过）必须由验证证据建立；PROVISIONAL/WAIVED 必须由负责人评审建立")
         with self.connect() as connection:
@@ -6042,6 +6072,7 @@ class ProjectStore:
     @store_operation
     def waive_node(self, node_id: str, reviewer: str, reason: str) -> dict[str, Any]:
         self.require()
+        self._require_work_target(node_id)
         with self.connect() as connection:
             node = connection.execute(
                 "SELECT workstream,data_json FROM nodes WHERE id=?", (node_id,),
@@ -6077,6 +6108,7 @@ class ProjectStore:
         data: dict[str, Any] | None = None, contract_validated: bool = False,
     ) -> dict[str, Any]:
         self.require()
+        self._require_work_target(subject)
         source_path = Path(source)
         if not source_path.is_absolute():
             source_path = self.root / source_path
@@ -6204,6 +6236,8 @@ class ProjectStore:
                 summary["determinism_ready"] = False
 
     def _evidence_dependency_blockers(self, subject: str) -> list[str]:
+        self.ensure_dashboard_schema()
+        vdoc_artifacts.reconcile(self, self.workstreams())
         blockers: list[str] = []
         with self.read_connect() as connection:
             row = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (subject,)).fetchone()
@@ -6691,6 +6725,7 @@ class ProjectStore:
         if cached is not None and cached[0] == observed:
             return copy.deepcopy(cached[1])
         plans = self.workstreams()
+        vdoc_artifacts.reconcile(self, plans)
         plan = next((item for item in plans if item["workstream"] == name), None)
         if plan is None:
             raise HarnessError(f"Workstream {name} 尚未设计")
@@ -7024,6 +7059,8 @@ class ProjectStore:
 
     def model(self, node_id: str | None = None) -> dict[str, Any]:
         self.require()
+        self.ensure_dashboard_schema()
+        vdoc_artifacts.reconcile(self, self.workstreams())
         with self.read_connect() as connection:
             suffix, params = ("", ()) if node_id is None else (" WHERE id=?", (node_id,))
             nodes = [dict(row) for row in connection.execute("SELECT id,type,title,workstream,status,updated_at FROM nodes" + suffix + " ORDER BY id", params)]
@@ -7203,7 +7240,10 @@ class ProjectStore:
     @store_operation
     def status(self) -> dict[str, Any]:
         self.require()
+        self.ensure_dashboard_schema()
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
+        plans = self.workstreams()
+        vdoc_artifacts.reconcile(self, plans)
         with self.read_connect() as connection:
             counts = {row["status"]: row["total"] for row in connection.execute(
                 "SELECT status,COUNT(*) total FROM nodes GROUP BY status"
@@ -7211,7 +7251,6 @@ class ProjectStore:
             open_findings = connection.execute(
                 "SELECT COUNT(*) FROM findings WHERE status='OPEN'"
             ).fetchone()[0]
-        plans = self.workstreams()
         document_rows = self.documents()
         document_status: dict[str, int] = {}
         for document in document_rows:
@@ -7251,6 +7290,7 @@ class ProjectStore:
             if item.get("role") != "document-semantic-unit"
             and item.get("visible_to_human", True)
         }
+        vdoc_artifacts.reconcile(self, plans)
         model = self._dashboard_model(dashboard_node_ids)
         current_nodes = self._planned_nodes(plans)
         delivery_reviews: dict[str, dict[str, Any]] = {}
@@ -8024,6 +8064,7 @@ class ProjectStore:
     def _write_model_projection(self) -> None:
         if not self.initialized:
             return
+        vdoc_artifacts.reconcile(self, self.workstreams())
         with self.read_connect() as connection:
             model = {
                 "nodes": [dict(row) for row in connection.execute(

@@ -181,7 +181,8 @@ class DeliveryPendingTest(unittest.TestCase):
             f.store.document_delivery_review_state(self.node["id"])["status"],
             "PENDING",
         )
-        f.store.complete_review_agent_check(approved["result"]["review_id"], "Project Main Agent", "历史检查仅供审计")
+        with self.assertRaisesRegex(fixtures.HarnessError, "版本"):
+            f.store.complete_review_agent_check(approved["result"]["review_id"], "Project Main Agent", "不能用旧审批检查当前内容")
         self.assertIsNone(f.store.document_delivery_review_state(self.node["id"])["agent_check"])
         approved_again = f.post(
             "/api/reviews/document-delivery", payload, f.server.write_token,

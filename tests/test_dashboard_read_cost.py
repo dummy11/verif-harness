@@ -79,40 +79,30 @@ class DashboardReadCostTest(unittest.TestCase):
                 self.assertEqual(node["closure_assessment"]["digest"],
                                  store.node_closure_assessment(node["id"])["digest"])
 
-    def test_hidden_units_do_not_add_per_node_queries_or_escape_closure(self) -> None:
+    def test_manifest_entries_do_not_add_queries_or_work_nodes(self) -> None:
         store = self.fixture.store
+        store.dashboard_snapshot()
         _, small_queries = self.traced(store.dashboard_snapshot)
         plan = store.workstream("VDOC")
-        prototype = next(n for n in plan["desired_state"] if n["role"] == "document-semantic-unit")
+        delivery = next(n for n in plan["desired_state"] if n["role"] == "document-deliverable")
+        prototype = delivery["internal_semantic_units"][0]
         copies = [
-            {**prototype, "key": f"cost-unit-{i}", "id": f"cost--semantic--unit-{i}",
-             "fixture_provenance": "x" * 4096}
+            {**prototype, "id": f"cost-entry-{i}", "content": "x" * 4096}
             for i in range(1000)
         ]
-        plan["desired_state"].extend(copies)
+        delivery["internal_semantic_units"].extend(copies)
         with store.connect() as connection:
             connection.execute("UPDATE workstreams SET desired_json=? WHERE name='VDOC'",
                                (json.dumps(plan["desired_state"]),))
-            connection.executemany(
-                "INSERT INTO nodes(id,type,title,workstream,status,data_json,created_at,updated_at) "
-                "VALUES(?,'desired-state',?,'VDOC',?,?,?,?)",
-                [(n["id"], n["title"], "UNKNOWN" if i == 0 else "VALID",
-                  json.dumps(n), plan["updated_at"], plan["updated_at"])
-                 for i, n in enumerate(copies)],
-            )
-            connection.execute(
-                "INSERT INTO edges(source,target,relation,origin,confidence,data_json,created_at) "
-                "VALUES('cost--semantic--unit-1','cost--semantic--unit-0',"
-                "'DEPENDS_ON','fixture',1.0,'{}',?)", (plan["updated_at"],),
-            )
+        store.dashboard_snapshot()
         snapshot, large_queries = self.traced(store.dashboard_snapshot)
         self.assertEqual(len(large_queries), len(small_queries))
         vdoc = next(w for w in snapshot["workstreams"] if w["workstream"] == "VDOC")
-        actions = {a["target"]: a for a in vdoc["closure"]["actions"]}
-        self.assertEqual(actions["cost--semantic--unit-0"]["kind"], "SATISFY_DESIRED_STATE")
-        self.assertEqual(actions["cost--semantic--unit-1"]["kind"], "WAIT_FOR_DEPENDENCY")
-        self.assertEqual(actions["cost--semantic--unit-1"]["blocked_by"], ["cost--semantic--unit-0"])
-        self.assertFalse(any(n["id"].startswith("cost--semantic--") for n in vdoc["nodes"]))
+        self.assertEqual(len([n for n in vdoc["nodes"] if n["role"] != "document-catalog"]), 2)
+        node = next(n for n in vdoc["nodes"] if n["id"] == delivery["id"])
+        self.assertFalse(node["delivery_review"]["internal_work"]["ready"])
+        self.assertGreater(node["delivery_review"]["internal_work"]["total"], 1000)
+        self.assertNotIn("cost-entry-", json.dumps(snapshot))
         self.assertEqual(vdoc["closure"], store.evaluate_closure("VDOC", persist=False))
 
     def test_new_request_does_not_reuse_old_body_or_revision(self) -> None:
