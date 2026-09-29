@@ -16,6 +16,33 @@ head and downstream capability without automatically reopening an unchanged plan
 Plan/input changes revoke the affected plan, delivery and capabilities. Old results
 remain auditable; no approval or Agent check is silently copied to a new version.
 
+## VENV code delivery
+
+VENV proposals use DUT-specific `code-plan` packages with stable
+`implementation_key` identities. Approval produces an immutable `art.code_plan`
+and its paired `code-deliverable` WorkNode. Implementation, build, run and analysis
+are Activities of that delivery, not additional public WorkNode types.
+Main Agent submits `CodeValidation/1` with current output digests and typed
+`EnvironmentEvidence/1` reports covering every approved acceptance condition.
+Existing evidence-admission policies still apply. Validation precedes owner
+acceptance; acceptance binds the exact validation receipt, code and upstream inputs.
+No post-acceptance Agent check is introduced for code delivery.
+
+Plans depend on accepted `cap.doc` and explicit upstream package `cap.venv` objects.
+Deliveries depend on their versioned plan artifact. Accepted deliveries produce
+`art.code` and package `cap.venv:<implementation_key>`. Default downstream
+dependencies resolve to `cap.venv:<claim>`; these conservative summary capabilities
+require all required providers of that claim to be accepted. They are not tasks,
+approvals, or additional progress items. Explicit package dependencies select one
+specific DUT work package. Code and evidence changes revoke delivery availability
+without reopening an unchanged plan; source/plan changes revoke both.
+
+Installing a code proposal preserves the former VENV nodes and dependency audit.
+Known legacy capability dependencies move to corresponding derived capabilities;
+unmapped dependencies stay blocked until Main Agent explicitly replans them.
+Unchanged reads reuse stat-keyed content digests, streaming large native evidence
+only after a file changes. File preview is project-, node- and digest-scoped.
+
 ## Purpose
 
 For an implementation-grounded walkthrough in Chinese, read

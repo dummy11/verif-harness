@@ -7,6 +7,10 @@
   "required": ["schema", "workstream", "nodes"],
   "allOf": [
     {
+      "if": {"properties": {"workstream": {"const": "VENV"}}},
+      "then": {"properties": {"nodes": {"items": {"properties": {"role": {"const": "code-plan"}}}}}}
+    },
+    {
       "if": {"properties": {"workstream": {"const": "VDOC"}}},
       "then": {
         "properties": {
@@ -42,6 +46,11 @@
         "additionalProperties": false,
         "allOf": [
           {
+            "if": {"properties": {"role": {"const": "code-plan"}}, "required": ["role"]},
+            "then": {"required": ["implementation_key", "validation_methods", "inputs", "input_files", "output_paths", "capabilities"]},
+            "else": {"required": ["parent_key", "purpose", "progress_measures", "quality_checks", "suggested_mode", "evidence_claim"]}
+          },
+          {
             "if": {
               "properties": {
                 "role": {"const": "document-writing-plan"},
@@ -53,15 +62,20 @@
           }
         ],
         "required": [
-          "key", "title", "role", "parent_key", "statement", "purpose",
+          "key", "title", "role", "statement",
           "scope", "acceptance_criteria", "source_refs", "work_content",
-          "implementation_approach", "deliverables", "progress_measures",
-          "quality_checks", "suggested_mode", "evidence_claim"
+          "implementation_approach", "deliverables"
         ],
         "properties": {
           "key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
           "title": {"type": "string", "minLength": 1},
           "role": {"type": "string", "minLength": 1},
+          "implementation_key": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._:-]*$"},
+          "validation_methods": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^cap\\.(doc|venv):"}},
+          "input_files": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "output_paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "capabilities": {"type": "array", "minItems": 1, "items": {"enum": ["interface-ready", "clock-reset-ready", "topology-ready", "build-ready", "run-ready", "observation-ready", "environment-smoke-evidence"]}},
           "parent_key": {"type": "string", "minLength": 1},
           "document_key": {"type": "string", "minLength": 1},
           "required": {"type": "boolean", "default": true},

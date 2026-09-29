@@ -33,6 +33,7 @@ from .document_authoring import (
 )
 from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
 from .evidence_policy import policy_for
+from . import code_workflow
 from .reachability import ReachabilityError, validate_reachability
 
 
@@ -286,7 +287,7 @@ def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
 DESIRED_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 PROJECT_NODE_ROLES: dict[str, set[str]] = {
     "VDOC": {"document-writing-plan", "document-deliverable"},
-    "VENV": {"environment-component", "interface", "clock-reset-domain", "observation-path"},
+    "VENV": {"code-plan", "code-deliverable"},
     "VSTIM": {"stimulus-feature", "stimulus-scenario"},
     "VCHK": {"checking-goal", "checker", "reference-path", "assertion-group"},
     "VCOV": {"coverage-goal", "coverage-scope"},
@@ -845,6 +846,14 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  `agent-question ask` 提问；不需要或所有问题回答并重新分析后，用",
         "  `agent-review-check complete REVIEW_ID --summary ...` 完成本轮检查。",
         "  未完成 Agent 检查或仍有开放问题时，节点不得显示为正文验收通过。",
+        "- VENV 只建立 DUT 工作包的 code-plan；方案按目标、工作范围、具体工作、实现方式、",
+        "  如何验证、输出和交付条件说明。inputs 依赖已验收的 cap.doc 或其他包的 cap.venv。",
+        "  负责人批准后系统创建同 implementation_key 的 code-deliverable，绑定批准的 art.code_plan。",
+        "  Agent 在该交付节点内实现、构建、验证并分析结果，用 code status 获取当前版本，",
+        "  用 code validate 登记绑定当前代码及原始工具证据的 CodeValidation/1；通过后才请求验收。",
+        "  负责人验收后系统复核版本并派生 art.code 和 cap.venv；不再安排例行验收后 Agent 检查。",
+        "  待确认工程问题使用节点绑定的 agent-question，不放入方案正文。完整合同见 vplan/venv.md。",
+        "  旧版 VENV 节点不得继续作为新实现授权；提交新的 code-plan 方案，历史保留。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同；VDOC 仅在",
         "  文档撰写方案已进入 `ACTIVE` 后执行 `docs sync`。",
@@ -1188,14 +1197,14 @@ CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
 
-SCHEMA += vdoc_artifacts.SCHEMA
+SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA
 
 # Heartbeats and runtime logs must not cause another expensive closure read.
 for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documents",
                "document_reviews", "document_items", "agent_questions", "human_actions",
                "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
                "review_feedback_items", "review_agent_checks", "node_closure_reviews",
-               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks"):
+               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks", "code_validations"):
     for _operation in ("INSERT", "UPDATE", "DELETE"):
         SCHEMA += f"""
 CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
@@ -1498,7 +1507,10 @@ class ProjectStore:
 
     def _reconcile_default_dependencies(self, connection: sqlite3.Connection) -> int:
         current: dict[tuple[str, str], str] = {}
-        for row in connection.execute("SELECT name,desired_json FROM workstreams"):
+        code_model = False
+        for row in connection.execute("SELECT name,desired_json,context_json FROM workstreams"):
+            if row["name"] == "VENV":
+                code_model = json.loads(row["context_json"]).get("code_model") == 2
             for desired in json.loads(row["desired_json"]):
                 current[(row["name"], desired["key"])] = desired["id"]
         connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
@@ -1507,6 +1519,10 @@ class ProjectStore:
         for dependent_key, prerequisite_key in DEFAULT_DEPENDENCIES:
             dependent = current.get(dependent_key)
             prerequisite = current.get(prerequisite_key)
+            if code_model and prerequisite_key[0] == "VENV":
+                prerequisite = "cap.venv:" + prerequisite_key[1]
+                if not connection.execute("SELECT 1 FROM nodes WHERE id=?", (prerequisite,)).fetchone():
+                    self.upsert_node(connection, prerequisite, "capability", "验证环境交付尚未验收", Validity.UNKNOWN, data={"derived": True})
             if dependent is None or prerequisite is None:
                 continue
             prerequisites = [prerequisite]
@@ -2167,6 +2183,24 @@ class ProjectStore:
     ) -> dict[str, Any]:
         self.require()
         name = self.normalize_workstream(workstream)
+        if name == "VENV":
+            if desired or evidence_claims or document_root or exit_criteria:
+                raise HarnessError("VENV 请使用包含 code-plan 和交付条件的 --desired-file")
+            if not desired_file:
+                current = next((p for p in self.workstreams() if p['workstream'] == name), None)
+                if current and code_workflow.modern(current):
+                    return {**current, 'auto_closure': self.evaluate_closure(name)}
+            return code_workflow.design(self, desired_file, objective, decisions)
+        return self._design_workstream(name, objective, desired, exit_criteria, decisions,
+                                       document_root, evidence_claims, desired_file)
+
+    @store_operation
+    def _design_workstream(
+        self, name: str, objective: str | None, desired: list[str],
+        exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
+        evidence_claims: list[str] | None = None, desired_file: str | None = None,
+    ) -> dict[str, Any]:
+        """Shared original planner; retained to interpret and test pre-v2 histories."""
         current_vdoc_plan: dict[str, Any] | None = None
         if name == "VDOC":
             try:
@@ -2650,11 +2684,12 @@ class ProjectStore:
         with self.read_connect() as connection:
             row = connection.execute("SELECT * FROM agent_service WHERE id=1").fetchone()
             latest = connection.execute(
-                "SELECT id,task_key,revision,status,activity_id,created_at,ended_at,summary,retry_requested "
+                "SELECT id,task_key,revision,status,activity_id,created_at,ended_at,summary,retry_requested, "
+                "COALESCE(json_extract(action_json,'$.workstream'),'VDOC') AS workstream "
                 "FROM agent_service_runs ORDER BY created_at DESC,rowid DESC LIMIT 1"
             ).fetchone()
             revision = connection.execute(
-                "SELECT revision FROM workstream_read_headers WHERE name='VDOC'"
+                "SELECT revision FROM workstream_read_headers WHERE name=?", (latest['workstream'] if latest else 'VDOC',)
             ).fetchone()
         result = dict(row) if row else {"status": "NOT_STARTED", "message": "未启动自动接续服务；提交记录不会唤醒已退出的 CLI"}
         result["online"] = bool(row and row["status"] not in {"STOPPED", "FAILED"}
@@ -2672,23 +2707,25 @@ class ProjectStore:
         return result
 
     def create_agent_service_run(self, task: dict[str, Any], run_id: str, log_path: str) -> str:
-        """Atomically bind an invocation to its Activity and current VDOC revision."""
+        """Atomically bind an invocation to its Activity and current workflow revision."""
         activity_id = f"activity:{uuid.uuid4().hex[:12]}"
         timestamp = now()
         normalized_log = relative_path(self.root, log_path)
+        name = task.get('workstream', 'VDOC')
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             revision = connection.execute(
-                "SELECT revision FROM workstream_read_headers WHERE name='VDOC'"
+                "SELECT revision FROM workstream_read_headers WHERE name=?", (name,)
             ).fetchone()
             if revision is None or revision[0] != task["revision"]:
-                raise HarnessError("自动接续动作已不是当前 VDOC 版本，请重新读取")
+                raise HarnessError(f"自动接续动作已不是当前 {name} 版本，请重新读取")
             target = task["action"]["target"]
             node = connection.execute("SELECT workstream FROM nodes WHERE id=?", (target,)).fetchone()
             connection.execute(
                 "INSERT INTO activities(id,node_id,workstream,operation,status,actor,message,log_path,created_at,updated_at) "
-                "VALUES(?,?,?,'处理验证文档待办','RUNNING',?,?,?,?,?)",
+                "VALUES(?,?,?,?,'RUNNING',?,?,?,?,?)",
                 (activity_id, target if node else PROJECT_TARGET, node[0] if node else PROJECT_WORKSTREAM,
+                 '处理验证环境代码待办' if name == 'VENV' else '处理验证文档待办',
                  PROJECT_AGENT_ACTOR, task["action"]["reason"], normalized_log, timestamp, timestamp),
             )
             connection.execute(
@@ -2972,6 +3009,9 @@ class ProjectStore:
                 plan, desired = self._current_assignment_definition(
                     connection, action["target"],
                 )
+                if code_workflow.modern(plan) and scopes:
+                    if desired['role'] != 'code-deliverable' or any(scope not in desired['output_paths'] for scope in scopes):
+                        raise HarnessError("代码写入任务只能绑定交付节点，并逐项声明批准的 output_paths")
                 if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"} and not (
                     action["kind"] == "APPLY_REVIEW_FEEDBACK"
                     and plan["lifecycle"] == "REVISE"
@@ -3575,6 +3615,8 @@ class ProjectStore:
 
     @store_operation
     def review_workstream(self, workstream: str, verdict: str, reviewer: str, reason: str) -> dict[str, Any]:
+        if self.normalize_workstream(workstream) == "VENV" and code_workflow.modern(self.workstream("VENV")):
+            raise HarnessError("VENV 请在每个代码方案或交付节点审批，不能整条工作流批准")
         if verdict not in {"approve", "reject", "modify", "clarify"}:
             raise HarnessError("workstream verdict 必须是 approve/reject/modify/clarify")
         if not reviewer.strip() or not reason.strip():
@@ -3927,7 +3969,7 @@ class ProjectStore:
     def _store_review_feedback_items(
         connection: sqlite3.Connection, review_id: str, node_id: str,
         revision: int, definition_digest: str, document_digest: str,
-        reviewer: str, items: Iterable[dict[str, str]], timestamp: str,
+        reviewer: str, items: Iterable[dict[str, str]], timestamp: str, workstream: str = "VDOC",
     ) -> list[str]:
         feedback_ids: list[str] = []
         for item in items:
@@ -3939,7 +3981,7 @@ class ProjectStore:
                     resolution,created_at,updated_at,resolved_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    feedback_id, review_id, node_id, "VDOC", revision,
+                    feedback_id, review_id, node_id, workstream, revision,
                     definition_digest, document_digest, item["operation"],
                     item["target"], reviewer, item["instruction"], "DRAFT", None, "",
                     timestamp, timestamp, None,
@@ -3954,6 +3996,8 @@ class ProjectStore:
     ) -> dict[str, Any]:
         """Return revision-bound approval opinions awaiting one explicit Agent handoff."""
         self.ensure_dashboard_schema()
+        if node_id.startswith("workstream:VENV:"):
+            return code_workflow.review_state(self, node_id)["feedback"]
         if plan is None:
             plan = self.workstream("VDOC")
         if desired is None:
@@ -4013,12 +4057,13 @@ class ProjectStore:
         document_digest: str = "",
     ) -> dict[str, Any]:
         """Seal all current draft opinions into one durable Main Agent work batch."""
-        plan = self.workstream("VDOC")
+        name = "VENV" if node_id.startswith("workstream:VENV:") else "VDOC"
+        plan = self.workstream(name)
         desired = next(
             (item for item in plan["desired_state"] if item["id"] == node_id), None,
         )
         if desired is None or desired.get("role") not in {
-            "document-writing-plan", "document-deliverable",
+            "document-writing-plan", "document-deliverable", "code-plan", "code-deliverable",
         }:
             raise HarnessError("只能提交当前 VDOC 方案或正文节点的审批意见")
         state = self.review_feedback_state(node_id, plan, desired)
@@ -4060,7 +4105,7 @@ class ProjectStore:
                     timestamp,
                 ),
             )
-        closure = self.evaluate_closure("VDOC")
+        closure = self.evaluate_closure(name)
         return {
             "batch_id": batch_id,
             "node_id": node_id,
@@ -4117,7 +4162,8 @@ class ProjectStore:
                        WHERE batch_id=?""",
                     (summary.strip(), timestamp, timestamp, batch_id),
                 )
-        plan = self.workstream("VDOC")
+        name = "VENV" if node_id.startswith("workstream:VENV:") else "VDOC"
+        plan = self.workstream(name)
         desired = next(
             (item for item in plan["desired_state"] if item["id"] == node_id), None,
         )
@@ -4130,7 +4176,7 @@ class ProjectStore:
         elif desired is not None and desired.get("role") == "document-deliverable":
             self._refresh_vdoc_delivery_acceptance(node_id)
             self.write_model_projection()
-        closure = self.evaluate_closure("VDOC")
+        closure = self.evaluate_closure(name)
         if open_question_ids:
             raise HarnessError(
                 "Agent 已提出等待负责人回答的问题（"
@@ -4227,6 +4273,9 @@ class ProjectStore:
         desired: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.ensure_dashboard_schema()
+        if node_id.startswith("workstream:VENV:"):
+            code_workflow.refresh(self)
+            return code_workflow.review_state(self, node_id, plan, desired)
         if plan is None or desired is None:
             for candidate in self.workstreams():
                 match = next(
@@ -4325,6 +4374,8 @@ class ProjectStore:
         reviewer: str, reason: str,
         change_items: Iterable[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        if node_id.startswith("workstream:VENV:"):
+            return code_workflow.review(self, node_id, definition_digest, reviewer, reason, verdict, change_items)
         selected = verdict.lower()
         if selected not in {"approve", "reject", "modify", "clarify"}:
             raise HarnessError("node plan section verdict 必须是 approve/reject/modify/clarify")
@@ -4472,6 +4523,8 @@ class ProjectStore:
     def complete_node_plan_review(
         self, node_id: str, definition_digest: str, reviewer: str, reason: str = "",
     ) -> dict[str, Any]:
+        if node_id.startswith("workstream:VENV:"):
+            return code_workflow.review(self, node_id, definition_digest, reviewer, reason)
         if not reviewer.strip():
             raise HarnessError("审批完成必须填写审批人")
         plan = self.workstream("VDOC")
@@ -4686,6 +4739,7 @@ class ProjectStore:
 
     def node_closure_assessment(
         self, node_id: str, *, _plan: dict[str, Any] | None = None,
+        _code_review: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build a reproducible Human-reviewable explanation of one node conclusion."""
         self.require()
@@ -4703,6 +4757,14 @@ class ProjectStore:
                 raise HarnessError("Closure Assessment 只适用于 Workstream desired-state node")
             data = json.loads(row["data_json"])
             plan = _plan if _plan is not None else self.workstream(row["workstream"])
+            if plan["workstream"] == "VENV" and code_workflow.modern(plan):
+                state = _code_review if _code_review is not None else code_workflow.review_state(self, node_id, plan, data, connection)
+                return {"schema": "NodeClosureAssessment/1", "rule_version": "code-delivery/1", "node_id": node_id,
+                        "workstream": "VENV", "revision": plan["revision"], "current_revision": True,
+                        "conclusion": "CLOSED" if state["completed"] else "NOT_SATISFIED",
+                        "digest": state["definition_digest"], "assessment_digest": state["definition_digest"],
+                        "reasons": state["blockers"] or ["当前版本已验收" if state["completed"] else "等待负责人审批当前版本"],
+                        "acceptance_results": [], "dependency_blockers": [], "open_findings": [], "reviews": []}
             if plan["workstream"] != row["workstream"]:
                 raise HarnessError("节点与当前工作流不匹配；请刷新后重试")
             current_ids = {item["id"] for item in plan["desired_state"]}
@@ -5566,6 +5628,11 @@ class ProjectStore:
     @store_operation
     def approval_status(self, node_id: str) -> dict[str, Any]:
         """Read one current approval without closure, exports, or a project snapshot."""
+        if node_id.startswith("workstream:VENV:"):
+            code_workflow.refresh(self)
+            review = code_workflow.review_state(self, node_id)
+            return {"node_id": node_id, "revision": review["revision"], "definition_digest": review["definition_digest"],
+                    "status": review["status"], "current_review": review["current_completion"]}
         plan = self.workstream("VDOC")
         desired = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
         if desired is None:
@@ -5878,6 +5945,8 @@ class ProjectStore:
                 payload["document_governance_projection"] = "document-governance.md"
                 for document in documents:
                     document["snapshot_path"] = f"documents/{Path(document['path']).name}"
+        if workstream == 'VENV' and code_workflow.modern(plan):
+            payload['code_artifacts'] = code_workflow.artifacts(self)
         return payload
 
     @store_operation
@@ -5956,7 +6025,7 @@ class ProjectStore:
 
     def _require_work_target(self, node_id: str) -> None:
         node_id = node_id.strip()
-        if vdoc_artifacts.protected(node_id):
+        if vdoc_artifacts.protected(node_id) or code_workflow.protected(node_id):
             raise HarnessError("文档产物和可用状态由审批、正文检查及依赖自动确定，不能直接执行或修改")
         self.ensure_dashboard_schema()
         with self.read_connect() as connection:
@@ -5986,7 +6055,7 @@ class ProjectStore:
     def add_edge(self, source: str, target: str, relation: str, origin: str, confidence: float) -> dict[str, Any]:
         self.require()
         self._require_work_target(source)
-        if vdoc_artifacts.protected(target):
+        if vdoc_artifacts.protected(target) or code_workflow.protected(target):
             raise HarnessError("文档产物和可用状态只能通过依赖关系引用")
         if not 0 <= confidence <= 1:
             raise HarnessError("confidence 必须在 0 到 1 之间")
@@ -6019,6 +6088,10 @@ class ProjectStore:
                 raise HarnessError("未知 node: " + ", ".join(missing))
             dependent = connection.execute("SELECT workstream FROM nodes WHERE id=?", (subject,)).fetchone()
             source = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (prerequisite,)).fetchone()
+            if prerequisite.startswith(("art.code_plan:", "art.code:")) or (source[0] == "VENV" and code_workflow.modern(self._read_workstream(connection, "VENV"))):
+                raise HarnessError("代码工作包之间及下游必须依赖 cap.venv，不能依赖方案或交付工作节点")
+            if subject.startswith("workstream:VENV:") and code_workflow.modern(self._read_workstream(connection, "VENV")):
+                raise HarnessError("代码方案的输入依赖属于批准内容；请通过新方案 revision 修改 inputs")
             if dependent[0] != "VDOC" and (source[0] == "VDOC" or prerequisite.startswith(("art.doc:", "art.doc_plan:"))):
                 data = json.loads(source["data_json"])
                 key = data.get("document_key") or data.get("key")
@@ -6073,6 +6146,8 @@ class ProjectStore:
     def waive_node(self, node_id: str, reviewer: str, reason: str) -> dict[str, Any]:
         self.require()
         self._require_work_target(node_id)
+        if node_id.startswith("workstream:VENV:") and code_workflow.modern(self.workstream("VENV")):
+            raise HarnessError("代码交付不能通过接受例外绕过方案审批、验证和交付验收")
         with self.connect() as connection:
             node = connection.execute(
                 "SELECT workstream,data_json FROM nodes WHERE id=?", (node_id,),
@@ -6108,6 +6183,8 @@ class ProjectStore:
         data: dict[str, Any] | None = None, contract_validated: bool = False,
     ) -> dict[str, Any]:
         self.require()
+        if subject.startswith("workstream:VENV:") and code_workflow.modern(self.workstream("VENV")):
+            raise HarnessError("代码交付请使用 code validate 登记验证报告；证据不能替代负责人验收")
         self._require_work_target(subject)
         source_path = Path(source)
         if not source_path.is_absolute():
@@ -6237,7 +6314,9 @@ class ProjectStore:
 
     def _evidence_dependency_blockers(self, subject: str) -> list[str]:
         self.ensure_dashboard_schema()
-        vdoc_artifacts.reconcile(self, self.workstreams())
+        plans = self.workstreams()
+        vdoc_artifacts.reconcile(self, plans)
+        code_workflow.refresh(self, plans)
         blockers: list[str] = []
         with self.read_connect() as connection:
             row = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (subject,)).fetchone()
@@ -6375,6 +6454,15 @@ class ProjectStore:
             blockers.append("fresh-evidence snapshot_revision 必须等于报告 revision")
         derived: list[dict[str, str]] = []
         for item in sorted(current.values(), key=lambda value: value["id"]):
+            if item.get('role') == 'code-deliverable' and item.get('required', True):
+                plan = self._read_workstream(connection, 'VENV')
+                state = code_workflow.review_state(self, item['id'], plan, item, connection)
+                if not state['completed']:
+                    blockers.append(f"代码交付 {item['title']} 尚未通过当前版本验收")
+                else:
+                    derived.append({'id': item['id'], 'status': 'VALID',
+                                    'evidence_digest': code_workflow.digest(state['validation'])})
+                continue
             if item["id"] == subject or item.get("role") != "closure-evidence" or not item.get("required", True):
                 continue
             node = connection.execute("SELECT status FROM nodes WHERE id=?", (item["id"],)).fetchone()
@@ -6726,6 +6814,7 @@ class ProjectStore:
             return copy.deepcopy(cached[1])
         plans = self.workstreams()
         vdoc_artifacts.reconcile(self, plans)
+        code_workflow.refresh(self, plans)
         plan = next((item for item in plans if item["workstream"] == name), None)
         if plan is None:
             raise HarnessError(f"Workstream {name} 尚未设计")
@@ -6739,19 +6828,26 @@ class ProjectStore:
 
     @staticmethod
     def _planned_nodes(plans: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
-        return {
+        result = {
             (plan["workstream"], item["key"]): item
             for plan in plans for item in plan["desired_state"]
         }
+        if any(p["workstream"] == "VENV" and code_workflow.modern(p) for p in plans):
+            for key in CLAIMS["VENV"]:
+                result[("VENV", key)] = {"id": "cap.venv:" + key, "key": key, "required": True}
+        return result
 
     def _evaluate_closure(
         self, plan: dict[str, Any],
         current_nodes: dict[tuple[str, str], dict[str, Any]], *,
         persist: bool,
         delivery_reviews: dict[str, dict[str, Any]] | None = None,
+        code_reviews: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Evaluate the same rules with definitions loaded once by this read operation."""
         name = plan["workstream"]
+        if name == "VENV" and code_workflow.modern(plan):
+            return code_workflow.closure(self, plan, persist, code_reviews)
         actions: list[dict[str, Any]] = []
         vdoc_proposal_issues = (
             self._vdoc_plan_proposal_issues(plan["desired_state"])
@@ -7060,7 +7156,9 @@ class ProjectStore:
     def model(self, node_id: str | None = None) -> dict[str, Any]:
         self.require()
         self.ensure_dashboard_schema()
-        vdoc_artifacts.reconcile(self, self.workstreams())
+        plans = self.workstreams()
+        vdoc_artifacts.reconcile(self, plans)
+        code_workflow.refresh(self, plans)
         with self.read_connect() as connection:
             suffix, params = ("", ()) if node_id is None else (" WHERE id=?", (node_id,))
             nodes = [dict(row) for row in connection.execute("SELECT id,type,title,workstream,status,updated_at FROM nodes" + suffix + " ORDER BY id", params)]
@@ -7164,6 +7262,7 @@ class ProjectStore:
         try:
             with self.read_connect() as connection:
                 rows = connection.execute("SELECT path FROM documents ORDER BY id").fetchall()
+                watched.extend(self.root / row[0] for row in connection.execute("SELECT path FROM code_watched_files"))
                 active_assignments = connection.execute(
                     "SELECT id,lease_expires_at FROM agent_assignments "
                     "WHERE status='ACTIVE' ORDER BY id"
@@ -7177,7 +7276,7 @@ class ProjectStore:
         for path in watched:
             try:
                 stat = path.stat()
-                signatures.append((str(path), stat.st_mtime_ns, stat.st_size))
+                signatures.append((str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))
             except OSError:
                 signatures.append((str(path), None, None))
         observed_at = dt.datetime.now(dt.timezone.utc)
@@ -7244,6 +7343,7 @@ class ProjectStore:
         manifest = json.loads((self.state / "project.json").read_text(encoding="utf-8"))
         plans = self.workstreams()
         vdoc_artifacts.reconcile(self, plans)
+        code_workflow.refresh(self, plans)
         with self.read_connect() as connection:
             counts = {row["status"]: row["total"] for row in connection.execute(
                 "SELECT status,COUNT(*) total FROM nodes GROUP BY status"
@@ -7291,12 +7391,19 @@ class ProjectStore:
             and item.get("visible_to_human", True)
         }
         vdoc_artifacts.reconcile(self, plans)
+        code_workflow.refresh(self, plans)
         model = self._dashboard_model(dashboard_node_ids)
         current_nodes = self._planned_nodes(plans)
         delivery_reviews: dict[str, dict[str, Any]] = {}
+        code_reviews = {
+            n['id']: code_workflow.review_state(self, n['id'], p, n)
+            for p in plans if p['workstream'] == 'VENV' and code_workflow.modern(p)
+            for n in p['desired_state']
+        }
         closures = [
             self._evaluate_closure(
                 item, current_nodes, persist=False, delivery_reviews=delivery_reviews,
+                code_reviews=code_reviews,
             ) for item in plans
         ]
         agent_assignment_history = self.agent_assignments()
@@ -7549,6 +7656,9 @@ class ProjectStore:
                     "title": display_definition.get("title", node["title"]),
                     "key": desired.get("key"),
                     "role": desired.get("role", "capability"),
+                    "implementation_key": desired.get("implementation_key"),
+                    "validation_methods": desired.get("validation_methods", []),
+                    "output_paths": desired.get("output_paths", []),
                     "required": desired.get("required", True),
                     "suggested_mode": desired.get("suggested_mode"),
                     "evidence_claim": desired.get("evidence_claim"),
@@ -7588,6 +7698,7 @@ class ProjectStore:
                     "outgoing": outgoing.get(desired["id"], []),
                     "document": mapped_document,
                     "plan_review": (
+                        code_reviews[desired['id']] if desired['id'] in code_reviews else
                         self.node_plan_review_state(desired["id"], plan, desired)
                         if desired["id"] in vdoc_plan_ids else None
                     ),
@@ -7596,7 +7707,7 @@ class ProjectStore:
                     # node is or is not closed.  It is deliberately separate from the raw
                     # status so a Human can review the reasoning rather than a badge.
                     "closure_assessment": self._dashboard_closure_assessment(
-                        self.node_closure_assessment(desired["id"], _plan=plan)
+                        self.node_closure_assessment(desired["id"], _plan=plan, _code_review=code_reviews.get(desired['id']))
                     ),
                     "next_actions": [
                         action for action in workstream_closure.get("actions", [])
@@ -7604,6 +7715,11 @@ class ProjectStore:
                     ],
                 })
             registered_required_total = required_total
+            if plan["workstream"] == "VENV" and code_workflow.modern(plan):
+                pending_vdoc_delivery_nodes = sum(
+                    n["role"] == "code-plan" and n["required"] and not any(d.get("parent_id") == n["id"] for d in desired_nodes)
+                    for n in desired_nodes)
+                required_total += pending_vdoc_delivery_nodes
             if plan["workstream"] == "VDOC":
                 # VDOC completion includes both plan approval and body acceptance.
                 # Delivery nodes cannot be registered before the body is written, so
@@ -7725,6 +7841,7 @@ class ProjectStore:
                 progress["vdoc"] = vdoc_progress
             workstream_views.append({
                 "workstream": plan["workstream"],
+                "code_model": code_workflow.modern(plan),
                 "display_name": plan["display_name"],
                 "lifecycle": plan["lifecycle"],
                 "revision": plan["revision"],

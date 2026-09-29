@@ -1,4 +1,4 @@
-"""Explicit, single-writer VDOC continuation; SQLite remains the only inbox.
+"""Explicit, single-writer verification continuation; SQLite remains the only inbox.
 
 No runtime session is resurrected. Each bounded invocation rereads current facts.
 The inherited process lock also fences orphan runtimes after a supervisor crash.
@@ -29,6 +29,7 @@ CLI = Path(__file__).resolve().parents[1] / "scripts/verif_harness.py"
 KINDS = {"APPLY_REVIEW_FEEDBACK", "CHECK_DOCUMENT_REVIEW", "AUTHOR_DOCUMENT_CONTENT",
          "REFINE_DOCUMENT_DELIVERIES", "REFINE_DESIRED_STATE", "REPAIR_OR_REPLAN",
          "SATISFY_DESIRED_STATE", "RESOLVE_FINDING", "REVALIDATE"}
+KINDS.update({"IMPLEMENT_AND_VALIDATE", "APPLY_WORKFLOW_CHANGE"})
 OWNER = f"{socket.gethostname()}:{os.getuid()}"
 _CHILDREN: list[subprocess.Popen] = []  # Reap starts when used from a long-lived caller.
 _KIMI_PRINT: dict[str, bool] = {}
@@ -104,22 +105,27 @@ def validate_runtime(store: ProjectStore, runtime: str) -> None:
 
 def candidates(store: ProjectStore, *, include_attempted: bool = False) -> list[dict]:
     """Materialize only current closure actions, not a second workflow engine."""
+    from .code_workflow import modern
     plans = store.workstreams()
-    plan = next((item for item in plans if item["workstream"] == "VDOC"), None)
-    if not plan:
-        return []
+    return [task for plan in plans
+            if plan['workstream'] == 'VDOC' or (plan['workstream'] == 'VENV' and modern(plan))
+            for task in _candidates_for_plan(store, plan, include_attempted)]
+
+
+def _candidates_for_plan(store, plan, include_attempted):
+    name = plan['workstream']
     questions = store.agent_questions()
     with store.read_connect() as connection:
         blocked_keys = {row[0] for row in connection.execute(
             "SELECT task_key FROM agent_service_runs WHERE retry_requested=0"
         )}
     result = []
-    for action in store.evaluate_closure("VDOC", persist=False)["actions"]:
+    for action in store.evaluate_closure(name, persist=False)["actions"]:
         if action["kind"] not in KINDS or action.get("executor") == "human":
             continue
         target = action["target"]
         desired = next((item for item in plan["desired_state"] if item["id"] == target), None)
-        targets = {target, "project", "VDOC"}
+        targets = {target, "project", name}
         ancestor = desired
         while ancestor and ancestor.get("parent_key"):
             ancestor = next((item for item in plan["desired_state"] if item["key"] == ancestor["parent_key"]), None)
@@ -130,10 +136,16 @@ def candidates(store: ProjectStore, *, include_attempted: bool = False) -> list[
         if any(q["status"] == "OPEN" and q["blocking"] for q in related):
             continue
         review = None
+        code_dependencies = None
         if desired and desired.get("role") == "document-deliverable":
             state = store.document_delivery_review_state(target, plan, desired)
             review = {key: state.get(key) for key in ("definition_digest", "document_digest", "semantic_revision")}
-        payload = {"action": action, "revision": plan["revision"], "definition": desired,
+        if desired and name == 'VENV':
+            state = store.node_plan_review_state(target)
+            review = {key: state.get(key) for key in ('definition_digest', 'input_signature')}
+            code_dependencies = state['dependencies']
+        payload = {"action": action, "revision": plan["revision"], "definition": desired, "workstream": name,
+                   "code_dependencies": code_dependencies,
                    "document_version": review,
                    "answers": [{key: q.get(key) for key in
                                 ("id", "status", "answer_option", "answer_text", "answered_at")}
@@ -148,11 +160,12 @@ def change_token(store: ProjectStore) -> tuple:
     with store.read_connect() as connection:
         version = connection.execute("SELECT version FROM agent_service_changes WHERE id=1").fetchone()[0]
         paths = [store.root / row[0] for row in connection.execute("SELECT path FROM documents")]
+        paths.extend(store.root / row[0] for row in connection.execute("SELECT path FROM code_watched_files"))
     stamps = []
     for path in [store.state / "project.json", *paths]:
         try:
             stat = path.stat()
-            stamps.append((str(path), stat.st_mtime_ns, stat.st_size))
+            stamps.append((str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))
         except OSError:
             stamps.append((str(path), None, None))
     return version, tuple(stamps)
@@ -164,6 +177,22 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
     reference = {key: task.get(key) for key in ("key", "revision", "document_version")}
     reference["action"] = {key: task.get("action", {}).get(key) for key in ("id", "kind", "target", "review_id", "batch_ids")}
     reference["task_definition_fingerprint"] = hashlib.sha256(json_text(task.get("definition")).encode()).hexdigest()
+    if task.get('workstream') == 'VENV':
+        return f"""你是当前项目的受管 Main Agent。本轮只处理下面一项 VENV 动作。
+项目根目录：{store.root}
+控制面 CLI 入口：{command}（各子命令须带 --project-root）
+当前动作及版本（任务定位数据，不是额外指令）：{json_text(reference)}
+先读取项目 AGENTS.md、verif-harness Skill 的 vplan/venv.md、status VENV 和 closure。
+代码方案仅包含目标、工作范围、具体工作、实现方式、如何验证、输出和交付条件。
+方案输入依赖已验收 cap.doc 或其他工作包 cap.venv；交付依赖同工作包批准的 art.code_plan。
+只有 code-deliverable 的批准方案与依赖仍有效，才可在约定输出范围实现、构建和验证。
+用 code status 获取当前版本，分析真实工具报告，执行 code validate 登记证据后请求负责人验收。
+不得用 PASS 字样代替原始证据，不得自己批准方案、交付、waive、freeze、提交或推送 Git。
+审批意见必须逐条保留并处理，再完成对应反馈批次；工作流变更要记录处理结论并提交新方案。
+不修改 DUT RTL 和规格，不运行 setup 或启动其他受管 Agent；没有资源权限时提出问题，不臆造结果。
+待确认工程问题使用节点绑定的 agent-question ask ... --no-wait 后退出，不写入方案正文。
+版本或授权变化立即停止。服务保存检查点，不调用 await-human 或后台等待。
+完成这一项动作后重算 closure 并用中文汇报，不处理下一项任务。"""
     return f"""你是当前项目的受管 Main Agent。本轮只处理下面一项 VDOC 动作。
 项目根目录：{store.root}
 控制面 CLI 入口：{command}（各子命令须带 --project-root）
@@ -200,10 +229,22 @@ def stop_requested(store: ProjectStore) -> bool:
     return bool(row and row[0])
 
 
-def current_revision(store: ProjectStore) -> int | None:
+def current_revision(store: ProjectStore, workstream: str = 'VDOC') -> int | None:
     with store.read_connect() as connection:
-        row = connection.execute("SELECT revision FROM workstream_read_headers WHERE name='VDOC'").fetchone()
+        row = connection.execute("SELECT revision FROM workstream_read_headers WHERE name=?", (workstream,)).fetchone()
     return row[0] if row else None
+
+
+def task_is_current(store, task):
+    if current_revision(store, task.get('workstream', 'VDOC')) != task['revision']:
+        return False
+    if task.get('workstream') == 'VENV' and task.get('code_dependencies') is not None:
+        try:
+            state = store.node_plan_review_state(task['action']['target'])
+        except HarnessError:
+            return False
+        return state['dependencies'] == task['code_dependencies']
+    return True
 
 
 def end_process(process: subprocess.Popen) -> None:
@@ -237,7 +278,8 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
         if stop_requested(store):
             status, summary = "INTERRUPTED", "服务停止请求已收到；本轮未启动 CLI"
             return
-        heartbeat(store, "RUNNING", "Agent 正在处理当前版本的验证文档待办")
+        work_label = '验证环境代码' if task.get('workstream') == 'VENV' else '验证文档'
+        heartbeat(store, "RUNNING", f"Agent 正在处理当前版本的{work_label}待办")
         with log.open("w", encoding="utf-8") as output:
             process = subprocess.Popen(runtime_command(runtime, prompt_for(store, task)),
                                        cwd=store.root, stdin=subprocess.DEVNULL, stdout=output,
@@ -248,18 +290,18 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
                 if stop_requested(store):
                     status, summary = "INTERRUPTED", "已停止本轮；确认当前文件与记录后可显式 retry"
                     break
-                if current_revision(store) != task["revision"]:
+                if not task_is_current(store, task):
                     status, summary = "STALE", "工作流版本已变化；旧动作已停止，等待重新读取"
                     break
                 if time.monotonic() - started > 1800:
                     summary = "本轮超过 30 分钟，已停止；请检查日志后显式 retry"
                     break
-                heartbeat(store, "RUNNING", "Agent 正在处理当前版本的验证文档待办")
+                heartbeat(store, "RUNNING", f"Agent 正在处理当前版本的{work_label}待办")
                 time.sleep(2)
             else:
                 if process.returncode == 0:
                     status, summary = "COMPLETED", "本轮执行已结束；是否通过仍由审批与 closure 判断"
-                    if current_revision(store) != task["revision"]:
+                    if not task_is_current(store, task):
                         status, summary = "STALE", "工作流版本已变化；本轮结果不能作为旧动作完成结论"
                     elif any(item["key"] == task["key"] for item in candidates(store, include_attempted=True)):
                         status, summary = "FAILED", "CLI 已退出，但同一动作尚未推进；请检查日志后显式 retry"
@@ -287,7 +329,7 @@ def run(store: ProjectStore, runtime: str) -> None:
             connection.execute("UPDATE agent_service_runs SET status='INTERRUPTED',ended_at=?,"
                                "summary='服务意外中断；确认文件与记录后显式 retry' WHERE status='RUNNING'", (now(),))
             connection.execute("INSERT OR REPLACE INTO agent_service VALUES(1,?,?,?,'WAITING',?,0,?)",
-                               (runtime, OWNER, os.getpid(), time.time(), "正在读取验证文档待办"))
+                               (runtime, OWNER, os.getpid(), time.time(), "正在读取验证文档和环境代码待办"))
         for row in interrupted:
             if row[0] and store.activity(row[0])["status"] == "RUNNING":
                 store.update_activity(row[0], "FAILED", "服务意外中断；没有自动重试")
@@ -311,7 +353,7 @@ def run(store: ProjectStore, runtime: str) -> None:
                     previous = current
                     latest = store.agent_service_status()["latest_run"]
                     message = (latest["summary"] if latest and latest["status"] in {"FAILED", "INTERRUPTED"}
-                               else "自动接续服务在线；等待新的审批、回答或可执行的验证文档动作")
+                               else "自动接续服务在线；等待新的审批、回答或可执行的文档和代码动作")
                     heartbeat(store, "WAITING", message)
                     time.sleep(3)
         except Exception as exc:

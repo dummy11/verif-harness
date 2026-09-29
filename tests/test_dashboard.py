@@ -730,7 +730,8 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("humanRows(openHuman)", html)
         self.assertNotIn("是否需要负责人处理", html)
         self.assertIn("function workstreamStatusCardHtml(w)", html)
-        self.assertIn("waiting.length && w.workstream !== 'VDOC'", html)
+        self.assertIn("waiting.length && !['VDOC','VENV'].includes(w.workstream)", html)
+        self.assertNotIn("waiting.length && w.workstream !== 'VDOC'", html)
         self.assertIn("function vdocPlanReviewState(workstream)", html)
         self.assertIn("REFINE_DESIRED_STATE:'由 Agent 完善当前 DUT 的工作节点'", html)
         self.assertIn("文档撰写方案尚未形成", html)
@@ -835,7 +836,8 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("Human 交互入口", html)
         self.assertNotIn("必需节点", html)
         self.assertNotIn("必须完成的节点", html)
-        self.assertNotIn("证据", html)
+        self.assertIn("代码交付验证报告与证据", html)
+        self.assertIn("['code-plan','code-deliverable']", html)
         self.assertIn("Testbench 目录（可选）", html)
         self.assertIn("参考模型（可选）", html)
         self.assertIn("验证脚本（可选）", html)
@@ -987,7 +989,7 @@ class DashboardTest(unittest.TestCase):
             html.index("function nodeRows(nodes)")
         ]
         vdoc_branch = render_workstream[
-            render_workstream.index("if (w.workstream === 'VDOC') {"):
+            render_workstream.index("if (['VDOC','VENV'].includes(w.workstream)) {"):
             render_workstream.index("      const actions = w.closure.actions || [];")
         ]
         self.assertIn('id="add-vdoc-node">添加节点', vdoc_branch)
@@ -996,6 +998,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("${workstreamStatusCardHtml(w)}", vdoc_branch)
         self.assertIn("<h2>工作节点列表</h2>", vdoc_branch)
         self.assertIn("['document-writing-plan','document-deliverable']", vdoc_branch)
+        self.assertIn("['code-plan','code-deliverable']", vdoc_branch)
         self.assertNotIn("projectContextHtml", vdoc_branch)
         self.assertNotIn("vdocReviewProgressHtml", vdoc_branch)
         self.assertNotIn("Agent 当前工作", vdoc_branch)

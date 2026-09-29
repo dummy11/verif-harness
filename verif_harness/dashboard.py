@@ -361,6 +361,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json({"dashboard_project_id": project_id, "result": result})
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/code-file":
+            try:
+                from . import code_workflow
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                self._json(code_workflow.content(self.server.project_store(project_id), query.get("node", [""])[0], query.get("path", [""])[0], query.get("digest", [""])[0]))
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/document":
             try:
                 query = urllib.parse.parse_qs(parsed.query)
@@ -546,6 +554,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return store.complete_review_feedback(
                 str(body.get("batch_id", "")), checked_by, summary,
             )
+        if path == "/api/code/workflow-change":
+            from . import code_workflow
+            return code_workflow.request_change(store, body)
         if path == "/api/reviews/node-plan-section":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:

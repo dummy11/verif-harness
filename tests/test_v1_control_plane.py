@@ -13,6 +13,7 @@ from pathlib import Path
 
 from verif_harness.evidence_policy import policy_for
 from verif_harness.store import ProjectStore
+from verif_harness.cli import build_parser, normalize
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,14 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
+        if workstream == "VENV":
+            # These v1 tests deliberately seed persisted pre-v2 history, not a
+            # new public VENV proposal. New CLI planning is covered by v2 tests.
+            args = build_parser().parse_args(normalize(["plan", "VENV", *extra]))
+            return ProjectStore(self.root)._design_workstream(
+                "VENV", args.objective, args.desired, args.exit_criteria, args.decision,
+                args.document_root, args.evidence_claim, args.desired_file,
+            )
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
 
     def design_minimal_vdoc(self) -> dict:
@@ -2113,7 +2122,7 @@ class V1ControlPlaneTest(unittest.TestCase):
                 continue
             arguments = ["plan", workstream, "--desired", f"{workstream} verified"]
             arguments.extend(["--evidence-claim", custom_claims[workstream]])
-            plan = self.run_cli(*arguments)
+            plan = self.design(workstream, *arguments[2:]) if workstream == "VENV" else self.run_cli(*arguments)
             self.run_cli("review", workstream)
             self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
                          "--reason", "final-freeze command fixture")

@@ -319,6 +319,15 @@ def build_parser() -> argparse.ArgumentParser:
     changed.add_argument("--kind", choices=("auto", "add", "modify", "delete", "rename", "spec-change", "rtl-change"), default="auto")
     changed.add_argument("--revision")
 
+    code = commands.add_parser("code", help="查看代码方案、登记 Agent 验证报告及查询验收产物")
+    code_commands = code.add_subparsers(dest="code_command", required=True)
+    code_status = code_commands.add_parser("status", help="查看当前代码节点、版本和验证状态")
+    project_argument(code_status); code_status.add_argument("node")
+    code_validate = code_commands.add_parser("validate", help="检查并登记当前代码版本的验证证据，不代替负责人验收")
+    project_argument(code_validate); code_validate.add_argument("node"); code_validate.add_argument("report")
+    code_artifacts = code_commands.add_parser("artifacts", help="查看批准方案、代码交付历史和下游可用状态")
+    project_argument(code_artifacts)
+
     docs = commands.add_parser("docs", help="管理验证文档索引，并按需输出 SQLite 中记录的评审和状态")
     docs_commands = docs.add_subparsers(dest="docs_command", required=True)
     docs_status = docs_commands.add_parser("status", help="查看一个或全部验证文档的评审和内容状态")
@@ -859,7 +868,11 @@ def main(arguments: list[str] | None = None) -> int:
                 emit(result)
         elif args.command == "status":
             with store.operation():
-                emit({"plan": store.workstream(args.workstream), "closure": store.evaluate_closure(args.workstream, persist=False)} if args.workstream else store.status())
+                if args.workstream:
+                    closure = store.evaluate_closure(args.workstream, persist=False)
+                    emit({"plan": store.workstream(args.workstream), "closure": closure})
+                else:
+                    emit(store.status())
         elif args.command == "dashboard":
             if args.ensure_ready:
                 from .dashboard_startup import ensure_dashboard_ready
@@ -959,6 +972,16 @@ def main(arguments: list[str] | None = None) -> int:
                 suffix = Path(args.path).suffix.lower()
                 kind = "rtl-change" if suffix in {".v", ".sv", ".svh", ".vhd", ".vhdl"} else "spec-change" if suffix in {".md", ".rst", ".txt", ".pdf"} else "modify"
             emit(store.record_change(args.path, kind, args.revision))
+        elif args.command == "code":
+            from . import code_workflow
+            with store.operation():
+                if args.code_command == "validate":
+                    emit(code_workflow.validate(store, args.node, args.report))
+                elif args.code_command == "status":
+                    code_workflow.refresh(store)
+                    emit(code_workflow.review_state(store, args.node))
+                else:
+                    emit(code_workflow.artifacts(store))
         elif args.command == "docs":
             if args.docs_command == "status":
                 emit({"documents": store.documents(args.document)})

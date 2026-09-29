@@ -1,12 +1,45 @@
 # V1 control plane
 
+## VENV 代码方案与交付验收
+
+VENV 主页面参照 VDOC：当前项目状态、工作节点列表，以及添加节点、删除节点和
+重新启动工作流。每个 DUT 工作包有一个代码实现方案和一个代码交付验收节点，
+不是整个工作流只有两个节点。列表使用百分比圆环，负责人批准后只收起详情，
+不会关闭浏览器标签页。产物和 CAP 不另计工作节点或进度。
+
+方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件。
+输入依据默认折叠，代码只列目录，文档逐一列出。待确认事项由 Agent 关联节点
+单独提问，不作为方案正文栏目。方案批准后才能在对应交付节点实现和验证。
+
+交付节点以验证报告和证据替换文档正文，展示检查方法、预期、实际结果和结论，
+并提供当前代码和证据的受控查看入口。Agent 完成验证后才允许负责人批准；验证
+失败、证据缺失或内容变化时不能批准。批准说明选填，审批意见按批提交给 Agent，
+全部处理完成后才能重新批准。负责人批准后不再要求常规 Agent 验收后检查。
+
+依赖已改为 `cap.doc → code-plan → art.code_plan → code-deliverable → art.code → cap.venv`。
+跨工作包和下游使用 `cap.venv`；代码或证据变化只撤销受影响交付及 CAP，上游文档、
+输入或方案变化则同时撤销方案与交付。所有批准都绑定具体版本。
+
+Agent 使用 `plan VENV --desired-file proposal.json` 提交代码方案，使用
+`code status NODE` 读取当前验证对象，使用 `code validate NODE report.json` 登记
+实际验证报告，使用 `code artifacts` 查询历史与当前可用状态。该命令不会运行
+仿真或自动批准。完整字段与证据要求见
+[VENV 使用说明](../skills/verif-harness/vplan/venv.md)。
+
+添加和删除只登记下一版方案要求；重新启动需要填写原因并再次确认，不删除代码、
+日志、证据、审批或历史节点，也不重启 Dashboard 或 Agent。旧项目提交新代码方案
+时保留历史，旧批准不继承；无法确定新归属的旧依赖保持阻塞，等待 Agent 重新规划。
+
 The v1 control plane uses five cooperating subsystems: VPlan, VModel, VCheck,
 VClosure, and VReason. See the [mode catalog](skill_modes.md) for commands and
 the [architecture summary](architecture.md) for authority boundaries.
 
 Deterministic commands persist their result before returning. The explicit
-`agent-service` supervisor can continue current VDOC actions using the selected
+`agent-service` supervisor can continue current VDOC and v2 VENV actions using the selected
 runtime; it never grants approvals or treats a process exit as verification evidence.
+VENV 方案批准后，在线服务可继续对应工作包的实现与验证；验证通过后等待负责人验收。
+依赖尚未验收时不会执行该工作包；后台服务未启动时仍由当前交互 Agent 执行，审批本身
+不会启动一个新 Agent 进程。VSTIM、VCHK、VCASE、VCOV 的节点模型本次保持不变。
 
 ## CLI 重启与自动接续
 
