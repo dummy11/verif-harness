@@ -25,7 +25,7 @@ const workstream = config.workstream || 'VENV';
         await page.getByRole('button', {name, exact:true}).click();
         const change = page.locator('#code-workflow-change');
         await change.locator('[name="reviewer"]').fill('browser-owner');
-        await change.locator('[name="reason"]').fill('重新划分当前 DUT 的工作包范围');
+        await change.locator('[name="reason"]').fill('重新划分当前 DUT 的验证工作范围');
         const saved = page.waitForResponse(r => r.url().includes('/api/code/workflow-change') && r.request().method() === 'POST');
         await change.getByRole('button', {name:'确认' + name,exact:true}).click();
         assert.equal((await saved).ok(), true);
@@ -40,6 +40,10 @@ const workstream = config.workstream || 'VENV';
     }
     await table.locator(`[data-open-node="${config.node}"]`).click();
     await page.locator('#drawer #node-plan-complete').waitFor();
+    if (config.expectedRole) {
+      assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(config.expectedRole));
+      assert.equal(await page.locator('#drawer').getByText('工作包', {exact:true}).count(), 0);
+    }
     assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(config.phase === 'plan' ? '等待负责人审批方案' : '等待负责人验收交付'));
     assert.equal(await page.locator('#drawer .writing-plan-inputs').getAttribute('open'), null);
     assert.doesNotMatch(await page.locator('#drawer .role-node-panel').innerText(), /待确认问题|预计正文交付|方案质量检查/);
@@ -47,9 +51,13 @@ const workstream = config.workstream || 'VENV';
       assert.deepEqual(await page.locator('#drawer .role-node-panel h4').allTextContents(), ['目标','工作范围','具体工作','实现方式','如何验证','输出','交付条件']);
     } else {
       assert.ok((await page.locator('#drawer .role-node-panel').innerText()).includes('检查结论'));
+      if (config.expectedFileHeading) {
+        assert.equal(await page.locator('#drawer .role-node-panel').getByRole('heading', {name:config.expectedFileHeading, exact:true}).count(), 1);
+        if (config.expectedFileHeading === '交付文件') assert.equal(await page.locator('#drawer .role-node-panel').getByRole('heading', {name:'交付代码', exact:true}).count(), 0);
+      }
       await page.locator('#drawer [data-code-file]').first().click();
       await page.locator('#modal pre').waitFor();
-      assert.ok((await page.locator('#modal pre').innerText()).includes('fixture_interface'));
+      assert.ok((await page.locator('#modal pre').innerText()).includes(config.previewText || 'fixture_interface'));
       await page.locator('#modal [data-close-modal]').click();
     }
     // Full-node route and reload preserve the same project and code object.

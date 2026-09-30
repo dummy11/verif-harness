@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -822,7 +823,12 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("负责人审批方案 → Agent 撰写或修改 → 负责人验收正文", html)
         self.assertIn("所有文档内容均已验收通过（暂定不算通过）", html)
         self.assertIn("function vdocReviewProgressHtml(w)", html)
-        self.assertNotIn("收敛", html)
+        self.assertNotIn("收敛", html[
+            html.index("function vdocReviewProgressHtml(w)"):
+            html.index("function criteriaTableHtml(n)")
+        ])
+        self.assertIn("覆盖率收敛方案", html)
+        self.assertIn("覆盖率收敛交付", html)
         self.assertNotIn("退出条件", html)
         self.assertNotIn("区块", html)
         self.assertNotIn("计划快照", html)
@@ -841,10 +847,16 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("必需节点", html)
         self.assertNotIn("必须完成的节点", html)
         self.assertIn("function codeNodeObjectLabel(n)", html)
-        self.assertIn("覆盖工作方案", html)
+        self.assertIn("覆盖率实现方案", html)
+        self.assertIn("覆盖率实现交付", html)
+        self.assertNotIn("覆盖工作方案", html)
         self.assertIn("回归工作方案", html)
         self.assertIn("代码交付及验证证据", html)
-        self.assertIn("['code-plan','code-deliverable']", html)
+        self.assertIn("function isCodePlanNode(n)", html)
+        self.assertIn("coverage-implementation-plan", html)
+        self.assertIn("coverage-implementation-deliverable", html)
+        self.assertIn("coverage-convergence-plan", html)
+        self.assertIn("coverage-convergence-deliverable", html)
         self.assertIn("Testbench 目录（可选）", html)
         self.assertIn("参考模型（可选）", html)
         self.assertIn("验证脚本（可选）", html)
@@ -1005,7 +1017,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("${workstreamStatusCardHtml(w)}", vdoc_branch)
         self.assertIn("<h2>工作节点列表</h2>", vdoc_branch)
         self.assertIn("['document-writing-plan','document-deliverable']", vdoc_branch)
-        self.assertIn("['code-plan','code-deliverable']", vdoc_branch)
+        self.assertIn("code ? isCodeNode(n) : roles.includes(n.role)", vdoc_branch)
         self.assertNotIn("projectContextHtml", vdoc_branch)
         self.assertNotIn("vdocReviewProgressHtml", vdoc_branch)
         self.assertNotIn("Agent 当前工作", vdoc_branch)
@@ -2327,6 +2339,117 @@ class DashboardTest(unittest.TestCase):
                 "reason": "attempt to reuse stale assessment",
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+
+class DashboardCoverageNodeTypesTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Dashboard renderer checks require Node.js")
+    def test_coverage_types_share_review_flow_and_preserve_legacy_records(self) -> None:
+        result = subprocess.run(
+            ["node", "-", str(ROOT / "verif_harness/dashboard.html")],
+            input=r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[2], 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+new vm.Script(source);
+const elements = new Map();
+const context = vm.createContext({
+  assert, URLSearchParams,
+  window:{location:{search:''}},
+  localStorage:{getItem:() => '', setItem:() => {}},
+  document:{
+    querySelector:selector => {
+      if (!elements.has(selector)) elements.set(selector, {
+        content:'test-token', innerHTML:'', dataset:{},
+        classList:{add:() => {}, remove:() => {}, contains:() => false},
+      });
+      return elements.get(selector);
+    },
+    querySelectorAll:() => [],
+  },
+});
+vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclick")), context);
+vm.runInContext(`
+  const types = [
+    ['coverage-implementation-plan','覆盖率实现方案',true],
+    ['coverage-implementation-deliverable','覆盖率实现交付',false],
+    ['coverage-convergence-plan','覆盖率收敛方案',true],
+    ['coverage-convergence-deliverable','覆盖率收敛交付',false],
+  ];
+  const nodes = types.map(([role,title,plan], index) => ({
+    id:'coverage-node-' + index, role, title, workstream:'VCOV', required:true,
+    status:'PENDING', statement:'FIFO 满空边界覆盖', source_refs:[],
+    scope:['FIFO 边界'], work_content:['核对覆盖项'],
+    implementation_approach:['按当前覆盖计划采样'], validation_methods:['检查覆盖项全集'],
+    deliverables:['覆盖结果'], acceptance_criteria:['当前证据完整'],
+    capabilities:index < 2 ? ['coverage-model','coverage-collection']
+      : ['coverage-collection-evidence','hole-analysis-evidence'],
+    coverage_item_ids:index < 2 ? ['C.DEMO.1','C.DEMO.2'] : [],
+    plan_review:{completed:false,can_approve:true,status:'PENDING'},
+  }));
+  state.snapshot = {project:{}, workstreams:[], agent_questions:[], activities:[], model:{nodes:[],edges:[]}};
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index], [role,title,plan] = types[index];
+    assert.equal(isCodeNode(node), true);
+    assert.equal(isCodePlanNode(node), plan);
+    assert.equal(nodeRoleLabel(node), title);
+    assert.equal(nodeAttentionText(node), (plan ? '等待负责人审批' : '等待负责人验收') + title);
+    const rendered = codeNodeHtml(node);
+    assert.ok(rendered.includes('<h3>' + title + '</h3>'));
+    assert.ok(rendered.includes('审批' + title));
+    assert.match(rendered, /id="node-plan-complete"/);
+    assert.equal(rendered.includes('<h4>目标</h4>'), plan);
+    assert.equal(rendered.includes('本方案必须实现的覆盖项'), index === 0);
+    if (index === 0) assert.ok(rendered.includes('C.DEMO.2'));
+    assert.equal(nodeProgressState(node).ratio, 0);
+    node.plan_review.completed = true;
+    assert.equal(nodeProgressState(node).ratio, 100);
+    assert.ok(codeStatusBadge(node).includes(plan ? '方案已批准' : '已验收通过'));
+  }
+  const legacy = {role:'code-plan',workstream:'VCOV',capabilities:['coverage-model','coverage-collection']};
+  const legacyBefore = JSON.stringify(legacy);
+  assert.equal(nodeRoleLabel(legacy), '覆盖率实现方案');
+  assert.equal(JSON.stringify(legacy), legacyBefore);
+  legacy.role = 'code-deliverable';
+  legacy.capabilities = ['coverage-collection-evidence','hole-analysis-evidence'];
+  assert.equal(nodeRoleLabel(legacy), '覆盖率收敛交付');
+  assert.equal(legacy.role, 'code-deliverable');
+
+  const delivery = nodes[3];
+  delivery.plan_review.validation = {
+    summary:'覆盖数据库和缺口报告已检查',current:true,ready:true,
+    code_files:[{path:'results/coverage-database.json',digest:'current'}],
+    files:[],checks:[],
+  };
+  const deliveryBody = codeNodeHtml(delivery);
+  assert.ok(deliveryBody.includes('<h4>交付文件</h4>'));
+  assert.ok(!deliveryBody.includes('<h4>交付代码</h4>'));
+  assert.doesNotMatch(deliveryBody, /工作包/);
+  assert.match(deliveryBody, /data-code-file=/);
+  assert.equal(nodeRoleLabel({role:'code-plan',workstream:'VENV'}), '代码实现方案');
+
+  const w = {
+    workstream:'VCOV',code_model:2,lifecycle:'ACTIVE',revision:1,objective:'收敛 FIFO 覆盖率',
+    nodes:[...nodes,{id:'internal-cap',role:'capability',title:'内部能力'}],
+    progress:{required:4,satisfied:4},closure:{ready:true,actions:[]},activities:[],waiting_for_human:[],
+  };
+  state.snapshot.workstreams = [w];
+  renderWorkstream(w);
+  const workflow = $('#main').innerHTML;
+  for (const [,title] of types) assert.ok(workflow.includes(title));
+  assert.doesNotMatch(workflow, /internal-cap|工作包/);
+  for (const id of ['add-vdoc-node','delete-vdoc-node','restart-vdoc-workflow']) assert.ok(workflow.includes('id="' + id + '"'));
+  openCodeWorkflowChange(w, 'remove');
+  const change = $('#modal').innerHTML;
+  assert.ok(change.includes('<label>工作节点</label>'));
+  assert.ok(change.includes('value="coverage-node-0"'));
+  assert.ok(change.includes('value="coverage-node-2"'));
+  assert.doesNotMatch(change, /value="coverage-node-1"|value="coverage-node-3"|工作包/);
+`, context);
+""",
+            text=True, capture_output=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

@@ -1,13 +1,16 @@
 {
   "schema": "CoverageEvidence/1",
+  "example_only": true,
+  "example_notice": "仅为字段格式示例；路径、摘要、命中次数均为占位内容，未执行验证，不可作为证据。",
   "claim": "hole-analysis-evidence",
   "revision": "git-or-model-revision",
   "tool": "coverage exporter version",
   "artifacts": [
-    {"path": "results/coverage/analysis.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "analysis-report", "analyzed_by": ["xverif"]},
+    {"path": "results/coverage/items.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "analysis-report", "analyzed_by": ["xverif"]},
     {"path": "results/coverage/database.ucdb", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "coverage-database", "analyzed_by": ["xverif"]}
   ],
   "result": {
+    "coverage_manifest_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "items": [
       {
         "id": "COV.DEMO.001",

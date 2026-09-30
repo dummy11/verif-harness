@@ -14,7 +14,20 @@ from typing import Any
 
 from .vdoc_artifacts import digest, encoded
 
-ROLES = {"code-plan", "code-deliverable"}
+VCOV_PLAN_ROLES = {"coverage-implementation-plan", "coverage-convergence-plan"}
+VCOV_DELIVERY_ROLES = {"coverage-implementation-deliverable", "coverage-convergence-deliverable"}
+PLAN_ROLES = {"code-plan", *VCOV_PLAN_ROLES}
+DELIVERY_ROLES = {"code-deliverable", *VCOV_DELIVERY_ROLES}
+ROLES = PLAN_ROLES | DELIVERY_ROLES
+VCOV_IMPLEMENTATION_CLAIMS = {"coverage-model", "coverage-collection"}
+VCOV_CONVERGENCE_CLAIMS = {"coverage-collection-evidence", "hole-analysis-evidence"}
+VCOV_VALIDATION_CONTRACT = "CoverageConvergence/2"
+VCOV_ROLE_LABELS = {
+    "coverage-implementation-plan": "覆盖率实现方案",
+    "coverage-implementation-deliverable": "覆盖率实现交付",
+    "coverage-convergence-plan": "覆盖率收敛方案",
+    "coverage-convergence-deliverable": "覆盖率收敛交付",
+}
 CODE_WORKSTREAMS = ("VENV", "VSTIM", "VCHK", "VCASE", "VCOV", "VREG")
 PROFILES: dict[str, dict[str, Any]] = {
     "VENV": {
@@ -120,6 +133,49 @@ def modern(plan):
 
 def supported(workstream):
     return workstream in CODE_WORKSTREAMS
+
+
+def is_plan(node):
+    return node.get("role") in PLAN_ROLES
+
+
+def is_delivery(node):
+    return node.get("role") in DELIVERY_ROLES
+
+
+def coverage_items(node):
+    from .evidence_contracts import ID
+    value = node.get("coverage_item_ids")
+    return bool(isinstance(value, list) and value and all(
+        isinstance(identifier, str) and ID.fullmatch(identifier)
+        for identifier in value) and len(value) == len(set(value)))
+
+
+def vcov_stage(node):
+    role = node.get("role", "")
+    if role.startswith("coverage-implementation-"):
+        return "implementation"
+    if role.startswith("coverage-convergence-"):
+        return "convergence"
+    claims = set(node.get("capabilities", []))
+    if claims == VCOV_IMPLEMENTATION_CLAIMS:
+        return "implementation"
+    if claims == VCOV_CONVERGENCE_CLAIMS:
+        return "convergence"
+    return None
+
+
+def vcov_role(node):
+    stage = vcov_stage(node)
+    if stage:
+        return f"coverage-{stage}-" + ("plan" if is_plan(node) else "deliverable")
+    return node.get("role")
+
+
+def node_label(node, workstream):
+    if workstream == "VCOV":
+        return VCOV_ROLE_LABELS.get(vcov_role(node), "覆盖率工作节点")
+    return profile(workstream).get("plan_term", "代码实现方案") if is_plan(node) else profile(workstream)["delivery_label"]
 
 
 def profile(workstream):
@@ -248,7 +304,7 @@ def identity(store, connection, plan, node):
                "questions": [dict(r) for r in connection.execute(
                    'SELECT id,status,answer_option,answer_text,answered_at FROM agent_questions WHERE target=? ORDER BY id',
                    (node['id'],))]}
-    if node["role"] == "code-deliverable":
+    if is_delivery(node):
         payload["outputs"] = file_snapshot(store, node["output_paths"])
     return digest(payload), payload
 
@@ -274,6 +330,8 @@ def validation_current(store, connection, plan, node, signature):
     value.update(id=row["id"], created_at=row["created_at"])
     value["current"] = (row["signature"] == signature and row["revision"] == plan["revision"]
                         and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
+    if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
+        value["current"] = False
     return value
 
 
@@ -284,7 +342,7 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
     if plan is None or node is None:
         plan, node = selected(store, node_id, connection)
     signature, snapshot = identity(store, connection, plan, node)
-    validation = validation_current(store, connection, plan, node, signature) if node["role"] == "code-deliverable" else None
+    validation = validation_current(store, connection, plan, node, signature) if is_delivery(node) else None
     # Owner approval binds the exact validation receipt too, not just code files.
     approval_digest = digest({"definition": signature, "validation": validation["id"] if validation and validation["current"] else None})
     history = [dict(r) for r in connection.execute("SELECT * FROM node_plan_reviews WHERE node_id=? ORDER BY rowid", (node_id,))]
@@ -299,15 +357,38 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
                        and r["revision"] == plan["revision"] and r["created_at"] >= latest_opinion), None)
     reasons = blockers(connection, node_id)
     workstream = plan["workstream"]
-    expected_dependencies = (set(node['inputs']) if node['role'] == 'code-plan'
+    expected_dependencies = (set(node['inputs']) if is_plan(node)
                              else {ids(node['implementation_key'], workstream)[0]})
     if {v['id'] for v in snapshot['dependencies']} != expected_dependencies:
         reasons.append("前置结果与批准范围不一致，请重新登记方案依赖")
     reasons.extend("前置结果尚未验收或已经变化：" + str(v["title"] or '前置交付') for v in snapshot["dependencies"] if v["status"] != "VALID" or not v["current"])
     if any(v["sha256"] is None for v in snapshot["sources"]):
         reasons.append("方案输入文件缺失")
-    if node["role"] == "code-deliverable" and not (validation and validation["current"] and validation["ready"]):
+    if is_delivery(node) and not (validation and validation["current"] and validation["ready"]):
         reasons.append("Agent 尚未完成当前代码版本的验证，或验证证据已经变化")
+    if workstream == "VCOV":
+        if is_delivery(node):
+            parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
+            if (parent is None or not is_plan(parent) or vcov_stage(parent) != vcov_stage(node)
+                    or parent.get("implementation_key") != node.get("implementation_key")
+                    or parent.get("required") != node.get("required")):
+                reasons.append("覆盖率交付与当前对应方案不一致，请重新形成方案")
+        expected_claims = VCOV_IMPLEMENTATION_CLAIMS if vcov_stage(node) == "implementation" else VCOV_CONVERGENCE_CLAIMS
+        if vcov_stage(node) is None or set(node.get("capabilities", [])) != expected_claims:
+            reasons.append("覆盖率节点类型与验证要求不一致，请重新形成方案")
+        if "cap.vreg:executor-ready" not in node.get("inputs", []):
+            reasons.append("前置结果缺少已验收的回归执行能力，请重新形成方案")
+        if vcov_stage(node) == "implementation" and not coverage_items(node):
+            reasons.append("覆盖率实现方案缺少已批准的必需覆盖项清单，请重新形成方案")
+        if vcov_stage(node) == "convergence":
+            manifests, manifest_reasons = _vcov_expected_manifests(store, connection, plan, node)
+            reasons.extend(manifest_reasons)
+            if is_delivery(node) and validation and validation["current"]:
+                for claim in sorted(VCOV_CONVERGENCE_CLAIMS):
+                    observed = {check.get("validation", {}).get("facts", {}).get("coverage_manifest_digest")
+                                for check in validation.get("checks", []) if check.get("claim") == claim}
+                    if not manifests or observed != manifests:
+                        reasons.append("覆盖率收敛证据的覆盖项清单与已验收实现不一致：" + claim)
     complete = bool(completion and not reasons)
     return {"node_id": node_id, "workstream": workstream, "revision": plan["revision"],
             "definition_digest": approval_digest, "input_signature": signature,
@@ -364,10 +445,8 @@ def validate_claims(workstream, claims):
     elif workstream == "VCASE" and claims != {"case-implementation", "targeted-evidence"}:
         error("VCASE 代码交付必须同时包含测试用例实现和定向执行证据")
     elif workstream == "VCOV":
-        implementation = {"coverage-model", "coverage-collection"}
-        closure = {"coverage-collection-evidence", "hole-analysis-evidence"}
-        if frozenset(claims) not in {frozenset(implementation), frozenset(closure)}:
-            error("VCOV 工作包必须是覆盖率模型与采集实现，或当前覆盖数据与缺口分析证据；两类工作包不能混在一起")
+        if frozenset(claims) not in {frozenset(VCOV_IMPLEMENTATION_CLAIMS), frozenset(VCOV_CONVERGENCE_CLAIMS)}:
+            error("VCOV 节点必须是覆盖率实现或覆盖率收敛；两类节点的验证要求不能混在一起")
     elif workstream == "VREG":
         infrastructure = {"regression-policy", "executor-ready"}
         closure = {"execution-evidence", "triage-evidence", "fresh-evidence"}
@@ -388,6 +467,57 @@ def required_input_prefixes(workstream, claims):
         return ("cap.doc:", "cap.venv:", "cap.vstim:", "cap.vchk:",
                 "cap.vcase:", "cap.vcov:", "cap.vreg:")
     return profile(workstream)["required_input_prefixes"]
+
+
+def vcov_structure_blockers(plan):
+    """A completed implementation alone cannot satisfy coverage convergence."""
+    required = [n for n in plan["desired_state"] if is_plan(n) and n.get("required", True)]
+    implementations = {ids(n["implementation_key"], "VCOV")[2]: n for n in required
+                       if vcov_stage(n) == "implementation"}
+    convergence = [n for n in required if vcov_stage(n) == "convergence"]
+    reasons = []
+    if not implementations:
+        reasons.append("尚未登记必需的覆盖率实现方案")
+    if not convergence:
+        reasons.append("尚未登记必需的覆盖率收敛方案，覆盖率实现完成后仍需采集和分析缺口")
+    consumed = set()
+    for node in convergence:
+        inputs = set(node.get("inputs", [])) & implementations.keys()
+        if not inputs:
+            reasons.append(node["title"] + " 尚未关联必需覆盖率实现能力")
+        consumed.update(inputs)
+    for identifier in implementations.keys() - consumed:
+        reasons.append(implementations[identifier]["title"] + " 尚未纳入必需覆盖率收敛范围")
+    return reasons
+
+
+def _vcov_expected_manifests(store, connection, plan, node):
+    """Resolve accepted implementation reports through explicit capability inputs."""
+    owner = node if is_plan(node) else next(
+        (n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
+    if owner is None:
+        return set(), ["覆盖率收敛交付缺少对应方案"]
+    expected, reasons = set(), []
+    implementations = {ids(n["implementation_key"], "VCOV")[2]: n
+                       for n in plan["desired_state"] if is_plan(n) and vcov_stage(n) == "implementation"}
+    selected_inputs = set(owner.get("inputs", [])) & implementations.keys()
+    if not selected_inputs:
+        reasons.append("覆盖率收敛方案没有关联覆盖率实现能力")
+    for identifier in sorted(selected_inputs):
+        provider = implementations[identifier]
+        delivery = next((n for n in plan["desired_state"] if n.get("parent_id") == provider["id"]), None)
+        if not delivery:
+            reasons.append(provider["title"] + " 尚未交付覆盖率实现")
+            continue
+        state = review_state(store, delivery["id"], plan, delivery, connection)
+        validation = state.get("validation") or {}
+        checks = [check for check in validation.get("checks", []) if check.get("claim") == "coverage-model"]
+        manifests = {check.get("validation", {}).get("facts", {}).get("coverage_manifest_digest") for check in checks}
+        manifests.discard(None)
+        if not state["completed"] or not manifests:
+            reasons.append(provider["title"] + " 缺少当前已验收的覆盖项清单，请重新验证实现")
+        expected.update(manifests)
+    return expected, reasons
 
 
 def _sync_watched_files(store, connection):
@@ -431,18 +561,21 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             error(f"代码方案必须使用 {workstream} 的 DesiredStateProposal/1")
         nodes = proposal.get("nodes")
         if not isinstance(nodes, list) or not nodes:
-            error("代码实现方案必须包含工作包")
+            error("覆盖率方案必须包含工作节点" if workstream == "VCOV" else "代码实现方案必须包含工作包")
     normalized = []
     known_keys = set()
     known_outputs = set()
     for raw in nodes:
-        if not isinstance(raw, dict) or raw.get("role") != "code-plan":
-            error(f"{workstream} 方案只包含 code-plan；批准后由系统建立对应 code-deliverable")
+        allowed_roles = {"code-plan", *VCOV_PLAN_ROLES} if workstream == "VCOV" else {"code-plan"}
+        if not isinstance(raw, dict) or raw.get("role") not in allowed_roles:
+            error("VCOV 方案只能包含覆盖率实现方案或覆盖率收敛方案；批准后建立对应交付节点"
+                  if workstream == "VCOV" else f"{workstream} 方案只包含 code-plan；批准后由系统建立对应 code-deliverable")
         key = raw.get("implementation_key", "")
         if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._:-]*", key) or key in known_keys:
-            error("implementation_key 必须是唯一、稳定的工作包标识")
+            error("implementation_key 必须是唯一、稳定的方案与交付关联标识" if workstream == "VCOV"
+                  else "implementation_key 必须是唯一、稳定的工作包标识")
         known_keys.add(key)
-        item = {"implementation_key": key, "key": raw.get("key") or key.replace(":", "-"), "role": "code-plan"}
+        item = {"implementation_key": key, "key": raw.get("key") or key.replace(":", "-"), "role": raw["role"]}
         if not isinstance(item['key'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9._-]*', item['key']):
             error("代码方案 key 只能使用小写字母、数字、点、短横线和下划线")
         for field in ("title", "statement"):
@@ -452,6 +585,18 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         for field in ("scope", "work_content", "implementation_approach", "validation_methods", "deliverables", "acceptance_criteria", "source_refs", "inputs", "output_paths", "capabilities"):
             item[field] = strings(raw, field)
         validate_claims(workstream, item["capabilities"])
+        if workstream == "VCOV":
+            inferred = "implementation" if set(item["capabilities"]) == VCOV_IMPLEMENTATION_CLAIMS else "convergence"
+            canonical = f"coverage-{inferred}-plan"
+            if item["role"] != "code-plan" and item["role"] != canonical:
+                error("覆盖率节点类型与验证要求不一致")
+            item["role"] = canonical
+            if inferred == "implementation":
+                item["coverage_item_ids"] = raw.get("coverage_item_ids")
+                if not coverage_items(item):
+                    error("覆盖率实现方案必须列出非空、唯一且有效的 coverage_item_ids，供负责人批准覆盖范围")
+            elif "coverage_item_ids" in raw:
+                error("覆盖率收敛范围由明确关联的实现能力继承，不另行登记 coverage_item_ids")
         if not all(v.startswith(settings["input_prefixes"]) for v in item["inputs"]):
             error(f"{workstream} 上游必须使用 " + "、".join(settings["input_prefixes"]) + "，不能依赖工作节点、未验收产物或下游结果")
         if not any(v.startswith("cap.doc:") for v in item["inputs"]):
@@ -462,12 +607,14 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         ]
         if missing_inputs:
             error(f"{workstream} 代码方案缺少必需上游能力：" + ", ".join(missing_inputs))
+        if workstream == "VCOV" and "cap.vreg:executor-ready" not in item["inputs"]:
+            error("覆盖率方案必须依赖已验收的回归执行能力 cap.vreg:executor-ready")
         if ids(key, workstream)[2] in item["inputs"]:
-            error("工作包不能依赖自己的交付能力")
+            error("覆盖率方案不能依赖自己的交付能力" if workstream == "VCOV" else "工作包不能依赖自己的交付能力")
         item["output_paths"] = store._normalized_write_scopes(item["output_paths"])
         for path in item["output_paths"]:
             if any(store._scopes_overlap(path, old) for old in known_outputs):
-                error("工作包的输出范围不能重叠")
+                error("覆盖率节点的输出范围不能重叠" if workstream == "VCOV" else "工作包的输出范围不能重叠")
             known_outputs.add(path)
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
@@ -476,7 +623,8 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                     suggested_mode="plan", definition_origin="project-proposal",
                     definition_status="REVIEW_CANDIDATE", quality_checks=item["validation_methods"],
                     progress_measures=[], evidence_claim="code-validation", parent_id=None,
-                    role_description="当前 DUT 工作包的" + settings.get("plan_term", "代码实现方案"))
+                    role_description=("当前 DUT 的" + node_label(item, workstream) if workstream == "VCOV"
+                                      else "当前 DUT 工作包的" + settings.get("plan_term", "代码实现方案")))
         if not isinstance(item["required"], bool):
             error("required 必须是布尔值")
         normalized.append(item)
@@ -485,11 +633,14 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
     by_cap = {ids(n["implementation_key"], workstream)[2]: n for n in normalized}
     def visit(cap, parents):
         if cap in parents:
-            error("代码工作包存在循环依赖")
+            error("覆盖率节点存在循环依赖" if workstream == "VCOV" else "代码工作包存在循环依赖")
         for target in by_cap.get(cap, {}).get("inputs", []):
             if target.startswith(settings["cap_prefix"]):
                 if target not in by_cap:
-                    error("当前方案没有提供前置工作包：" + target)
+                    error(("当前方案没有提供前置覆盖率实现节点：" if workstream == "VCOV"
+                           else "当前方案没有提供前置工作包：") + target)
+                if workstream == "VCOV" and vcov_stage(by_cap[target]) != "implementation":
+                    error("覆盖率收敛方案必须依赖覆盖率实现能力，不能依赖收敛结果")
                 visit(target, parents | {cap})
     for cap in by_cap:
         visit(cap, set())
@@ -532,7 +683,10 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                     store.upsert_node(db, target, "capability", "前置交付尚未验收", Validity.UNKNOWN, data={"derived": True})
                 edge(db, item["id"], target, timestamp)
         db.execute("INSERT INTO workstreams VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET lifecycle=excluded.lifecycle,revision=excluded.revision,objective=excluded.objective,desired_json=excluded.desired_json,exit_json=excluded.exit_json,decisions_json=excluded.decisions_json,context_json=excluded.context_json,updated_at=excluded.updated_at",
-                   (workstream, "REVIEW", revision, objective or settings["objective"], encoded(normalized), encoded(["必需工作包的代码交付均通过专用验证并由负责人验收"]), encoded(decisions or []), encoded(context), timestamp))
+                   (workstream, "REVIEW", revision, objective or settings["objective"], encoded(normalized),
+                    encoded(["当前必需覆盖率实现与收敛节点均已验证并由负责人验收" if workstream == "VCOV"
+                             else "必需工作包的代码交付均通过专用验证并由负责人验收"]),
+                    encoded(decisions or []), encoded(context), timestamp))
         # Default downstream edges must never fall back to old WorkNodes.
         store._reconcile_default_dependencies(db)
         _sync_watched_files(store, db)
@@ -550,8 +704,9 @@ def create_delivery(store, db, plan, node, timestamp):
     if any(n.get("parent_id") == node["id"] for n in plan["desired_state"]):
         return
     workstream = plan["workstream"]
+    role = vcov_role(node).replace("-plan", "-deliverable") if workstream == "VCOV" else "code-deliverable"
     value = {**node, "id": node["id"] + ":delivery", "key": node["key"] + "-delivery",
-             "role": "code-deliverable", "title": node["title"] + " · " + profile(workstream)["delivery_label"],
+             "role": role, "title": node["title"] + " · " + node_label({**node, "role": role}, workstream),
              "parent_id": node["id"], "parent_key": node["key"], "suggested_mode": "implement",
              "role_description": "Agent 先完成实现与验证，再由负责人验收当前代码和证据"}
     plan["desired_state"].append(value)
@@ -580,7 +735,7 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
             if state["completed"]:
                 error("当前版本已批准，无需重复提交")
             db.execute("INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], plan["revision"], expected, "APPROVE", reviewer.strip(), reason.strip(), timestamp))
-            if node["role"] == "code-plan":
+            if is_plan(node):
                 create_delivery(store, db, plan, node, timestamp)
         else:
             if state["feedback"]["processing_count"]:
@@ -627,7 +782,7 @@ def _validate_evidence(store, path, workstream, claim):
                 )
         return result
     try:
-        return validate_workstream_evidence(path, workstream, claim)
+        return validate_workstream_evidence(path, workstream, claim, artifact_root=store.root)
     except EvidenceContractError as exc:
         error(str(exc))
 
@@ -673,7 +828,7 @@ def validate(store, node_id, report_path):
     except (OSError, ValueError) as exc:
         error(f"无法读取验证报告：{exc}")
     plan, node = selected(store, node_id)
-    if node["role"] != "code-deliverable":
+    if not is_delivery(node):
         error("只有代码交付节点可以登记验证，方案节点不产生正式代码")
     with store.read_connect() as db:
         signature, snapshot = identity(store, db, plan, node)
@@ -736,8 +891,56 @@ def validate(store, node_id, report_path):
     for smoke in facts_by_claim.get('environment-smoke-evidence', []):
         if not builds or any(smoke.get('environment_digest') != b.get('environment_digest') for b in builds):
             reasons.append("集成工作包的 smoke 必须与本次构建使用同一版本的验证环境")
+    if workstream == "VCOV" and vcov_stage(node) == "implementation":
+        source_digests = {source["sha256"] for source in snapshot["sources"]}
+        output_digests = {output["sha256"] for output in snapshot["outputs"]}
+        for facts in facts_by_claim.get("coverage-model", []):
+            if set(facts.get("required_item_ids", [])) != set(node.get("coverage_item_ids", [])):
+                reasons.append("覆盖项清单与负责人批准的必需覆盖范围不一致")
+            if facts.get("plan_digest") not in source_digests:
+                reasons.append("覆盖计划摘要不属于批准方案的当前输入文件")
+            if facts.get("model_digest") not in output_digests:
+                reasons.append("覆盖模型摘要不属于当前交付文件")
+        for facts in facts_by_claim.get("coverage-collection", []):
+            if facts.get("exporter_digest") not in output_digests:
+                reasons.append("覆盖率采集配置摘要不属于当前交付文件")
+    if workstream == "VCOV" and vcov_stage(node) == "convergence":
+        with store.read_connect() as db:
+            expected_manifests, manifest_reasons = _vcov_expected_manifests(store, db, plan, node)
+        reasons.extend(manifest_reasons)
+        for claim in sorted(VCOV_CONVERGENCE_CLAIMS):
+            observed = {facts.get("coverage_manifest_digest") for facts in facts_by_claim.get(claim, [])}
+            if not expected_manifests or observed != expected_manifests:
+                reasons.append("覆盖率收敛证据的覆盖项清单与已验收实现不一致：" + claim)
+        databases_by_claim = {}
+        for claim in VCOV_CONVERGENCE_CLAIMS:
+            databases = {}
+            for check in checks:
+                if check["claim"] == claim:
+                    evidence = check["validation"]
+                    databases.setdefault(evidence["facts"].get("coverage_manifest_digest"), set()).update(
+                        artifact["sha256"] for artifact in evidence["artifacts"]
+                        if artifact["kind"] == "coverage-database")
+            databases_by_claim[claim] = databases
+        if databases_by_claim["coverage-collection-evidence"] != databases_by_claim["hole-analysis-evidence"]:
+            reasons.append("缺口分析没有使用本轮采集和合并的同一覆盖率数据库")
+        with store.read_connect() as db:
+            for facts in facts_by_claim.get("hole-analysis-evidence", []):
+                for item in facts.get("items", []):
+                    if item.get("status") != "excluded":
+                        continue
+                    waiver = item.get("waiver") or {}
+                    record = db.execute("SELECT * FROM reviews WHERE id=? AND verdict='WAIVE'", (waiver.get("id"),)).fetchone()
+                    if (record is None or record["workstream"] != "VCOV" or record["revision"] != plan["revision"]
+                            or record["reviewer"] != waiver.get("reviewer")
+                            or record["created_at"][:10] != waiver.get("decision_date")
+                            or not re.search(r"(?<![A-Za-z0-9_.:-])" + re.escape(item["id"])
+                                             + r"(?![A-Za-z0-9_.:-])", record["reason"])):
+                        reasons.append(item["id"] + " 的排除项没有当前版本的负责人例外批准记录")
     receipt = {**report, "files": file_snapshot(store, files, required=True), "ready": not reasons,
                "blockers": reasons, "checks": checks, "feedback_routes": feedback_routes}
+    if workstream == "VCOV":
+        receipt["coverage_contract"] = VCOV_VALIDATION_CONTRACT
     if {v['path']: v['sha256'] for v in receipt['files']} != expected_files:
         error("检查期间代码或证据发生变化，请重新验证")
     identifier, timestamp = "code-validation:" + uuid.uuid4().hex[:12], now()
@@ -832,7 +1035,7 @@ def refresh(store, plans=None):
             published = set()
             states = {}
             # Topological order follows accepted package CAP dependencies, not node kinds.
-            packages = {n["implementation_key"]: n for n in plan["desired_state"] if n["role"] == "code-plan"}
+            packages = {n["implementation_key"]: n for n in plan["desired_state"] if is_plan(n)}
             remaining = dict(packages)
             done = set()
             while remaining:
@@ -931,11 +1134,24 @@ def closure(store, plan, persist, states=None):
                         "executor": "reasoning", "reason": change['reason'], "change_id": change['id']})
     if not nodes:
         actions.append({"kind": "REFINE_DESIRED_STATE", "target": f"workstream:{workstream}", "executor": "reasoning", "reason": "请 Agent 根据已验收文档和上游能力形成当前 DUT 的" + profile(workstream).get("plan_term", "代码实现方案")})
+    elif workstream == "VCOV":
+        structure = vcov_structure_blockers(plan)
+        for node in nodes:
+            if is_plan(node) and node["required"] and states[node["id"]]["completed"] and not any(
+                    is_delivery(child) and child.get("parent_id") == node["id"] and child["required"]
+                    and vcov_stage(child) == vcov_stage(node)
+                    and child.get("implementation_key") == node.get("implementation_key") for child in nodes):
+                structure.append(node["title"] + " 缺少对应的必需交付节点")
+        if structure:
+            actions.append({"kind": "REFINE_DESIRED_STATE", "target": "workstream:VCOV",
+                            "executor": "reasoning", "reason": "；".join(structure)})
     for node in nodes:
         if not node["required"]:
             continue
         state = states[node['id']]
         feedback = state["feedback"]
+        validation = state.get("validation") or {}
+        routes = validation.get("feedback_routes", []) if validation.get("current") else []
         if feedback["draft_count"]:
             kind, actor, reason = "SUBMIT_REVIEW_FEEDBACK", "human", "请提交当前审批意见给 Agent"
         elif feedback["processing_count"]:
@@ -944,25 +1160,25 @@ def closure(store, plan, persist, states=None):
             continue
         elif state["can_approve"]:
             kind, actor, reason = "HUMAN_REVIEW", "human", "等待负责人" + (
-                "审批" + profile(workstream).get("plan_term", "代码实现方案")
-                if node["role"] == "code-plan" else "验收" + profile(workstream)["delivery_label"]
+                ("审批" if is_plan(node) else "验收") + node_label(node, workstream)
             )
         else:
             kind, actor, reason = "IMPLEMENT_AND_VALIDATE", "reasoning", "；".join(state["blockers"])
-            routes = (state.get("validation") or {}).get("feedback_routes", [])
             if routes:
                 kind, actor = "ANALYZE_VERIFICATION_FEEDBACK", "reasoning"
                 targets = sorted({route["responsible_workstream"] for route in routes})
                 reason = "分析验证反馈并向责任工作流登记重规划或重验证要求：" + "、".join(targets)
-            if node["role"] == "code-plan" or any("前置结果" in r for r in state["blockers"]):
+            if workstream == "VCOV" and is_plan(node) and any("请重新形成方案" in r for r in state["blockers"]):
+                kind, actor = "REFINE_DESIRED_STATE", "reasoning"
+            elif is_plan(node) or any("前置结果" in r for r in state["blockers"]):
                 kind, actor = "WAIT_FOR_DEPENDENCY", "deterministic"
         actions.append({"kind": kind, "target": node["id"], "executor": actor, "reason": reason,
                         "batch_ids": feedback["batch_ids"],
-                        "feedback_routes": (state.get("validation") or {}).get("feedback_routes", [])})
+                        "feedback_routes": routes})
     for action in actions:
         action.update(priority=1 if action["executor"] == "human" else 3, suggested_mode="plan" if action["target"] == f"workstream:{workstream}" else "code")
         action["id"] = "action:" + digest(action)[:12]
-    approved = any(n["role"] == "code-plan" and states[n['id']]["completed"] for n in nodes)
+    approved = any(is_plan(n) and states[n['id']]["completed"] for n in nodes)
     lifecycle = "SATISFIED" if not actions and nodes else "ACTIVE" if approved else "REVIEW"
     if lifecycle == 'SATISFIED' and plan['lifecycle'] == 'BASELINED':
         lifecycle = 'BASELINED'
@@ -1015,8 +1231,8 @@ def request_change(store, body):
     if kind == "remove":
         target = str(body.get("node", ""))
         _, node = selected(store, target)
-        if node["role"] != "code-plan":
-            error("删除要求应选择一个代码工作包")
+        if not is_plan(node):
+            error("删除要求应选择一个覆盖率方案节点" if workstream == "VCOV" else "删除要求应选择一个代码工作包")
     identifier, timestamp = 'human:' + uuid.uuid4().hex[:12], now()
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')

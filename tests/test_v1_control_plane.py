@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from verif_harness.evidence_policy import policy_for
-from verif_harness.store import ProjectStore
+from verif_harness.store import HarnessError, ProjectStore
 from verif_harness.cli import build_parser, normalize
 
 
@@ -51,12 +51,12 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
-        if workstream == "VENV":
+        if workstream in {"VENV", "VCOV"}:
             # These v1 tests deliberately seed persisted pre-v2 history, not a
-            # new public VENV proposal. New CLI planning is covered by v2 tests.
-            args = build_parser().parse_args(normalize(["plan", "VENV", *extra]))
+            # new public code proposal. New CLI planning is covered by v2 tests.
+            args = build_parser().parse_args(normalize(["plan", workstream, *extra]))
             return ProjectStore(self.root)._design_workstream(
-                "VENV", args.objective, args.desired, args.exit_criteria, args.decision,
+                workstream, args.objective, args.desired, args.exit_criteria, args.decision,
                 args.document_root, args.evidence_claim, args.desired_file,
             )
         return self.run_cli("plan", "design", "--workstream", workstream, *extra)
@@ -248,9 +248,55 @@ class V1ControlPlaneTest(unittest.TestCase):
             return digest_replacements.get(value, value)
 
         payload["result"] = bind_artifacts(payload["result"])
+        self.attach_coverage_manifest(payload, filename)
         target = self.root / filename
         target.write_text(json.dumps(payload) + "\n", encoding="utf-8")
         return target
+
+    def attach_coverage_manifest(self, payload: dict, filename: str) -> None:
+        if payload["schema"] != "CoverageEvidence/1" or payload["claim"] not in {
+            "coverage-model", "coverage-collection-evidence", "hole-analysis-evidence",
+        }:
+            return
+        result = payload["result"]
+        item_ids = [item["id"] for item in result.get("items", [])] or [
+            f"COV.DEMO.{index + 1:03d}" for index in range(result.get("planned_items", 1))
+        ]
+        artifacts = payload["artifacts"]
+        manifest_artifact = next((item for item in artifacts
+            if item["kind"] == "analysis-report"
+            and item["sha256"] == result.get("coverage_manifest_digest")), None)
+        native_root = self.root / "results/contracts"
+        native_root.mkdir(parents=True, exist_ok=True)
+        plan = native_root / f"{filename}.coverage-plan.json"
+        model = native_root / f"{filename}.coverage-model.sv"
+        plan.write_text(json.dumps({"fixture_only": True, "planned_item_ids": item_ids}) + "\n", encoding="utf-8")
+        model.write_text("// Test fixture coverage IDs: " + ", ".join(item_ids) + "\n", encoding="utf-8")
+        plan_digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+        model_digest = hashlib.sha256(model.read_bytes()).hexdigest()
+        artifacts.extend([
+            {"path": plan.relative_to(self.root).as_posix(), "sha256": plan_digest,
+             "kind": "configuration", "analyzed_by": ["xverif"]},
+            {"path": model.relative_to(self.root).as_posix(), "sha256": model_digest,
+             "kind": "source", "analyzed_by": ["xverif"]},
+        ])
+        manifest = {
+            **self.adapter_receipt("xverif"), "schema": "CoverageItemManifest/1",
+            "fixture_only": True, "plan_digest": plan_digest, "model_digest": model_digest,
+            "planned_item_ids": item_ids, "mapped_item_ids": item_ids,
+        }
+        manifest_path = (self.root / manifest_artifact["path"] if manifest_artifact
+                         else native_root / f"{filename}.coverage-items.json")
+        manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+        manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if manifest_artifact:
+            manifest_artifact["sha256"] = manifest_digest
+        else:
+            artifacts.append({"path": manifest_path.relative_to(self.root).as_posix(),
+                "sha256": manifest_digest, "kind": "analysis-report", "analyzed_by": ["xverif"]})
+        result["coverage_manifest_digest"] = manifest_digest
+        if payload["claim"] == "coverage-model":
+            result.update({"plan_digest": plan_digest, "model_digest": model_digest})
 
     def write_typed_report(self, filename: str, schema: str, claim: str, result: dict) -> Path:
         workstream = {
@@ -290,6 +336,7 @@ class V1ControlPlaneTest(unittest.TestCase):
             "artifacts": artifacts,
             "result": bind(result),
         }
+        self.attach_coverage_manifest(payload, filename)
         target = self.root / filename
         target.write_text(json.dumps(payload) + "\n", encoding="utf-8")
         return target
@@ -731,7 +778,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         }
         path = self.root / "vcov-desired.json"
         path.write_text(json.dumps(proposal), encoding="utf-8")
-        plan = self.run_cli("plan", "VCOV", "--desired-file", str(path))
+        plan = self.design("VCOV", "--desired-file", str(path))
         self.assertEqual(plan["project_goal_count"], 1)
         child = next(
             item for item in plan["desired_state"]
@@ -756,9 +803,8 @@ class V1ControlPlaneTest(unittest.TestCase):
 
         del proposal["nodes"][0]["acceptance_criteria"]
         path.write_text(json.dumps(proposal), encoding="utf-8")
-        rejected = self.invoke("plan", "VCOV", "--desired-file", str(path))
-        self.assertEqual(rejected.returncode, 2)
-        self.assertIn("acceptance_criteria 必须是非空字符串数组", rejected.stderr)
+        with self.assertRaisesRegex(HarnessError, "acceptance_criteria 必须是非空字符串数组"):
+            self.design("VCOV", "--desired-file", str(path))
 
     def test_vdoc_plan_and_delivery_registration_are_separate(self) -> None:
         self.bootstrap()
@@ -2122,7 +2168,7 @@ class V1ControlPlaneTest(unittest.TestCase):
                 continue
             arguments = ["plan", workstream, "--desired", f"{workstream} verified"]
             arguments.extend(["--evidence-claim", custom_claims[workstream]])
-            plan = self.design(workstream, *arguments[2:]) if workstream == "VENV" else self.run_cli(*arguments)
+            plan = self.design(workstream, *arguments[2:]) if workstream in {"VENV", "VCOV"} else self.run_cli(*arguments)
             self.run_cli("review", workstream)
             self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
                          "--reason", "final-freeze command fixture")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -15,7 +16,10 @@ DIGEST = "a" * 64
 
 
 class EvidenceContractsTest(unittest.TestCase):
-    def validate(self, workstream: str, claim: str, result: dict) -> dict:
+    def validate(
+        self, workstream: str, claim: str, result: dict, *, manifest: dict | None = None,
+        legacy: bool = False, tamper_manifest: bool = False,
+    ) -> dict:
         policy = policy_for(workstream, claim)
         artifacts = []
         for index, item in enumerate(policy["requirements"]):
@@ -24,15 +28,39 @@ class EvidenceContractsTest(unittest.TestCase):
                 "path": f"results/native-{index}", "sha256": DIGEST,
                 "kind": selected["kind"], "analyzed_by": [selected["analyzer"]],
             })
+        result = dict(result)
         payload = {
             "schema": SCHEMAS[workstream], "claim": claim, "revision": "revision-1",
             "tool": "test-tool/1", "artifacts": artifacts,
             "result": result,
         }
         with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            if workstream == "VCOV" and claim in {
+                "coverage-model", "coverage-collection-evidence", "hole-analysis-evidence",
+            } and not legacy:
+                default_ids = [f"C.DEMO.{index + 1}"
+                               for index in range(result.get("planned_items", 1))]
+                manifest = manifest or {
+                    "schema": "CoverageItemManifest/1", "plan_digest": DIGEST,
+                    "model_digest": DIGEST, "planned_item_ids": default_ids,
+                    "mapped_item_ids": default_ids,
+                }
+                manifest_path = root / "results/coverage-items.json"
+                manifest_path.parent.mkdir()
+                manifest_bytes = json.dumps(manifest).encode("utf-8")
+                manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+                manifest_path.write_bytes(manifest_bytes)
+                artifacts.append({
+                    "path": "results/coverage-items.json", "sha256": manifest_digest,
+                    "kind": "analysis-report", "analyzed_by": ["xverif"],
+                })
+                result["coverage_manifest_digest"] = manifest_digest
+                if tamper_manifest:
+                    manifest_path.write_text(json.dumps({**manifest, "model_digest": "b" * 64}), encoding="utf-8")
             path = Path(directory) / "evidence.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
-            return validate_workstream_evidence(path, workstream, claim)
+            return validate_workstream_evidence(path, workstream, claim, artifact_root=root)
 
     def test_every_standard_claim_has_a_passing_contract(self) -> None:
         cases = {
@@ -216,6 +244,123 @@ class EvidenceContractsTest(unittest.TestCase):
         })
         self.assertFalse(summary["ready"])
         self.assertIn("负责人例外评审", summary["blockers"][0])
+
+    @staticmethod
+    def coverage_manifest(planned: list[str], mapped: list[str] | None = None) -> dict:
+        return {
+            "schema": "CoverageItemManifest/1", "plan_digest": DIGEST,
+            "model_digest": DIGEST, "planned_item_ids": planned,
+            "mapped_item_ids": planned if mapped is None else mapped,
+        }
+
+    def test_legacy_coverage_reports_remain_readable_but_require_revalidation(self) -> None:
+        results = {
+            "coverage-model": {
+                "plan_digest": DIGEST, "model_digest": DIGEST, "planned_items": 1,
+                "mapped_items": 1, "compiled": True,
+            },
+            "coverage-collection-evidence": {
+                "database_ids": ["db-1"], "runs": 1, "merge_errors": 0, "stale_shards": 0,
+            },
+            "hole-analysis-evidence": {
+                "items": [{"id": "C.DEMO.1", "status": "covered", "hits": 1,
+                           "plan_ref": "coverage_plan.md"}],
+            },
+        }
+        for claim, result in results.items():
+            with self.subTest(claim=claim):
+                summary = self.validate("VCOV", claim, result, legacy=True)
+                self.assertFalse(summary["ready"])
+                self.assertTrue(any("覆盖项清单" in item for item in summary["blockers"]))
+
+    def test_coverage_model_checks_item_identity_not_only_matching_counts(self) -> None:
+        summary = self.validate("VCOV", "coverage-model", {
+            "plan_digest": DIGEST, "model_digest": DIGEST, "planned_items": 2,
+            "mapped_items": 2, "compiled": True,
+        }, manifest=self.coverage_manifest(
+            ["C.DEMO.1", "C.DEMO.2"], ["C.DEMO.1", "C.OTHER.1"],
+        ))
+        self.assertFalse(summary["ready"])
+        self.assertTrue(any("未实现计划覆盖项：C.DEMO.2" in item for item in summary["blockers"]))
+        self.assertTrue(any("未登记计划的覆盖项：C.OTHER.1" in item for item in summary["blockers"]))
+
+    def test_hole_analysis_must_cover_exact_manifest_item_universe(self) -> None:
+        manifest = self.coverage_manifest(["C.DEMO.1", "C.DEMO.2"])
+        covered = lambda item_id: {
+            "id": item_id, "status": "covered", "hits": 1, "plan_ref": "coverage_plan.md",
+        }
+        for ids in (["C.DEMO.1"], ["C.DEMO.1", "C.OTHER.1"],
+                    ["C.DEMO.1", "C.DEMO.2", "C.OTHER.1"],
+                    ["C.DEMO.1", "C.DEMO.2", "C.DEMO.2"]):
+            with self.subTest(ids=ids):
+                summary = self.validate("VCOV", "hole-analysis-evidence", {
+                    "items": [covered(item_id) for item_id in ids],
+                    "required_item_ids": ids,
+                }, manifest=manifest)
+                self.assertFalse(summary["ready"])
+                self.assertEqual(summary["facts"]["required_item_ids"], ["C.DEMO.1", "C.DEMO.2"])
+        complete = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [covered("C.DEMO.1"), covered("C.DEMO.2")],
+        }, manifest=manifest)
+        self.assertTrue(complete["ready"])
+        self.assertTrue(complete["facts"]["coverage_manifest_digest"])
+
+    def test_coverage_manifest_tampering_and_duplicate_ids_are_rejected(self) -> None:
+        result = {"items": [{"id": "C.DEMO.1", "status": "covered", "hits": 1,
+                             "plan_ref": "coverage_plan.md"}]}
+        with self.assertRaisesRegex(EvidenceContractError, "摘要变化"):
+            self.validate("VCOV", "hole-analysis-evidence", result, tamper_manifest=True)
+        with self.assertRaisesRegex(EvidenceContractError, "重复项"):
+            self.validate("VCOV", "hole-analysis-evidence", result,
+                          manifest=self.coverage_manifest(["C.DEMO.1", "C.DEMO.1"]))
+
+    def test_coverage_model_manifest_must_match_plan_and_source_version(self) -> None:
+        summary = self.validate("VCOV", "coverage-model", {
+            "plan_digest": DIGEST, "model_digest": DIGEST, "planned_items": 1,
+            "mapped_items": 1, "compiled": True,
+        }, manifest={**self.coverage_manifest(["C.DEMO.1"]), "model_digest": "b" * 64})
+        self.assertFalse(summary["ready"])
+        self.assertTrue(any("版本不一致" in item for item in summary["blockers"]))
+
+    def test_coverage_collection_exposes_controlled_manifest_for_cross_claim_checks(self) -> None:
+        summary = self.validate("VCOV", "coverage-collection-evidence", {
+            "database_ids": ["db-1"], "runs": 1, "merge_errors": 0, "stale_shards": 0,
+        }, manifest=self.coverage_manifest(["C.DEMO.1", "C.DEMO.2"]))
+        self.assertTrue(summary["ready"])
+        self.assertEqual(summary["facts"]["required_item_ids"], ["C.DEMO.1", "C.DEMO.2"])
+        self.assertEqual(summary["facts"]["plan_digest"], DIGEST)
+
+    def test_complete_hole_analysis_still_requires_hits_or_approved_exclusion(self) -> None:
+        summary = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.1", "status": "covered", "hits": 0,
+                       "plan_ref": "coverage_plan.md"}],
+        })
+        self.assertFalse(summary["ready"])
+        approved = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.1", "status": "excluded", "hits": 0,
+                       "plan_ref": "coverage_plan.md", "waiver": {
+                           "id": "waiver-1", "reviewer": "alice", "decision_date": "2026-09-15",
+                           "rationale": "unreachable", "status": "Approved",
+                       }}],
+        })
+        self.assertTrue(approved["ready"])
+
+    def test_hole_analysis_retains_waiver_binding_for_store_verification(self) -> None:
+        waiver = {
+            "id": "waive-1", "reviewer": "alice", "decision_date": "2026-09-15",
+            "rationale": "unreachable", "status": "Approved", "item_id": "C.DEMO.1",
+            "revision": "revision-1", "review_ref": "review-1",
+        }
+        summary = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.1", "status": "excluded", "hits": 0,
+                       "plan_ref": "coverage_plan.md", "waiver": waiver}],
+        })
+        self.assertTrue(summary["ready"])
+        self.assertEqual(summary["facts"]["items"][0]["waiver"], waiver)
+        collector = self.validate("VCOV", "coverage-collection", {
+            "configured": True, "exporter_digest": DIGEST,
+        })
+        self.assertEqual(collector["facts"]["exporter_digest"], DIGEST)
 
     def test_uncovered_item_requires_an_explicit_feedback_route(self) -> None:
         summary = self.validate("VCOV", "hole-analysis-evidence", {

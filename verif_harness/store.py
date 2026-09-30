@@ -854,6 +854,11 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  负责人验收后系统复核版本并派生 art.code 和 cap.<workstream>；不再安排例行验收后 Agent 检查。",
         "  待确认工程问题使用节点绑定的 agent-question，不放入方案正文。完整合同见对应 vplan/*.md。",
         "  旧版代码工作流节点不得继续作为新实现授权；提交新的 code-plan 方案，历史保留。",
+        "- VCOV 公开节点为覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付。",
+        "  proposal 只包含 coverage-implementation-plan 或 coverage-convergence-plan；批准后建立对应交付。",
+        "  实现验收派生内部 cap.vcov，收敛依赖该能力和已验收的回归执行能力；不增加公开能力节点。",
+        "  覆盖项清单必须绑定批准范围和实现版本，收敛分析覆盖全部必需项；缺口反馈先分析再修订对应方案。",
+        "  全部必需实现和收敛交付均验收后 VCOV 才能完成，具体合同见 vplan/vcov.md。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同；VDOC 仅在",
         "  文档撰写方案已进入 `ACTIVE` 后执行 `docs sync`。",
@@ -2185,22 +2190,24 @@ class ProjectStore:
         self.require()
         name = self.normalize_workstream(workstream)
         if code_workflow.supported(name):
-            code_candidate = name == "VENV"
-            if name != "VENV" and desired_file:
+            current = next((p for p in self.workstreams() if p['workstream'] == name), None)
+            code_candidate = name in {"VENV", "VCOV"} or bool(current and code_workflow.modern(current))
+            if not code_candidate and desired_file:
                 try:
                     proposal = json.loads(resolved_path(self.root, desired_file).read_text(encoding="utf-8"))
                 except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                     proposal = None
                 proposal_nodes = proposal.get("nodes", []) if isinstance(proposal, dict) else []
                 code_candidate = bool(proposal_nodes) and not any(
-                    not isinstance(item, dict) or item.get("role") != "code-plan"
+                    not isinstance(item, dict) or not code_workflow.is_plan(item)
                     for item in proposal_nodes
                 )
             if not code_candidate:
                 return self._design_workstream(name, objective, desired, exit_criteria, decisions,
                                                document_root, evidence_claims, desired_file)
             if desired or evidence_claims or document_root or exit_criteria:
-                raise HarnessError(f"{name} 请使用包含 code-plan 和交付条件的 --desired-file")
+                raise HarnessError("VCOV 请使用包含覆盖率实现方案或收敛方案及交付条件的 --desired-file"
+                                   if name == "VCOV" else f"{name} 请使用包含 code-plan 和交付条件的 --desired-file")
             if not desired_file:
                 current = next((p for p in self.workstreams() if p['workstream'] == name), None)
                 if current and code_workflow.modern(current):
@@ -3025,7 +3032,7 @@ class ProjectStore:
                     connection, action["target"],
                 )
                 if code_workflow.modern(plan) and scopes:
-                    if desired['role'] != 'code-deliverable' or any(scope not in desired['output_paths'] for scope in scopes):
+                    if not code_workflow.is_delivery(desired) or any(scope not in desired['output_paths'] for scope in scopes):
                         raise HarnessError("代码写入任务只能绑定交付节点，并逐项声明批准的 output_paths")
                 if plan["lifecycle"] not in {"ACTIVE", "PARTIALLY_STALE"} and not (
                     action["kind"] == "APPLY_REVIEW_FEEDBACK"
@@ -4079,7 +4086,7 @@ class ProjectStore:
             (item for item in plan["desired_state"] if item["id"] == node_id), None,
         )
         if desired is None or desired.get("role") not in {
-            "document-writing-plan", "document-deliverable", "code-plan", "code-deliverable",
+            "document-writing-plan", "document-deliverable", *code_workflow.ROLES,
         }:
             raise HarnessError("只能提交当前文档方案、正文验收或代码方案、代码交付节点的审批意见")
         state = self.review_feedback_state(node_id, plan, desired)
@@ -6474,7 +6481,7 @@ class ProjectStore:
             blockers.append("fresh-evidence snapshot_revision 必须等于报告 revision")
         derived: list[dict[str, str]] = []
         for item in sorted(current.values(), key=lambda value: value["id"]):
-            if item.get('role') == 'code-deliverable' and item.get('required', True):
+            if code_workflow.is_delivery(item) and item.get('required', True):
                 item_workstream = code_workflow.node_workstream(item['id'])
                 if item_workstream is None:
                     blockers.append(f"代码交付 {item['title']} 无法确定所属工作流")
@@ -6616,7 +6623,7 @@ class ProjectStore:
             supported = ", ".join(CLAIMS[workstream].values())
             raise HarnessError(f"无法从 node 推导 claim；请使用 --claim，{workstream} 支持: {supported}")
         try:
-            summary = validate_workstream_evidence(source_path, workstream, selected)
+            summary = validate_workstream_evidence(source_path, workstream, selected, artifact_root=self.root)
         except EvidenceContractError as exc:
             raise HarnessError(str(exc)) from exc
         summary["artifacts"] = self._verify_evidence_artifacts(summary["artifacts"])
@@ -7703,6 +7710,8 @@ class ProjectStore:
                     "key": desired.get("key"),
                     "role": desired.get("role", "capability"),
                     "implementation_key": desired.get("implementation_key"),
+                    "capabilities": desired.get("capabilities", []),
+                    "coverage_item_ids": desired.get("coverage_item_ids", []),
                     "validation_methods": desired.get("validation_methods", []),
                     "output_paths": desired.get("output_paths", []),
                     "required": desired.get("required", True),
@@ -7763,7 +7772,11 @@ class ProjectStore:
             registered_required_total = required_total
             if code_workflow.modern(plan):
                 pending_vdoc_delivery_nodes = sum(
-                    n["role"] == "code-plan" and n["required"] and not any(d.get("parent_id") == n["id"] for d in desired_nodes)
+                    code_workflow.is_plan(n) and n["required"] and not any(
+                        code_workflow.is_delivery(d) and d.get("parent_id") == n["id"] and d["required"]
+                        and d.get("implementation_key") == n.get("implementation_key")
+                        and (plan["workstream"] != "VCOV" or code_workflow.vcov_stage(d) == code_workflow.vcov_stage(n))
+                        for d in desired_nodes)
                     for n in desired_nodes)
                 required_total += pending_vdoc_delivery_nodes
             if plan["workstream"] == "VDOC":

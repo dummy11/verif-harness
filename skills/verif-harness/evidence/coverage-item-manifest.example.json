@@ -1,0 +1,17 @@
+{
+  "schema": "CoverageItemManifest/1",
+  "example_only": true,
+  "example_notice": "仅为字段格式示例；摘要、工具身份及 PASS 回执均为占位内容，未运行 xverif，不可作为验证证据。",
+  "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "model_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "planned_item_ids": ["COV.DEMO.001"],
+  "mapped_item_ids": ["COV.DEMO.001"],
+  "adapter_schema_version": 1,
+  "adapter_version": "placeholder-version",
+  "state": "PASS",
+  "blockers": [],
+  "request_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "operation": "coverage-item-mapping",
+  "tool": "placeholder-not-executed",
+  "tool_identity": {"state": "PASS", "version": "placeholder-version"}
+}

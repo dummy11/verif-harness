@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import date
@@ -558,7 +559,55 @@ def _valid_waiver(value: object) -> bool:
     return True
 
 
-def _vcov(path: Path, claim: str) -> dict[str, Any]:
+def _coverage_manifest(
+    path: Path, result: dict[str, Any], normalized: dict[str, Any], artifact_root: Path | None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Read the item universe from the bound analysis artifact, not report counts."""
+    if result.get("coverage_manifest_digest") is None:
+        return {}, ["覆盖率证据缺少当前覆盖项清单，必须重新验证"]
+    digest = _bound_digest(
+        normalized, result.get("coverage_manifest_digest"), "result.coverage_manifest_digest",
+    )
+    matches = [artifact for artifact in normalized["artifacts"]
+               if artifact["sha256"] == digest and artifact["kind"] == "analysis-report"
+               and "xverif" in artifact["analyzed_by"]]
+    if len(matches) != 1:
+        raise EvidenceContractError("coverage_manifest_digest 必须唯一绑定 xverif 分析的覆盖项清单")
+    root = (artifact_root or path.parent).resolve()
+    manifest_path = (root / matches[0]["path"]).resolve()
+    try:
+        manifest_path.relative_to(root)
+    except ValueError as exc:
+        raise EvidenceContractError("覆盖项清单路径必须属于当前项目") from exc
+    try:
+        raw = manifest_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise EvidenceContractError("覆盖项清单文件摘要变化，必须重新验证")
+        manifest = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvidenceContractError(f"无法读取覆盖项清单：{exc}") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema") != "CoverageItemManifest/1":
+        raise EvidenceContractError("覆盖项清单 schema 必须是 CoverageItemManifest/1")
+    planned = _strings(manifest.get("planned_item_ids"), "manifest.planned_item_ids", unique=True)
+    mapped = _strings(manifest.get("mapped_item_ids"), "manifest.mapped_item_ids", unique=True)
+    if any(not ID.fullmatch(item_id) for item_id in planned + mapped):
+        raise EvidenceContractError("覆盖项清单中的覆盖项 ID 非法")
+    missing = sorted(set(planned) - set(mapped))
+    unexpected = sorted(set(mapped) - set(planned))
+    blockers = []
+    if missing:
+        blockers.append("覆盖模型未实现计划覆盖项：" + ", ".join(missing))
+    if unexpected:
+        blockers.append("覆盖模型包含未登记计划的覆盖项：" + ", ".join(unexpected))
+    return {
+        "coverage_manifest_digest": digest,
+        "plan_digest": _digest(manifest.get("plan_digest"), "manifest.plan_digest"),
+        "model_digest": _digest(manifest.get("model_digest"), "manifest.model_digest"),
+        "required_item_ids": sorted(planned), "mapped_item_ids": sorted(mapped),
+    }, blockers
+
+
+def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
     _payload, result, normalized = _base(path, "VCOV", claim)
     blockers: list[str] = []
     if claim == "coverage-model":
@@ -568,6 +617,16 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
         facts = {"plan_digest": _bound_digest(normalized, result.get("plan_digest"), "result.plan_digest"),
                  "model_digest": _bound_digest(normalized, result.get("model_digest"), "result.model_digest"),
                  "planned_items": planned, "mapped_items": mapped, "compiled": compiled}
+        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
+        blockers.extend(manifest_blockers)
+        if manifest_facts:
+            if (facts["plan_digest"] != manifest_facts["plan_digest"]
+                    or facts["model_digest"] != manifest_facts["model_digest"]):
+                blockers.append("覆盖项清单与本次覆盖计划或模型版本不一致")
+            if (planned != len(manifest_facts["required_item_ids"])
+                    or mapped != len(manifest_facts["mapped_item_ids"])):
+                blockers.append("覆盖项数量与受控清单不一致")
+            facts.update(manifest_facts)
         if mapped != planned:
             blockers.append(f"coverage mapping 不完整: {mapped}/{planned}")
         if not compiled:
@@ -585,6 +644,9 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
         stale_shards = _integer(result.get("stale_shards"), "result.stale_shards")
         facts = {"database_ids": databases, "runs": runs, "merge_errors": merge_errors,
                  "stale_shards": stale_shards}
+        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
+        facts.update(manifest_facts)
+        blockers.extend(manifest_blockers)
         if merge_errors:
             blockers.append(f"coverage merge errors={merge_errors}")
         if stale_shards:
@@ -627,8 +689,19 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
                 "id": item_id, "status": status, "hits": hits, "plan_ref": plan_ref,
                 "responsible_workstream": owner, "next_action": next_action,
                 "target_implementation_key": target_key,
+                "waiver": dict(item["waiver"]) if isinstance(item.get("waiver"), dict) else {},
             })
-        facts = {**counts, "item_count": len(items), "items": normalized_items}
+        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
+        blockers.extend(manifest_blockers)
+        if manifest_facts:
+            required = set(manifest_facts["required_item_ids"])
+            missing = sorted(required - seen)
+            unexpected = sorted(seen - required)
+            if missing:
+                blockers.append("缺口分析遗漏计划覆盖项：" + ", ".join(missing))
+            if unexpected:
+                blockers.append("缺口分析包含未登记计划的覆盖项：" + ", ".join(unexpected))
+        facts = {**counts, "item_count": len(items), "items": normalized_items, **manifest_facts}
     return _finish(normalized, blockers, facts)
 
 
@@ -794,9 +867,13 @@ VALIDATORS: dict[str, Callable[[Path, str], dict[str, Any]]] = {
 }
 
 
-def validate_workstream_evidence(path: Path, workstream: str, claim: str) -> dict[str, Any]:
+def validate_workstream_evidence(
+    path: Path, workstream: str, claim: str, *, artifact_root: Path | None = None,
+) -> dict[str, Any]:
     if workstream not in VALIDATORS:
         raise EvidenceContractError(f"{workstream} 没有专用 evidence validator")
     if claim not in CLAIMS[workstream].values():
         raise EvidenceContractError(f"{workstream} 不支持 claim={claim}")
+    if workstream == "VCOV":
+        return _vcov(path, claim, artifact_root)
     return VALIDATORS[workstream](path, claim)

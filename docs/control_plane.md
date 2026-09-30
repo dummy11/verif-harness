@@ -3,8 +3,9 @@
 ## VENV、VSTIM、VCHK、VCASE、VCOV、VREG 方案与交付验收
 
 六类验证工作流主页面参照 VDOC：当前项目状态、工作节点列表，以及添加节点、删除节点和
-重新启动工作流。每个 DUT 工作包有一个代码实现方案和一个代码交付验收节点，
-不是整个工作流只有两个节点。列表使用百分比圆环，负责人批准后只收起详情，
+重新启动工作流。VENV、VSTIM、VCHK、VCASE、VREG 按 DUT 工作范围建立代码实现方案和
+对应代码交付验收节点，VCOV 使用覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、
+覆盖率收敛交付四种节点类型。实际节点数量按 DUT 的验证范围决定。列表使用百分比圆环，负责人批准后只收起详情，
 不会关闭浏览器标签页。产物和 CAP 不另计工作节点或进度。
 
 方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件。
@@ -12,11 +13,12 @@
 单独提问，不作为方案正文栏目。方案批准后才能在对应交付节点实现和验证。
 
 交付节点以验证报告和证据替换文档正文，展示检查方法、预期、实际结果和结论，
-并提供当前代码和证据的受控查看入口。Agent 完成验证后才允许负责人批准；验证
+并提供当前交付文件和证据的受控查看入口；覆盖率收敛交付展示数据库、采集报告和缺口结论。
+Agent 完成验证后才允许负责人批准；验证
 失败、证据缺失或内容变化时不能批准。批准说明选填，审批意见按批提交给 Agent，
 全部处理完成后才能重新批准。负责人批准后不再要求常规 Agent 验收后检查。
 
-依赖统一为 `上游 cap → code-plan → art.code_plan → code-deliverable → art.code → cap.<workstream>`。
+依赖统一为 `上游 cap → 方案节点 → art.code_plan → 交付节点 → art.code → cap.<workstream>`。
 VSTIM 依赖 VENV，VCHK 依赖 VENV 和 VSTIM，VCASE 依赖 VENV、VSTIM 和 VCHK；
 VCASE 自身验收不等待 VCOV，VCOV 在后续消费已验收的用例和运行证据。代码或证据变化只撤销受影响交付及 CAP，上游文档、
 输入或方案变化则同时撤销方案与交付。所有批准都绑定具体版本。
@@ -32,7 +34,18 @@ Agent 使用 `plan WORKSTREAM --desired-file proposal.json` 提交代码方案�
 [VCOV](../skills/verif-harness/vplan/vcov.md) 和
 [VREG](../skills/verif-harness/vplan/vreg.md) 使用说明。
 
-VCOV 将覆盖率模型/采集实现与覆盖率收敛（覆盖数据/缺口分析）分成不同工作包；VREG 将策略/执行器与
+VCOV 按“覆盖率实现方案 → 实现交付 → 收敛方案 → 收敛交付”推进。实现交付验收后，Engine
+派生有效的 `cap.vcov:coverage-model` 和 `cap.vcov:coverage-collection` 汇总能力；收敛方案
+使用 `cap.vcov:<implementation_key>` 关联具体已验收实现范围，不能只依赖汇总状态；
+这些能力是内部派生状态，不增加公开节点或审批入口。当前必需的实现和收敛两部分都完成验收后，
+VCOV 才满足完成条件，只实现覆盖模型不能完成整条工作流。
+
+模型、采集与缺口分析证据通过 `coverage_manifest_digest` 绑定当前受控覆盖项清单
+`CoverageItemManifest/1`。清单包含计划和模型版本及计划必需覆盖项全集；模型映射、
+采集范围和缺口分析必须与当前清单一致。清单遗漏、重复、额外项或版本变化会阻止收敛。
+实现方案中的必需覆盖项随方案一起审批并在节点详情展示，收敛不能自行缩小批准范围。
+旧验证记录继续保留，缺少当前合同信息时必须重新验证；过期缺口报告不再触发反馈动作。
+VREG 将策略/执行器与
 执行/失败分类/结果新鲜度分成不同工作包，避免回归执行器等待最终回归闭环的循环依赖。
 coverage hole 或未关闭 regression failure 必须登记责任工作流和下一步动作。Main Agent
 分析后向上游登记重规划或重验证要求；只有实际上游版本或证据变化才沿依赖图自动传播
@@ -58,9 +71,10 @@ the [architecture summary](architecture.md) for authority boundaries.
 Deterministic commands persist their result before returning. The explicit
 `agent-service` supervisor can continue current VDOC and code-workflow actions using the selected
 runtime; it never grants approvals or treats a process exit as verification evidence.
-代码方案批准后，在线服务可继续对应工作包的实现与验证；验证通过后等待负责人验收。
-依赖尚未验收时不会执行该工作包；后台服务未启动时仍由当前交互 Agent 执行，审批本身
-不会启动一个新 Agent 进程。VCOV 和 VREG 的旧项目记录仍可读取；新方案使用上述版本化工作包模型。
+方案批准后，在线服务可继续对应交付节点的实现、采集、分析和验证；验证通过后等待负责人验收。
+依赖尚未验收时不会执行对应交付；后台服务未启动时仍由当前交互 Agent 执行，审批本身
+不会启动一个新 Agent 进程。VCOV 和 VREG 的旧项目记录仍可读取；旧 VCOV 通用方案/交付
+角色按其能力要求显示实现或收敛类型，历史记录保持不变，新方案使用四种明确节点类型。
 
 ## CLI 重启与自动接续
 

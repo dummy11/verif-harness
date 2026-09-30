@@ -451,6 +451,8 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             "output_paths": [f"verification/{workstream.lower()}/main.sv"],
             "capabilities": capabilities,
         }
+        if workstream == "VCOV" and "coverage-model" in capabilities:
+            item["coverage_item_ids"] = ["C.DEMO.1"]
         path = self.root / (workstream.lower() + "-code-proposal.json")
         path.write_text(json.dumps({
             "schema": "DesiredStateProposal/1", "workstream": workstream, "nodes": [item],
@@ -496,16 +498,18 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             self.seed(*inputs[1:])
             plan, item = self.design(workstream, claims, inputs)
             self.assertTrue(code.modern(plan))
-            self.assertEqual([node["role"] for node in plan["desired_state"]], ["code-plan"])
+            expected_plan_role = "coverage-implementation-plan" if workstream == "VCOV" else "code-plan"
+            expected_delivery_role = "coverage-implementation-deliverable" if workstream == "VCOV" else "code-deliverable"
+            self.assertEqual([node["role"] for node in plan["desired_state"]], [expected_plan_role])
             node = plan["desired_state"][0]
             if workstream == "VCOV":
-                self.assertIn("覆盖率实现与收敛方案", node["role_description"])
+                self.assertIn("覆盖率实现方案", node["role_description"])
                 self.assertNotIn("闭环", node["role_description"])
             state = self.store.node_plan_review_state(node["id"])
             self.assertTrue(state["can_approve"], state["blockers"])
             self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
             current = self.store.workstream(workstream)
-            self.assertEqual({node["role"] for node in current["desired_state"]}, {"code-plan", "code-deliverable"})
+            self.assertEqual({node["role"] for node in current["desired_state"]}, {expected_plan_role, expected_delivery_role})
             self.assertEqual(code.ids(item["implementation_key"], workstream)[0],
                              f"art.code_plan:{workstream.lower()}:{item['implementation_key']}")
             view = next(value for value in self.store.dashboard_snapshot()["workstreams"]
@@ -529,7 +533,7 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                 "VCASE", ["case-implementation", "targeted-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence", "cap.vcov:coverage-collection-evidence"],
             )
-        with self.assertRaisesRegex(HarnessError, "两类工作包不能混在一起"):
+        with self.assertRaisesRegex(HarnessError, "两类节点的验证要求不能混在一起"):
             self.design(
                 "VCOV", ["coverage-model", "coverage-collection", "hole-analysis-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],

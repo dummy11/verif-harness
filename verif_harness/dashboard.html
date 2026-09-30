@@ -341,7 +341,7 @@
     .role-node-panel[data-node-role="document-writing-plan"], .role-node-panel[data-node-role="document-deliverable"], .role-node-panel[data-node-role="document-catalog"] { border-left-color: var(--purple); }
     .role-node-panel[data-node-role="stimulus-feature"], .role-node-panel[data-node-role="stimulus-scenario"], .role-node-panel[data-node-role="testcase"], .role-node-panel[data-node-role="case-mapping"] { border-left-color: var(--green); }
     .role-node-panel[data-node-role="checking-goal"], .role-node-panel[data-node-role="checker"], .role-node-panel[data-node-role="reference-path"], .role-node-panel[data-node-role="assertion-group"] { border-left-color: var(--yellow); }
-    .role-node-panel[data-node-role="coverage-goal"], .role-node-panel[data-node-role="coverage-scope"] { border-left-color: var(--purple); }
+    .role-node-panel[data-node-role="coverage-goal"], .role-node-panel[data-node-role="coverage-scope"], .role-node-panel[data-node-role^="coverage-implementation-"], .role-node-panel[data-node-role^="coverage-convergence-"] { border-left-color: var(--purple); }
     .role-node-panel[data-node-role="regression-profile"], .role-node-panel[data-node-role="regression-run-set"], .role-node-panel[data-node-role="failure-group"] { border-left-color: var(--orange); }
     .node-status-card { margin-top: 12px; padding: 16px; }
     .node-status-goal { color: var(--text); font-size: 15px; font-weight: 700; }
@@ -498,6 +498,8 @@
       'stimulus-feature':'激励功能', 'stimulus-scenario':'激励场景',
       'checking-goal':'检查目标', checker:'结果检查模块', 'reference-path':'参考结果路径', 'assertion-group':'断言组',
       'code-plan':'代码实现方案', 'code-deliverable':'代码交付验收',
+      'coverage-implementation-plan':'覆盖率实现方案', 'coverage-implementation-deliverable':'覆盖率实现交付',
+      'coverage-convergence-plan':'覆盖率收敛方案', 'coverage-convergence-deliverable':'覆盖率收敛交付',
       'coverage-goal':'覆盖目标', 'coverage-scope':'覆盖范围', 'case-mapping':'功能与用例对应关系', testcase:'测试用例',
       'regression-profile':'回归配置', 'regression-run-set':'回归批次', 'failure-group':'失败分组'
     };
@@ -549,7 +551,7 @@
       APPLY_REVIEW_FEEDBACK:'Agent 处理审批意见并修改内容',
       IMPLEMENT_AND_VALIDATE:'Agent 实现代码并验证',
       ANALYZE_VERIFICATION_FEEDBACK:'Agent 分析覆盖率或回归反馈并登记上游动作',
-      APPLY_WORKFLOW_CHANGE:'Agent 分析工作包变更并形成下一版方案',
+      APPLY_WORKFLOW_CHANGE:'Agent 分析工作节点变更并形成下一版方案',
       HUMAN_REVIEW:'等待负责人评审当前计划'
     };
     const WORKSTREAM_LABELS = {
@@ -1673,7 +1675,7 @@
       if (feedback.draft_count) return `请提交当前 ${feedback.draft_count} 条审批意见给 Agent`;
       if (feedback.processing_count) return `Agent 待处理 ${feedback.processing_count} 条审批意见`;
       if (isCodeNode(n)) return n.plan_review?.completed ? '' : n.plan_review?.can_approve
-        ? (n.role === 'code-plan' ? `等待负责人审批${codeNodeObjectLabel(n)}` : `等待负责人验收${codeNodeObjectLabel(n)}`)
+        ? (isCodePlanNode(n) ? `等待负责人审批${codeNodeObjectLabel(n)}` : `等待负责人验收${codeNodeObjectLabel(n)}`)
         : (n.plan_review?.blockers || ['等待 Agent 实现并验证'])[0];
       if (n.plan_review && n.plan_review.status !== 'APPROVED') {
         const parentWorkstream = workstream(n.workstream);
@@ -1783,7 +1785,7 @@
     }
     function codeStatusBadge(n) {
       const review = n.plan_review || {};
-      const plan = n.role === 'code-plan';
+      const plan = isCodePlanNode(n);
       const label = review.completed ? (plan ? '方案已批准' : '已验收通过')
         : review.feedback?.unresolved_count ? '等待处理审批意见'
         : review.can_approve ? (plan ? '等待负责人审批方案' : '等待负责人验收交付')
@@ -1952,14 +1954,14 @@
       if (!w) { state.workstream = null; return renderOverview(); }
       if (w.workstream === 'VDOC' || w.code_model) {
         const code = Boolean(w.code_model);
-        const roles = code ? ['code-plan','code-deliverable'] : ['document-writing-plan','document-deliverable'];
-        const nodes = w.nodes.filter(n => roles.includes(n.role));
+        const roles = ['document-writing-plan','document-deliverable'];
+        const nodes = w.nodes.filter(n => code ? isCodeNode(n) : roles.includes(n.role));
         const rows = nodes.length
           ? nodeRows(nodes)
           : '<tr><td colspan="4" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
         $('#main').innerHTML = `<div class="page-head"><div><h1>${w.workstream} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn primary" id="add-vdoc-node">添加节点</button><button class="btn" id="delete-vdoc-node">删除节点</button><button class="btn danger" id="restart-vdoc-workflow">重新启动工作流</button></div></div>
           ${workstreamStatusCardHtml(w)}
-          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案或验收交付</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
         $('#add-vdoc-node').onclick = () => code ? openCodeWorkflowChange(w, 'add') : openVdocRevisionRequestTab('add');
         $('#delete-vdoc-node').onclick = () => code ? openCodeWorkflowChange(w, 'remove') : openVdocRevisionRequestTab('remove');
         $('#restart-vdoc-workflow').onclick = () => code ? openCodeWorkflowChange(w, 'restart') : openVdocRestartModal(w);
@@ -2446,10 +2448,21 @@
       return `${nodeRolePanelHtml(n)}${nodePlanApprovalPanelHtml(n, available)}`;
     }
 
-    function isCodeNode(n) { return Boolean(n && ['code-plan','code-deliverable'].includes(n.role)); }
+    const CODE_PLAN_ROLES = ['code-plan','coverage-implementation-plan','coverage-convergence-plan'];
+    const CODE_DELIVERY_ROLES = ['code-deliverable','coverage-implementation-deliverable','coverage-convergence-deliverable'];
+    function isCodePlanNode(n) { return Boolean(n && CODE_PLAN_ROLES.includes(n.role)); }
+    function isCodeNode(n) { return isCodePlanNode(n) || Boolean(n && CODE_DELIVERY_ROLES.includes(n.role)); }
+    function isCoverageConvergenceNode(n) {
+      return n?.workstream === 'VCOV' && (String(n.role).startsWith('coverage-convergence-')
+        || (n.capabilities || []).some(claim => ['coverage-collection-evidence','hole-analysis-evidence'].includes(claim)));
+    }
     function codeNodeObjectLabel(n) {
-      const plan = n?.role === 'code-plan';
-      if (n?.workstream === 'VCOV') return plan ? '覆盖工作方案' : '覆盖交付及证据';
+      const plan = isCodePlanNode(n);
+      if (n?.workstream === 'VCOV') {
+        if (String(n.role).startsWith('coverage-')) return roleLabel(n.role);
+        return isCoverageConvergenceNode(n) ? (plan ? '覆盖率收敛方案' : '覆盖率收敛交付')
+          : (plan ? '覆盖率实现方案' : '覆盖率实现交付');
+      }
       if (n?.workstream === 'VREG') return plan ? '回归工作方案' : '回归交付及证据';
       return plan ? '代码实现方案' : '代码交付及验证证据';
     }
@@ -2460,14 +2473,16 @@
       const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><h4>目标</h4><p>${escapeHtml(n.statement)}</p>` + [
         ['工作范围','scope'],['具体工作','work_content'],['实现方式','implementation_approach'],
         ['如何验证','validation_methods'],['输出','deliverables'],['交付条件','acceptance_criteria'],
-      ].map(([label, key]) => `<h4>${label}</h4><ul>${planListHtml(n[key])}</ul>`).join('');
+      ].map(([label, key]) => `<h4>${label}</h4><ul>${planListHtml(n[key])}</ul>`).join('')
+        + (n.workstream === 'VCOV' && (n.coverage_item_ids || []).length
+          ? `<h4>本方案必须实现的覆盖项</h4><ul>${planListHtml(n.coverage_item_ids)}</ul>` : '');
       const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${validation
         ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
-          <h4>交付代码</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
+          <h4>${isCoverageConvergenceNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
           ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
-        : '<div class="notice">Agent 尚未提交当前代码版本的验证报告，暂不能验收。</div>'}`;
-      return `${writingPlanSourcesHtml(n)}<section class="detail-block role-node-panel" data-node-role="${n.role}">${n.role === 'code-plan' ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
+        : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
+      return `${writingPlanSourcesHtml(n)}<section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
     }
     async function showCodeFile(n, path, digest) {
       const project = state.project;
@@ -2479,8 +2494,8 @@
     }
     function openCodeWorkflowChange(w, kind) {
       const title = {add:'添加节点',remove:'删除节点',restart:'重新启动工作流'}[kind];
-      const nodes = w.nodes.filter(n => n.role === 'code-plan');
-      openModal(`<h2>${title}</h2><p>${kind === 'restart' ? '确认后创建新的方案版本，旧代码、证据和审批历史保留，新版本需要重新审批。不会重启 Dashboard 或 Agent。' : '这里只登记下一版方案的变更要求；当前节点和历史不会被直接修改或删除。'}</p><form id="code-workflow-change"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div>${kind === 'remove' ? `<div class="field"><label>工作包</label><select name="node" required>${nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.title)}</option>`).join('')}</select></div>` : ''}<div class="field"><label>${kind === 'restart' ? '重新启动原因' : '变更要求'}</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认${title}</button></div></form>`);
+      const nodes = w.nodes.filter(isCodePlanNode);
+      openModal(`<h2>${title}</h2><p>${kind === 'restart' ? '确认后创建新的方案版本，旧交付文件、证据和审批历史保留，新版本需要重新审批。不会重启 Dashboard 或 Agent。' : '这里只登记下一版方案的变更要求；当前节点和历史不会被直接修改或删除。'}</p><form id="code-workflow-change"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div>${kind === 'remove' ? `<div class="field"><label>工作节点</label><select name="node" required>${nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.title)}</option>`).join('')}</select></div>` : ''}<div class="field"><label>${kind === 'restart' ? '重新启动原因' : '变更要求'}</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认${title}</button></div></form>`);
       $('#code-workflow-change').onsubmit = async event => {
         event.preventDefault();
         const data = {...Object.fromEntries(new FormData(event.target)), workstream:w.workstream, kind, revision:w.revision, confirm:true};

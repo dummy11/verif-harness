@@ -242,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument("--document-root", help="VDOC 文档输出目录；由 Agent 在对话确认后传入")
     design.add_argument(
         "--desired-file",
-        help="供 Agent 和负责人评审的 DesiredStateProposal/1 JSON；在模板汇总节点下追加项目级子节点",
+        help="供负责人评审的 DUT 验证方案 JSON（DesiredStateProposal/1）；VCOV 使用覆盖率实现方案和收敛方案",
     )
     authoring = plan_commands.add_parser(
         "authoring",
@@ -332,11 +332,11 @@ def build_parser() -> argparse.ArgumentParser:
     changed.add_argument("--kind", choices=("auto", "add", "modify", "delete", "rename", "spec-change", "rtl-change"), default="auto")
     changed.add_argument("--revision")
 
-    code = commands.add_parser("code", help="查看代码方案、登记 Agent 验证报告及查询验收产物")
+    code = commands.add_parser("code", help="查看实现或覆盖率收敛方案、登记 Agent 验证报告及查询验收产物")
     code_commands = code.add_subparsers(dest="code_command", required=True)
     code_status = code_commands.add_parser("status", help="查看当前代码节点、版本和验证状态")
     project_argument(code_status); code_status.add_argument("node")
-    code_validate = code_commands.add_parser("validate", help="检查并登记当前代码版本的验证证据，不代替负责人验收")
+    code_validate = code_commands.add_parser("validate", help="检查并登记当前交付版本的验证证据，不代替负责人验收")
     project_argument(code_validate); code_validate.add_argument("node"); code_validate.add_argument("report")
     code_artifacts = code_commands.add_parser("artifacts", help="查看批准方案、代码交付历史和下游可用状态")
     project_argument(code_artifacts)

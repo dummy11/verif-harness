@@ -3,8 +3,13 @@
 User-facing definitions for schema, claim, validator, raw artifact, and native
 artifact are in the [glossary](../docs/glossary.md#evidence-format).
 
-Use `verif-harness evidence NODE REPORT.json` for VENV, VCHK, VCOV, VCASE, and VREG
-desired nodes. Standard template nodes infer their claim; custom nodes require
+Modern implementation and convergence deliveries use `verif-harness code validate
+NODE REPORT.json`: `CodeValidation/1` wraps the typed reports below and binds the
+current delivery, revision, inputs and outputs. In particular, VCOV's four public
+node types never use `evidence` to bypass plan approval or delivery acceptance.
+
+Use `verif-harness evidence NODE REPORT.json` only for historical non-code-model
+VENV, VCHK, VCOV, VCASE, and VREG desired nodes. Standard template nodes infer their claim; custom nodes require
 `--claim`. VSTIM is dispatched to its stricter reachability validator. VDOC
 semantic approval remains `docs review` and is not accepted here.
 
@@ -37,6 +42,7 @@ Schemas and starting examples are in this directory:
 - `stimulus-capability-evidence.schema.json` / `stimulus-capability-evidence.example.json`
 - `checking-evidence.schema.json` / `checking-evidence.example.json`
 - `coverage-evidence.schema.json` / `coverage-evidence.example.json`
+- `coverage-item-manifest.schema.json` / `coverage-item-manifest.example.json`
 - `testcase-evidence.schema.json` / `testcase-evidence.example.json`
 - `regression-evidence.schema.json` / `regression-evidence.example.json`
 

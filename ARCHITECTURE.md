@@ -18,7 +18,7 @@ remain auditable; no approval or Agent check is silently copied to a new version
 
 ## Versioned delivery for VENV, VSTIM, VCHK, VCASE, VCOV and VREG
 
-These six workstreams use DUT-specific `code-plan` packages with stable
+VENV, VSTIM, VCHK, VCASE and VREG use DUT-specific `code-plan` packages with stable
 `implementation_key` identities. Approval produces an immutable `art.code_plan`
 and its paired `code-deliverable` WorkNode. Implementation, build, run and analysis
 are Activities of that delivery, not additional public WorkNode types.
@@ -32,7 +32,17 @@ Plans depend on accepted `cap.doc` and explicit upstream package capabilities.
 VSTIM requires VENV; VCHK requires VENV and VSTIM; VCASE requires VENV, VSTIM
 and VCHK. VCASE validity does not depend on VCOV; VCOV consumes accepted VCASE
 and stimulus/checking results when evaluating overall closure.
-VCOV separates model/collector implementation from collection/hole evidence.
+VCOV exposes four WorkNode types: `coverage-implementation-plan`,
+`coverage-implementation-deliverable`, `coverage-convergence-plan`, and
+`coverage-convergence-deliverable`, with no public package layer. They share the
+same approval, validation and acceptance gates. Accepted implementation derives
+internal capabilities; convergence depends on an explicitly selected accepted
+implementation and the accepted regression executor. All required implementation
+scopes must be consumed by required convergence scopes; implementation alone
+cannot satisfy VCOV. Approved `coverage_item_ids` bind the item universe.
+`CoverageItemManifest/1` binds that universe to current plan inputs and model
+outputs, and every convergence report must use the selected accepted manifest.
+Old validation receipts require revalidation under the current coverage contract.
 VREG separates policy/executor infrastructure from execution/triage/freshness
 evidence, so executor readiness can unblock runs without waiting for final
 regression closure. Uncovered coverage items and unresolved regression failures
@@ -43,8 +53,8 @@ Deliveries depend on their versioned plan artifact. Accepted deliveries produce
 `art.code` and package `cap.<workstream>:<implementation_key>`. Default downstream
 dependencies resolve to `cap.<workstream>:<claim>`; these conservative summary capabilities
 require all required providers of that claim to be accepted. They are not tasks,
-approvals, or additional progress items. Explicit package dependencies select one
-specific DUT work package. Code and evidence changes revoke delivery availability
+approvals, or additional progress items. Explicit capability dependencies select
+one specific DUT implementation scope. Code and evidence changes revoke delivery availability
 without reopening an unchanged plan; source/plan changes revoke both.
 
 Installing a code proposal preserves the former workstream nodes and dependency audit.

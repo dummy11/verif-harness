@@ -120,7 +120,7 @@ This repository contains public, reusable verification infrastructure.
 
 ### VENV、VSTIM、VCHK、VCASE、VCOV、VREG 方案与交付
 
-- VENV、VSTIM、VCHK、VCASE、VCOV、VREG 均按 DUT 工作包使用 `code-plan` 和
+- VENV、VSTIM、VCHK、VCASE、VREG 按 DUT 工作包使用 `code-plan` 和
   `code-deliverable` 两种公开工作节点；
   稳定的 `implementation_key` 将同一工作包的方案、交付、产物与能力关联起来。
   代码方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件；
@@ -134,9 +134,16 @@ This repository contains public, reusable verification infrastructure.
   `art.code_plan`；跨工作包和下游依赖验收后派生的 `cap.<workstream>`。不得用旧 capability 工作节点、方案批准或工具
   PASS 代替代码交付可用。相关输入变化使方案、交付及能力失效；仅输出代码或验证
   证据变化时保留未变化方案。新版本不得继承旧批准或旧证据。
-- VCOV 必须把 `coverage-model` + `coverage-collection` 实现包与
-  `coverage-collection-evidence` + `hole-analysis-evidence` 收敛包分开；后者依赖
-  当前有效的环境、激励、检查、用例、回归执行器和同工作流实现能力。VREG 必须把
+- VCOV 直接使用覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付四种
+  公开节点类型，不增加工作包层级。方案角色分别为 `coverage-implementation-plan` 和
+  `coverage-convergence-plan`；批准后建立对应 `-deliverable` 交付节点。
+  实现方案的 `coverage_item_ids` 列出供负责人批准的必需覆盖范围，交付验证
+  `coverage-model` 与 `coverage-collection`；收敛交付验证 `coverage-collection-evidence`
+  与 `hole-analysis-evidence`，依赖当前有效的环境、激励、检查、用例、回归执行器
+  `cap.vreg:executor-ready` 和明确关联的覆盖率实现能力。清单必须对应已批准范围、
+  当前计划输入和模型输出；全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
+  `implementation_key` 仅为内部关联；派生的产物和能力不增加公开节点或审批。
+- VREG 必须把
   `regression-policy` + `executor-ready` 基础设施包与 `execution-evidence` +
   `triage-evidence` + `fresh-evidence` 闭环包分开，防止执行器等待最终回归结果的循环依赖。
   未覆盖项和未关闭回归失败必须记录责任工作流及下一步动作；Main Agent 分析后登记
