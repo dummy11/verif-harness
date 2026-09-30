@@ -1,8 +1,9 @@
-// Real VENV routes, code preview and owner approval against an isolated project.
+// Real code-workflow routes, code preview and owner approval against an isolated project.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {chromium} = require('playwright');
 const config = JSON.parse(fs.readFileSync(0, 'utf8'));
+const workstream = config.workstream || 'VENV';
 (async () => {
   const browser = await chromium.launch({headless:true, ...(process.env.VERIF_DASHBOARD_BROWSER_CHANNEL ? {channel:process.env.VERIF_DASHBOARD_BROWSER_CHANNEL} : {})});
   const context = await browser.newContext({viewport:{width:1440,height:1000}});
@@ -12,7 +13,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
   // No persistent SSE readers are needed for this click + refresh test.
   await page.route('**/api/events*', route => route.abort());
   const url = new URL(config.url);
-  for (const [key,value] of Object.entries({project:config.project,token:config.token,workstream:'VENV'})) url.searchParams.set(key,value);
+  for (const [key,value] of Object.entries({project:config.project,token:config.token,workstream})) url.searchParams.set(key,value);
   try {
     await page.goto(url.toString());
     const table = page.locator('.work-node-table');
@@ -56,7 +57,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.reload();
     await page.locator('#main #node-plan-complete').waitFor();
     if (process.env.VERIF_DASHBOARD_SCREENSHOT_DIR) {
-      await page.screenshot({path:process.env.VERIF_DASHBOARD_SCREENSHOT_DIR + '/venv-' + config.phase + '.png', fullPage:true});
+      await page.screenshot({path:process.env.VERIF_DASHBOARD_SCREENSHOT_DIR + '/' + workstream.toLowerCase() + '-' + config.phase + '.png', fullPage:true});
     }
     await page.locator('#main #node-plan-complete').click();
     const form = page.locator('#node-plan-complete-form');
@@ -68,7 +69,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.locator('#modal-backdrop').waitFor({state:'hidden'});
     await page.locator('.work-node-table').waitFor();
     assert.equal(page.isClosed(), false);
-    assert.equal(new URL(page.url()).searchParams.get('workstream'), 'VENV');
+    assert.equal(new URL(page.url()).searchParams.get('workstream'), workstream);
     assert.equal(new URL(page.url()).searchParams.get('project'), config.project);
     await page.reload();
     const approved = page.locator(`[data-approve-plan-node="${config.node}"]`);
@@ -78,6 +79,6 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.ok((await approved.locator('xpath=ancestor::tr').innerText()).includes(config.phase === 'plan' ? '方案已批准' : '已验收通过'));
     if (config.phase === 'plan') assert.ok((await table.innerText()).includes('等待 Agent 验证通过'));
     assert.deepEqual(errors, []);
-    console.log('VENV ' + config.phase + ' browser routes, preview, approval and reload PASS');
+    console.log(workstream + ' ' + config.phase + ' browser routes, preview, approval and reload PASS');
   } finally { await context.close(); await browser.close(); }
 })().catch(e => {console.error(e);process.exit(1);});

@@ -12,7 +12,7 @@ from unittest import mock
 
 from tests import test_vdoc_artifacts as vdoc_fixture
 from verif_harness import code_workflow as code
-from verif_harness.store import HarnessError, ProjectStore
+from verif_harness.store import HarnessError, ProjectStore, Validity
 
 
 class CodeWorkflowTest(unittest.TestCase):
@@ -148,7 +148,7 @@ class CodeWorkflowTest(unittest.TestCase):
             code.validate(self.store, self.delivery["id"], self.report_path.name)
 
     def test_downstream_default_dependencies_use_capabilities(self):
-        plan = self.store.design_workstream("VCASE", None, [], [], [])
+        plan = self.store._design_workstream("VCASE", None, [], [], [])
         node = next(n for n in plan["desired_state"] if n["key"] == "case-implementation")
         edges = self.store.trace(node["id"])["outgoing"]
         targets = {e["target"] for e in edges if e["relation"] == "DEPENDS_ON"}
@@ -285,7 +285,7 @@ class CodeWorkflowTest(unittest.TestCase):
 
     def test_snapshot_reuses_node_reviews_and_downstream_detects_unsynced_change(self):
         self.implement(); self.validate(); self.approve(self.delivery)
-        downstream = self.store.design_workstream('VCASE', None, [], [], [])
+        downstream = self.store._design_workstream('VCASE', None, [], [], [])
         node = next(n for n in downstream['desired_state'] if n['key'] == 'case-implementation')
         self.store.dashboard_snapshot()
         with mock.patch.object(code, 'identity', wraps=code.identity) as identities:
@@ -358,7 +358,7 @@ class CodeWorkflowTest(unittest.TestCase):
     def test_legacy_dependency_migration_preserves_history(self):
         legacy = self.store._design_workstream('VENV', None, [], [], [])
         old = next(n for n in legacy['desired_state'] if n['key'] == 'build-ready')
-        downstream = self.store.design_workstream('VCASE', None, [], [], [])['desired_state'][1]
+        downstream = self.store._design_workstream('VCASE', None, [], [], [])['desired_state'][1]
         self.store.add_dependency(downstream['id'], old['id'])
         self.design()
         self.assertIsNone(self.store.model(old['id'])['nodes'][0]['workstream'])
@@ -409,6 +409,121 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.store.workstream('VENV')['revision'], previous + 1)
         self.assertTrue(self.output.is_file())
+
+
+class CodeWorkflowProfileTest(unittest.TestCase):
+    """VSTIM/VCHK/VCASE share the VENV lifecycle without sharing semantics."""
+
+    def setUp(self):
+        self.fixture = vdoc_fixture.VdocArtifactsTest()
+        self.fixture.setUp()
+        self.fixture.prepare()
+        self.fixture.finish()
+        self.store = self.fixture.store
+        self.root = self.store.root
+
+    def tearDown(self):
+        self.fixture.tearDown()
+
+    def seed(self, *identifiers):
+        with self.store.connect() as connection:
+            for identifier in identifiers:
+                self.store.upsert_node(
+                    connection, identifier, "capability", identifier, Validity.VALID,
+                    data={"derived": True, "current": {"fixture": identifier}},
+                )
+
+    def proposal(self, workstream, capabilities, inputs):
+        key = workstream.lower() + ":main"
+        item = {
+            "key": workstream.lower() + "-main", "implementation_key": key,
+            "role": "code-plan", "title": workstream + " 主工作包",
+            "statement": "实现并验证当前 DUT 的 " + workstream + " 能力",
+            "scope": ["当前 DUT 必需验证点"], "work_content": ["实现批准范围内的验证代码"],
+            "implementation_approach": ["保持 DUT RTL 只读并使用受控验证入口"],
+            "validation_methods": ["执行专用合同检查并核对原始证据"],
+            "deliverables": ["验证代码和当前版本证据"],
+            "acceptance_criteria": ["实现和运行证据均满足专用合同"],
+            "source_refs": ["rtl/", "verification_plan.md"], "inputs": inputs,
+            "input_files": ["rtl/dut.sv"],
+            "output_paths": [f"verification/{workstream.lower()}/main.sv"],
+            "capabilities": capabilities,
+        }
+        path = self.root / (workstream.lower() + "-code-proposal.json")
+        path.write_text(json.dumps({
+            "schema": "DesiredStateProposal/1", "workstream": workstream, "nodes": [item],
+        }))
+        return path, item
+
+    def design(self, workstream, capabilities, inputs):
+        path, item = self.proposal(workstream, capabilities, inputs)
+        plan = self.store.design_workstream(
+            workstream, None, [], [], [], desired_file=path.name,
+        )
+        return plan, item
+
+    def test_each_code_workstream_uses_only_plan_and_delivery_nodes(self):
+        cases = {
+            "VSTIM": (
+                ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+            ),
+            "VCHK": (
+                ["scoreboard", "scoreboard-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence"],
+            ),
+            "VCASE": (
+                ["case-implementation", "targeted-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"],
+            ),
+        }
+        # Each subtest uses a fresh project because modern summary capabilities
+        # deliberately supersede manually seeded upstream fixtures.
+        for index, (workstream, (claims, inputs)) in enumerate(cases.items()):
+            if index:
+                self.tearDown()
+                self.setUp()
+            self.seed(*inputs[1:])
+            plan, item = self.design(workstream, claims, inputs)
+            self.assertTrue(code.modern(plan))
+            self.assertEqual([node["role"] for node in plan["desired_state"]], ["code-plan"])
+            node = plan["desired_state"][0]
+            state = self.store.node_plan_review_state(node["id"])
+            self.assertTrue(state["can_approve"], state["blockers"])
+            self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+            current = self.store.workstream(workstream)
+            self.assertEqual({node["role"] for node in current["desired_state"]}, {"code-plan", "code-deliverable"})
+            self.assertEqual(code.ids(item["implementation_key"], workstream)[0],
+                             f"art.code_plan:{workstream.lower()}:{item['implementation_key']}")
+            view = next(value for value in self.store.dashboard_snapshot()["workstreams"]
+                        if value["workstream"] == workstream)
+            self.assertTrue(view["code_model"])
+            self.assertEqual(view["progress"]["required"], 2)
+
+    def test_profile_specific_gates_fail_closed(self):
+        with self.assertRaisesRegex(HarnessError, "同配置同 seed"):
+            self.design(
+                "VSTIM", ["stimulus-implementation", "reachability-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+            )
+        with self.assertRaisesRegex(HarnessError, "对应的运行证据"):
+            self.design(
+                "VCHK", ["scoreboard"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence"],
+            )
+        with self.assertRaisesRegex(HarnessError, "下游结果"):
+            self.design(
+                "VCASE", ["case-implementation", "targeted-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence", "cap.vcov:coverage-collection-evidence"],
+            )
+
+    def test_vcase_requires_environment_stimulus_and_checking_not_coverage(self):
+        path, _ = self.proposal(
+            "VCASE", ["case-implementation", "targeted-evidence"],
+            ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence"],
+        )
+        with self.assertRaisesRegex(HarnessError, "cap.vchk"):
+            self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)
 
 
 if __name__ == "__main__":

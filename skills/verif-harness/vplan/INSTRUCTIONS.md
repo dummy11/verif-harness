@@ -77,13 +77,14 @@ databases, and individual transactions as evidence; do not turn every artifact
 into a planning node. Parent every project node under a template or project node
 and never create parent cycles.
 
-For VENV, use [code workflow instructions](venv.md) instead of the older component
-roles or whole-workstream approval. Propose `code-plan` nodes, one per actual DUT
-work package. Each approved node creates its paired `code-deliverable`; build and
-smoke are Activities inside the integration delivery. Dependencies now target
-accepted document or code capabilities, not the former WorkNodes. Main Agent
-validates before asking the owner to accept code delivery; no subsequent routine
-Agent review is required after that acceptance.
+For VENV, VSTIM, VCHK and VCASE, use their code-workflow instructions
+([VENV](venv.md), [VSTIM](vstim.md), [VCHK](vchk.md), [VCASE](vcase.md)) instead
+of the older component roles or whole-workstream approval. Propose `code-plan`
+nodes, one per actual DUT work package. Each approved node creates its paired
+`code-deliverable`; implementation and tool runs are Activities inside that
+delivery. Dependencies target accepted document or code capabilities, not former
+WorkNodes. Main Agent validates before asking the owner to accept code delivery;
+no subsequent routine Agent review is required after that acceptance.
 
 After evidence changes, use the Dashboard node view to inspect the current
 `NodeClosureAssessment/1`. Its conclusion must remain traceable to the current

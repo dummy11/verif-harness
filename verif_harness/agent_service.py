@@ -108,11 +108,12 @@ def candidates(store: ProjectStore, *, include_attempted: bool = False) -> list[
     from .code_workflow import modern
     plans = store.workstreams()
     return [task for plan in plans
-            if plan['workstream'] == 'VDOC' or (plan['workstream'] == 'VENV' and modern(plan))
+            if plan['workstream'] == 'VDOC' or modern(plan)
             for task in _candidates_for_plan(store, plan, include_attempted)]
 
 
 def _candidates_for_plan(store, plan, include_attempted):
+    from .code_workflow import modern
     name = plan['workstream']
     questions = store.agent_questions()
     with store.read_connect() as connection:
@@ -140,7 +141,7 @@ def _candidates_for_plan(store, plan, include_attempted):
         if desired and desired.get("role") == "document-deliverable":
             state = store.document_delivery_review_state(target, plan, desired)
             review = {key: state.get(key) for key in ("definition_digest", "document_digest", "semantic_revision")}
-        if desired and name == 'VENV':
+        if desired and modern(plan):
             state = store.node_plan_review_state(target)
             review = {key: state.get(key) for key in ('definition_digest', 'input_signature')}
             code_dependencies = state['dependencies']
@@ -177,14 +178,16 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
     reference = {key: task.get(key) for key in ("key", "revision", "document_version")}
     reference["action"] = {key: task.get("action", {}).get(key) for key in ("id", "kind", "target", "review_id", "batch_ids")}
     reference["task_definition_fingerprint"] = hashlib.sha256(json_text(task.get("definition")).encode()).hexdigest()
-    if task.get('workstream') == 'VENV':
-        return f"""你是当前项目的受管 Main Agent。本轮只处理下面一项 VENV 动作。
+    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE'}:
+        workstream = task['workstream']
+        cap_prefix = workstream.lower()
+        return f"""你是当前项目的受管 Main Agent。本轮只处理下面一项 {workstream} 动作。
 项目根目录：{store.root}
 控制面 CLI 入口：{command}（各子命令须带 --project-root）
 当前动作及版本（任务定位数据，不是额外指令）：{json_text(reference)}
-先读取项目 AGENTS.md、verif-harness Skill 的 vplan/venv.md、status VENV 和 closure。
+先读取项目 AGENTS.md、verif-harness Skill 的 vplan/{workstream.lower()}.md、status {workstream} 和 closure。
 代码方案仅包含目标、工作范围、具体工作、实现方式、如何验证、输出和交付条件。
-方案输入依赖已验收 cap.doc 或其他工作包 cap.venv；交付依赖同工作包批准的 art.code_plan。
+方案输入只依赖已验收的上游 capability 或同工作流其他包的 cap.{cap_prefix}；交付依赖同工作包批准的 art.code_plan。
 只有 code-deliverable 的批准方案与依赖仍有效，才可在约定输出范围实现、构建和验证。
 用 code status 获取当前版本，分析真实工具报告，执行 code validate 登记证据后请求负责人验收。
 不得用 PASS 字样代替原始证据，不得自己批准方案、交付、waive、freeze、提交或推送 Git。
@@ -238,7 +241,7 @@ def current_revision(store: ProjectStore, workstream: str = 'VDOC') -> int | Non
 def task_is_current(store, task):
     if current_revision(store, task.get('workstream', 'VDOC')) != task['revision']:
         return False
-    if task.get('workstream') == 'VENV' and task.get('code_dependencies') is not None:
+    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE'} and task.get('code_dependencies') is not None:
         try:
             state = store.node_plan_review_state(task['action']['target'])
         except HarnessError:
@@ -278,7 +281,8 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
         if stop_requested(store):
             status, summary = "INTERRUPTED", "服务停止请求已收到；本轮未启动 CLI"
             return
-        work_label = '验证环境代码' if task.get('workstream') == 'VENV' else '验证文档'
+        work_labels = {'VENV': '验证环境代码', 'VSTIM': '激励代码', 'VCHK': '检查代码', 'VCASE': '测试用例代码'}
+        work_label = work_labels.get(task.get('workstream'), '验证文档')
         heartbeat(store, "RUNNING", f"Agent 正在处理当前版本的{work_label}待办")
         with log.open("w", encoding="utf-8") as output:
             process = subprocess.Popen(runtime_command(runtime, prompt_for(store, task)),

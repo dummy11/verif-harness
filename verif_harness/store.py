@@ -846,14 +846,14 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  `agent-question ask` 提问；不需要或所有问题回答并重新分析后，用",
         "  `agent-review-check complete REVIEW_ID --summary ...` 完成本轮检查。",
         "  未完成 Agent 检查或仍有开放问题时，节点不得显示为正文验收通过。",
-        "- VENV 只建立 DUT 工作包的 code-plan；方案按目标、工作范围、具体工作、实现方式、",
-        "  如何验证、输出和交付条件说明。inputs 依赖已验收的 cap.doc 或其他包的 cap.venv。",
+        "- VENV、VSTIM、VCHK、VCASE 只建立 DUT 工作包的 code-plan；方案按目标、工作范围、具体工作、实现方式、",
+        "  如何验证、输出和交付条件说明。inputs 依赖已验收的 cap.doc 和该工作流允许的上游 capability。",
         "  负责人批准后系统创建同 implementation_key 的 code-deliverable，绑定批准的 art.code_plan。",
         "  Agent 在该交付节点内实现、构建、验证并分析结果，用 code status 获取当前版本，",
         "  用 code validate 登记绑定当前代码及原始工具证据的 CodeValidation/1；通过后才请求验收。",
-        "  负责人验收后系统复核版本并派生 art.code 和 cap.venv；不再安排例行验收后 Agent 检查。",
-        "  待确认工程问题使用节点绑定的 agent-question，不放入方案正文。完整合同见 vplan/venv.md。",
-        "  旧版 VENV 节点不得继续作为新实现授权；提交新的 code-plan 方案，历史保留。",
+        "  负责人验收后系统复核版本并派生 art.code 和 cap.<workstream>；不再安排例行验收后 Agent 检查。",
+        "  待确认工程问题使用节点绑定的 agent-question，不放入方案正文。完整合同见对应 vplan/*.md。",
+        "  旧版代码工作流节点不得继续作为新实现授权；提交新的 code-plan 方案，历史保留。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同；VDOC 仅在",
         "  文档撰写方案已进入 `ACTIVE` 后执行 `docs sync`。",
@@ -1507,10 +1507,10 @@ class ProjectStore:
 
     def _reconcile_default_dependencies(self, connection: sqlite3.Connection) -> int:
         current: dict[tuple[str, str], str] = {}
-        code_model = False
+        code_models: set[str] = set()
         for row in connection.execute("SELECT name,desired_json,context_json FROM workstreams"):
-            if row["name"] == "VENV":
-                code_model = json.loads(row["context_json"]).get("code_model") == 2
+            if code_workflow.supported(row["name"]) and json.loads(row["context_json"]).get("code_model") == 2:
+                code_models.add(row["name"])
             for desired in json.loads(row["desired_json"]):
                 current[(row["name"], desired["key"])] = desired["id"]
         connection.execute("DELETE FROM edges WHERE relation='DEPENDS_ON' AND origin='planner-default'")
@@ -1519,10 +1519,10 @@ class ProjectStore:
         for dependent_key, prerequisite_key in DEFAULT_DEPENDENCIES:
             dependent = current.get(dependent_key)
             prerequisite = current.get(prerequisite_key)
-            if code_model and prerequisite_key[0] == "VENV":
-                prerequisite = "cap.venv:" + prerequisite_key[1]
+            if prerequisite_key[0] in code_models:
+                prerequisite = code_workflow.profile(prerequisite_key[0])["cap_prefix"] + prerequisite_key[1]
                 if not connection.execute("SELECT 1 FROM nodes WHERE id=?", (prerequisite,)).fetchone():
-                    self.upsert_node(connection, prerequisite, "capability", "验证环境交付尚未验收", Validity.UNKNOWN, data={"derived": True})
+                    self.upsert_node(connection, prerequisite, "capability", "代码交付尚未验收", Validity.UNKNOWN, data={"derived": True})
             if dependent is None or prerequisite is None:
                 continue
             prerequisites = [prerequisite]
@@ -2183,14 +2183,28 @@ class ProjectStore:
     ) -> dict[str, Any]:
         self.require()
         name = self.normalize_workstream(workstream)
-        if name == "VENV":
+        if code_workflow.supported(name):
+            code_candidate = name == "VENV"
+            if name != "VENV" and desired_file:
+                try:
+                    proposal = json.loads(resolved_path(self.root, desired_file).read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    proposal = None
+                proposal_nodes = proposal.get("nodes", []) if isinstance(proposal, dict) else []
+                code_candidate = bool(proposal_nodes) and not any(
+                    not isinstance(item, dict) or item.get("role") != "code-plan"
+                    for item in proposal_nodes
+                )
+            if not code_candidate:
+                return self._design_workstream(name, objective, desired, exit_criteria, decisions,
+                                               document_root, evidence_claims, desired_file)
             if desired or evidence_claims or document_root or exit_criteria:
-                raise HarnessError("VENV 请使用包含 code-plan 和交付条件的 --desired-file")
+                raise HarnessError(f"{name} 请使用包含 code-plan 和交付条件的 --desired-file")
             if not desired_file:
                 current = next((p for p in self.workstreams() if p['workstream'] == name), None)
                 if current and code_workflow.modern(current):
                     return {**current, 'auto_closure': self.evaluate_closure(name)}
-            return code_workflow.design(self, desired_file, objective, decisions)
+            return code_workflow.design(self, name, desired_file, objective, decisions)
         return self._design_workstream(name, objective, desired, exit_criteria, decisions,
                                        document_root, evidence_claims, desired_file)
 
@@ -2725,7 +2739,7 @@ class ProjectStore:
                 "INSERT INTO activities(id,node_id,workstream,operation,status,actor,message,log_path,created_at,updated_at) "
                 "VALUES(?,?,?,?,'RUNNING',?,?,?,?,?)",
                 (activity_id, target if node else PROJECT_TARGET, node[0] if node else PROJECT_WORKSTREAM,
-                 '处理验证环境代码待办' if name == 'VENV' else '处理验证文档待办',
+                 f'处理{name}代码待办' if code_workflow.supported(name) else '处理验证文档待办',
                  PROJECT_AGENT_ACTOR, task["action"]["reason"], normalized_log, timestamp, timestamp),
             )
             connection.execute(
@@ -3615,8 +3629,9 @@ class ProjectStore:
 
     @store_operation
     def review_workstream(self, workstream: str, verdict: str, reviewer: str, reason: str) -> dict[str, Any]:
-        if self.normalize_workstream(workstream) == "VENV" and code_workflow.modern(self.workstream("VENV")):
-            raise HarnessError("VENV 请在每个代码方案或交付节点审批，不能整条工作流批准")
+        normalized = self.normalize_workstream(workstream)
+        if code_workflow.supported(normalized) and code_workflow.modern(self.workstream(normalized)):
+            raise HarnessError(f"{normalized} 请在每个代码方案或交付节点审批，不能整条工作流批准")
         if verdict not in {"approve", "reject", "modify", "clarify"}:
             raise HarnessError("workstream verdict 必须是 approve/reject/modify/clarify")
         if not reviewer.strip() or not reason.strip():
@@ -3996,7 +4011,7 @@ class ProjectStore:
     ) -> dict[str, Any]:
         """Return revision-bound approval opinions awaiting one explicit Agent handoff."""
         self.ensure_dashboard_schema()
-        if node_id.startswith("workstream:VENV:"):
+        if code_workflow.node_workstream(node_id):
             return code_workflow.review_state(self, node_id)["feedback"]
         if plan is None:
             plan = self.workstream("VDOC")
@@ -4057,7 +4072,7 @@ class ProjectStore:
         document_digest: str = "",
     ) -> dict[str, Any]:
         """Seal all current draft opinions into one durable Main Agent work batch."""
-        name = "VENV" if node_id.startswith("workstream:VENV:") else "VDOC"
+        name = code_workflow.node_workstream(node_id) or "VDOC"
         plan = self.workstream(name)
         desired = next(
             (item for item in plan["desired_state"] if item["id"] == node_id), None,
@@ -4065,7 +4080,7 @@ class ProjectStore:
         if desired is None or desired.get("role") not in {
             "document-writing-plan", "document-deliverable", "code-plan", "code-deliverable",
         }:
-            raise HarnessError("只能提交当前 VDOC 方案或正文节点的审批意见")
+            raise HarnessError("只能提交当前文档方案、正文验收或代码方案、代码交付节点的审批意见")
         state = self.review_feedback_state(node_id, plan, desired)
         if state["definition_digest"] != definition_digest:
             raise HarnessError("审批对象已变化；请刷新后重新核对当前审批意见")
@@ -4162,7 +4177,7 @@ class ProjectStore:
                        WHERE batch_id=?""",
                     (summary.strip(), timestamp, timestamp, batch_id),
                 )
-        name = "VENV" if node_id.startswith("workstream:VENV:") else "VDOC"
+        name = code_workflow.node_workstream(node_id) or "VDOC"
         plan = self.workstream(name)
         desired = next(
             (item for item in plan["desired_state"] if item["id"] == node_id), None,
@@ -4273,7 +4288,7 @@ class ProjectStore:
         desired: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.ensure_dashboard_schema()
-        if node_id.startswith("workstream:VENV:"):
+        if code_workflow.node_workstream(node_id):
             code_workflow.refresh(self)
             return code_workflow.review_state(self, node_id, plan, desired)
         if plan is None or desired is None:
@@ -4374,7 +4389,7 @@ class ProjectStore:
         reviewer: str, reason: str,
         change_items: Iterable[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        if node_id.startswith("workstream:VENV:"):
+        if code_workflow.node_workstream(node_id):
             return code_workflow.review(self, node_id, definition_digest, reviewer, reason, verdict, change_items)
         selected = verdict.lower()
         if selected not in {"approve", "reject", "modify", "clarify"}:
@@ -4523,7 +4538,7 @@ class ProjectStore:
     def complete_node_plan_review(
         self, node_id: str, definition_digest: str, reviewer: str, reason: str = "",
     ) -> dict[str, Any]:
-        if node_id.startswith("workstream:VENV:"):
+        if code_workflow.node_workstream(node_id):
             return code_workflow.review(self, node_id, definition_digest, reviewer, reason)
         if not reviewer.strip():
             raise HarnessError("审批完成必须填写审批人")
@@ -4757,10 +4772,10 @@ class ProjectStore:
                 raise HarnessError("Closure Assessment 只适用于 Workstream desired-state node")
             data = json.loads(row["data_json"])
             plan = _plan if _plan is not None else self.workstream(row["workstream"])
-            if plan["workstream"] == "VENV" and code_workflow.modern(plan):
+            if code_workflow.modern(plan):
                 state = _code_review if _code_review is not None else code_workflow.review_state(self, node_id, plan, data, connection)
                 return {"schema": "NodeClosureAssessment/1", "rule_version": "code-delivery/1", "node_id": node_id,
-                        "workstream": "VENV", "revision": plan["revision"], "current_revision": True,
+                        "workstream": plan["workstream"], "revision": plan["revision"], "current_revision": True,
                         "conclusion": "CLOSED" if state["completed"] else "NOT_SATISFIED",
                         "digest": state["definition_digest"], "assessment_digest": state["definition_digest"],
                         "reasons": state["blockers"] or ["当前版本已验收" if state["completed"] else "等待负责人审批当前版本"],
@@ -5628,7 +5643,7 @@ class ProjectStore:
     @store_operation
     def approval_status(self, node_id: str) -> dict[str, Any]:
         """Read one current approval without closure, exports, or a project snapshot."""
-        if node_id.startswith("workstream:VENV:"):
+        if code_workflow.node_workstream(node_id):
             code_workflow.refresh(self)
             review = code_workflow.review_state(self, node_id)
             return {"node_id": node_id, "revision": review["revision"], "definition_digest": review["definition_digest"],
@@ -5945,8 +5960,8 @@ class ProjectStore:
                 payload["document_governance_projection"] = "document-governance.md"
                 for document in documents:
                     document["snapshot_path"] = f"documents/{Path(document['path']).name}"
-        if workstream == 'VENV' and code_workflow.modern(plan):
-            payload['code_artifacts'] = code_workflow.artifacts(self)
+        if code_workflow.modern(plan):
+            payload['code_artifacts'] = code_workflow.artifacts(self, workstream)
         return payload
 
     @store_operation
@@ -6088,9 +6103,11 @@ class ProjectStore:
                 raise HarnessError("未知 node: " + ", ".join(missing))
             dependent = connection.execute("SELECT workstream FROM nodes WHERE id=?", (subject,)).fetchone()
             source = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (prerequisite,)).fetchone()
-            if prerequisite.startswith(("art.code_plan:", "art.code:")) or (source[0] == "VENV" and code_workflow.modern(self._read_workstream(connection, "VENV"))):
-                raise HarnessError("代码工作包之间及下游必须依赖 cap.venv，不能依赖方案或交付工作节点")
-            if subject.startswith("workstream:VENV:") and code_workflow.modern(self._read_workstream(connection, "VENV")):
+            source_plan = self._read_workstream(connection, source[0]) if source[0] and code_workflow.supported(source[0]) else None
+            if prerequisite.startswith(("art.code_plan:", "art.code:")) or (source_plan and code_workflow.modern(source_plan)):
+                raise HarnessError("代码工作包之间及下游必须依赖对应的 cap.venv/cap.vstim/cap.vchk/cap.vcase，不能依赖方案或交付工作节点")
+            subject_workstream = code_workflow.node_workstream(subject)
+            if subject_workstream and code_workflow.modern(self._read_workstream(connection, subject_workstream)):
                 raise HarnessError("代码方案的输入依赖属于批准内容；请通过新方案 revision 修改 inputs")
             if dependent[0] != "VDOC" and (source[0] == "VDOC" or prerequisite.startswith(("art.doc:", "art.doc_plan:"))):
                 data = json.loads(source["data_json"])
@@ -6146,7 +6163,8 @@ class ProjectStore:
     def waive_node(self, node_id: str, reviewer: str, reason: str) -> dict[str, Any]:
         self.require()
         self._require_work_target(node_id)
-        if node_id.startswith("workstream:VENV:") and code_workflow.modern(self.workstream("VENV")):
+        code_name = code_workflow.node_workstream(node_id)
+        if code_name and code_workflow.modern(self.workstream(code_name)):
             raise HarnessError("代码交付不能通过接受例外绕过方案审批、验证和交付验收")
         with self.connect() as connection:
             node = connection.execute(
@@ -6183,7 +6201,8 @@ class ProjectStore:
         data: dict[str, Any] | None = None, contract_validated: bool = False,
     ) -> dict[str, Any]:
         self.require()
-        if subject.startswith("workstream:VENV:") and code_workflow.modern(self.workstream("VENV")):
+        code_name = code_workflow.node_workstream(subject)
+        if code_name and code_workflow.modern(self.workstream(code_name)):
             raise HarnessError("代码交付请使用 code validate 登记验证报告；证据不能替代负责人验收")
         self._require_work_target(subject)
         source_path = Path(source)
@@ -6455,7 +6474,11 @@ class ProjectStore:
         derived: list[dict[str, str]] = []
         for item in sorted(current.values(), key=lambda value: value["id"]):
             if item.get('role') == 'code-deliverable' and item.get('required', True):
-                plan = self._read_workstream(connection, 'VENV')
+                item_workstream = code_workflow.node_workstream(item['id'])
+                if item_workstream is None:
+                    blockers.append(f"代码交付 {item['title']} 无法确定所属工作流")
+                    continue
+                plan = self._read_workstream(connection, item_workstream)
                 state = code_workflow.review_state(self, item['id'], plan, item, connection)
                 if not state['completed']:
                     blockers.append(f"代码交付 {item['title']} 尚未通过当前版本验收")
@@ -6832,9 +6855,15 @@ class ProjectStore:
             (plan["workstream"], item["key"]): item
             for plan in plans for item in plan["desired_state"]
         }
-        if any(p["workstream"] == "VENV" and code_workflow.modern(p) for p in plans):
-            for key in CLAIMS["VENV"]:
-                result[("VENV", key)] = {"id": "cap.venv:" + key, "key": key, "required": True}
+        for plan in plans:
+            if not code_workflow.modern(plan):
+                continue
+            name = plan["workstream"]
+            for key in code_workflow.profile(name)["allowed_claims"]:
+                result[(name, key)] = {
+                    "id": code_workflow.profile(name)["cap_prefix"] + key,
+                    "key": key, "required": True,
+                }
         return result
 
     def _evaluate_closure(
@@ -6846,7 +6875,7 @@ class ProjectStore:
     ) -> dict[str, Any]:
         """Evaluate the same rules with definitions loaded once by this read operation."""
         name = plan["workstream"]
-        if name == "VENV" and code_workflow.modern(plan):
+        if code_workflow.modern(plan):
             return code_workflow.closure(self, plan, persist, code_reviews)
         actions: list[dict[str, Any]] = []
         vdoc_proposal_issues = (
@@ -7397,7 +7426,7 @@ class ProjectStore:
         delivery_reviews: dict[str, dict[str, Any]] = {}
         code_reviews = {
             n['id']: code_workflow.review_state(self, n['id'], p, n)
-            for p in plans if p['workstream'] == 'VENV' and code_workflow.modern(p)
+            for p in plans if code_workflow.modern(p)
             for n in p['desired_state']
         }
         closures = [
@@ -7715,7 +7744,7 @@ class ProjectStore:
                     ],
                 })
             registered_required_total = required_total
-            if plan["workstream"] == "VENV" and code_workflow.modern(plan):
+            if code_workflow.modern(plan):
                 pending_vdoc_delivery_nodes = sum(
                     n["role"] == "code-plan" and n["required"] and not any(d.get("parent_id") == n["id"] for d in desired_nodes)
                     for n in desired_nodes)

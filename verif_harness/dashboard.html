@@ -695,8 +695,8 @@
     }
     const workstreamStatusLabel = (workstream) => {
       const value = workstream.lifecycle;
-      if (workstream.workstream === 'VENV') {
-        if (!workstream.code_model) return '旧版验证环境需要 Agent 重新形成代码实现方案';
+      if (workstream.workstream === 'VENV' && !workstream.code_model) return '旧版验证环境需要 Agent 重新形成代码实现方案';
+      if (workstream.code_model) {
         if (workstream.closure?.ready) return '必需代码交付已验收通过';
         const actions = workstream.closure?.actions || [];
         if (actions.some(a => a.kind === 'APPLY_WORKFLOW_CHANGE' || a.kind === 'APPLY_REVIEW_FEEDBACK')) return '等待 Agent 按负责人意见修改';
@@ -997,7 +997,7 @@
       bind('[data-agent-question]', e => routeUrl({'agent-interaction':'1','agent-question':e.dataset.agentQuestion}));
       bind('[data-return-vdoc]', () => routeUrl({workstream:'VDOC'}));
       bindRouteLink($('#review-ws'), routeUrl({workstream:state.workstream,'review-workstream':state.workstream}));
-      if (state.workstream !== 'VENV') {
+      if (!workstream(state.workstream)?.code_model) {
         bindRouteLink($('#add-vdoc-node'), routeUrl({workstream:'VDOC','revise-vdoc-plan':'1','change-kind':'add'}));
         bindRouteLink($('#delete-vdoc-node'), routeUrl({workstream:'VDOC','revise-vdoc-plan':'1','change-kind':'remove'}));
       }
@@ -1915,16 +1915,16 @@
             : firstAction
               ? `继续处理“${actionLabel(firstAction.kind)}”。${humanText(firstAction.reason || '')}`
               : '继续按工作节点推进当前验证工作。';
-      const action = waiting.length && !['VDOC','VENV'].includes(w.workstream)
+      const action = waiting.length && w.workstream !== 'VDOC' && !w.code_model
         ? '<button class="btn primary" type="button" data-open-pending-items>打开需要你处理</button>'
         : '';
-      const statusTitle = ['VDOC','VENV'].includes(w.workstream) ? '当前项目状态' : '当前工作流状态';
+      const statusTitle = w.workstream === 'VDOC' || w.code_model ? '当前项目状态' : '当前工作流状态';
       return `<section class="card project-status-card" aria-label="${statusTitle}"><div class="project-status-label">${statusTitle}</div><div class="project-status-head"><h2>${statusPulse(workstreamMotion(w))}${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
     }
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
-      if (['VDOC','VENV'].includes(w.workstream)) {
-        const code = w.workstream === 'VENV';
+      if (w.workstream === 'VDOC' || w.code_model) {
+        const code = Boolean(w.code_model);
         const roles = code ? ['code-plan','code-deliverable'] : ['document-writing-plan','document-deliverable'];
         const nodes = w.nodes.filter(n => roles.includes(n.role));
         const rows = nodes.length
@@ -2235,7 +2235,7 @@
 
     function renderWorkstreamReview(w) {
       if (!w) { state.reviewWorkstream = null; return renderOverview(); }
-      if (w.workstream === 'VENV') return renderWorkstream(w);
+      if (w.code_model) return renderWorkstream(w);
       state.workstream = w.workstream;
       const hasPlanNodes = (w.plan_node_count || 0) > 0;
       const vdocPlan = vdocPlanReviewState(w);
@@ -2446,8 +2446,8 @@
       openModal(`<h2>${title}</h2><p>${kind === 'restart' ? '确认后创建新的方案版本，旧代码、证据和审批历史保留，新版本需要重新审批。不会重启 Dashboard 或 Agent。' : '这里只登记下一版方案的变更要求；当前节点和历史不会被直接修改或删除。'}</p><form id="code-workflow-change"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div>${kind === 'remove' ? `<div class="field"><label>工作包</label><select name="node" required>${nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.title)}</option>`).join('')}</select></div>` : ''}<div class="field"><label>${kind === 'restart' ? '重新启动原因' : '变更要求'}</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认${title}</button></div></form>`);
       $('#code-workflow-change').onsubmit = async event => {
         event.preventDefault();
-        const data = {...Object.fromEntries(new FormData(event.target)), kind, revision:w.revision, confirm:true};
-        await post('/api/code/workflow-change', data, kind === 'restart' ? 'VENV 已重新启动，等待 Agent 形成新方案' : '变更要求已保存，等待 Agent 形成下一版方案');
+        const data = {...Object.fromEntries(new FormData(event.target)), workstream:w.workstream, kind, revision:w.revision, confirm:true};
+        await post('/api/code/workflow-change', data, kind === 'restart' ? `${w.workstream} 已重新启动，等待 Agent 形成新方案` : '变更要求已保存，等待 Agent 形成下一版方案');
       };
     }
 

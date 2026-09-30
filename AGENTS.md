@@ -118,20 +118,23 @@ This repository contains public, reusable verification infrastructure.
 
 ## Current-project issue guardrails
 
-### VENV 代码方案与交付
+### VENV、VSTIM、VCHK、VCASE 代码方案与交付
 
-- VENV 按 DUT 工作包使用 `code-plan` 和 `code-deliverable` 两种公开工作节点；
+- VENV、VSTIM、VCHK、VCASE 均按 DUT 工作包使用 `code-plan` 和
+  `code-deliverable` 两种公开工作节点；
   稳定的 `implementation_key` 将同一工作包的方案、交付、产物与能力关联起来。
   代码方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件；
   不列“待确认问题”。需要负责人决定的问题由 Main Agent 通过节点关联提问处理。
 - 每个方案只批准当前版本。批准后建立对应交付节点；Agent 在交付节点中实现、
   构建、验证并分析结果，全部必需验证通过后才提交负责人验收。负责人批准是最后
   一道人工作业，批准后只重新核对版本与证据有效性，不再增加常规 Agent 验收后检查。
-- VENV 方案依赖 `cap.doc`，交付依赖同一工作包的 `art.code_plan`；跨工作包和
-  下游依赖验收后派生的 `cap.venv`。不得用旧 capability 工作节点、方案批准或工具
+- VENV 方案依赖 `cap.doc`；VSTIM 还依赖 `cap.venv`；VCHK 还依赖
+  `cap.venv` 和 `cap.vstim`；VCASE 还依赖 `cap.venv`、`cap.vstim` 和
+  `cap.vchk`，不以 VCOV 完成为自身交付条件。交付依赖同一工作包的
+  `art.code_plan`；跨工作包和下游依赖验收后派生的 `cap.<workstream>`。不得用旧 capability 工作节点、方案批准或工具
   PASS 代替代码交付可用。相关输入变化使方案、交付及能力失效；仅输出代码或验证
   证据变化时保留未变化方案。新版本不得继承旧批准或旧证据。
-- VENV 页面参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
+- 四类代码工作流页面均参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
   添加和删除仅记录下一版方案要求；重启需要再次确认，保存新旧版本和操作人、原因，
   不删除文件、证据和审批历史。详情和列表共用节点审批，批准说明选填，意见批次未
   处理完成前禁用批准。交付正文区域展示验证报告、对应代码版本和受控证据查看入口。
