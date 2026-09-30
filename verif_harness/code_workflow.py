@@ -15,7 +15,7 @@ from typing import Any
 from .vdoc_artifacts import digest, encoded
 
 ROLES = {"code-plan", "code-deliverable"}
-CODE_WORKSTREAMS = ("VENV", "VSTIM", "VCHK", "VCASE")
+CODE_WORKSTREAMS = ("VENV", "VSTIM", "VCHK", "VCASE", "VCOV", "VREG")
 PROFILES: dict[str, dict[str, Any]] = {
     "VENV": {
         "cap_prefix": "cap.venv:",
@@ -64,6 +64,38 @@ PROFILES: dict[str, dict[str, Any]] = {
         "label": "测试用例",
         "delivery_label": "测试用例代码交付验收",
         "allowed_claims": {"case-implementation", "targeted-evidence"},
+    },
+    "VCOV": {
+        "cap_prefix": "cap.vcov:",
+        "input_prefixes": (
+            "cap.doc:", "cap.venv:", "cap.vstim:", "cap.vchk:",
+            "cap.vcase:", "cap.vcov:", "cap.vreg:",
+        ),
+        "required_input_prefixes": ("cap.doc:", "cap.venv:"),
+        "objective": "实现当前 DUT 的覆盖率模型、采集链路，并用当前结果关闭覆盖缺口",
+        "label": "覆盖率",
+        "delivery_label": "覆盖率实现与证据验收",
+        "plan_term": "覆盖率实现与闭环方案",
+        "allowed_claims": {
+            "coverage-model", "coverage-collection",
+            "coverage-collection-evidence", "hole-analysis-evidence",
+        },
+    },
+    "VREG": {
+        "cap_prefix": "cap.vreg:",
+        "input_prefixes": (
+            "cap.doc:", "cap.venv:", "cap.vstim:", "cap.vchk:",
+            "cap.vcase:", "cap.vcov:", "cap.vreg:",
+        ),
+        "required_input_prefixes": ("cap.doc:", "cap.venv:"),
+        "objective": "建立当前 DUT 的回归执行基础设施，并形成可复现、已分类且版本新鲜的回归结论",
+        "label": "回归",
+        "delivery_label": "回归实现与证据验收",
+        "plan_term": "回归执行与闭环方案",
+        "allowed_claims": {
+            "regression-policy", "executor-ready", "execution-evidence",
+            "triage-evidence", "fresh-evidence",
+        },
     },
 }
 SCHEMA = """
@@ -331,6 +363,31 @@ def validate_claims(workstream, claims):
             error("VCHK 运行证据缺少同工作包实现：" + ", ".join(sorted(orphan)))
     elif workstream == "VCASE" and claims != {"case-implementation", "targeted-evidence"}:
         error("VCASE 代码交付必须同时包含测试用例实现和定向执行证据")
+    elif workstream == "VCOV":
+        implementation = {"coverage-model", "coverage-collection"}
+        closure = {"coverage-collection-evidence", "hole-analysis-evidence"}
+        if frozenset(claims) not in {frozenset(implementation), frozenset(closure)}:
+            error("VCOV 工作包必须是覆盖率模型与采集实现，或当前覆盖数据与缺口分析证据；两类工作包不能混在一起")
+    elif workstream == "VREG":
+        infrastructure = {"regression-policy", "executor-ready"}
+        closure = {"execution-evidence", "triage-evidence", "fresh-evidence"}
+        if frozenset(claims) not in {frozenset(infrastructure), frozenset(closure)}:
+            error("VREG 工作包必须是回归策略与执行器，或执行、失败分类和结果新鲜度证据；两类工作包不能混在一起")
+
+
+def required_input_prefixes(workstream, claims):
+    """Return claim-specific upstream gates without introducing completion cycles."""
+    if workstream == "VCOV":
+        if set(claims) == {"coverage-model", "coverage-collection"}:
+            return ("cap.doc:", "cap.venv:", "cap.vreg:")
+        return ("cap.doc:", "cap.venv:", "cap.vstim:", "cap.vchk:",
+                "cap.vcase:", "cap.vcov:", "cap.vreg:")
+    if workstream == "VREG":
+        if set(claims) == {"regression-policy", "executor-ready"}:
+            return ("cap.doc:", "cap.venv:")
+        return ("cap.doc:", "cap.venv:", "cap.vstim:", "cap.vchk:",
+                "cap.vcase:", "cap.vcov:", "cap.vreg:")
+    return profile(workstream)["required_input_prefixes"]
 
 
 def _sync_watched_files(store, connection):
@@ -394,12 +451,13 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             item[field] = raw[field].strip()
         for field in ("scope", "work_content", "implementation_approach", "validation_methods", "deliverables", "acceptance_criteria", "source_refs", "inputs", "output_paths", "capabilities"):
             item[field] = strings(raw, field)
+        validate_claims(workstream, item["capabilities"])
         if not all(v.startswith(settings["input_prefixes"]) for v in item["inputs"]):
             error(f"{workstream} 上游必须使用 " + "、".join(settings["input_prefixes"]) + "，不能依赖工作节点、未验收产物或下游结果")
         if not any(v.startswith("cap.doc:") for v in item["inputs"]):
             error("代码方案必须说明所依据的已验收文档 cap.doc")
         missing_inputs = [
-            prefix for prefix in settings["required_input_prefixes"]
+            prefix for prefix in required_input_prefixes(workstream, item["capabilities"])
             if not any(value.startswith(prefix) for value in item["inputs"])
         ]
         if missing_inputs:
@@ -411,7 +469,6 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             if any(store._scopes_overlap(path, old) for old in known_outputs):
                 error("工作包的输出范围不能重叠")
             known_outputs.add(path)
-        validate_claims(workstream, item["capabilities"])
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
             error("input_files 必须逐项引用实际输入文件，目录仅用于界面展示")
@@ -419,7 +476,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                     suggested_mode="plan", definition_origin="project-proposal",
                     definition_status="REVIEW_CANDIDATE", quality_checks=item["validation_methods"],
                     progress_measures=[], evidence_claim="code-validation", parent_id=None,
-                    role_description="当前 DUT 工作包的代码实现方案")
+                    role_description="当前 DUT 工作包的" + settings.get("plan_term", "代码实现方案"))
         if not isinstance(item["required"], bool):
             error("required 必须是布尔值")
         normalized.append(item)
@@ -575,6 +632,37 @@ def _validate_evidence(store, path, workstream, claim):
         error(str(exc))
 
 
+def _feedback_routes(workstream, claim, facts):
+    """Extract analysis-driven feedback; this never mutates the target workflow."""
+    routes = []
+    if workstream == "VCOV" and claim == "hole-analysis-evidence":
+        for item in facts.get("items", []):
+            if item.get("status") != "uncovered" or not item.get("responsible_workstream"):
+                continue
+            routes.append({
+                "source_workstream": workstream,
+                "source_claim": claim,
+                "finding": item.get("id"),
+                "responsible_workstream": item.get("responsible_workstream"),
+                "target_implementation_key": item.get("target_implementation_key") or "",
+                "next_action": item.get("next_action") or "",
+            })
+    if workstream == "VREG" and claim == "triage-evidence":
+        closed = {"fixed", "accepted-known-fail", "rerun-pass"}
+        for item in facts.get("failures", []):
+            if item.get("disposition") in closed or not item.get("responsible_workstream"):
+                continue
+            routes.append({
+                "source_workstream": workstream,
+                "source_claim": claim,
+                "finding": item.get("test"),
+                "responsible_workstream": item.get("responsible_workstream"),
+                "target_implementation_key": item.get("target_implementation_key") or "",
+                "next_action": item.get("next_action") or "",
+            })
+    return routes
+
+
 def validate(store, node_id, report_path):
     from .store import now, PROJECT_AGENT_ACTOR
     refresh(store)
@@ -608,7 +696,8 @@ def validate(store, node_id, report_path):
     expected_files = {v['path']: v['sha256'] for v in outputs}
     expected_files[local_path(store, path)] = hashlib.sha256(raw_report).hexdigest()
     claims = set()
-    code_sources = set()
+    delivered_artifacts = set()
+    feedback_routes = []
     facts_by_claim = {}
     for check in checks:
         criterion = check.get("criterion") if isinstance(check, dict) else None
@@ -628,7 +717,8 @@ def validate(store, node_id, report_path):
         store._apply_revision_check(result)
         result['ready'] = not result['blockers']
         facts_by_claim.setdefault(check['claim'], []).append(result['facts'])
-        code_sources.update(a['path'] for a in result['artifacts'] if a['kind'] in {'source', 'configuration'})
+        feedback_routes.extend(_feedback_routes(workstream, check['claim'], result['facts']))
+        delivered_artifacts.update(a['path'] for a in result['artifacts'])
         reasons.extend(result["blockers"])
         files.extend([local_path(store, evidence_path), *(a["path"] for a in result["artifacts"])])
         for artifact in result['artifacts']:
@@ -640,14 +730,14 @@ def validate(store, node_id, report_path):
         error("验证必须逐项覆盖批准方案的全部交付条件")
     if claims != set(node["capabilities"]):
         error("尚未提供全部约定能力的验证证据")
-    if set(node['output_paths']) - code_sources:
-        error("专用验证报告必须直接引用全部当前交付代码或配置文件，不能只在摘要中声明已检查")
+    if set(node['output_paths']) - delivered_artifacts:
+        error("专用验证报告必须直接引用全部当前交付文件，不能只在摘要中声明已检查")
     builds = facts_by_claim.get('build-ready', [])
     for smoke in facts_by_claim.get('environment-smoke-evidence', []):
         if not builds or any(smoke.get('environment_digest') != b.get('environment_digest') for b in builds):
             reasons.append("集成工作包的 smoke 必须与本次构建使用同一版本的验证环境")
     receipt = {**report, "files": file_snapshot(store, files, required=True), "ready": not reasons,
-               "blockers": reasons, "checks": checks}
+               "blockers": reasons, "checks": checks, "feedback_routes": feedback_routes}
     if {v['path']: v['sha256'] for v in receipt['files']} != expected_files:
         error("检查期间代码或证据发生变化，请重新验证")
     identifier, timestamp = "code-validation:" + uuid.uuid4().hex[:12], now()
@@ -840,7 +930,7 @@ def closure(store, plan, persist, states=None):
         actions.append({"kind": "APPLY_WORKFLOW_CHANGE", "target": change['target'],
                         "executor": "reasoning", "reason": change['reason'], "change_id": change['id']})
     if not nodes:
-        actions.append({"kind": "REFINE_DESIRED_STATE", "target": f"workstream:{workstream}", "executor": "reasoning", "reason": "请 Agent 根据已验收文档和上游能力形成当前 DUT 的代码实现方案"})
+        actions.append({"kind": "REFINE_DESIRED_STATE", "target": f"workstream:{workstream}", "executor": "reasoning", "reason": "请 Agent 根据已验收文档和上游能力形成当前 DUT 的" + profile(workstream).get("plan_term", "代码实现方案")})
     for node in nodes:
         if not node["required"]:
             continue
@@ -853,13 +943,22 @@ def closure(store, plan, persist, states=None):
         elif state["completed"]:
             continue
         elif state["can_approve"]:
-            kind, actor, reason = "HUMAN_REVIEW", "human", "等待负责人" + ("审批代码实现方案" if node["role"] == "code-plan" else "验收代码交付和验证证据")
+            kind, actor, reason = "HUMAN_REVIEW", "human", "等待负责人" + (
+                "审批" + profile(workstream).get("plan_term", "代码实现方案")
+                if node["role"] == "code-plan" else "验收" + profile(workstream)["delivery_label"]
+            )
         else:
             kind, actor, reason = "IMPLEMENT_AND_VALIDATE", "reasoning", "；".join(state["blockers"])
+            routes = (state.get("validation") or {}).get("feedback_routes", [])
+            if routes:
+                kind, actor = "ANALYZE_VERIFICATION_FEEDBACK", "reasoning"
+                targets = sorted({route["responsible_workstream"] for route in routes})
+                reason = "分析验证反馈并向责任工作流登记重规划或重验证要求：" + "、".join(targets)
             if node["role"] == "code-plan" or any("前置结果" in r for r in state["blockers"]):
                 kind, actor = "WAIT_FOR_DEPENDENCY", "deterministic"
         actions.append({"kind": kind, "target": node["id"], "executor": actor, "reason": reason,
-                        "batch_ids": feedback["batch_ids"]})
+                        "batch_ids": feedback["batch_ids"],
+                        "feedback_routes": (state.get("validation") or {}).get("feedback_routes", [])})
     for action in actions:
         action.update(priority=1 if action["executor"] == "human" else 3, suggested_mode="plan" if action["target"] == f"workstream:{workstream}" else "code")
         action["id"] = "action:" + digest(action)[:12]

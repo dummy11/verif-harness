@@ -1,8 +1,8 @@
 # V1 control plane
 
-## VENV、VSTIM、VCHK、VCASE 代码方案与交付验收
+## VENV、VSTIM、VCHK、VCASE、VCOV、VREG 方案与交付验收
 
-四类代码工作流主页面参照 VDOC：当前项目状态、工作节点列表，以及添加节点、删除节点和
+六类验证工作流主页面参照 VDOC：当前项目状态、工作节点列表，以及添加节点、删除节点和
 重新启动工作流。每个 DUT 工作包有一个代码实现方案和一个代码交付验收节点，
 不是整个工作流只有两个节点。列表使用百分比圆环，负责人批准后只收起详情，
 不会关闭浏览器标签页。产物和 CAP 不另计工作节点或进度。
@@ -27,8 +27,25 @@ Agent 使用 `plan WORKSTREAM --desired-file proposal.json` 提交代码方案�
 仿真或自动批准。完整字段与证据要求见
 [VENV](../skills/verif-harness/vplan/venv.md)、
 [VSTIM](../skills/verif-harness/vplan/vstim.md)、
-[VCHK](../skills/verif-harness/vplan/vchk.md) 和
-[VCASE](../skills/verif-harness/vplan/vcase.md) 使用说明。
+[VCHK](../skills/verif-harness/vplan/vchk.md)、
+[VCASE](../skills/verif-harness/vplan/vcase.md)、
+[VCOV](../skills/verif-harness/vplan/vcov.md) 和
+[VREG](../skills/verif-harness/vplan/vreg.md) 使用说明。
+
+VCOV 将覆盖率模型/采集实现与覆盖数据/缺口分析分成不同工作包；VREG 将策略/执行器与
+执行/失败分类/结果新鲜度分成不同工作包，避免回归执行器等待最终回归闭环的循环依赖。
+coverage hole 或未关闭 regression failure 必须登记责任工作流和下一步动作。Main Agent
+分析后向上游登记重规划或重验证要求；只有实际上游版本或证据变化才沿依赖图自动传播
+`REVALIDATION_REQUIRED`，分析结论本身不会自动修改、批准或关闭上游节点。
+
+全部必需 VDOC 正文形成当前有效的 `art.doc` 和 `cap.doc` 后，Dashboard 要求负责人选择：
+“并行形成方案”或“按依赖顺序形成方案”。选择绑定当前 VDOC revision 和 capability
+摘要并写入 ProjectStore。并行只表示 Main Agent 同时形成六类方案，不表示同时实施；
+每个交付仍按 `cap.*` 门禁解锁。按依赖顺序模式先形成 VENV，然后依次开放 VREG 执行器、
+VSTIM、VCHK、VCASE 和 VCOV；VREG 的最终闭环包仍等待 VCOV 与其他当前能力。
+CLI 使用 `workflow-launch status` 读取同一状态；负责人可把其中的 `vdoc_signature` 传给
+`workflow-launch choose parallel|dependency_order --reviewer NAME --vdoc-signature DIGEST`。
+Dashboard 和 CLI 写入后都重新读取同一 ProjectStore 决定，不维护第二份启动状态。
 
 添加和删除只登记下一版方案要求；重新启动需要填写原因并再次确认，不删除代码、
 日志、证据、审批或历史节点，也不重启 Dashboard 或 Agent。旧项目提交新代码方案
@@ -43,7 +60,7 @@ Deterministic commands persist their result before returning. The explicit
 runtime; it never grants approvals or treats a process exit as verification evidence.
 代码方案批准后，在线服务可继续对应工作包的实现与验证；验证通过后等待负责人验收。
 依赖尚未验收时不会执行该工作包；后台服务未启动时仍由当前交互 Agent 执行，审批本身
-不会启动一个新 Agent 进程。VCOV 和 VREG 仍保留测量/回归节点模型。
+不会启动一个新 Agent 进程。VCOV 和 VREG 的旧项目记录仍可读取；新方案使用上述版本化工作包模型。
 
 ## CLI 重启与自动接续
 

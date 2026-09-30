@@ -16,9 +16,9 @@ head and downstream capability without automatically reopening an unchanged plan
 Plan/input changes revoke the affected plan, delivery and capabilities. Old results
 remain auditable; no approval or Agent check is silently copied to a new version.
 
-## Code delivery for VENV, VSTIM, VCHK and VCASE
+## Versioned delivery for VENV, VSTIM, VCHK, VCASE, VCOV and VREG
 
-These four workstreams use DUT-specific `code-plan` packages with stable
+These six workstreams use DUT-specific `code-plan` packages with stable
 `implementation_key` identities. Approval produces an immutable `art.code_plan`
 and its paired `code-deliverable` WorkNode. Implementation, build, run and analysis
 are Activities of that delivery, not additional public WorkNode types.
@@ -32,6 +32,13 @@ Plans depend on accepted `cap.doc` and explicit upstream package capabilities.
 VSTIM requires VENV; VCHK requires VENV and VSTIM; VCASE requires VENV, VSTIM
 and VCHK. VCASE validity does not depend on VCOV; VCOV consumes accepted VCASE
 and stimulus/checking results when evaluating overall closure.
+VCOV separates model/collector implementation from collection/hole evidence.
+VREG separates policy/executor infrastructure from execution/triage/freshness
+evidence, so executor readiness can unblock runs without waiting for final
+regression closure. Uncovered coverage items and unresolved regression failures
+carry an explicit responsible workstream and next action. Main Agent records a
+bounded upstream replan or revalidation request; findings never mutate upstream
+plans or approvals automatically.
 Deliveries depend on their versioned plan artifact. Accepted deliveries produce
 `art.code` and package `cap.<workstream>:<implementation_key>`. Default downstream
 dependencies resolve to `cap.<workstream>:<claim>`; these conservative summary capabilities
@@ -45,6 +52,12 @@ Known legacy capability dependencies move to corresponding derived capabilities;
 unmapped dependencies stay blocked until Main Agent explicitly replans them.
 Unchanged reads reuse stat-keyed content digests, streaming large native evidence
 only after a file changes. File preview is project-, node- and digest-scoped.
+
+Once every required VDOC body has a current `art.doc`/`cap.doc`, the owner selects
+parallel plan formation or dependency-ordered plan formation for the remaining
+six workstreams. The decision is bound to the exact VDOC capability signature in
+ProjectStore. Parallel formation does not bypass capability gates: implementation
+and evidence work still wait for their explicit accepted upstream capabilities.
 
 ## Purpose
 

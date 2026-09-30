@@ -118,9 +118,9 @@ This repository contains public, reusable verification infrastructure.
 
 ## Current-project issue guardrails
 
-### VENV、VSTIM、VCHK、VCASE 代码方案与交付
+### VENV、VSTIM、VCHK、VCASE、VCOV、VREG 方案与交付
 
-- VENV、VSTIM、VCHK、VCASE 均按 DUT 工作包使用 `code-plan` 和
+- VENV、VSTIM、VCHK、VCASE、VCOV、VREG 均按 DUT 工作包使用 `code-plan` 和
   `code-deliverable` 两种公开工作节点；
   稳定的 `implementation_key` 将同一工作包的方案、交付、产物与能力关联起来。
   代码方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件；
@@ -134,10 +134,22 @@ This repository contains public, reusable verification infrastructure.
   `art.code_plan`；跨工作包和下游依赖验收后派生的 `cap.<workstream>`。不得用旧 capability 工作节点、方案批准或工具
   PASS 代替代码交付可用。相关输入变化使方案、交付及能力失效；仅输出代码或验证
   证据变化时保留未变化方案。新版本不得继承旧批准或旧证据。
-- 四类代码工作流页面均参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
+- VCOV 必须把 `coverage-model` + `coverage-collection` 实现包与
+  `coverage-collection-evidence` + `hole-analysis-evidence` 闭环包分开；后者依赖
+  当前有效的环境、激励、检查、用例、回归执行器和同工作流实现能力。VREG 必须把
+  `regression-policy` + `executor-ready` 基础设施包与 `execution-evidence` +
+  `triage-evidence` + `fresh-evidence` 闭环包分开，防止执行器等待最终回归结果的循环依赖。
+  未覆盖项和未关闭回归失败必须记录责任工作流及下一步动作；Main Agent 分析后登记
+  上游重规划/重验证要求，不得由 finding 自动修改、批准或关闭上游节点。
+- 六类验证工作流页面均参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
   添加和删除仅记录下一版方案要求；重启需要再次确认，保存新旧版本和操作人、原因，
   不删除文件、证据和审批历史。详情和列表共用节点审批，批准说明选填，意见批次未
   处理完成前禁用批准。交付正文区域展示验证报告、对应代码版本和受控证据查看入口。
+- 全部必需 VDOC 正文形成当前有效的 `art.doc` 和 `cap.doc` 后，负责人必须选择其余
+  工作流“并行形成方案”或“按依赖顺序形成方案”。选择绑定当前 VDOC revision 和
+  capability 摘要并写入 ProjectStore。并行只并行形成方案，实施仍按 `cap.*` 解锁；
+  依赖顺序为 VENV → VREG 执行器 → VSTIM → VCHK → VCASE → VCOV，VREG 最终闭环包
+  仍等待其他工作流和 VCOV 的当前能力。Dashboard 不得直接创建已完成节点或代替审批。
 
 ### 状态、证据和项目边界
 

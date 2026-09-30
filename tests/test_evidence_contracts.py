@@ -217,6 +217,32 @@ class EvidenceContractsTest(unittest.TestCase):
         self.assertFalse(summary["ready"])
         self.assertIn("负责人例外评审", summary["blockers"][0])
 
+    def test_uncovered_item_requires_an_explicit_feedback_route(self) -> None:
+        summary = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.2", "status": "uncovered", "hits": 0,
+                       "plan_ref": "coverage_plan.md"}],
+        })
+        self.assertFalse(summary["ready"])
+        self.assertTrue(any("责任工作流" in item for item in summary["blockers"]))
+        routed = self.validate("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.2", "status": "uncovered", "hits": 0,
+                       "plan_ref": "coverage_plan.md", "responsible_workstream": "VSTIM",
+                       "next_action": "补充 backpressure 激励场景"}],
+        })
+        self.assertEqual(routed["facts"]["items"][0]["responsible_workstream"], "VSTIM")
+        self.assertIn("尚未覆盖", routed["blockers"][0])
+
+    def test_unclosed_regression_failure_requires_an_explicit_feedback_route(self) -> None:
+        summary = self.validate("VREG", "triage-evidence", {
+            "failures": [{"test": "demo_test", "original_seed": 7, "rerun_seed": 7,
+                          "classification": "STIMULUS", "disposition": "replan",
+                          "rerun_verdict": "FAIL", "rerun_log_digest": DIGEST,
+                          "responsible_workstream": "VSTIM",
+                          "next_action": "修正约束并用同 seed 重跑"}],
+        })
+        self.assertFalse(summary["ready"])
+        self.assertEqual(summary["facts"]["failures"][0]["responsible_workstream"], "VSTIM")
+
 
 if __name__ == "__main__":
     unittest.main()

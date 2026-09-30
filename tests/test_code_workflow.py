@@ -322,8 +322,10 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(self.head('cap.venv:interface:main')['status'], 'VALID')
 
     def test_agent_service_uses_venv_revision_and_never_dispatches_owner_review(self):
-        from verif_harness import agent_service
+        from verif_harness import agent_service, workflow_launch
         self.assertFalse(any(t['workstream'] == 'VENV' for t in agent_service.candidates(self.store)))
+        launch = workflow_launch.status(self.store)
+        workflow_launch.choose(self.store, 'parallel', 'fixture-owner', launch['vdoc_signature'])
         self.implement()
         task = next(t for t in agent_service.candidates(self.store) if t['workstream'] == 'VENV')
         self.assertEqual(task['action']['kind'], 'IMPLEMENT_AND_VALIDATE')
@@ -412,7 +414,7 @@ class CodeWorkflowTest(unittest.TestCase):
 
 
 class CodeWorkflowProfileTest(unittest.TestCase):
-    """VSTIM/VCHK/VCASE share the VENV lifecycle without sharing semantics."""
+    """All downstream workstreams share lifecycle gates without sharing semantics."""
 
     def setUp(self):
         self.fixture = vdoc_fixture.VdocArtifactsTest()
@@ -476,6 +478,14 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                 ["case-implementation", "targeted-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"],
             ),
+            "VCOV": (
+                ["coverage-model", "coverage-collection"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
+            ),
+            "VREG": (
+                ["regression-policy", "executor-ready"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+            ),
         }
         # Each subtest uses a fresh project because modern summary capabilities
         # deliberately supersede manually seeded upstream fixtures.
@@ -516,6 +526,16 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                 "VCASE", ["case-implementation", "targeted-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence", "cap.vcov:coverage-collection-evidence"],
             )
+        with self.assertRaisesRegex(HarnessError, "两类工作包不能混在一起"):
+            self.design(
+                "VCOV", ["coverage-model", "coverage-collection", "hole-analysis-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
+            )
+        with self.assertRaisesRegex(HarnessError, "两类工作包不能混在一起"):
+            self.design(
+                "VREG", ["regression-policy", "executor-ready", "execution-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+            )
 
     def test_vcase_requires_environment_stimulus_and_checking_not_coverage(self):
         path, _ = self.proposal(
@@ -524,6 +544,19 @@ class CodeWorkflowProfileTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(HarnessError, "cap.vchk"):
             self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)
+
+    def test_coverage_and_regression_findings_route_without_mutating_upstream(self):
+        coverage = code._feedback_routes("VCOV", "hole-analysis-evidence", {
+            "items": [{"id": "C.DEMO.1", "status": "uncovered",
+                       "responsible_workstream": "VCASE", "next_action": "增加定向用例"}],
+        })
+        regression = code._feedback_routes("VREG", "triage-evidence", {
+            "failures": [{"test": "demo_test", "disposition": "replan",
+                          "responsible_workstream": "VCHK", "next_action": "修正 scoreboard"}],
+        })
+        self.assertEqual(coverage[0]["responsible_workstream"], "VCASE")
+        self.assertEqual(regression[0]["responsible_workstream"], "VCHK")
+        self.assertNotIn("VCASE", {plan["workstream"] for plan in self.store.workstreams()})
 
 
 if __name__ == "__main__":

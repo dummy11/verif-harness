@@ -390,10 +390,11 @@ def reconcile(store, plans: list[dict[str, Any]]) -> None:
             if node_id.startswith("cap.doc:") and old and old["status"] == "VALID":
                 changed_caps.append(node_id)
             label = "文档可用状态" if node_id.startswith("cap.") else "批准后的文档方案" if node_id.startswith("art.doc_plan:") else "验收后的文档正文"
+            document_key = data.get("document_key") or node_id.split(":", 1)[-1]
             connection.execute("INSERT INTO nodes VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                                "title=excluded.title,status=excluded.status,data_json=excluded.data_json,updated_at=excluded.updated_at",
                                (node_id, "capability" if node_id.startswith("cap.") else "artifact",
-                                f"{label} · {data['document_key']}", None, status, data_json, timestamp, timestamp))
+                                f"{label} · {document_key}", None, status, data_json, timestamp, timestamp))
         existing = {(r[0], r[1]) for r in connection.execute("SELECT source,target FROM edges WHERE origin='vdoc-artifact'")}
         for source, target in existing - new_edges:
             connection.execute("DELETE FROM edges WHERE source=? AND target=? AND origin='vdoc-artifact'", (source, target))

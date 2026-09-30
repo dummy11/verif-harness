@@ -29,7 +29,7 @@ CLI = Path(__file__).resolve().parents[1] / "scripts/verif_harness.py"
 KINDS = {"APPLY_REVIEW_FEEDBACK", "CHECK_DOCUMENT_REVIEW", "AUTHOR_DOCUMENT_CONTENT",
          "REFINE_DOCUMENT_DELIVERIES", "REFINE_DESIRED_STATE", "REPAIR_OR_REPLAN",
          "SATISFY_DESIRED_STATE", "RESOLVE_FINDING", "REVALIDATE"}
-KINDS.update({"IMPLEMENT_AND_VALIDATE", "APPLY_WORKFLOW_CHANGE"})
+KINDS.update({"IMPLEMENT_AND_VALIDATE", "APPLY_WORKFLOW_CHANGE", "ANALYZE_VERIFICATION_FEEDBACK"})
 OWNER = f"{socket.gethostname()}:{os.getuid()}"
 _CHILDREN: list[subprocess.Popen] = []  # Reap starts when used from a long-lived caller.
 _KIMI_PRINT: dict[str, bool] = {}
@@ -106,10 +106,18 @@ def validate_runtime(store: ProjectStore, runtime: str) -> None:
 def candidates(store: ProjectStore, *, include_attempted: bool = False) -> list[dict]:
     """Materialize only current closure actions, not a second workflow engine."""
     from .code_workflow import modern
+    from .workflow_launch import status as launch_status
     plans = store.workstreams()
-    return [task for plan in plans
-            if plan['workstream'] == 'VDOC' or modern(plan)
-            for task in _candidates_for_plan(store, plan, include_attempted)]
+    tasks = [task for plan in plans
+             if plan['workstream'] == 'VDOC' or modern(plan)
+             for task in _candidates_for_plan(store, plan, include_attempted)]
+    launch = launch_status(store, plans)
+    if launch["decision"]:
+        allowed = set(launch["allowed_workstreams"])
+        tasks = [task for task in tasks if task["workstream"] == "VDOC" or task["workstream"] in allowed]
+    elif launch["selection_required"]:
+        tasks = [task for task in tasks if task["workstream"] == "VDOC"]
+    return tasks
 
 
 def _candidates_for_plan(store, plan, include_attempted):
@@ -176,9 +184,11 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
     command = shlex.join([sys.executable, str(CLI), "--help"])
     # Keep command-line size bounded; full user content stays in the project store.
     reference = {key: task.get(key) for key in ("key", "revision", "document_version")}
-    reference["action"] = {key: task.get("action", {}).get(key) for key in ("id", "kind", "target", "review_id", "batch_ids")}
+    reference["action"] = {key: task.get("action", {}).get(key) for key in (
+        "id", "kind", "target", "review_id", "batch_ids", "feedback_routes",
+    )}
     reference["task_definition_fingerprint"] = hashlib.sha256(json_text(task.get("definition")).encode()).hexdigest()
-    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE'}:
+    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE', 'VCOV', 'VREG'}:
         workstream = task['workstream']
         cap_prefix = workstream.lower()
         return f"""你是当前项目的受管 Main Agent。本轮只处理下面一项 {workstream} 动作。
@@ -192,6 +202,8 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
 用 code status 获取当前版本，分析真实工具报告，执行 code validate 登记证据后请求负责人验收。
 不得用 PASS 字样代替原始证据，不得自己批准方案、交付、waive、freeze、提交或推送 Git。
 审批意见必须逐条保留并处理，再完成对应反馈批次；工作流变更要记录处理结论并提交新方案。
+若动作包含 feedback_routes，逐项核对根因和责任工作流：向对应工作流登记下一版变更或重验证要求；
+不得仅因覆盖缺口或回归失败就自动改写上游方案、批准节点或修改 DUT RTL。
 不修改 DUT RTL 和规格，不运行 setup 或启动其他受管 Agent；没有资源权限时提出问题，不臆造结果。
 待确认工程问题使用节点绑定的 agent-question ask ... --no-wait 后退出，不写入方案正文。
 版本或授权变化立即停止。服务保存检查点，不调用 await-human 或后台等待。
@@ -241,7 +253,7 @@ def current_revision(store: ProjectStore, workstream: str = 'VDOC') -> int | Non
 def task_is_current(store, task):
     if current_revision(store, task.get('workstream', 'VDOC')) != task['revision']:
         return False
-    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE'} and task.get('code_dependencies') is not None:
+    if task.get('workstream') in {'VENV', 'VSTIM', 'VCHK', 'VCASE', 'VCOV', 'VREG'} and task.get('code_dependencies') is not None:
         try:
             state = store.node_plan_review_state(task['action']['target'])
         except HarnessError:
@@ -281,7 +293,8 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
         if stop_requested(store):
             status, summary = "INTERRUPTED", "服务停止请求已收到；本轮未启动 CLI"
             return
-        work_labels = {'VENV': '验证环境代码', 'VSTIM': '激励代码', 'VCHK': '检查代码', 'VCASE': '测试用例代码'}
+        work_labels = {'VENV': '验证环境代码', 'VSTIM': '激励代码', 'VCHK': '检查代码',
+                       'VCASE': '测试用例代码', 'VCOV': '覆盖率实现与证据', 'VREG': '回归实现与证据'}
         work_label = work_labels.get(task.get('workstream'), '验证文档')
         heartbeat(store, "RUNNING", f"Agent 正在处理当前版本的{work_label}待办")
         with log.open("w", encoding="utf-8") as output:

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .store_operation import StoreConnection, store_operation
-from . import vdoc_artifacts
+from . import vdoc_artifacts, workflow_launch
 
 from .document_authoring import (
     AUTHORING_CONTRACT_SCHEMA,
@@ -1197,14 +1197,15 @@ CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
 
-SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA
+SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA + workflow_launch.SCHEMA
 
 # Heartbeats and runtime logs must not cause another expensive closure read.
 for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documents",
                "document_reviews", "document_items", "agent_questions", "human_actions",
                "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
                "review_feedback_items", "review_agent_checks", "node_closure_reviews",
-               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks", "code_validations"):
+               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks",
+               "code_validations", "workflow_launch_decisions"):
     for _operation in ("INSERT", "UPDATE", "DELETE"):
         SCHEMA += f"""
 CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
@@ -7373,6 +7374,7 @@ class ProjectStore:
         plans = self.workstreams()
         vdoc_artifacts.reconcile(self, plans)
         code_workflow.refresh(self, plans)
+        launch = workflow_launch.status(self, plans)
         with self.read_connect() as connection:
             counts = {row["status"]: row["total"] for row in connection.execute(
                 "SELECT status,COUNT(*) total FROM nodes GROUP BY status"
@@ -7400,6 +7402,7 @@ class ProjectStore:
                 }
             ),
             "workstreams": plans, "closures": [self.evaluate_closure(item["workstream"], persist=False) for item in plans],
+            "workflow_launch": launch,
             "node_status": counts, "open_findings": open_findings,
             "documents": {"count": len(document_rows), "status": document_status,
                           "content_changed": [row["path"] for row in document_rows if row["content_changed"]]},
@@ -7421,6 +7424,7 @@ class ProjectStore:
         }
         vdoc_artifacts.reconcile(self, plans)
         code_workflow.refresh(self, plans)
+        launch_state = workflow_launch.status(self, plans)
         model = self._dashboard_model(dashboard_node_ids)
         current_nodes = self._planned_nodes(plans)
         delivery_reviews: dict[str, dict[str, Any]] = {}
@@ -7526,6 +7530,19 @@ class ProjectStore:
 
         workstream_views: list[dict[str, Any]] = []
         waiting_for_human: list[dict[str, Any]] = []
+        if launch_state["available"] and launch_state["decision"] is None:
+            vdoc_plan = next((item for item in plans if item["workstream"] == "VDOC"), None)
+            waiting_for_human.append({
+                "id": "workflow-launch:" + str(launch_state["vdoc_signature"]),
+                "source": "workflow-launch",
+                "target": PROJECT_TARGET,
+                "target_type": "project",
+                "action": "SELECT_WORKFLOW_LAUNCH",
+                "status": "OPEN",
+                "reviewer": "待选择",
+                "reason": "验证文档已验收并可供下游使用；请选择其余验证工作流的方案形成方式",
+                "created_at": vdoc_plan["updated_at"] if vdoc_plan else now(),
+            })
         def question_waiting_item(item: dict[str, Any]) -> dict[str, Any]:
             return {
                 "id": item["id"],
@@ -8172,6 +8189,7 @@ class ProjectStore:
             },
             "project_agent": project_agent,
             "agent_collaboration": agent_collaboration,
+            "workflow_launch": launch_state,
             # Dashboard totals describe the active desired-state revisions. The full model and
             # audit histories remain available below, but stale revisions must not look active.
             "node_status": current_node_status,

@@ -557,6 +557,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/api/code/workflow-change":
             from . import code_workflow
             return code_workflow.request_change(store, body)
+        if path == "/api/workflow-launch":
+            from . import workflow_launch
+            return workflow_launch.choose(
+                store,
+                str(body.get("strategy", "")),
+                str(body.get("reviewer", "")),
+                str(body.get("vdoc_signature", "")),
+            )
         if path == "/api/reviews/node-plan-section":
             verdict = str(body.get("verdict", ""))
             if verdict not in {"approve", "reject", "modify", "clarify"}:

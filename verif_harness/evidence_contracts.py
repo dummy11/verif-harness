@@ -13,6 +13,7 @@ from .evidence_policy import ARTIFACT_KINDS, validate_artifact_policy
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ID = re.compile(r"^[A-Za-z0-9_.:-]+$")
+FEEDBACK_OWNERS = {"VDOC", "VENV", "VSTIM", "VCHK", "VCASE", "VCOV", "VREG", "DUT"}
 
 CLAIMS: dict[str, dict[str, str]] = {
     "VENV": {
@@ -594,6 +595,7 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
             raise EvidenceContractError("result.items 不能为空")
         seen: set[str] = set()
         counts = {"covered": 0, "excluded": 0, "uncovered": 0}
+        normalized_items: list[dict[str, Any]] = []
         for index, item in enumerate(items):
             prefix = f"result.items[{index}]"
             item_id = _text(item.get("id"), f"{prefix}.id")
@@ -606,15 +608,27 @@ def _vcov(path: Path, claim: str) -> dict[str, Any]:
             if status not in counts:
                 raise EvidenceContractError(f"{prefix}.status 必须是 covered/excluded/uncovered")
             hits = _integer(item.get("hits"), f"{prefix}.hits")
-            _text(item.get("plan_ref"), f"{prefix}.plan_ref")
+            plan_ref = _text(item.get("plan_ref"), f"{prefix}.plan_ref")
+            owner = str(item.get("responsible_workstream") or "").strip().upper()
+            next_action = str(item.get("next_action") or "").strip()
+            target_key = str(item.get("target_implementation_key") or "").strip()
             counts[status] += 1
             if status == "covered" and hits == 0:
                 blockers.append(f"{item_id} 声明 covered 但 hits=0")
             elif status == "uncovered":
                 blockers.append(f"{item_id} 尚未覆盖")
+                if owner not in FEEDBACK_OWNERS:
+                    blockers.append(f"{item_id} 必须明确反馈责任工作流或 DUT")
+                if not next_action:
+                    blockers.append(f"{item_id} 必须说明下一步补洞或分析动作")
             elif status == "excluded" and not _valid_waiver(item.get("waiver")):
                 blockers.append(f"{item_id} 的排除项缺少完整的负责人例外评审信息")
-        facts = {**counts, "items": len(items)}
+            normalized_items.append({
+                "id": item_id, "status": status, "hits": hits, "plan_ref": plan_ref,
+                "responsible_workstream": owner, "next_action": next_action,
+                "target_implementation_key": target_key,
+            })
+        facts = {**counts, "item_count": len(items), "items": normalized_items}
     return _finish(normalized, blockers, facts)
 
 
@@ -733,6 +747,9 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
             classification = _text(item.get("classification"), f"{prefix}.classification")
             disposition = _text(item.get("disposition"), f"{prefix}.disposition")
             rerun_verdict = _text(item.get("rerun_verdict"), f"{prefix}.rerun_verdict")
+            owner = str(item.get("responsible_workstream") or "").strip().upper()
+            next_action = str(item.get("next_action") or "").strip()
+            target_key = str(item.get("target_implementation_key") or "").strip()
             rerun_log_digest = _bound_digest(
                 normalized, item.get("rerun_log_digest"), f"{prefix}.rerun_log_digest"
             )
@@ -742,6 +759,10 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
                 blockers.append(f"{test} 尚未分类")
             if disposition not in {"fixed", "accepted-known-fail", "rerun-pass"}:
                 blockers.append(f"{test} disposition 未关闭")
+                if owner not in FEEDBACK_OWNERS:
+                    blockers.append(f"{test} 必须明确反馈责任工作流或 DUT")
+                if not next_action:
+                    blockers.append(f"{test} 必须说明下一步定位或修复动作")
             if disposition in {"fixed", "rerun-pass"} and rerun_verdict != "PASS":
                 blockers.append(f"{test} disposition={disposition} 但 same-seed rerun 未 PASS")
             if disposition == "accepted-known-fail" and rerun_verdict not in {"FAIL", "ERROR", "TIMEOUT"}:
@@ -753,6 +774,8 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
                 "classification": classification, "disposition": disposition,
                 "rerun_verdict": rerun_verdict, "rerun_log_digest": rerun_log_digest,
                 "waiver_ref": str(item.get("waiver_ref") or ""),
+                "responsible_workstream": owner, "next_action": next_action,
+                "target_implementation_key": target_key,
             })
         facts = {"failures": normalized_failures, "failure_count": len(failures)}
     else:

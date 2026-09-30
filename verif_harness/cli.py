@@ -187,6 +187,19 @@ def build_parser() -> argparse.ArgumentParser:
     project_argument(status)
     status.add_argument("workstream", nargs="?", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
 
+    launch = commands.add_parser(
+        "workflow-launch",
+        help="在 VDOC 形成当前 art.doc/cap.doc 后查看或选择其余工作流的方案形成方式",
+    )
+    launch_commands = launch.add_subparsers(dest="launch_command", required=True)
+    launch_status = launch_commands.add_parser("status", help="查看当前 VDOC gate 和启动方式")
+    project_argument(launch_status)
+    launch_choose = launch_commands.add_parser("choose", help="由负责人选择并行或按依赖顺序形成方案")
+    project_argument(launch_choose)
+    launch_choose.add_argument("strategy", choices=("parallel", "dependency_order"))
+    launch_choose.add_argument("--reviewer", required=True)
+    launch_choose.add_argument("--vdoc-signature", required=True)
+
     dashboard = commands.add_parser("dashboard", help="在固定端口注册、检查或注销项目 Dashboard")
     project_argument(dashboard)
     dashboard.add_argument("--host", help="仅允许 loopback host；默认读取运行记录或使用 127.0.0.1")
@@ -873,6 +886,14 @@ def main(arguments: list[str] | None = None) -> int:
                     emit({"plan": store.workstream(args.workstream), "closure": closure})
                 else:
                     emit(store.status())
+        elif args.command == "workflow-launch":
+            from . import workflow_launch
+            if args.launch_command == "status":
+                emit(workflow_launch.status(store))
+            else:
+                emit(workflow_launch.choose(
+                    store, args.strategy, args.reviewer, args.vdoc_signature,
+                ))
         elif args.command == "dashboard":
             if args.ensure_ready:
                 from .dashboard_startup import ensure_dashboard_ready

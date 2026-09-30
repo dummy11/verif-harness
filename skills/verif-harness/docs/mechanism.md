@@ -63,6 +63,13 @@ VDOC 默认目标逐份关联八个正式验证文档及其通用模板，包括
 VDOC 规划还会把确认的文档根和八份路由写回同一个 `AGENTS.md` managed block。
 后续 VCHK、VCOV 等工作域按影响范围修订文档，不要求首次规划时全部完成。
 
+当本轮全部必需正文都形成当前有效的 `art.doc` 和 `cap.doc` 后，控制面才开放其余
+工作流的启动方式选择。负责人可选择“并行形成方案”或“按依赖顺序形成方案”。这个选择
+绑定当前 VDOC revision 和 capability 摘要：VDOC 正文或验收版本变化后，旧选择不自动
+沿用。并行只表示 Main Agent 可以同时分析并提交六类方案，实施仍由每个 `cap.*` 依赖
+门禁控制；依赖顺序模式按 VENV → VREG 执行器 → VSTIM → VCHK → VCASE → VCOV 开放
+方案推进，VREG 的最终结果闭环仍在 VCOV 和其他运行证据之后完成。
+
 正文改变后，Agent 调用 `docs sync`；Engine 比较文件 SHA-256，并把依赖旧内容的结论标为
 需要重新验证。SQLite 保存文档状态、待处理问题和决定、评审历史及修改记录；用户通过
 `docs status` 或 `docs render` 查看，默认不写回验证文档正文。Human 审批具体正文后，
@@ -238,6 +245,21 @@ RTL 文件 → VCHK 检查目标 → VREG 回归目标
 
 Workstream 只是把同类目标放在一起，不是必须顺序通过的阶段。例如 VCOV 发现未覆盖项后，
 可能需要 VSTIM 补激励、VCASE 补用例，再由 VREG 运行获得证据。局部目标可以在任意时刻修订。
+
+闭环有两条不同的返回路径，不能混为一条“自动回跳”：
+
+1. **版本/摘要变化驱动的自动失效传播。** 已验收文档、代码、配置或证据摘要实际变化后，
+   Engine 沿 `DEPENDS_ON` 图把消费旧版本的交付与能力标为 `REVALIDATION_REQUIRED`。
+   这条路径是确定性的，但只要求重验，不替 Agent 决定怎样修改。
+2. **VCOV/VREG 发现驱动的分析反馈。** `uncovered` coverage item 或未关闭的 regression
+   failure 必须携带责任工作流和下一步动作。Main Agent 核对是环境、激励、检查、用例、
+   覆盖实现、回归基础设施还是 DUT 问题，再向对应工作流登记下一版变更或重验证要求。
+   finding 本身不会自动修改代码、创建已批准节点或推翻负责人结论。
+
+因此典型状态机是：上游交付 `VALID` → 下游采集/回归 → 发现问题 → `FEEDBACK_ANALYSIS`
+→ 对责任工作流登记 `REQUEST_CHANGE`/重验证 → 新 revision 经方案审批、实现、验证和交付验收
+→ 版本变化自动使旧下游证据失效 → VCOV/VREG 用新结果重新收敛。只有最后一轮当前证据满足
+完成条件时，相关节点才重新成为 `VALID`；某个 VCASE 通过不等于项目覆盖或回归已经闭环。
 
 重新 plan 会创建新的 desired revision，旧 desired 节点被标为 STALE，当前工作域回到
 REVIEW。新 revision 需要再次评审与证明；不能因为上一个 revision 已通过就直接宣告完成。
