@@ -439,7 +439,7 @@ class CodeWorkflowProfileTest(unittest.TestCase):
         key = workstream.lower() + ":main"
         item = {
             "key": workstream.lower() + "-main", "implementation_key": key,
-            "role": "code-plan", "title": workstream + " 主工作包",
+            "role": "code-plan", "title": workstream + " 主验证范围",
             "statement": "实现并验证当前 DUT 的 " + workstream + " 能力",
             "scope": ["当前 DUT 必需验证点"], "work_content": ["实现批准范围内的验证代码"],
             "implementation_approach": ["保持 DUT RTL 只读并使用受控验证入口"],
@@ -498,8 +498,10 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             self.seed(*inputs[1:])
             plan, item = self.design(workstream, claims, inputs)
             self.assertTrue(code.modern(plan))
-            expected_plan_role = "coverage-implementation-plan" if workstream == "VCOV" else "code-plan"
-            expected_delivery_role = "coverage-implementation-deliverable" if workstream == "VCOV" else "code-deliverable"
+            expected_plan_role = ("coverage-implementation-plan" if workstream == "VCOV" else
+                                  "regression-infrastructure-plan" if workstream == "VREG" else "code-plan")
+            expected_delivery_role = ("coverage-implementation-deliverable" if workstream == "VCOV" else
+                                      "regression-infrastructure-deliverable" if workstream == "VREG" else "code-deliverable")
             self.assertEqual([node["role"] for node in plan["desired_state"]], [expected_plan_role])
             node = plan["desired_state"][0]
             if workstream == "VCOV":
@@ -538,7 +540,7 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                 "VCOV", ["coverage-model", "coverage-collection", "hole-analysis-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
             )
-        with self.assertRaisesRegex(HarnessError, "两类工作包不能混在一起"):
+        with self.assertRaisesRegex(HarnessError, "两类节点的验证要求不能混在一起"):
             self.design(
                 "VREG", ["regression-policy", "executor-ready", "execution-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],

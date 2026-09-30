@@ -859,6 +859,12 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  实现验收派生内部 cap.vcov，收敛依赖该能力和已验收的回归执行能力；不增加公开能力节点。",
         "  覆盖项清单必须绑定批准范围和实现版本，收敛分析覆盖全部必需项；缺口反馈先分析再修订对应方案。",
         "  全部必需实现和收敛交付均验收后 VCOV 才能完成，具体合同见 vplan/vcov.md。",
+        "- VREG 公开节点为回归基础设施方案、回归基础设施交付、回归结果方案、回归结果交付。",
+        "  proposal 只包含 regression-infrastructure-plan 或 regression-results-plan；批准后建立对应交付。",
+        "  基础设施只依赖已验收文档和验证环境；验收后派生 cap.vreg:executor-ready，不等待最终结果。",
+        "  结果方案明确依赖当前基础设施能力及已验收的激励、检查、用例和覆盖率能力。",
+        "  执行失败与分类记录必须一致，例外必须经过负责人批准，必需证据范围由 Engine 检查。",
+        "  全部必需基础设施和结果交付均验收后 VREG 才能完成；不增加工作包或公开能力节点。",
         "- capability 写入验证资产前，必须读取本文件，执行 `docs sync`，查询当前",
         "  `status`/`closure`，并读取下列与当前动作相关且已经评审的合同；VDOC 仅在",
         "  文档撰写方案已进入 `ACTIVE` 后执行 `docs sync`。",
@@ -2191,7 +2197,7 @@ class ProjectStore:
         name = self.normalize_workstream(workstream)
         if code_workflow.supported(name):
             current = next((p for p in self.workstreams() if p['workstream'] == name), None)
-            code_candidate = name in {"VENV", "VCOV"} or bool(current and code_workflow.modern(current))
+            code_candidate = name in {"VENV", "VCOV", "VREG"} or bool(current and code_workflow.modern(current))
             if not code_candidate and desired_file:
                 try:
                     proposal = json.loads(resolved_path(self.root, desired_file).read_text(encoding="utf-8"))
@@ -2207,7 +2213,8 @@ class ProjectStore:
                                                document_root, evidence_claims, desired_file)
             if desired or evidence_claims or document_root or exit_criteria:
                 raise HarnessError("VCOV 请使用包含覆盖率实现方案或收敛方案及交付条件的 --desired-file"
-                                   if name == "VCOV" else f"{name} 请使用包含 code-plan 和交付条件的 --desired-file")
+                                   if name == "VCOV" else "VREG 请使用包含回归基础设施方案或结果方案及交付条件的 --desired-file"
+                                   if name == "VREG" else f"{name} 请使用包含 code-plan 和交付条件的 --desired-file")
             if not desired_file:
                 current = next((p for p in self.workstreams() if p['workstream'] == name), None)
                 if current and code_workflow.modern(current):
@@ -6113,7 +6120,7 @@ class ProjectStore:
             source = connection.execute("SELECT workstream,data_json FROM nodes WHERE id=?", (prerequisite,)).fetchone()
             source_plan = self._read_workstream(connection, source[0]) if source[0] and code_workflow.supported(source[0]) else None
             if prerequisite.startswith(("art.code_plan:", "art.code:")) or (source_plan and code_workflow.modern(source_plan)):
-                raise HarnessError("代码工作包之间及下游必须依赖对应的 cap.venv/cap.vstim/cap.vchk/cap.vcase，不能依赖方案或交付工作节点")
+                raise HarnessError("验证节点之间及下游必须依赖对应的 cap.venv/cap.vstim/cap.vchk/cap.vcase/cap.vcov/cap.vreg，不能依赖方案或交付工作节点")
             subject_workstream = code_workflow.node_workstream(subject)
             if subject_workstream and code_workflow.modern(self._read_workstream(connection, subject_workstream)):
                 raise HarnessError("代码方案的输入依赖属于批准内容；请通过新方案 revision 修改 inputs")
@@ -6481,6 +6488,14 @@ class ProjectStore:
             blockers.append("fresh-evidence snapshot_revision 必须等于报告 revision")
         derived: list[dict[str, str]] = []
         for item in sorted(current.values(), key=lambda value: value["id"]):
+            # Result deliveries prove their execution/triage in this receipt and
+            # are accepted separately. Requiring their prior acceptance here
+            # would make one delivery wait for itself, or multiple deliveries
+            # wait for each other. Whole VREG closure checks all required results.
+            if (item["id"] == subject or
+                    (code_workflow.node_workstream(item["id"]) == "VREG"
+                     and code_workflow.is_delivery(item) and code_workflow.vreg_stage(item) == "results")):
+                continue
             if code_workflow.is_delivery(item) and item.get('required', True):
                 item_workstream = code_workflow.node_workstream(item['id'])
                 if item_workstream is None:
@@ -7775,7 +7790,8 @@ class ProjectStore:
                     code_workflow.is_plan(n) and n["required"] and not any(
                         code_workflow.is_delivery(d) and d.get("parent_id") == n["id"] and d["required"]
                         and d.get("implementation_key") == n.get("implementation_key")
-                        and (plan["workstream"] != "VCOV" or code_workflow.vcov_stage(d) == code_workflow.vcov_stage(n))
+                        and (plan["workstream"] not in {"VCOV", "VREG"}
+                             or code_workflow.stage(d, plan["workstream"]) == code_workflow.stage(n, plan["workstream"]))
                         for d in desired_nodes)
                     for n in desired_nodes)
                 required_total += pending_vdoc_delivery_nodes

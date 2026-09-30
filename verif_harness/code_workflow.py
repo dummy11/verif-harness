@@ -16,17 +16,28 @@ from .vdoc_artifacts import digest, encoded
 
 VCOV_PLAN_ROLES = {"coverage-implementation-plan", "coverage-convergence-plan"}
 VCOV_DELIVERY_ROLES = {"coverage-implementation-deliverable", "coverage-convergence-deliverable"}
-PLAN_ROLES = {"code-plan", *VCOV_PLAN_ROLES}
-DELIVERY_ROLES = {"code-deliverable", *VCOV_DELIVERY_ROLES}
+VREG_PLAN_ROLES = {"regression-infrastructure-plan", "regression-results-plan"}
+VREG_DELIVERY_ROLES = {"regression-infrastructure-deliverable", "regression-results-deliverable"}
+PLAN_ROLES = {"code-plan", *VCOV_PLAN_ROLES, *VREG_PLAN_ROLES}
+DELIVERY_ROLES = {"code-deliverable", *VCOV_DELIVERY_ROLES, *VREG_DELIVERY_ROLES}
 ROLES = PLAN_ROLES | DELIVERY_ROLES
 VCOV_IMPLEMENTATION_CLAIMS = {"coverage-model", "coverage-collection"}
 VCOV_CONVERGENCE_CLAIMS = {"coverage-collection-evidence", "hole-analysis-evidence"}
 VCOV_VALIDATION_CONTRACT = "CoverageConvergence/2"
+VREG_INFRASTRUCTURE_CLAIMS = {"regression-policy", "executor-ready"}
+VREG_RESULTS_CLAIMS = {"execution-evidence", "triage-evidence", "fresh-evidence"}
+VREG_VALIDATION_CONTRACT = "RegressionResults/2"
 VCOV_ROLE_LABELS = {
     "coverage-implementation-plan": "覆盖率实现方案",
     "coverage-implementation-deliverable": "覆盖率实现交付",
     "coverage-convergence-plan": "覆盖率收敛方案",
     "coverage-convergence-deliverable": "覆盖率收敛交付",
+}
+VREG_ROLE_LABELS = {
+    "regression-infrastructure-plan": "回归基础设施方案",
+    "regression-infrastructure-deliverable": "回归基础设施交付",
+    "regression-results-plan": "回归结果方案",
+    "regression-results-deliverable": "回归结果交付",
 }
 CODE_WORKSTREAMS = ("VENV", "VSTIM", "VCHK", "VCASE", "VCOV", "VREG")
 PROFILES: dict[str, dict[str, Any]] = {
@@ -104,7 +115,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "objective": "建立当前 DUT 的回归执行基础设施，并形成可复现、已分类且版本新鲜的回归结论",
         "label": "回归",
         "delivery_label": "回归实现与证据验收",
-        "plan_term": "回归执行与闭环方案",
+        "plan_term": "回归基础设施与结果方案",
         "allowed_claims": {
             "regression-policy", "executor-ready", "execution-evidence",
             "triage-evidence", "fresh-evidence",
@@ -172,9 +183,36 @@ def vcov_role(node):
     return node.get("role")
 
 
+def vreg_stage(node):
+    role = node.get("role", "")
+    if role.startswith("regression-infrastructure-"):
+        return "infrastructure"
+    if role.startswith("regression-results-"):
+        return "results"
+    claims = set(node.get("capabilities", []))
+    if claims == VREG_INFRASTRUCTURE_CLAIMS:
+        return "infrastructure"
+    if claims == VREG_RESULTS_CLAIMS:
+        return "results"
+    return None
+
+
+def vreg_role(node):
+    stage = vreg_stage(node)
+    if stage:
+        return f"regression-{stage}-" + ("plan" if is_plan(node) else "deliverable")
+    return node.get("role")
+
+
+def stage(node, workstream):
+    return vcov_stage(node) if workstream == "VCOV" else vreg_stage(node) if workstream == "VREG" else None
+
+
 def node_label(node, workstream):
     if workstream == "VCOV":
         return VCOV_ROLE_LABELS.get(vcov_role(node), "覆盖率工作节点")
+    if workstream == "VREG":
+        return VREG_ROLE_LABELS.get(vreg_role(node), "回归工作节点")
     return profile(workstream).get("plan_term", "代码实现方案") if is_plan(node) else profile(workstream)["delivery_label"]
 
 
@@ -332,6 +370,19 @@ def validation_current(store, connection, plan, node, signature):
                         and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
     if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
         value["current"] = False
+    if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
+        if value.get("regression_contract") != VREG_VALIDATION_CONTRACT:
+            value["current"] = False
+        elif value["current"]:
+            current = store._current_desired_nodes(connection)
+            for check in value.get("checks", []):
+                if check.get("claim") != "fresh-evidence":
+                    continue
+                evidence = check.get("validation", {})
+                refreshed = {**evidence, "facts": dict(evidence.get("facts", {}))}
+                reasons = store._derive_fresh_evidence(connection, node["id"], refreshed, current)
+                if reasons or refreshed["facts"].get("required_nodes") != evidence.get("facts", {}).get("required_nodes"):
+                    value["current"] = False
     return value
 
 
@@ -366,6 +417,27 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
         reasons.append("方案输入文件缺失")
     if is_delivery(node) and not (validation and validation["current"] and validation["ready"]):
         reasons.append("Agent 尚未完成当前代码版本的验证，或验证证据已经变化")
+    if workstream == "VREG":
+        if is_delivery(node):
+            parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
+            if (parent is None or not is_plan(parent) or vreg_stage(parent) != vreg_stage(node)
+                    or parent.get("implementation_key") != node.get("implementation_key")
+                    or parent.get("required") != node.get("required")):
+                reasons.append("回归交付与当前对应方案不一致，请重新形成方案")
+        expected_claims = VREG_INFRASTRUCTURE_CLAIMS if vreg_stage(node) == "infrastructure" else VREG_RESULTS_CLAIMS
+        if (vreg_stage(node) is None or set(node.get("capabilities", [])) != expected_claims
+                or node.get("role") not in {"code-plan", "code-deliverable", *VREG_PLAN_ROLES, *VREG_DELIVERY_ROLES}):
+            reasons.append("回归节点类型与验证要求不一致，请重新形成方案")
+        inputs = node.get("inputs", [])
+        if vreg_stage(node) == "infrastructure" and any(
+                not value.startswith(("cap.doc:", "cap.venv:")) for value in inputs):
+            reasons.append("回归基础设施只能依赖已验收文档和验证环境，不能等待最终回归结果，请重新形成方案")
+        if vreg_stage(node) == "results":
+            infrastructure = {ids(n["implementation_key"], "VREG")[2]
+                              for n in plan["desired_state"] if is_plan(n) and vreg_stage(n) == "infrastructure"}
+            own_inputs = {value for value in inputs if value.startswith("cap.vreg:")}
+            if not own_inputs or not own_inputs <= infrastructure:
+                reasons.append("回归结果方案必须明确关联当前回归基础设施能力，不能依赖结果能力，请重新形成方案")
     if workstream == "VCOV":
         if is_delivery(node):
             parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
@@ -448,10 +520,8 @@ def validate_claims(workstream, claims):
         if frozenset(claims) not in {frozenset(VCOV_IMPLEMENTATION_CLAIMS), frozenset(VCOV_CONVERGENCE_CLAIMS)}:
             error("VCOV 节点必须是覆盖率实现或覆盖率收敛；两类节点的验证要求不能混在一起")
     elif workstream == "VREG":
-        infrastructure = {"regression-policy", "executor-ready"}
-        closure = {"execution-evidence", "triage-evidence", "fresh-evidence"}
-        if frozenset(claims) not in {frozenset(infrastructure), frozenset(closure)}:
-            error("VREG 工作包必须是回归策略与执行器，或执行、失败分类和结果新鲜度证据；两类工作包不能混在一起")
+        if frozenset(claims) not in {frozenset(VREG_INFRASTRUCTURE_CLAIMS), frozenset(VREG_RESULTS_CLAIMS)}:
+            error("VREG 节点必须是回归基础设施或回归结果；两类节点的验证要求不能混在一起")
 
 
 def required_input_prefixes(workstream, claims):
@@ -488,6 +558,28 @@ def vcov_structure_blockers(plan):
         consumed.update(inputs)
     for identifier in implementations.keys() - consumed:
         reasons.append(implementations[identifier]["title"] + " 尚未纳入必需覆盖率收敛范围")
+    return reasons
+
+
+def vreg_structure_blockers(plan):
+    """Executor acceptance unlocks downstream work, not whole regression completion."""
+    required = [n for n in plan["desired_state"] if is_plan(n) and n.get("required", True)]
+    infrastructure = {ids(n["implementation_key"], "VREG")[2]: n for n in required
+                      if vreg_stage(n) == "infrastructure"}
+    results = [n for n in required if vreg_stage(n) == "results"]
+    reasons = []
+    if not infrastructure:
+        reasons.append("尚未登记必需的回归基础设施方案")
+    if not results:
+        reasons.append("尚未登记必需的回归结果方案，执行器验收后仍需执行回归、处理失败并检查版本新鲜度")
+    consumed = set()
+    for node in results:
+        inputs = set(node.get("inputs", [])) & infrastructure.keys()
+        if not inputs:
+            reasons.append(node["title"] + " 尚未关联必需回归基础设施能力")
+        consumed.update(inputs)
+    for identifier in infrastructure.keys() - consumed:
+        reasons.append(infrastructure[identifier]["title"] + " 尚未纳入必需回归结果范围")
     return reasons
 
 
@@ -561,18 +653,20 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             error(f"代码方案必须使用 {workstream} 的 DesiredStateProposal/1")
         nodes = proposal.get("nodes")
         if not isinstance(nodes, list) or not nodes:
-            error("覆盖率方案必须包含工作节点" if workstream == "VCOV" else "代码实现方案必须包含工作包")
+            error("方案必须包含工作节点" if workstream in {"VCOV", "VREG"} else "代码实现方案必须包含工作包")
     normalized = []
     known_keys = set()
     known_outputs = set()
     for raw in nodes:
-        allowed_roles = {"code-plan", *VCOV_PLAN_ROLES} if workstream == "VCOV" else {"code-plan"}
+        allowed_roles = ({"code-plan", *VCOV_PLAN_ROLES} if workstream == "VCOV" else
+                         {"code-plan", *VREG_PLAN_ROLES} if workstream == "VREG" else {"code-plan"})
         if not isinstance(raw, dict) or raw.get("role") not in allowed_roles:
             error("VCOV 方案只能包含覆盖率实现方案或覆盖率收敛方案；批准后建立对应交付节点"
-                  if workstream == "VCOV" else f"{workstream} 方案只包含 code-plan；批准后由系统建立对应 code-deliverable")
+                  if workstream == "VCOV" else "VREG 方案只能包含回归基础设施方案或回归结果方案；批准后建立对应交付节点"
+                  if workstream == "VREG" else f"{workstream} 方案只包含 code-plan；批准后由系统建立对应 code-deliverable")
         key = raw.get("implementation_key", "")
         if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._:-]*", key) or key in known_keys:
-            error("implementation_key 必须是唯一、稳定的方案与交付关联标识" if workstream == "VCOV"
+            error("implementation_key 必须是唯一、稳定的方案与交付关联标识" if workstream in {"VCOV", "VREG"}
                   else "implementation_key 必须是唯一、稳定的工作包标识")
         known_keys.add(key)
         item = {"implementation_key": key, "key": raw.get("key") or key.replace(":", "-"), "role": raw["role"]}
@@ -597,6 +691,15 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                     error("覆盖率实现方案必须列出非空、唯一且有效的 coverage_item_ids，供负责人批准覆盖范围")
             elif "coverage_item_ids" in raw:
                 error("覆盖率收敛范围由明确关联的实现能力继承，不另行登记 coverage_item_ids")
+        if workstream == "VREG":
+            inferred = "infrastructure" if set(item["capabilities"]) == VREG_INFRASTRUCTURE_CLAIMS else "results"
+            canonical = f"regression-{inferred}-plan"
+            if item["role"] != "code-plan" and item["role"] != canonical:
+                error("回归节点类型与验证要求不一致")
+            item["role"] = canonical
+            if inferred == "infrastructure" and any(
+                    not value.startswith(("cap.doc:", "cap.venv:")) for value in item["inputs"]):
+                error("回归基础设施只能依赖已验收文档和验证环境，不能依赖激励、检查、用例、覆盖率或最终回归结果")
         if not all(v.startswith(settings["input_prefixes"]) for v in item["inputs"]):
             error(f"{workstream} 上游必须使用 " + "、".join(settings["input_prefixes"]) + "，不能依赖工作节点、未验收产物或下游结果")
         if not any(v.startswith("cap.doc:") for v in item["inputs"]):
@@ -610,11 +713,11 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         if workstream == "VCOV" and "cap.vreg:executor-ready" not in item["inputs"]:
             error("覆盖率方案必须依赖已验收的回归执行能力 cap.vreg:executor-ready")
         if ids(key, workstream)[2] in item["inputs"]:
-            error("覆盖率方案不能依赖自己的交付能力" if workstream == "VCOV" else "工作包不能依赖自己的交付能力")
+            error("方案不能依赖自己的交付能力" if workstream in {"VCOV", "VREG"} else "工作包不能依赖自己的交付能力")
         item["output_paths"] = store._normalized_write_scopes(item["output_paths"])
         for path in item["output_paths"]:
             if any(store._scopes_overlap(path, old) for old in known_outputs):
-                error("覆盖率节点的输出范围不能重叠" if workstream == "VCOV" else "工作包的输出范围不能重叠")
+                error("工作节点的输出范围不能重叠" if workstream in {"VCOV", "VREG"} else "工作包的输出范围不能重叠")
             known_outputs.add(path)
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
@@ -623,7 +726,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                     suggested_mode="plan", definition_origin="project-proposal",
                     definition_status="REVIEW_CANDIDATE", quality_checks=item["validation_methods"],
                     progress_measures=[], evidence_claim="code-validation", parent_id=None,
-                    role_description=("当前 DUT 的" + node_label(item, workstream) if workstream == "VCOV"
+                    role_description=("当前 DUT 的" + node_label(item, workstream) if workstream in {"VCOV", "VREG"}
                                       else "当前 DUT 工作包的" + settings.get("plan_term", "代码实现方案")))
         if not isinstance(item["required"], bool):
             error("required 必须是布尔值")
@@ -633,14 +736,17 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
     by_cap = {ids(n["implementation_key"], workstream)[2]: n for n in normalized}
     def visit(cap, parents):
         if cap in parents:
-            error("覆盖率节点存在循环依赖" if workstream == "VCOV" else "代码工作包存在循环依赖")
+            error("工作节点存在循环依赖" if workstream in {"VCOV", "VREG"} else "代码工作包存在循环依赖")
         for target in by_cap.get(cap, {}).get("inputs", []):
             if target.startswith(settings["cap_prefix"]):
                 if target not in by_cap:
                     error(("当前方案没有提供前置覆盖率实现节点：" if workstream == "VCOV"
+                           else "当前方案没有提供前置回归基础设施节点：" if workstream == "VREG"
                            else "当前方案没有提供前置工作包：") + target)
                 if workstream == "VCOV" and vcov_stage(by_cap[target]) != "implementation":
                     error("覆盖率收敛方案必须依赖覆盖率实现能力，不能依赖收敛结果")
+                if workstream == "VREG" and vreg_stage(by_cap[target]) != "infrastructure":
+                    error("回归结果方案必须依赖回归基础设施能力，不能依赖结果能力")
                 visit(target, parents | {cap})
     for cap in by_cap:
         visit(cap, set())
@@ -685,6 +791,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         db.execute("INSERT INTO workstreams VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET lifecycle=excluded.lifecycle,revision=excluded.revision,objective=excluded.objective,desired_json=excluded.desired_json,exit_json=excluded.exit_json,decisions_json=excluded.decisions_json,context_json=excluded.context_json,updated_at=excluded.updated_at",
                    (workstream, "REVIEW", revision, objective or settings["objective"], encoded(normalized),
                     encoded(["当前必需覆盖率实现与收敛节点均已验证并由负责人验收" if workstream == "VCOV"
+                             else "当前必需回归基础设施与结果节点均已验证并由负责人验收" if workstream == "VREG"
                              else "必需工作包的代码交付均通过专用验证并由负责人验收"]),
                     encoded(decisions or []), encoded(context), timestamp))
         # Default downstream edges must never fall back to old WorkNodes.
@@ -704,11 +811,12 @@ def create_delivery(store, db, plan, node, timestamp):
     if any(n.get("parent_id") == node["id"] for n in plan["desired_state"]):
         return
     workstream = plan["workstream"]
-    role = vcov_role(node).replace("-plan", "-deliverable") if workstream == "VCOV" else "code-deliverable"
+    role = (vcov_role(node).replace("-plan", "-deliverable") if workstream == "VCOV" else
+            vreg_role(node).replace("-plan", "-deliverable") if workstream == "VREG" else "code-deliverable")
     value = {**node, "id": node["id"] + ":delivery", "key": node["key"] + "-delivery",
              "role": role, "title": node["title"] + " · " + node_label({**node, "role": role}, workstream),
              "parent_id": node["id"], "parent_key": node["key"], "suggested_mode": "implement",
-             "role_description": "Agent 先完成实现与验证，再由负责人验收当前代码和证据"}
+             "role_description": "Agent 先完成实现与验证，再由负责人验收当前交付文件和证据"}
     plan["desired_state"].append(value)
     store.upsert_node(db, value["id"], "desired-state", value["title"], Validity.UNKNOWN, workstream, value)
     edge(db, value["id"], node["id"], timestamp, "CHILD_OF")
@@ -816,6 +924,38 @@ def _feedback_routes(workstream, claim, facts):
                 "next_action": item.get("next_action") or "",
             })
     return routes
+
+
+def _vreg_result_blockers(store, connection, plan, node, checks):
+    """Bind execution, failure disposition and Engine-derived current scope."""
+    reasons = []
+    facts = {}
+    for check in checks:
+        claim = check["claim"]
+        value = check["validation"]["facts"]
+        facts.setdefault(claim, {})[digest(value)] = value
+    executed = [(item["test"], item["seed"])
+                for value in facts.get("execution-evidence", {}).values() for item in value.get("failed_runs", [])]
+    failures = [item for value in facts.get("triage-evidence", {}).values() for item in value.get("failures", [])]
+    triaged = [(item["test"], item["original_seed"]) for item in failures]
+    if len(executed) != len(set(executed)) or len(triaged) != len(set(triaged)):
+        reasons.append("回归执行或失败分类包含重复的 test/seed 记录")
+    missing, extra = set(executed) - set(triaged), set(triaged) - set(executed)
+    if missing:
+        reasons.append("回归执行失败尚未分类处理：" + "、".join(f"{test}/{seed}" for test, seed in sorted(missing)))
+    if extra:
+        reasons.append("失败分类包含当前回归执行不存在的失败：" + "、".join(f"{test}/{seed}" for test, seed in sorted(extra)))
+    for item in failures:
+        if item.get("disposition") != "accepted-known-fail":
+            continue
+        record = connection.execute("SELECT * FROM reviews WHERE id=? AND verdict='WAIVE'", (item.get("waiver_ref"),)).fetchone()
+        if record is None or record["workstream"] != "VREG" or record["revision"] != plan["revision"]:
+            reasons.append(item["test"] + " 的已知失败没有当前 VREG 版本的负责人例外批准记录")
+    current = store._current_desired_nodes(connection)
+    for check in checks:
+        if check["claim"] == "fresh-evidence":
+            reasons.extend(store._derive_fresh_evidence(connection, node["id"], check["validation"], current))
+    return reasons
 
 
 def validate(store, node_id, report_path):
@@ -937,10 +1077,15 @@ def validate(store, node_id, report_path):
                             or not re.search(r"(?<![A-Za-z0-9_.:-])" + re.escape(item["id"])
                                              + r"(?![A-Za-z0-9_.:-])", record["reason"])):
                         reasons.append(item["id"] + " 的排除项没有当前版本的负责人例外批准记录")
+    if workstream == "VREG" and vreg_stage(node) == "results":
+        with store.read_connect() as db:
+            reasons.extend(_vreg_result_blockers(store, db, plan, node, checks))
     receipt = {**report, "files": file_snapshot(store, files, required=True), "ready": not reasons,
                "blockers": reasons, "checks": checks, "feedback_routes": feedback_routes}
     if workstream == "VCOV":
         receipt["coverage_contract"] = VCOV_VALIDATION_CONTRACT
+    if workstream == "VREG" and vreg_stage(node) == "results":
+        receipt["regression_contract"] = VREG_VALIDATION_CONTRACT
     if {v['path']: v['sha256'] for v in receipt['files']} != expected_files:
         error("检查期间代码或证据发生变化，请重新验证")
     identifier, timestamp = "code-validation:" + uuid.uuid4().hex[:12], now()
@@ -949,6 +1094,12 @@ def validate(store, node_id, report_path):
         latest_plan, latest_node = selected(store, node_id, db)
         if identity(store, db, latest_plan, latest_node)[0] != signature or receipt["files"] != file_snapshot(store, files, required=True):
             error("登记期间代码或输入已变化，请重新验证")
+        if workstream == "VREG" and vreg_stage(node) == "results":
+            previous_scope = [check["validation"]["facts"].get("required_nodes") for check in checks if check["claim"] == "fresh-evidence"]
+            latest_reasons = _vreg_result_blockers(store, db, latest_plan, latest_node, checks)
+            latest_scope = [check["validation"]["facts"].get("required_nodes") for check in checks if check["claim"] == "fresh-evidence"]
+            if previous_scope != latest_scope or any(reason not in reasons for reason in latest_reasons):
+                error("登记期间必需回归证据或负责人例外批准发生变化，请重新验证")
         db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (identifier, node_id, plan["revision"], signature, encoded(receipt), timestamp))
         _sync_watched_files(store, db)
     refresh(store)
@@ -1134,16 +1285,16 @@ def closure(store, plan, persist, states=None):
                         "executor": "reasoning", "reason": change['reason'], "change_id": change['id']})
     if not nodes:
         actions.append({"kind": "REFINE_DESIRED_STATE", "target": f"workstream:{workstream}", "executor": "reasoning", "reason": "请 Agent 根据已验收文档和上游能力形成当前 DUT 的" + profile(workstream).get("plan_term", "代码实现方案")})
-    elif workstream == "VCOV":
-        structure = vcov_structure_blockers(plan)
+    elif workstream in {"VCOV", "VREG"}:
+        structure = vcov_structure_blockers(plan) if workstream == "VCOV" else vreg_structure_blockers(plan)
         for node in nodes:
             if is_plan(node) and node["required"] and states[node["id"]]["completed"] and not any(
                     is_delivery(child) and child.get("parent_id") == node["id"] and child["required"]
-                    and vcov_stage(child) == vcov_stage(node)
+                    and stage(child, workstream) == stage(node, workstream)
                     and child.get("implementation_key") == node.get("implementation_key") for child in nodes):
                 structure.append(node["title"] + " 缺少对应的必需交付节点")
         if structure:
-            actions.append({"kind": "REFINE_DESIRED_STATE", "target": "workstream:VCOV",
+            actions.append({"kind": "REFINE_DESIRED_STATE", "target": f"workstream:{workstream}",
                             "executor": "reasoning", "reason": "；".join(structure)})
     for node in nodes:
         if not node["required"]:
@@ -1168,7 +1319,7 @@ def closure(store, plan, persist, states=None):
                 kind, actor = "ANALYZE_VERIFICATION_FEEDBACK", "reasoning"
                 targets = sorted({route["responsible_workstream"] for route in routes})
                 reason = "分析验证反馈并向责任工作流登记重规划或重验证要求：" + "、".join(targets)
-            if workstream == "VCOV" and is_plan(node) and any("请重新形成方案" in r for r in state["blockers"]):
+            if workstream in {"VCOV", "VREG"} and is_plan(node) and any("请重新形成方案" in r for r in state["blockers"]):
                 kind, actor = "REFINE_DESIRED_STATE", "reasoning"
             elif is_plan(node) or any("前置结果" in r for r in state["blockers"]):
                 kind, actor = "WAIT_FOR_DEPENDENCY", "deterministic"
@@ -1232,7 +1383,8 @@ def request_change(store, body):
         target = str(body.get("node", ""))
         _, node = selected(store, target)
         if not is_plan(node):
-            error("删除要求应选择一个覆盖率方案节点" if workstream == "VCOV" else "删除要求应选择一个代码工作包")
+            error("删除要求应选择一个覆盖率方案节点" if workstream == "VCOV" else
+                  "删除要求应选择一个回归方案节点" if workstream == "VREG" else "删除要求应选择一个代码工作包")
     identifier, timestamp = 'human:' + uuid.uuid4().hex[:12], now()
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')

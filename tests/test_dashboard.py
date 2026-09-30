@@ -850,7 +850,12 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("覆盖率实现方案", html)
         self.assertIn("覆盖率实现交付", html)
         self.assertNotIn("覆盖工作方案", html)
-        self.assertIn("回归工作方案", html)
+        self.assertIn("回归基础设施方案", html)
+        self.assertIn("回归基础设施交付", html)
+        self.assertIn("回归结果方案", html)
+        self.assertIn("回归结果交付", html)
+        self.assertNotIn("回归工作方案", html)
+        self.assertNotIn("回归交付及证据", html)
         self.assertIn("代码交付及验证证据", html)
         self.assertIn("function isCodePlanNode(n)", html)
         self.assertIn("coverage-implementation-plan", html)
@@ -2343,7 +2348,7 @@ class DashboardTest(unittest.TestCase):
 
 class DashboardCoverageNodeTypesTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Dashboard renderer checks require Node.js")
-    def test_coverage_types_share_review_flow_and_preserve_legacy_records(self) -> None:
+    def test_coverage_and_regression_types_share_review_flow_and_preserve_legacy_records(self) -> None:
         result = subprocess.run(
             ["node", "-", str(ROOT / "verif_harness/dashboard.html")],
             input=r"""
@@ -2445,6 +2450,78 @@ vm.runInContext(`
   assert.ok(change.includes('value="coverage-node-0"'));
   assert.ok(change.includes('value="coverage-node-2"'));
   assert.doesNotMatch(change, /value="coverage-node-1"|value="coverage-node-3"|工作包/);
+
+  const regressionTypes = [
+    ['regression-infrastructure-plan','回归基础设施方案',true],
+    ['regression-infrastructure-deliverable','回归基础设施交付',false],
+    ['regression-results-plan','回归结果方案',true],
+    ['regression-results-deliverable','回归结果交付',false],
+  ];
+  const regressionNodes = regressionTypes.map(([role,title,plan], index) => ({
+    ...nodes[index], id:'regression-node-' + index, role, title, workstream:'VREG',
+    statement:'FIFO 满空边界回归', coverage_item_ids:[],
+    capabilities:index < 2 ? ['regression-policy','executor-ready']
+      : ['execution-evidence','triage-evidence','fresh-evidence'],
+    plan_review:{completed:false,can_approve:true,status:'PENDING',definition_digest:'current-regression-' + index},
+  }));
+  const regression = {...w,workstream:'VREG',revision:2,objective:'核对 FIFO 当前回归结果',nodes:regressionNodes};
+  state.snapshot.workstreams.push(regression);
+  for (let index = 0; index < regressionNodes.length; index++) {
+    const node = regressionNodes[index], [role,title,plan] = regressionTypes[index];
+    assert.equal(isCodeNode(node), true);
+    assert.equal(isCodePlanNode(node), plan);
+    assert.equal(nodeRoleLabel(node), title);
+    assert.equal(nodeAttentionText(node), (plan ? '等待负责人审批' : '等待负责人验收') + title);
+    const rendered = codeNodeHtml(node);
+    assert.ok(rendered.includes('<h3>' + title + '</h3>'));
+    assert.ok(rendered.includes('审批' + title));
+    assert.match(rendered, /id="node-plan-complete"/);
+    assert.equal(rendered.includes('<h4>目标</h4>'), plan);
+    assert.equal(nodeProgressState(node).ratio, 0);
+    const payload = planSectionReviewPayload(node, 'writing-plan', title, {
+      verdict:'modify',reviewer:'fixture-owner',reason:'明确当前运行范围',
+    });
+    assert.equal(payload.node, node.id);
+    assert.equal(payload.definition_digest, node.plan_review.definition_digest);
+    openNodePlanCompletionModal(node);
+    assert.equal($('#modal').dataset.planNode, node.id);
+    assert.ok($('#modal').innerHTML.includes('批准当前' + title));
+    node.plan_review.completed = true;
+    assert.equal(nodeProgressState(node).ratio, 100);
+    assert.ok(codeStatusBadge(node).includes(plan ? '方案已批准' : '已验收通过'));
+  }
+  for (const [claims,stage] of [
+    [['regression-policy','executor-ready'],'基础设施'],
+    [['execution-evidence','triage-evidence','fresh-evidence'],'结果'],
+  ]) {
+    for (const [role,object] of [['code-plan','方案'],['code-deliverable','交付']]) {
+      const oldNode = {role,workstream:'VREG',capabilities:claims};
+      const before = JSON.stringify(oldNode);
+      assert.equal(nodeRoleLabel(oldNode), '回归' + stage + object);
+      assert.equal(JSON.stringify(oldNode), before);
+    }
+  }
+  regressionNodes[3].plan_review.validation = {
+    summary:'当前回归结果及失败处理已核对',current:true,ready:true,
+    code_files:[{path:'verification/results/regression.json',digest:'current'}],files:[],checks:[],
+  };
+  const resultsBody = codeNodeHtml(regressionNodes[3]);
+  assert.ok(resultsBody.includes('<h4>交付文件</h4>'));
+  assert.ok(!resultsBody.includes('<h4>交付代码</h4>'));
+  assert.doesNotMatch(resultsBody, /工作包|闭环包/);
+  const pendingResults = {...regressionNodes[3],plan_review:{completed:false,can_approve:false,status:'PENDING'}};
+  assert.ok(codeNodeHtml(pendingResults).includes('当前回归执行结果和失败处理的检查报告'));
+  assert.match(codeNodeHtml(pendingResults), /id="node-plan-complete" disabled/);
+  renderWorkstream(regression);
+  const regressionWorkflow = $('#main').innerHTML;
+  for (const [,title] of regressionTypes) assert.ok(regressionWorkflow.includes(title));
+  assert.doesNotMatch(regressionWorkflow, /工作包|闭环包/);
+  for (const id of ['add-vdoc-node','delete-vdoc-node','restart-vdoc-workflow']) assert.ok(regressionWorkflow.includes('id="' + id + '"'));
+  openCodeWorkflowChange(regression, 'remove');
+  const regressionChange = $('#modal').innerHTML;
+  assert.ok(regressionChange.includes('value="regression-node-0"'));
+  assert.ok(regressionChange.includes('value="regression-node-2"'));
+  assert.doesNotMatch(regressionChange, /value="regression-node-1"|value="regression-node-3"|工作包|闭环包/);
 `, context);
 """,
             text=True, capture_output=True, timeout=15,

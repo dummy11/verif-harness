@@ -5,8 +5,10 @@ artifact are in the [glossary](../docs/glossary.md#evidence-format).
 
 Modern implementation and convergence deliveries use `verif-harness code validate
 NODE REPORT.json`: `CodeValidation/1` wraps the typed reports below and binds the
-current delivery, revision, inputs and outputs. In particular, VCOV's four public
-node types never use `evidence` to bypass plan approval or delivery acceptance.
+current delivery, revision, inputs and outputs. In particular, VCOV and VREG's
+four direct public node types never use `evidence` to bypass plan approval or
+delivery acceptance. VREG results also bind execution to complete triage and an
+Engine-derived current required evidence set under `RegressionResults/2`.
 
 Use `verif-harness evidence NODE REPORT.json` only for historical non-code-model
 VENV, VCHK, VCOV, VCASE, and VREG desired nodes. Standard template nodes infer their claim; custom nodes require

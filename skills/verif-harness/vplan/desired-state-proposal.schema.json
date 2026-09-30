@@ -7,7 +7,7 @@
   "required": ["schema", "workstream", "nodes"],
   "allOf": [
     {
-      "if": {"properties": {"workstream": {"enum": ["VENV", "VSTIM", "VCHK", "VCASE", "VREG"]}}},
+      "if": {"properties": {"workstream": {"enum": ["VENV", "VSTIM", "VCHK", "VCASE"]}}},
       "then": {"properties": {"nodes": {"items": {"properties": {"role": {"const": "code-plan"}}}}}}
     },
     {
@@ -25,6 +25,26 @@
             "role": {"enum": ["code-plan", "coverage-convergence-plan"]},
             "capabilities": {"minItems": 2, "maxItems": 2, "uniqueItems": true,
                              "items": {"enum": ["coverage-collection-evidence", "hole-analysis-evidence"]}}
+          }}
+        }]
+      }}}}
+    },
+    {
+      "if": {"properties": {"workstream": {"const": "VREG"}}},
+      "then": {"properties": {"nodes": {"items": {
+        "properties": {"role": {"enum": ["code-plan", "regression-infrastructure-plan", "regression-results-plan"]}},
+        "allOf": [{
+          "if": {"properties": {"capabilities": {"contains": {"const": "regression-policy"}}}},
+          "then": {"properties": {
+            "role": {"enum": ["code-plan", "regression-infrastructure-plan"]},
+            "inputs": {"items": {"pattern": "^cap\\.(doc|venv):"}},
+            "capabilities": {"minItems": 2, "maxItems": 2, "uniqueItems": true,
+                             "items": {"enum": ["regression-policy", "executor-ready"]}}
+          }},
+          "else": {"properties": {
+            "role": {"enum": ["code-plan", "regression-results-plan"]},
+            "capabilities": {"minItems": 3, "maxItems": 3, "uniqueItems": true,
+                             "items": {"enum": ["execution-evidence", "triage-evidence", "fresh-evidence"]}}
           }}
         }]
       }}}}
@@ -65,7 +85,7 @@
         "additionalProperties": false,
         "allOf": [
           {
-            "if": {"properties": {"role": {"enum": ["code-plan", "coverage-implementation-plan", "coverage-convergence-plan"]}}, "required": ["role"]},
+            "if": {"properties": {"role": {"enum": ["code-plan", "coverage-implementation-plan", "coverage-convergence-plan", "regression-infrastructure-plan", "regression-results-plan"]}}, "required": ["role"]},
             "then": {"required": ["implementation_key", "validation_methods", "inputs", "input_files", "output_paths", "capabilities"]},
             "else": {"required": ["parent_key", "purpose", "progress_measures", "quality_checks", "suggested_mode", "evidence_claim"]}
           },

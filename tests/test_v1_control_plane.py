@@ -51,7 +51,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
 
     def design(self, workstream: str = "VDOC", *extra: str) -> dict:
-        if workstream in {"VENV", "VCOV"}:
+        if workstream in {"VENV", "VCOV", "VREG"}:
             # These v1 tests deliberately seed persisted pre-v2 history, not a
             # new public code proposal. New CLI planning is covered by v2 tests.
             args = build_parser().parse_args(normalize(["plan", workstream, *extra]))
@@ -2168,7 +2168,7 @@ class V1ControlPlaneTest(unittest.TestCase):
                 continue
             arguments = ["plan", workstream, "--desired", f"{workstream} verified"]
             arguments.extend(["--evidence-claim", custom_claims[workstream]])
-            plan = self.design(workstream, *arguments[2:]) if workstream in {"VENV", "VCOV"} else self.run_cli(*arguments)
+            plan = self.design(workstream, *arguments[2:]) if workstream in {"VENV", "VCOV", "VREG"} else self.run_cli(*arguments)
             self.run_cli("review", workstream)
             self.run_cli("waive", plan["desired_state"][0]["id"], "--reviewer", "alice",
                          "--reason", "final-freeze command fixture")

@@ -120,7 +120,7 @@ This repository contains public, reusable verification infrastructure.
 
 ### VENV、VSTIM、VCHK、VCASE、VCOV、VREG 方案与交付
 
-- VENV、VSTIM、VCHK、VCASE、VREG 按 DUT 工作包使用 `code-plan` 和
+- VENV、VSTIM、VCHK、VCASE 按 DUT 工作包使用 `code-plan` 和
   `code-deliverable` 两种公开工作节点；
   稳定的 `implementation_key` 将同一工作包的方案、交付、产物与能力关联起来。
   代码方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件；
@@ -143,9 +143,18 @@ This repository contains public, reusable verification infrastructure.
   `cap.vreg:executor-ready` 和明确关联的覆盖率实现能力。清单必须对应已批准范围、
   当前计划输入和模型输出；全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
   `implementation_key` 仅为内部关联；派生的产物和能力不增加公开节点或审批。
-- VREG 必须把
-  `regression-policy` + `executor-ready` 基础设施包与 `execution-evidence` +
-  `triage-evidence` + `fresh-evidence` 闭环包分开，防止执行器等待最终回归结果的循环依赖。
+- VREG 直接使用回归基础设施方案、回归基础设施交付、回归结果方案、回归结果交付四种
+  公开节点类型，不增加工作包层级。方案角色分别为 `regression-infrastructure-plan` 和
+  `regression-results-plan`；批准后建立对应 `-deliverable` 交付节点。
+  基础设施交付验证 `regression-policy` 与 `executor-ready`，只依赖文档和验证环境；
+  验收派生 `cap.vreg:executor-ready`，不得反向等待激励、检查、用例、覆盖率或最终结果。
+  结果交付验证 `execution-evidence`、`triage-evidence`、`fresh-evidence`，明确关联当前
+  基础设施能力并依赖当前有效的文档、环境、激励、检查、用例和覆盖率能力。
+  回归执行失败与分类记录必须精确一致；已知失败必须有当前 VREG revision 的负责人
+  例外批准。Engine 派生当前必需上游证据范围，不能由报告自行缩小，也不能等待结果
+  交付自身验收。全部必需基础设施都要纳入必需结果范围；两类交付均验收才完成 VREG。
+  `implementation_key` 仅作内部关联；历史角色与审批保留，旧结果证据必须按新合同重新验证。
+  不增加公开能力节点、审批或进度。
   未覆盖项和未关闭回归失败必须记录责任工作流及下一步动作；Main Agent 分析后登记
   上游重规划/重验证要求，不得由 finding 自动修改、批准或关闭上游节点。
 - 六类验证工作流页面均参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
@@ -155,7 +164,7 @@ This repository contains public, reusable verification infrastructure.
 - 全部必需 VDOC 正文形成当前有效的 `art.doc` 和 `cap.doc` 后，负责人必须选择其余
   工作流“并行形成方案”或“按依赖顺序形成方案”。选择绑定当前 VDOC revision 和
   capability 摘要并写入 ProjectStore。并行只并行形成方案，实施仍按 `cap.*` 解锁；
-  依赖顺序为 VENV → VREG 执行器 → VSTIM → VCHK → VCASE → VCOV，VREG 最终闭环包
+  依赖顺序为 VENV → VREG 执行器 → VSTIM → VCHK → VCASE → VCOV，VREG 最终回归结果
   仍等待其他工作流和 VCOV 的当前能力。Dashboard 不得直接创建已完成节点或代替审批。
 
 ### 状态、证据和项目边界

@@ -342,7 +342,7 @@
     .role-node-panel[data-node-role="stimulus-feature"], .role-node-panel[data-node-role="stimulus-scenario"], .role-node-panel[data-node-role="testcase"], .role-node-panel[data-node-role="case-mapping"] { border-left-color: var(--green); }
     .role-node-panel[data-node-role="checking-goal"], .role-node-panel[data-node-role="checker"], .role-node-panel[data-node-role="reference-path"], .role-node-panel[data-node-role="assertion-group"] { border-left-color: var(--yellow); }
     .role-node-panel[data-node-role="coverage-goal"], .role-node-panel[data-node-role="coverage-scope"], .role-node-panel[data-node-role^="coverage-implementation-"], .role-node-panel[data-node-role^="coverage-convergence-"] { border-left-color: var(--purple); }
-    .role-node-panel[data-node-role="regression-profile"], .role-node-panel[data-node-role="regression-run-set"], .role-node-panel[data-node-role="failure-group"] { border-left-color: var(--orange); }
+    .role-node-panel[data-node-role="regression-profile"], .role-node-panel[data-node-role="regression-run-set"], .role-node-panel[data-node-role="failure-group"], .role-node-panel[data-node-role^="regression-infrastructure-"], .role-node-panel[data-node-role^="regression-results-"] { border-left-color: var(--orange); }
     .node-status-card { margin-top: 12px; padding: 16px; }
     .node-status-goal { color: var(--text); font-size: 15px; font-weight: 700; }
     .node-status-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 14px; }
@@ -500,6 +500,8 @@
       'code-plan':'代码实现方案', 'code-deliverable':'代码交付验收',
       'coverage-implementation-plan':'覆盖率实现方案', 'coverage-implementation-deliverable':'覆盖率实现交付',
       'coverage-convergence-plan':'覆盖率收敛方案', 'coverage-convergence-deliverable':'覆盖率收敛交付',
+      'regression-infrastructure-plan':'回归基础设施方案', 'regression-infrastructure-deliverable':'回归基础设施交付',
+      'regression-results-plan':'回归结果方案', 'regression-results-deliverable':'回归结果交付',
       'coverage-goal':'覆盖目标', 'coverage-scope':'覆盖范围', 'case-mapping':'功能与用例对应关系', testcase:'测试用例',
       'regression-profile':'回归配置', 'regression-run-set':'回归批次', 'failure-group':'失败分组'
     };
@@ -2448,14 +2450,24 @@
       return `${nodeRolePanelHtml(n)}${nodePlanApprovalPanelHtml(n, available)}`;
     }
 
-    const CODE_PLAN_ROLES = ['code-plan','coverage-implementation-plan','coverage-convergence-plan'];
-    const CODE_DELIVERY_ROLES = ['code-deliverable','coverage-implementation-deliverable','coverage-convergence-deliverable'];
+    const CODE_PLAN_ROLES = ['code-plan','coverage-implementation-plan','coverage-convergence-plan','regression-infrastructure-plan','regression-results-plan'];
+    const CODE_DELIVERY_ROLES = ['code-deliverable','coverage-implementation-deliverable','coverage-convergence-deliverable','regression-infrastructure-deliverable','regression-results-deliverable'];
     function isCodePlanNode(n) { return Boolean(n && CODE_PLAN_ROLES.includes(n.role)); }
     function isCodeNode(n) { return isCodePlanNode(n) || Boolean(n && CODE_DELIVERY_ROLES.includes(n.role)); }
     function isCoverageConvergenceNode(n) {
       return n?.workstream === 'VCOV' && (String(n.role).startsWith('coverage-convergence-')
         || (n.capabilities || []).some(claim => ['coverage-collection-evidence','hole-analysis-evidence'].includes(claim)));
     }
+    function regressionNodeStage(n) {
+      if (n?.workstream !== 'VREG') return null;
+      if (String(n.role).startsWith('regression-infrastructure-')) return 'infrastructure';
+      if (String(n.role).startsWith('regression-results-')) return 'results';
+      const claims = n.capabilities || [];
+      if (claims.length === 2 && ['regression-policy','executor-ready'].every(claim => claims.includes(claim))) return 'infrastructure';
+      if (claims.length === 3 && ['execution-evidence','triage-evidence','fresh-evidence'].every(claim => claims.includes(claim))) return 'results';
+      return null;
+    }
+    function isResultFileNode(n) { return isCoverageConvergenceNode(n) || regressionNodeStage(n) === 'results'; }
     function codeNodeObjectLabel(n) {
       const plan = isCodePlanNode(n);
       if (n?.workstream === 'VCOV') {
@@ -2463,7 +2475,13 @@
         return isCoverageConvergenceNode(n) ? (plan ? '覆盖率收敛方案' : '覆盖率收敛交付')
           : (plan ? '覆盖率实现方案' : '覆盖率实现交付');
       }
-      if (n?.workstream === 'VREG') return plan ? '回归工作方案' : '回归交付及证据';
+      if (n?.workstream === 'VREG') {
+        const stage = regressionNodeStage(n);
+        if (String(n.role).startsWith('regression-')) return roleLabel(n.role);
+        if (stage === 'infrastructure') return plan ? '回归基础设施方案' : '回归基础设施交付';
+        if (stage === 'results') return plan ? '回归结果方案' : '回归结果交付';
+        return plan ? '回归方案' : '回归交付';
+      }
       return plan ? '代码实现方案' : '代码交付及验证证据';
     }
     function codeNodeHtml(n) {
@@ -2478,10 +2496,10 @@
           ? `<h4>本方案必须实现的覆盖项</h4><ul>${planListHtml(n.coverage_item_ids)}</ul>` : '');
       const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${validation
         ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
-          <h4>${isCoverageConvergenceNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
+          <h4>${isResultFileNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
           ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
-        : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
+        : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
       return `${writingPlanSourcesHtml(n)}<section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
     }
     async function showCodeFile(n, path, digest) {

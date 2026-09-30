@@ -18,7 +18,7 @@ remain auditable; no approval or Agent check is silently copied to a new version
 
 ## Versioned delivery for VENV, VSTIM, VCHK, VCASE, VCOV and VREG
 
-VENV, VSTIM, VCHK, VCASE and VREG use DUT-specific `code-plan` packages with stable
+VENV, VSTIM, VCHK and VCASE use DUT-specific `code-plan` packages with stable
 `implementation_key` identities. Approval produces an immutable `art.code_plan`
 and its paired `code-deliverable` WorkNode. Implementation, build, run and analysis
 are Activities of that delivery, not additional public WorkNode types.
@@ -28,7 +28,7 @@ Existing evidence-admission policies still apply. Validation precedes owner
 acceptance; acceptance binds the exact validation receipt, code and upstream inputs.
 No post-acceptance Agent check is introduced for code delivery.
 
-Plans depend on accepted `cap.doc` and explicit upstream package capabilities.
+Plans depend on accepted `cap.doc` and explicit upstream scope capabilities.
 VSTIM requires VENV; VCHK requires VENV and VSTIM; VCASE requires VENV, VSTIM
 and VCHK. VCASE validity does not depend on VCOV; VCOV consumes accepted VCASE
 and stimulus/checking results when evaluating overall closure.
@@ -43,14 +43,26 @@ cannot satisfy VCOV. Approved `coverage_item_ids` bind the item universe.
 `CoverageItemManifest/1` binds that universe to current plan inputs and model
 outputs, and every convergence report must use the selected accepted manifest.
 Old validation receipts require revalidation under the current coverage contract.
-VREG separates policy/executor infrastructure from execution/triage/freshness
-evidence, so executor readiness can unblock runs without waiting for final
-regression closure. Uncovered coverage items and unresolved regression failures
+VREG exposes four direct WorkNode types: `regression-infrastructure-plan`,
+`regression-infrastructure-deliverable`, `regression-results-plan`, and
+`regression-results-deliverable`, without a public package layer. Infrastructure
+depends only on accepted documents and environment; its acceptance derives
+`cap.vreg:executor-ready` without waiting for final results. Results explicitly
+consume accepted infrastructure capabilities plus stimulus, checking, testcase
+and coverage capabilities. All required infrastructure must be consumed by
+required results, and both kinds of deliveries must be accepted before VREG
+can be satisfied. Failed execution test/seed pairs must exactly match triage;
+known failures require a current VREG owner waiver. Engine derives the current
+required upstream evidence set, rechecking it on reads and acceptance; result
+deliveries do not wait for their own or each other's acceptance. Old result
+receipts require revalidation under `RegressionResults/2`. Historical generic
+roles and approvals remain stored without automatic migration or approval.
+Uncovered coverage items and unresolved regression failures
 carry an explicit responsible workstream and next action. Main Agent records a
 bounded upstream replan or revalidation request; findings never mutate upstream
 plans or approvals automatically.
 Deliveries depend on their versioned plan artifact. Accepted deliveries produce
-`art.code` and package `cap.<workstream>:<implementation_key>`. Default downstream
+`art.code` and scope-specific `cap.<workstream>:<implementation_key>`. Default downstream
 dependencies resolve to `cap.<workstream>:<claim>`; these conservative summary capabilities
 require all required providers of that claim to be accepted. They are not tasks,
 approvals, or additional progress items. Explicit capability dependencies select

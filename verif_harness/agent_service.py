@@ -200,6 +200,14 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
             "方案只依赖已验收的上游能力；交付依赖对应方案批准的 art.code_plan。\n"
             "只有对应交付节点的批准方案与依赖仍有效，才可在约定输出范围实现、采集和分析。"
             if workstream == "VCOV" else
+            "VREG 的公开节点只有回归基础设施方案、回归基础设施交付、回归结果方案、回归结果交付。\n"
+            "proposal 只登记 regression-infrastructure-plan 和 regression-results-plan，批准后建立对应交付。\n"
+            "基础设施只依赖已验收文档和验证环境；验收派生 cap.vreg:executor-ready，不能等待最终结果。\n"
+            "结果方案必须明确关联当前基础设施 cap.vreg:<implementation_key> 及已验收的激励、检查、用例和覆盖率能力。\n"
+            "回归执行失败与分类记录必须精确一致，例外必须有当前 VREG 版本的负责人批准，证据范围由 Engine 派生。\n"
+            "所有必需基础设施和结果交付均验收后才完成 VREG；失败反馈由 Main Agent 分析并登记责任工作流变更。\n"
+            "交付依赖对应批准的 art.code_plan；只有方案与依赖仍有效，才可在对应交付节点的约定输出范围实现、执行和分析。"
+            if workstream == "VREG" else
             f"方案输入只依赖已验收的上游 capability 或同工作流其他包的 cap.{cap_prefix}；交付依赖同工作包批准的 art.code_plan。\n"
             "只有 code-deliverable 的批准方案与依赖仍有效，才可在约定输出范围实现、构建和验证。"
         )
