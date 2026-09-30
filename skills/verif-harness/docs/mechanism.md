@@ -259,7 +259,8 @@ Workstream 只是把同类目标放在一起，不是必须顺序通过的阶段
 因此典型状态机是：上游交付 `VALID` → 下游采集/回归 → 发现问题 → `FEEDBACK_ANALYSIS`
 → 对责任工作流登记 `REQUEST_CHANGE`/重验证 → 新 revision 经方案审批、实现、验证和交付验收
 → 版本变化自动使旧下游证据失效 → VCOV/VREG 用新结果重新收敛。只有最后一轮当前证据满足
-完成条件时，相关节点才重新成为 `VALID`；某个 VCASE 通过不等于项目覆盖或回归已经闭环。
+完成条件时，相关节点才重新成为 `VALID`；某个 VCASE 通过不等于项目覆盖率已经收敛，
+也不等于回归已经闭环。
 
 重新 plan 会创建新的 desired revision，旧 desired 节点被标为 STALE，当前工作域回到
 REVIEW。新 revision 需要再次评审与证明；不能因为上一个 revision 已通过就直接宣告完成。

@@ -75,7 +75,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "objective": "实现当前 DUT 的覆盖率模型、采集链路，并用当前结果关闭覆盖缺口",
         "label": "覆盖率",
         "delivery_label": "覆盖率实现与证据验收",
-        "plan_term": "覆盖率实现与闭环方案",
+        "plan_term": "覆盖率实现与收敛方案",
         "allowed_claims": {
             "coverage-model", "coverage-collection",
             "coverage-collection-evidence", "hole-analysis-evidence",

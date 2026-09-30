@@ -135,7 +135,7 @@ This repository contains public, reusable verification infrastructure.
   PASS 代替代码交付可用。相关输入变化使方案、交付及能力失效；仅输出代码或验证
   证据变化时保留未变化方案。新版本不得继承旧批准或旧证据。
 - VCOV 必须把 `coverage-model` + `coverage-collection` 实现包与
-  `coverage-collection-evidence` + `hole-analysis-evidence` 闭环包分开；后者依赖
+  `coverage-collection-evidence` + `hole-analysis-evidence` 收敛包分开；后者依赖
   当前有效的环境、激励、检查、用例、回归执行器和同工作流实现能力。VREG 必须把
   `regression-policy` + `executor-ready` 基础设施包与 `execution-evidence` +
   `triage-evidence` + `fresh-evidence` 闭环包分开，防止执行器等待最终回归结果的循环依赖。

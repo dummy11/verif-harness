@@ -498,6 +498,9 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             self.assertTrue(code.modern(plan))
             self.assertEqual([node["role"] for node in plan["desired_state"]], ["code-plan"])
             node = plan["desired_state"][0]
+            if workstream == "VCOV":
+                self.assertIn("覆盖率实现与收敛方案", node["role_description"])
+                self.assertNotIn("闭环", node["role_description"])
             state = self.store.node_plan_review_state(node["id"])
             self.assertTrue(state["can_approve"], state["blockers"])
             self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")

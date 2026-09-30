@@ -32,7 +32,7 @@ Agent 使用 `plan WORKSTREAM --desired-file proposal.json` 提交代码方案�
 [VCOV](../skills/verif-harness/vplan/vcov.md) 和
 [VREG](../skills/verif-harness/vplan/vreg.md) 使用说明。
 
-VCOV 将覆盖率模型/采集实现与覆盖数据/缺口分析分成不同工作包；VREG 将策略/执行器与
+VCOV 将覆盖率模型/采集实现与覆盖率收敛（覆盖数据/缺口分析）分成不同工作包；VREG 将策略/执行器与
 执行/失败分类/结果新鲜度分成不同工作包，避免回归执行器等待最终回归闭环的循环依赖。
 coverage hole 或未关闭 regression failure 必须登记责任工作流和下一步动作。Main Agent
 分析后向上游登记重规划或重验证要求；只有实际上游版本或证据变化才沿依赖图自动传播
