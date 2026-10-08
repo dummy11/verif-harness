@@ -32,6 +32,8 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
       await page.goto(url.toString());
       const row = page.locator('.work-node-table tr').filter({has:page.locator(`[data-open-node="${node.id}"]`)});
       await row.waitFor();
+      await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '实时连接正常');
+      assert.equal(await page.locator('#connection-dot').getAttribute('class'), 'dot live');
       assert.match(await row.textContent(), /等待 Agent 检查审批/);
       assert.doesNotMatch(await row.textContent(), /Agent 正在/);
       assert.equal(await row.locator('[data-motion="active"]').count(), 0);

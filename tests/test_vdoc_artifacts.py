@@ -108,6 +108,88 @@ class VdocArtifactsTest(unittest.TestCase):
                 with self.assertRaisesRegex(HarnessError, "不能直接"):
                     action()
 
+    def test_change_crosses_derived_results_without_creating_findings_on_them(self):
+        self.prepare()
+        self.finish()
+        relative = self.path.relative_to(self.fixture.root).as_posix()
+        # A mature authoring contract may name another VDOC Markdown file as a
+        # source. Reproduce that edge so the impact walk crosses all three
+        # derived results before reaching downstream work nodes.
+        with self.store.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO edges VALUES(?,?,?,?,?,?,?)",
+                (f"file:{relative}", self.plan["id"], "AFFECTS", "fixture", 1.0, "{}", now()),
+            )
+        derived = {
+            "art.doc_plan:verification-plan",
+            "art.doc:verification-plan",
+            "cap.doc:verification-plan",
+        }
+        with self.store.operation():
+            result = self.store.record_change(
+                relative, "document-source-change", "document-r3", _reconcile=False,
+            )
+            self.assertTrue(derived.issubset(result["affected"]))
+            with self.store.read_connect() as connection:
+                findings = {
+                    row["subject"] for row in connection.execute(
+                        "SELECT subject FROM findings WHERE cause_event=? AND status='OPEN'",
+                        (result["event_id"],),
+                    )
+                }
+                statuses = {
+                    row["id"]: row["status"] for row in connection.execute(
+                        "SELECT id,status FROM nodes WHERE id IN (?,?,?)", tuple(sorted(derived)),
+                    )
+                }
+            self.assertTrue(derived.isdisjoint(findings))
+            self.assertIn(self.plan["id"], findings)
+            self.assertIn(self.delivery["id"], findings)
+            self.assertTrue(any(item.startswith("workstream:VCHK:") for item in findings))
+            self.assertEqual(set(statuses.values()), {"VALID"})
+        # Reconciliation, not record_change, owns the derived status transition.
+        self.store.document_artifacts()
+        self.assertNotEqual(self.head("art.doc_plan:verification-plan")["status"], "VALID")
+
+    def test_schema_migration_resolves_legacy_change_findings_on_derived_results(self):
+        self.prepare()
+        self.finish()
+        derived = (
+            "art.doc_plan:verification-plan",
+            "art.doc:verification-plan",
+            "cap.doc:verification-plan",
+        )
+        event_id = "event:legacy-derived-change"
+        with self.store.connect() as connection:
+            connection.execute(
+                "INSERT INTO events VALUES(?,?,?,?,?,?)",
+                (event_id, "modify", f"file:{self.path.relative_to(self.fixture.root).as_posix()}",
+                 "document-r2", "{}", now()),
+            )
+            for index, subject in enumerate((*derived, self.delivery["id"])):
+                connection.execute(
+                    "INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
+                    (f"finding:legacy-derived-{index}", subject, "MEDIUM", "OPEN", event_id,
+                     "旧版工具生成的变更通知", now()),
+                )
+            connection.execute("DELETE FROM meta WHERE key='derived_change_findings_v1'")
+        migrated = ProjectStore(self.fixture.root)
+        migrated.ensure_dashboard_schema()
+        with migrated.read_connect() as connection:
+            statuses = dict(connection.execute(
+                "SELECT subject,status FROM findings WHERE cause_event=?", (event_id,),
+            ).fetchall())
+            event = connection.execute(
+                "SELECT payload_json FROM events WHERE id='migration:derived-change-findings-v1'",
+            ).fetchone()
+            marker = connection.execute(
+                "SELECT value FROM meta WHERE key='derived_change_findings_v1'",
+            ).fetchone()
+        self.assertEqual({statuses[item] for item in derived}, {"RESOLVED"})
+        self.assertEqual(statuses[self.delivery["id"]], "OPEN")
+        self.assertEqual(json.loads(event["payload_json"])["resolved_count"], len(derived))
+        self.assertEqual(marker["value"], str(len(derived)))
+
     def test_downstream_stays_on_cap_and_reopens_after_body_change(self):
         self.prepare()
         self.finish()

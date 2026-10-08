@@ -208,7 +208,7 @@ vm.runInContext(`
   assert.match(planHtml, /提交当前 0 条审批意见给 Agent/);
   assert.match(planHtml, /data-submit-node-feedback disabled/);
   assert.match(planHtml, /批准当前文档撰写方案的全部内容/);
-  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" >批准全部内容/);
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan"[^>]*>批准全部内容/);
   assert.match(planHtml, /writing-plan-inputs"><summary>输入依据/);
   assert.doesNotMatch(planHtml, /writing-plan-inputs" open/);
   state.snapshot.workstreams[0].closure.actions = [{kind:'REFINE_DESIRED_STATE'}];
@@ -265,7 +265,7 @@ vm.runInContext(`
   const completedPlanHtml = documentWritingPlanNodeHtml(planNode, true);
   assert.match(completedPlanHtml, /id="node-plan-complete" disabled/);
   assert.match(completedPlanHtml, /已批准全部内容/);
-  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan" disabled>已批准全部内容/);
+  assert.match(nodeRows([planNode]), /data-approve-plan-node="vdoc-plan"[^>]*disabled[^>]*>已批准全部内容/);
   assert.match(nodeStatusHtml(planNode), /已审批通过/);
   assert.doesNotMatch(nodeStatusHtml(planNode), /已满足|有完成条件需要负责人阅读内容后确认/);
   assert.match(completedPlanHtml, /data-plan-section-form=/);

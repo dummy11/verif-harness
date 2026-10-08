@@ -729,7 +729,9 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("@keyframes waiting-breathe", html)
         self.assertIn("@media (prefers-reduced-motion: reduce)", html)
         self.assertIn("<h2>工作节点</h2>", html)
-        self.assertIn("个工作节点 · 点击名称在侧边查看，审批进入完整页面", html)
+        self.assertIn('data-approve-plan-node="${escapeHtml(n.id)}"', html)
+        self.assertIn("const approvalState = nodeApprovalState(n)", html)
+        self.assertIn("await openNodeApprovalFromList(button)", html)
         self.assertNotIn("<div class=\"label\">需要你处理</div>", html)
         self.assertNotIn("<h2>等待负责人处理</h2>", html)
         self.assertNotIn("humanRows(openHuman)", html)
@@ -922,7 +924,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('role="progressbar"', html)
         self.assertIn('aria-valuenow="${progress.ratio}"', html)
         self.assertNotIn("const bar = ratio === null ? ''", html)
-        self.assertIn("点击名称在侧边查看，审批进入完整页面", html)
+        self.assertNotIn("点击名称在侧边查看，审批进入完整页面", html)
         self.assertNotIn("点击名称后在新标签页查看详情", html)
         self.assertNotIn("在新标签页验收文档内容", html)
         self.assertIn('data-open-node="${escapeHtml(n.id)}"', html)
@@ -2356,6 +2358,18 @@ class DashboardTest(unittest.TestCase):
                 "reason": "attempt to reuse stale assessment",
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+
+class DashboardNodeApprovalTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Dashboard approval checks require Node.js")
+    def test_all_public_node_types_share_list_and_detail_approval_conditions(self) -> None:
+        result = subprocess.run(
+            ["node", str(ROOT / "tests/dashboard_node_approval_unit.cjs"),
+             str(ROOT / "verif_harness/dashboard.html")],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("document preflight PASS", result.stdout)
 
 
 class DashboardCoverageNodeTypesTest(unittest.TestCase):

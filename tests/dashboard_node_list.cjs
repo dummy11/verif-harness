@@ -75,6 +75,16 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(await planRow.locator('.node-progress-ring').evaluate(el => getComputedStyle(el).animationName), 'none');
     assert.equal(await bodyRow.locator('.node-progress-ring').evaluate(el => getComputedStyle(el).animationName), 'progress-breathe');
     assert.ok(await bodyRow.getByRole('progressbar').getAttribute('title'));
+    assert.equal(await page.locator('[data-node-list-filter="all"]').getAttribute('aria-pressed'), 'true');
+    await page.locator('[data-node-list-filter="human"]').click();
+    assert.equal(await table.locator('[data-open-node]').count(), 1);
+    assert.equal(await table.locator('[data-open-node]').getAttribute('data-open-node'), delivery.id);
+    assert.ok((await page.locator('.section-head .count').filter({hasText:'显示 1 / 2 个工作节点'}).count()) > 0);
+    await page.locator('[data-node-list-filter="agent"]').click();
+    assert.equal(await table.locator('[data-open-node]').count(), 0);
+    assert.ok((await table.innerText()).includes('当前没有已登记的 Agent 工作节点'));
+    await page.locator('[data-node-list-filter="all"]').click();
+    assert.equal(await table.locator('tbody tr').count(), 2);
     await checkAlignment();
     await capture('node-list-dark');
 

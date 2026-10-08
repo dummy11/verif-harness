@@ -48,9 +48,11 @@
     .search input { width: 100%; padding: 10px 14px 10px 38px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel-2); outline: none; }
     .search span { position: absolute; left: 13px; top: 9px; color: var(--muted); }
     .connection { margin-left: auto; display: flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; }
-    .dot { width: 9px; height: 9px; border-radius: 50%; background: #98a2b3; }
-    .dot.live { background: #22a663; box-shadow: 0 0 0 4px rgba(34,166,99,.12); }
-    .dot.offline { background: #e5484d; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; color: #98a2b3; background: currentColor; }
+    .dot.connecting { animation: connection-breathe 2s ease-in-out infinite; }
+    .dot.live { color: #22a663; box-shadow: 0 0 0 4px rgba(34,166,99,.12); }
+    .dot.offline { color: #e5484d; }
+    @keyframes connection-breathe { 0%, 100% { opacity: .45; box-shadow: 0 0 0 0 transparent; } 50% { opacity: 1; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent); } }
     .icon-btn { border: 1px solid var(--line); color: var(--text); background: var(--panel); border-radius: 9px; padding: 8px 10px; }
     .layout { min-height: calc(100vh - 76px); display: grid; grid-template-columns: 252px minmax(0, 1fr); }
     .sidebar { border-right: 1px solid var(--line); background: var(--sidebar-bg); padding: 22px 14px; }
@@ -312,6 +314,8 @@
     .node-progress-ring::before { inset: 5px; }
     .node-progress-ring[data-complete="true"] { --motion-color: var(--green); }
     .work-node-table tr:hover .node-progress-ring::before { background: var(--panel-2); }
+    .node-list-tools { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .node-list-tools .btn[aria-pressed="true"] { color: white; background: #195fb8; border-color: #195fb8; }
     .node-row-approval { margin-top: 8px; }
     .node-progress-head { display: flex; align-items: center; gap: 10px; }
     .node-progress-bar { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 6px; background: var(--gray-bg); }
@@ -418,9 +422,9 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } .dot.connecting { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .modal-actions { width: 100%; } .plan-approval-controls > .modal-actions .btn { flex: 1 1 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .modal-actions { width: 100%; } .plan-approval-controls > .modal-actions .btn { flex: 1 1 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-list-tools { width: 100%; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
     @media (max-width: 760px) {
       .work-node-table { min-width: 620px; }
       .work-node-table th:first-child { width: 45%; }
@@ -433,7 +437,7 @@
     <div class="brand"><button class="logo" id="home" type="button" title="返回首页" aria-label="返回首页"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M16 2.5 29.5 10 16 17.5 2.5 10 16 2.5Z"/><path d="m2.5 10 13.5 7.5L29.5 10M2.5 16 16 23.5 29.5 16M2.5 22 16 29.5 29.5 22"/></svg></button><div><strong id="project-name">verif-harness</strong><small id="project-meta">正在读取项目状态</small></div></div>
     <div class="project-controls"><label class="sr-only" for="project-switcher">切换项目</label><select id="project-switcher" class="project-switcher" aria-label="切换项目"><option>正在读取项目…</option></select><button id="project-unregister" class="icon-btn project-unregister" type="button" title="仅从 Dashboard 注销当前项目">注销项目</button></div>
     <div class="search"><span>⌕</span><input id="search" type="search" placeholder="搜索工作流、工作节点、支持材料或文件"></div>
-    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">连接中</span></div>
+    <div class="connection" role="status" aria-live="polite"><span id="connection-dot" class="dot connecting" aria-hidden="true"></span><span id="connection-text">连接中</span></div>
     <button id="theme" class="icon-btn" title="切换明暗主题">◐</button>
   </header>
   <div class="layout" id="layout">
@@ -468,11 +472,14 @@
       previewDocument: initialParams.get('document'),
       invalidRoute: null,
       connected: false,
+      connectionState: 'connecting',
       query: '',
       collapsedNodes: new Set(),
     };
     // Ephemeral, tab-local UI drafts. Never a second source of control-plane state.
     const viewCache = new Map();
+    const nodeListFilters = new Map();
+    const pendingNodeApprovalReads = new Set();
     let renderedView = null, renderSequence = 0, submittingForm = null, modalSequence = 0;
     let displayedUrl = window.location.href;
     const $ = (selector) => document.querySelector(selector);
@@ -504,6 +511,14 @@
       'regression-results-plan':'回归结果方案', 'regression-results-deliverable':'回归结果交付',
       'coverage-goal':'覆盖目标', 'coverage-scope':'覆盖范围', 'case-mapping':'功能与用例对应关系', testcase:'测试用例',
       'regression-profile':'回归配置', 'regression-run-set':'回归批次', 'failure-group':'失败分组'
+    };
+    const WORK_NODE_PHASE_ORDER = {
+      'document-writing-plan':10, 'document-deliverable':20,
+      'code-plan':10, 'code-deliverable':20,
+      'coverage-implementation-plan':10, 'coverage-implementation-deliverable':20,
+      'coverage-convergence-plan':30, 'coverage-convergence-deliverable':40,
+      'regression-infrastructure-plan':10, 'regression-infrastructure-deliverable':20,
+      'regression-results-plan':30, 'regression-results-deliverable':40,
     };
     const BASE_NODE_ROLE_PROFILE = {
       panelTitle:'节点工作内容', purposeLabel:'目标', scopeTitle:'验证范围', workTitle:'需要完成的工作',
@@ -811,10 +826,16 @@
       const node = $('#toast'); node.textContent = message; node.className = `toast show${error ? ' error' : ''}`;
       clearTimeout(toast.timer); toast.timer = setTimeout(() => node.className = 'toast', 3500);
     }
-    function setConnection(connected) {
-      state.connected = connected;
-      $('#connection-dot').className = `dot ${connected ? 'live' : 'offline'}`;
-      $('#connection-text').textContent = connected ? '实时连接正常' : '连接中断 · 显示最后状态';
+    function setConnection(connectionState) {
+      const view = {
+        connecting: {label:'连接中', connected:false},
+        live: {label:'实时连接正常', connected:true},
+        offline: {label:'连接中断 · 显示最后状态', connected:false},
+      }[connectionState] || {label:'连接中', connected:false};
+      state.connected = view.connected;
+      state.connectionState = connectionState;
+      $('#connection-dot').className = `dot ${connectionState}`;
+      $('#connection-text').textContent = view.label;
     }
     function setSnapshot(snapshot) {
       if (snapshot.dashboard_project_id && snapshot.dashboard_project_id !== state.project) return;
@@ -1073,19 +1094,23 @@
     }
     function connectProjectStream(projectId) {
       if (state.stream) state.stream.close();
+      setConnection('connecting');
       const version = state.snapshot?.version || '';
       const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}&version=${encodeURIComponent(version)}`);
       state.stream = stream;
+      const current = () => state.project === projectId && state.stream === stream;
+      stream.onopen = () => { if (current()) setConnection('live'); };
       stream.addEventListener('snapshot', event => {
         const snapshot = JSON.parse(event.data);
-        if (state.project === projectId) { setConnection(true); setSnapshot(snapshot); }
+        if (current()) { setConnection('live'); setSnapshot(snapshot); }
       });
-      stream.onerror = () => { if (state.project === projectId) setConnection(false); };
+      stream.onerror = () => { if (current()) setConnection('offline'); };
     }
     async function selectProject(projectId, resetView=true) {
       if (!state.projects.some(project => project.id === projectId)) throw new Error('所选项目未注册');
       if (resetView) return navigateUrl(routeUrl({project:projectId}));
       if (state.stream) { state.stream.close(); state.stream = null; }
+      setConnection('connecting');
       renderedView = null;
       state.project = projectId;
       state.snapshot = null;
@@ -1095,12 +1120,17 @@
       url.searchParams.set('token', token);
       window.history.replaceState({...window.history.state, verif:true}, '', url);
       $('#main').innerHTML = '<div class="empty">正在加载所选项目…</div>';
-      const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`, {headers:{'X-Verif-Token':token}});
-      const body = await response.json();
-      if (state.project !== projectId) return;
-      if (!response.ok) throw new Error(body.error || response.statusText);
-      setSnapshot(body);
-      connectProjectStream(projectId);
+      try {
+        const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`, {headers:{'X-Verif-Token':token}});
+        const body = await response.json();
+        if (state.project !== projectId) return;
+        if (!response.ok) throw new Error(body.error || response.statusText);
+        setSnapshot(body);
+        connectProjectStream(projectId);
+      } catch (error) {
+        if (state.project === projectId) setConnection('offline');
+        throw error;
+      }
     }
     async function initialLoad() {
       try {
@@ -1113,6 +1143,7 @@
         if (!selected) throw new Error('当前 Dashboard 没有已注册项目');
         await selectProject(selected, false);
       } catch (error) {
+        setConnection('offline');
         const fallback = state.projects[0];
         $('#main').innerHTML = `<div class="card empty"><strong>无法打开所选项目</strong><p>${escapeHtml(String(error))}</p>${fallback ? '<button class="btn" id="open-default-project" type="button">打开已注册项目</button>' : ''}</div>`;
         if (fallback) $('#open-default-project').onclick = () => selectProject(fallback.id, true).catch(nextError => toast(`打开项目失败：${nextError}`, true));
@@ -1964,22 +1995,142 @@
       const statusTitle = w.workstream === 'VDOC' || w.code_model ? '当前项目状态' : '当前工作流状态';
       return `<section class="card project-status-card" aria-label="${statusTitle}"><div class="project-status-label">${statusTitle}</div><div class="project-status-head"><h2>${statusPulse(workstreamMotion(w))}${escapeHtml(workstreamStatusLabel(w))}</h2><div class="project-status-badges"><span class="badge RECORDED">方案 ${escapeHtml(revisionLabel(w.revision))}</span></div></div><div class="project-status-progress">${progress}</div><div class="project-status-next"><strong>下一步：</strong>${escapeHtml(next)}</div>${action ? `<div class="status-card-actions">${action}</div>` : ''}</section>`;
     }
+    function workNodePhaseRank(node) {
+      return WORK_NODE_PHASE_ORDER[node?.role] ?? 100;
+    }
+    function workNodePackageKey(node, byId) {
+      let root = node, cursor = node;
+      const visited = new Set();
+      while (cursor?.parent_id && byId.has(cursor.parent_id) && !visited.has(cursor.parent_id)) {
+        visited.add(cursor.id);
+        cursor = byId.get(cursor.parent_id);
+        root = cursor;
+      }
+      const implementationKey = root?.implementation_key || node?.implementation_key;
+      if (implementationKey) return `implementation:${implementationKey}`;
+      const documentKey = root?.document_key || node?.document_key;
+      if (documentKey) return `document:${documentKey}`;
+      return `node:${root?.id || node.id}`;
+    }
+    function orderWorkNodes(nodes) {
+      const source = [...(nodes || [])];
+      const byId = new Map(source.map(node => [node.id, node]));
+      const original = new Map(source.map((node, index) => [node.id, index]));
+      const packageByNode = new Map();
+      const packages = new Map();
+      for (const node of source) {
+        const key = workNodePackageKey(node, byId);
+        packageByNode.set(node.id, key);
+        if (!packages.has(key)) packages.set(key, {key, nodes:[], first:original.get(node.id), phase:workNodePhaseRank(node), required:false});
+        const group = packages.get(key);
+        group.nodes.push(node);
+        group.first = Math.min(group.first, original.get(node.id));
+        group.phase = Math.min(group.phase, workNodePhaseRank(node));
+        group.required ||= node.required !== false;
+      }
+      const comparePackages = (left, right) => left.phase - right.phase
+        || Number(!left.required) - Number(!right.required)
+        || left.first - right.first
+        || left.key.localeCompare(right.key);
+      const compareNodes = (left, right) => workNodePhaseRank(left) - workNodePhaseRank(right)
+        || Number(left.required === false) - Number(right.required === false)
+        || original.get(left.id) - original.get(right.id)
+        || left.id.localeCompare(right.id);
+      const prerequisites = new Map([...packages.keys()].map(key => [key, new Set()]));
+      for (const node of source) {
+        const sourcePackage = packageByNode.get(node.id);
+        for (const edge of node.outgoing || []) {
+          if (edge.relation !== 'DEPENDS_ON' || !packageByNode.has(edge.target)) continue;
+          const targetPackage = packageByNode.get(edge.target);
+          if (targetPackage !== sourcePackage) prerequisites.get(sourcePackage).add(targetPackage);
+        }
+      }
+      const dependents = new Map([...packages.keys()].map(key => [key, new Set()]));
+      const indegree = new Map();
+      for (const [key, targets] of prerequisites) {
+        indegree.set(key, targets.size);
+        for (const target of targets) dependents.get(target).add(key);
+      }
+      const ready = [...packages.values()].filter(group => indegree.get(group.key) === 0).sort(comparePackages);
+      const orderedPackages = [];
+      while (ready.length) {
+        const group = ready.shift();
+        orderedPackages.push(group);
+        for (const dependent of dependents.get(group.key)) {
+          indegree.set(dependent, indegree.get(dependent) - 1);
+          if (indegree.get(dependent) === 0) {
+            ready.push(packages.get(dependent));
+            ready.sort(comparePackages);
+          }
+        }
+      }
+      if (orderedPackages.length !== packages.size) {
+        const seen = new Set(orderedPackages.map(group => group.key));
+        orderedPackages.push(...[...packages.values()].filter(group => !seen.has(group.key)).sort(comparePackages));
+      }
+      return orderedPackages.flatMap(group => [...group.nodes].sort(compareNodes));
+    }
+    function nodeListFilterKey(w) {
+      return `${state.project || ''}:${w.workstream}`;
+    }
+    function nodeListMode(w) {
+      const mode = nodeListFilters.get(nodeListFilterKey(w));
+      return ['human','agent'].includes(mode) ? mode : 'all';
+    }
+    function workNodeHasAgentWork(node) {
+      return (node.activities || []).some(activity => activityIsRunning(activity)
+        || ['PENDING','WAITING_FOR_PARENT'].includes(activity.status));
+    }
+    function workNodeListView(w, nodes) {
+      const ordered = orderWorkNodes(nodes);
+      const mode = nodeListMode(w);
+      if (mode === 'human') {
+        const targets = new Set(humanPendingItems({waiting_for_human:w.waiting_for_human || []})
+          .filter(item => ['OPEN','WAITING_FOR_HUMAN'].includes(item.status))
+          .map(item => item.target));
+        return {mode, nodes:ordered.filter(node => targets.has(node.id))};
+      }
+      if (mode === 'agent') return {mode, nodes:ordered.filter(workNodeHasAgentWork)};
+      return {mode, nodes:ordered};
+    }
+    function nodeListToolsHtml(w, view, total) {
+      const labels = [['all','全部'],['human','需要你处理'],['agent','Agent 工作']];
+      const buttons = labels.map(([mode, label]) => `<button type="button" class="btn small" data-node-list-filter="${mode}" aria-pressed="${view.mode === mode}">${label}</button>`).join('');
+      const count = view.nodes.length === total ? `${total} 个工作节点` : `显示 ${view.nodes.length} / ${total} 个工作节点`;
+      return `<span class="count">${count} · 按验证推进顺序排列</span>${total ? `<div class="node-list-tools" role="group" aria-label="筛选工作节点">${buttons}</div>` : ''}`;
+    }
+    function nodeListRows(w, nodes, emptyText) {
+      const view = workNodeListView(w, nodes);
+      const rows = !nodes.length
+        ? `<tr><td colspan="4" class="empty">${escapeHtml(emptyText)}</td></tr>`
+        : view.nodes.length
+          ? nodeRows(view.nodes)
+          : `<tr><td colspan="4" class="empty">${view.mode === 'human' ? '当前没有需要你处理的工作节点' : '当前没有已登记的 Agent 工作节点'}</td></tr>`;
+      return {view, rows};
+    }
+    function bindNodeListTools(w) {
+      document.querySelectorAll('[data-node-list-filter]').forEach(button => button.onclick = event => {
+        event.stopPropagation();
+        const mode = button.dataset.nodeListFilter;
+        if (!['all','human','agent'].includes(mode) || mode === nodeListMode(w)) return;
+        nodeListFilters.set(nodeListFilterKey(w), mode);
+        renderWorkstream(workstream(w.workstream) || w);
+      });
+    }
     function renderWorkstream(w) {
       if (!w) { state.workstream = null; return renderOverview(); }
       if (w.workstream === 'VDOC' || w.code_model) {
         const code = Boolean(w.code_model);
         const roles = ['document-writing-plan','document-deliverable'];
         const nodes = w.nodes.filter(n => code ? isCodeNode(n) : roles.includes(n.role));
-        const rows = nodes.length
-          ? nodeRows(nodes)
-          : '<tr><td colspan="4" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+        const list = nodeListRows(w, nodes, '尚未根据当前 DUT、规格和验证目标形成工作节点');
         $('#main').innerHTML = `<div class="page-head"><div><h1>${w.workstream} · ${escapeHtml(workstreamLabel(w.workstream))}</h1><p>${escapeHtml(humanText(w.objective))}</p></div><div class="page-actions"><button class="btn primary" id="add-vdoc-node">添加节点</button><button class="btn" id="delete-vdoc-node">删除节点</button><button class="btn danger" id="restart-vdoc-workflow">重新启动工作流</button></div></div>
           ${workstreamStatusCardHtml(w)}
-          <section><div class="section-head"><h2>工作节点列表</h2><span class="count">${nodes.length} 个工作节点 · 点击名称查看详情，也可在本行批准方案或验收交付</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+          <section><div class="section-head"><h2>工作节点列表</h2>${nodeListToolsHtml(w, list.view, nodes.length)}</div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${list.rows}</tbody></table></div></section>`;
         $('#add-vdoc-node').onclick = () => code ? openCodeWorkflowChange(w, 'add') : openVdocRevisionRequestTab('add');
         $('#delete-vdoc-node').onclick = () => code ? openCodeWorkflowChange(w, 'remove') : openVdocRevisionRequestTab('remove');
         $('#restart-vdoc-workflow').onclick = () => code ? openCodeWorkflowChange(w, 'restart') : openVdocRestartModal(w);
-        bindOverviewEntries(); bindNodeLinks();
+        bindOverviewEntries(); bindNodeLinks(); bindNodeListTools(w);
         return;
       }
       const actions = w.closure.actions || [];
@@ -1987,9 +2138,7 @@
       const planNodes = w.nodes.filter(n => n.definition_origin !== 'template');
       const catalogNodes = w.nodes.filter(n => !planNodes.some(item => item.id === n.id));
       const concreteNodes = planNodes.length;
-      const planRows = concreteNodes
-        ? nodeRows(planNodes)
-        : '<tr><td colspan="4" class="empty">尚未根据当前 DUT、规格和验证目标形成工作节点</td></tr>';
+      const list = nodeListRows(w, planNodes, '尚未根据当前 DUT、规格和验证目标形成工作节点');
       const catalogLabel = '工作流固定分类';
       const catalog = catalogNodes.length
         ? `<details class="detail-group"><summary>查看${catalogLabel}（${catalogNodes.length} 项，不计入工作节点数量）</summary><div class="detail-group-body card list-card">${catalogNodes.map(n => `<div class="list-row"><div><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button><div class="row-meta">${escapeHtml(n.document?.path || roleLabel(n.role))}</div></div>${statusBadge(n.status)}</div>`).join('')}</div></details>`
@@ -2000,12 +2149,12 @@
         ${projectContextHtml(true)}
         ${workstreamStatusCardHtml(w)}
         ${vdocReviewProgressHtml(w)}
-        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2><span class="count">${concreteNodes} 个工作节点 · 点击名称在侧边查看，审批进入完整页面</span></div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${planRows}</tbody></table></div>${catalog}</section>
+        ${granularityNotice}<section><div class="section-head"><h2>工作节点</h2>${nodeListToolsHtml(w, list.view, concreteNodes)}</div><div class="card" style="overflow:auto"><table class="node-table work-node-table"><thead><tr><th>节点名称</th><th>节点类型</th><th>进度</th><th>状态 / 操作</th></tr></thead><tbody>${list.rows}</tbody></table></div>${catalog}</section>
         <section class="section"><details class="detail-group"><summary>Agent 当前工作 <span class="row-meta">${active.length ? `${active.length} 项正在处理` : '当前没有正在处理的工作'}</span></summary><div class="detail-group-body card list-card">${activityRows(active)}</div></details></section>
         <section class="section"><div class="section-head"><h2>还要完成什么</h2><span class="count">系统列出下一步，不代替负责人决定</span></div><div class="card list-card">${closureRows(actions)}</div></section>`;
       if ($('#human-action')) $('#human-action').onclick = () => openHumanModal(w.workstream);
       if ($('#review-ws')) $('#review-ws').onclick = () => openWorkstreamReviewTab(w.workstream);
-      bindOverviewEntries(); bindNodeLinks();
+      bindOverviewEntries(); bindNodeLinks(); bindNodeListTools(w);
     }
     function nodeDocumentLabel(n) {
       if (n.role !== 'document-deliverable') return '';
@@ -2038,9 +2187,10 @@
         const toggle = children.length ? `<button class="tree-toggle" data-toggle-node="${escapeHtml(n.id)}" aria-expanded="${!state.collapsedNodes.has(n.id) || Boolean(query)}" aria-label="展开或折叠${escapeHtml(humanText(n.title))}的子节点" title="展开或折叠子节点">${state.collapsedNodes.has(n.id) && !query ? '▸' : '▾'}</button>` : '<span aria-hidden="true"></span>';
         const documentLabel = nodeDocumentLabel(n);
         const document = documentLabel ? `<div class="work-node-document">文档：${escapeHtml(documentLabel)}</div>` : '';
-        const feedbackReady = nodeFeedbackState(n).can_approve;
-        const approval = (n.role === 'document-writing-plan' || isCodeNode(n)) && n.plan_review
-          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !(isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) && feedbackReady ? '' : 'disabled'}>${(isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
+        const approvalState = nodeApprovalState(n);
+        const checkingBody = pendingNodeApprovalReads.has(JSON.stringify([state.project, n.id]));
+        const approval = approvalState
+          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${approvalState.enabled && !checkingBody ? '' : 'disabled'} title="${escapeHtml(approvalState.title)}">${escapeHtml(checkingBody ? '正在核对正文…' : approvalState.label)}</button></div>` : '';
         return `<tr><td><div class="work-node-name">${toggle}<div class="work-node-copy"><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button>${document}</div></div></td><td><div>${escapeHtml(nodeRoleLabel(n))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td><td>${nodeStatusHtml(n)}${approval}</td></tr>`;
       }).join('');
     }
@@ -2060,11 +2210,9 @@
       }).join('');
     }
     function bindNodeLinks() {
-      document.querySelectorAll('[data-approve-plan-node]').forEach(button => button.onclick = event => {
+      document.querySelectorAll('[data-approve-plan-node]').forEach(button => button.onclick = async event => {
         event.stopPropagation();
-        const n = findNode(button.dataset.approvePlanNode);
-        if (!planApprovalAvailable(n) || (isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) || !nodeFeedbackState(n).can_approve) { toast('当前方案存在未处理审批意见或不能重复审批，请刷新后核对节点状态', true); return; }
-        openNodePlanCompletionModal(n);
+        await openNodeApprovalFromList(button);
       });
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
       document.querySelectorAll('[data-open-workstream]').forEach(button => button.onclick = event => { event.stopPropagation(); openWorkstreamTab(button.dataset.openWorkstream); });
@@ -2441,16 +2589,70 @@
       const body = available
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
         : `<div class="notice"><strong>当前还不能批准。</strong> ${escapeHtml((n.plan_review.blockers || ['Agent 需要先补齐当前 DUT 的文档工作分解']).join('；'))}</div>${isCodeNode(n) ? `${planReviewFormHtml(n)}<section><h2>审批历史记录</h2>${planReviewHistoryHtml(n)}</section>` : ''}`;
+      const approval = planApprovalState(n, available);
+      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批${objectLabel}</summary><div class="detail-group-body">${body}</div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-plan-complete" ${approval.enabled ? '' : 'disabled'} title="${escapeHtml(approval.title)}">${escapeHtml(approval.label)}</button></div></div>`;
+    }
+
+    function planApprovalState(n, available=planApprovalAvailable(n)) {
       const feedback = nodeFeedbackState(n);
       const completed = isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed;
-      const canComplete = available && !completed && feedback.can_approve;
-      const completionLabel = completed ? '已批准全部内容' : available || isCodeNode(n) ? '批准全部内容' : '方案待补齐';
-      const completionTitle = completed
-        ? '当前方案的全部内容已批准；提交新的审批意见后需要重新审批'
+      const title = completed
+        ? `当前${isCodeNode(n) ? codeNodeObjectLabel(n) : '文档撰写方案'}的全部内容已批准；提交新的审批意见后需要重新审批`
         : feedback.unresolved_count ? '当前审批意见尚未由 Agent 处理完成，不能批准未修改的内容'
+        : isCodeNode(n) ? (available ? `批准当前${codeNodeObjectLabel(n)}的全部内容` : (n.plan_review.blockers || ['请先完成前置事项和必需验证']).join('；'))
         : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
         : 'Agent 需要先补齐当前 DUT 的文档撰写方案';
-      return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批${objectLabel}</summary><div class="detail-group-body">${body}</div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-plan-complete" ${canComplete ? '' : 'disabled'} title="${escapeHtml(isCodeNode(n) ? objectLabel : completionTitle)}">${completionLabel}</button></div></div>`;
+      return {
+        enabled: available && !completed && feedback.can_approve,
+        label: completed ? '已批准全部内容' : available || isCodeNode(n) ? '批准全部内容' : '方案待补齐',
+        title,
+      };
+    }
+
+    function nodeApprovalState(n) {
+      if (n?.role === 'document-deliverable' && n.delivery_review) return deliveryApprovalState(n);
+      if ((n?.role === 'document-writing-plan' || isCodeNode(n)) && n.plan_review) return planApprovalState(n);
+      return null;
+    }
+
+    async function openNodeApprovalFromList(button) {
+      if (button.dataset.checking || button.disabled) return;
+      const n = findNode(button.dataset.approvePlanNode);
+      const approval = nodeApprovalState(n);
+      if (!approval?.enabled) { toast(approval?.title || '当前节点不能审批，请刷新后核对节点状态', true); return; }
+      if (!n.delivery_review) { openNodePlanCompletionModal(n); return; }
+      // A list shortcut must read the same controlled body as the detail view,
+      // not turn a cached document-available flag into approval authorization.
+      const project = state.project, scope = draftScope(null, n.id);
+      const sequence = modalSequence, route = window.location.href;
+      const key = JSON.stringify([project, n.id]);
+      if (pendingNodeApprovalReads.has(key)) return;
+      pendingNodeApprovalReads.add(key);
+      const current = () => state.project === project && modalSequence === sequence && window.location.href === route;
+      button.dataset.checking = 'true'; button.disabled = true; button.textContent = '正在核对正文…';
+      try {
+        const body = await approvalRequest(`/api/document?project=${encodeURIComponent(project)}&selector=${encodeURIComponent(n.delivery_review.document_id)}`, {headers:{'X-Verif-Token':token}});
+        if (!current()) return;
+        const latest = findNode(n.id);
+        if (draftScope(null, n.id) !== scope || !deliveryBodyMatches(latest, body)) throw new Error('节点或正文版本已变化，请刷新后重新核对');
+        const latestApproval = nodeApprovalState(latest);
+        if (!latestApproval?.enabled) throw new Error(latestApproval?.title || '当前节点已经失效，请刷新后重新核对');
+        openNodePlanCompletionModal(latest);
+      } catch (error) {
+        if (current()) toast(`不能批准文档正文：${error.message}`, true);
+      } finally {
+        pendingNodeApprovalReads.delete(key);
+        delete button.dataset.checking;
+        if (state.project === project) {
+          const latestApproval = nodeApprovalState(findNode(n.id));
+          for (const item of [button, ...document.querySelectorAll('[data-approve-plan-node]')]) {
+            if (item.dataset.approvePlanNode !== n.id) continue;
+            item.disabled = !latestApproval?.enabled;
+            item.textContent = latestApproval?.label || approval.label;
+            item.title = latestApproval?.title || '当前节点不能审批，请刷新后核对';
+          }
+        }
+      }
     }
 
     function planApprovalAvailable(n) {
@@ -2781,7 +2983,7 @@
         const body = await approvalRequest(`/api/document?project=${encodeURIComponent(project)}&selector=${encodeURIComponent(n.delivery_review.document_id)}`, {headers:{'X-Verif-Token':token}});
         if (!current()) return;
         // Never approve a different body from the one actually rendered.
-        const matching = body.document.digest === n.delivery_review.document_digest && !body.document.content_changed;
+        const matching = deliveryBodyMatches(n, body);
         container.innerHTML = documentBodyHtml(body);
         root.querySelector('#node-delivery-complete').disabled = !matching || !deliveryApprovalState(n).enabled;
         root.querySelector('[data-delivery-opinion-form] button').disabled = (
@@ -2794,6 +2996,12 @@
         root.querySelector('#node-delivery-complete').disabled = true;
         root.querySelector('[data-delivery-opinion-form] button').disabled = true;
       }
+    }
+
+    function deliveryBodyMatches(n, body) {
+      return Boolean(n?.delivery_review && body?.document?.id === n.delivery_review.document_id
+        && body.document.digest === n.delivery_review.document_digest && !body.document.content_changed
+        && typeof body.content === 'string');
     }
 
 
@@ -3256,7 +3464,7 @@
           } else {
             if (state.stream) state.stream.close();
             state.stream = null; state.project = null; state.snapshot = null;
-            renderProjectSwitcher(); setConnection(false);
+            renderProjectSwitcher(); setConnection('offline');
             window.history.replaceState({}, '', window.location.pathname);
             $('#project-name').textContent = 'verif-harness';
             $('#project-meta').textContent = '没有已注册项目';

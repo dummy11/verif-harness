@@ -142,6 +142,39 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
       await page.screenshot({path:process.env.VERIF_DASHBOARD_SCREENSHOT_DIR + '/delivery-unified.png', fullPage:true});
     }
     await page.locator('#node-delivery-complete').click();
+    await page.locator('#node-plan-complete-form').waitFor();
+    assert.equal(await page.locator('#modal').getAttribute('data-plan-node'), delivery.id);
+    await page.locator('#modal [data-close-modal]').click();
+    // The list exposes the same approval, with a controlled body read before
+    // opening the confirmation. An unreadable or changed body cannot bypass it.
+    await page.goto(url({workstream:'VDOC'}));
+    const listApproval = page.locator(`[data-approve-plan-node="${delivery.id}"]`);
+    await listApproval.waitFor();
+    assert.equal(await listApproval.innerText(), '批准全部内容');
+    assert.equal(await listApproval.isEnabled(), true);
+    const controlledBody = await context.request.get(new URL(`/api/document?project=${config.otherProject}&selector=${encodeURIComponent(docId)}`, config.url).toString(), {
+      headers:{'X-Verif-Token':config.token},
+    });
+    assert.equal(controlledBody.ok(), true);
+    const bodyPayload = await controlledBody.json();
+    for (const failure of [
+      {status:400,json:{error:'测试列表正文不可读'}},
+      {status:200,json:{...bodyPayload,document:{...bodyPayload.document,digest:'changed-for-list-test'}}},
+    ]) {
+      await page.route('**/api/document?*', route => route.fulfill(failure));
+      const failedRead = page.waitForResponse(r => r.url().includes('/api/document?'));
+      await listApproval.click();
+      assert.equal((await failedRead).status(), failure.status);
+      await page.locator('#toast').filter({hasText:'不能批准文档正文：'}).waitFor();
+      assert.equal(await page.locator('#modal-backdrop.open').count(), 0);
+      await page.waitForFunction(id => !document.querySelector(`[data-approve-plan-node="${id}"]`).disabled, delivery.id);
+      await page.unroute('**/api/document?*');
+    }
+    const bodyRead = page.waitForResponse(r => r.url().includes('/api/document?'));
+    await listApproval.click();
+    assert.equal((await bodyRead).ok(), true);
+    await page.locator('#node-plan-complete-form').waitFor();
+    assert.equal(await page.locator('#modal').getAttribute('data-plan-node'), delivery.id);
     await page.locator('#node-plan-complete-form [name="reviewer"]').fill('markdown-browser-reviewer');
     assert.equal(await page.locator('#node-plan-complete-form [name="reason"]').getAttribute('required'), null);
     const written = page.waitForResponse(r => r.url().includes('/api/reviews/document-delivery') && r.request().method() === 'POST');
@@ -156,6 +189,11 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.ok(!after.waiting_for_human.some(a => a.source === 'closure' && a.target === delivery.id));
     assert.ok(after.workstreams.find(w => w.workstream === 'VDOC').closure.actions.some(a => a.kind === 'CHECK_DOCUMENT_REVIEW' && a.target === delivery.id));
     assert.equal(reviewed.delivery_review.current_review.notes, '');
+    await page.reload();
+    await listApproval.waitFor();
+    assert.equal(await listApproval.innerText(), '已批准全部内容');
+    assert.equal(await listApproval.isDisabled(), true);
+    assert.ok(!(await listApproval.locator('xpath=ancestor::tr').innerText()).includes('已验收通过'));
     // Old direct acceptance links are the same node view, not a second form.
     await page.goto(url({workstream:'VDOC', 'review-delivery-node':delivery.id}));
     await rendered();

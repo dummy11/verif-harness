@@ -638,6 +638,57 @@ def json_text(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
 
+DERIVED_CHANGE_FINDINGS_MIGRATION = "derived_change_findings_v1"
+
+
+def derived_result_node(identifier: str) -> bool:
+    """Return whether validity is owned by a reconciler, not a work action."""
+    return vdoc_artifacts.protected(identifier) or code_workflow.protected(identifier)
+
+
+def migrate_derived_change_findings(connection: sqlite3.Connection, timestamp: str) -> None:
+    """Discharge change findings that older versions put on derived results.
+
+    The originating file event and finding rows remain as audit history. Only
+    their OPEN status was invalid: artifacts and capabilities have no evidence,
+    waiver, or approval action of their own and are re-derived from work nodes.
+    """
+    if connection.execute(
+        "SELECT 1 FROM meta WHERE key=?", (DERIVED_CHANGE_FINDINGS_MIGRATION,),
+    ).fetchone():
+        return
+    candidates = [dict(row) for row in connection.execute(
+        """SELECT findings.id,findings.subject
+           FROM findings JOIN events ON events.id=findings.cause_event
+           WHERE findings.status='OPEN' AND events.subject LIKE 'file:%'
+           ORDER BY findings.rowid"""
+    )]
+    invalid = [item for item in candidates if derived_result_node(item["subject"])]
+    if invalid:
+        connection.executemany(
+            "UPDATE findings SET status='RESOLVED' WHERE id=? AND status='OPEN'",
+            [(item["id"],) for item in invalid],
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?)",
+            (
+                "migration:derived-change-findings-v1",
+                "repair-derived-change-findings",
+                PROJECT_TARGET,
+                None,
+                json_text({
+                    "resolved_count": len(invalid),
+                    "subjects": sorted({item["subject"] for item in invalid}),
+                }),
+                timestamp,
+            ),
+        )
+    connection.execute(
+        "INSERT INTO meta(key,value) VALUES(?,?)",
+        (DERIVED_CHANGE_FINDINGS_MIGRATION, str(len(invalid))),
+    )
+
+
 def atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -1352,6 +1403,7 @@ class ProjectStore:
             connection.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
             vdoc_artifacts.migrate(connection, now())
             code_workflow.migrate(connection)
+            migrate_derived_change_findings(connection, now())
             if not connection.execute("SELECT 1 FROM meta WHERE key='vdoc_cap_dependencies'").fetchone():
                 self._reconcile_default_dependencies(connection)
                 connection.execute("INSERT INTO meta VALUES('vdoc_cap_dependencies','1')")
@@ -6065,7 +6117,7 @@ class ProjectStore:
 
     def _require_work_target(self, node_id: str) -> None:
         node_id = node_id.strip()
-        if vdoc_artifacts.protected(node_id) or code_workflow.protected(node_id):
+        if derived_result_node(node_id):
             raise HarnessError("文档产物和可用状态由审批、正文检查及依赖自动确定，不能直接执行或修改")
         self.ensure_dashboard_schema()
         with self.read_connect() as connection:
@@ -6095,7 +6147,7 @@ class ProjectStore:
     def add_edge(self, source: str, target: str, relation: str, origin: str, confidence: float) -> dict[str, Any]:
         self.require()
         self._require_work_target(source)
-        if vdoc_artifacts.protected(target) or code_workflow.protected(target):
+        if derived_result_node(target):
             raise HarnessError("文档产物和可用状态只能通过依赖关系引用")
         if not 0 <= confidence <= 1:
             raise HarnessError("confidence 必须在 0 到 1 之间")
@@ -6785,12 +6837,16 @@ class ProjectStore:
                 queue.extend(graph.get(current, []))
             timestamp = now()
             self._update_node_statuses(connection, [subject], initial.value, timestamp)
-            self._update_node_statuses(connection, affected[1:], Validity.REVALIDATION_REQUIRED.value, timestamp)
+            work_targets = [node_id for node_id in affected[1:] if not derived_result_node(node_id)]
+            self._update_node_statuses(
+                connection, work_targets, Validity.REVALIDATION_REQUIRED.value, timestamp,
+            )
             details = f"{relative} 的 {kind} 事件使该节点需要重新验证"
             existing_findings = {row["subject"] for row in connection.execute(
                 "SELECT subject FROM findings WHERE status='OPEN' AND details=?", (details,),
             )}
-            for index, node_id in enumerate(affected):
+            finding_targets = [node_id for node_id in affected if not derived_result_node(node_id)]
+            for index, node_id in enumerate(finding_targets):
                 if node_id not in existing_findings:
                     connection.execute("INSERT INTO findings VALUES(?,?,?,?,?,?,?)",
                                        (f"finding:{uuid.uuid4().hex[:12]}", node_id,
