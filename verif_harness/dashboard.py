@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -369,6 +370,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json(code_workflow.content(self.server.project_store(project_id), query.get("node", [""])[0], query.get("path", [""])[0], query.get("digest", [""])[0]))
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/code-exclusion-file":
+            try:
+                from . import code_workflow
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                self._json(code_workflow.coverage_exclusion_content(
+                    self.server.project_store(project_id), query.get("node", [""])[0],
+                    query.get("path", [""])[0], query.get("digest", [""])[0],
+                ))
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/code/regression-history-file":
+            try:
+                from . import code_workflow
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                value = code_workflow.regression_history_content(
+                    self.server.project_store(project_id), query.get("node", [""])[0],
+                    query.get("round_id", [""])[0], query.get("file", [""])[0],
+                )
+                self._json({**value, "dashboard_project_id": project_id})
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/document":
             try:
                 query = urllib.parse.parse_qs(parsed.query)
@@ -461,7 +485,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # caller separately rereads the authoritative project snapshot.
                 self._json({"result": result, "dashboard_project_id": project_id})
                 return
-            self._json({"result": result, "snapshot": self._snapshot(store, project_id)})
+            self._json({"result": result, "snapshot": self._snapshot(store, project_id), "dashboard_project_id": project_id})
         except HarnessError as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:  # pragma: no cover - safety boundary for the local HTTP surface
@@ -557,6 +581,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/api/code/workflow-change":
             from . import code_workflow
             return code_workflow.request_change(store, body)
+        if path == "/api/code/regression-rerun":
+            from . import code_workflow
+            return code_workflow.request_regression_rerun(store, body)
+        if path == "/api/code/coverage-exclusions":
+            from . import code_workflow
+            encoded_content = str(body.get("content_base64", ""))
+            try:
+                content = base64.b64decode(encoded_content, validate=True)
+            except (ValueError, TypeError) as exc:
+                raise HarnessError("exclude 文件内容不是有效 base64") from exc
+            return code_workflow.provide_coverage_exclusions(
+                store, str(body.get("node", "")), str(body.get("reviewer", "")),
+                str(body.get("reason", "")), confirm=body.get("confirm") is True,
+                content=content, filename=str(body.get("filename", "")),
+            )
         if path == "/api/workflow-launch":
             from . import workflow_launch
             return workflow_launch.choose(

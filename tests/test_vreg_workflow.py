@@ -6,6 +6,9 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import urllib.error
+import urllib.parse
+from unittest import mock
 
 from tests import test_vdoc_artifacts as fixtures
 from verif_harness import agent_service as service, code_workflow as code, workflow_launch
@@ -29,6 +32,15 @@ class VregWorkflowTest(unittest.TestCase):
         self.store = self.fixture.store
         self.root = self.store.root
         self.http = self.fixture.fixture
+        submit_file = self.write_json("verification/regression/submit.json", {
+            "profiles": {"local": {"owner": "synthetic-testbench"}, "local-other": {"owner": "synthetic-testbench"}},
+        })
+        self.submit_profile = {
+            "schema": "SubmitProfileRef/1", "profile_id": "local",
+            "submit_file": str(submit_file.relative_to(self.root)),
+            "submit_file_digest": self.store._digest(submit_file), "profile_digest": "b" * 64,
+            "adapter": {"name": "synthetic-submit-export", "version": "1"},
+        }
         self.write("regression-plan.md", "# 回归计划\n\n定向用例 demo_test，显式 seed 和同 seed 重跑。\n")
         # The Dashboard fixture includes historical VCHK nodes. Its explicit
         # synthetic upstream waivers preserve the fresh-set governance contract.
@@ -60,6 +72,8 @@ class VregWorkflowTest(unittest.TestCase):
                               "verification/regression/runner.sh", "verification/regression/collector.json"],
              "capabilities": ["regression-policy", "executor-ready"]},
             {**copy.deepcopy(common), "key": "dut-results", "implementation_key": "dut:results",
+             "regression_config": {"regression_group": "nightly", "cases": [{"case_id": "demo_test", "case_digest": "c" * 64}],
+                                   "submit_profile": self.submit_profile, "seed_mode": "fixed", "seed": 17, "repeat": 1},
              "role": "regression-results-plan", "title": "DUT 回归结果方案",
              "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
                         "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence",
@@ -128,13 +142,16 @@ class VregWorkflowTest(unittest.TestCase):
         plan = self.node("regression-results-plan") if plan is None else plan
         if approve:
             self.approve(plan)
+        delivery = next(node for node in self.store.workstream("VREG")["desired_state"]
+                        if node["role"] == "regression-results-deliverable"
+                        and node["implementation_key"] == plan["implementation_key"])
+        binding = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["execution_binding"]
+        code.start_regression_execution(self.store, delivery["id"], binding, "Project Main Agent")
         self.write(plan["output_paths"][0], "synthetic fixture demo_test seed=17\n")
         self.write_json(plan["output_paths"][1], {
             **ANALYSIS_RECEIPT, "synthetic": True, "summary": "fixture run analyzed",
         })
-        return next(node for node in self.store.workstream("VREG")["desired_state"]
-                    if node["role"] == "regression-results-deliverable"
-                    and node["implementation_key"] == plan["implementation_key"])
+        return delivery
 
     def artifact(self, name, kind, analyzer="xverif"):
         return {"path": name, "sha256": self.store._digest(self.root / name),
@@ -145,6 +162,9 @@ class VregWorkflowTest(unittest.TestCase):
         if stage == "results" and node["implementation_key"] != "dut:results":
             stage += "-" + node["implementation_key"].replace(":", "-")
         state = self.store.node_plan_review_state(node["id"])
+        binding = ((state.get("regression_execution") or {}).get("current") or {}).get("execution_binding")
+        if binding:
+            stage += "-" + binding["round_id"].split(":", 1)[1]
         project = json.loads((self.store.state / "project.json").read_text())
         revision = project.get("baseline_revision") or "fixture-revision"
         checks = []
@@ -166,19 +186,54 @@ class VregWorkflowTest(unittest.TestCase):
                              self.artifact(node["output_paths"][0], "simulation-log"),
                              self.artifact(node["output_paths"][1], "analysis-report")]
                 if claim == "execution-evidence":
-                    result = {"golden_required": True, "batch_seed": "17", "manifest_digest": artifacts[0]["sha256"],
-                              "results": [{"test": "demo_test", "seed": 17, "verdict": execution_verdict,
-                                           "log_digest": artifacts[1]["sha256"]}]}
+                    config = node["regression_config"]
+                    profile = config["submit_profile"]
+                    submit_file = self.root / profile["submit_file"]
+                    runs = [{"case_id": case["case_id"], "iteration": iteration,
+                             "seed": config["seed"] if config["seed_mode"] == "fixed" else str(17 + iteration)}
+                            for case in config["cases"] for iteration in range(config["repeat"])]
+                    caselist = self.write(f"verification/results/{stage}/nightly.caselist", "".join(case["case_id"] + "\n" for case in config["cases"]))
+                    batch = self.write_json(f"verification/results/{stage}/nightly.batch.json", {
+                        "schema": "RegressionBatchManifest/2", "batch_id": f"{stage}-local",
+                        "regression_group": config["regression_group"], "submit_profile": profile,
+                        "execution_binding": binding, "seed_mode": config["seed_mode"], "runs": runs,
+                        "caselist": {"path": str(caselist.relative_to(self.root)),
+                                     "sha256": self.store._digest(caselist)},
+                        **({"seed": config["seed"]} if config["seed_mode"] == "fixed" else {}),
+                        "repeat": config["repeat"], "timeout_seconds": 60, "cases": config["cases"],
+                    })
+                    artifacts = [self.artifact(str(batch.relative_to(self.root)), "regression-manifest"),
+                                 self.artifact(str(caselist.relative_to(self.root)), "regression-manifest"),
+                                 self.artifact(str(submit_file.relative_to(self.root)), "configuration"),
+                                 self.artifact(node["output_paths"][0], "simulation-log"),
+                                 self.artifact(node["output_paths"][1], "analysis-report")]
+                    result = {
+                        "golden_required": True,
+                        "batch_manifest_digests": [self.store._digest(batch)],
+                        "results": [{
+                            **run, "batch_id": f"{stage}-local",
+                            "case_digest": next(case["case_digest"] for case in config["cases"] if case["case_id"] == run["case_id"]),
+                            "submit_profile_id": profile["profile_id"], "submit_profile_digest": profile["profile_digest"],
+                            "verdict": execution_verdict,
+                            "log_digest": artifacts[3]["sha256"],
+                        } for run in runs],
+                    }
                 elif claim == "triage-evidence":
                     result = {"failures": [] if failures is None else [
-                        {**failure, "rerun_log_digest": artifacts[1]["sha256"]} for failure in failures]}
+                        {"batch_id": f"{stage}-local", "rerun_kind": "failure-rerun",
+                         "case_id": failure.get("case_id") or failure.get("test"),
+                         "iteration": failure.get("iteration", 0),
+                         **{key: value for key, value in failure.items()
+                            if key not in {"test", "case_id", "iteration"}},
+                         "rerun_log_digest": artifacts[1]["sha256"]} for failure in failures]}
                 else:
                     # The Engine must derive the complete set despite a producer
                     # trying to supply an empty required-node list.
                     result = {"snapshot_revision": revision if snapshot_revision is None else snapshot_revision,
                               "required_nodes": []}
+                result["execution_binding"] = binding
             evidence_file = self.write_json(f"verification/results/{stage}/{claim}.json", {
-                "schema": "RegressionEvidence/1", "claim": claim, "revision": revision,
+                "schema": "RegressionEvidence/3", "claim": claim, "revision": revision,
                 "tool": "synthetic-contract-fixture/1", "artifacts": artifacts, "result": result,
             })
             checks.append({"criterion": node["acceptance_criteria"][0], "method": "synthetic 合同检查",
@@ -187,6 +242,7 @@ class VregWorkflowTest(unittest.TestCase):
         report_file = self.write_json(f"verification/results/{stage}/validation.json", {
             "schema": "CodeValidation/1", "node_id": node["id"], "revision": state["revision"],
             "input_signature": state["input_signature"], "code_files": state["code_files"],
+            **({"execution_binding": binding} if binding else {}),
             "checked_by": "Project Main Agent", "summary": "已核对当前 synthetic 回归报告", "checks": checks,
         })
         self.last_report = report_file
@@ -227,7 +283,7 @@ class VregWorkflowTest(unittest.TestCase):
         results_delivery = self.results(approve=False)
         self.assertTrue(self.validate(results_delivery, via_cli=True)["ready"])
         state = self.cli("code", "status", results_delivery["id"])
-        self.assertEqual(state["validation"]["regression_contract"], "RegressionResults/2")
+        self.assertEqual(state["validation"]["regression_contract"], "RegressionResults/4")
         fresh = next(check["validation"]["facts"] for check in state["validation"]["checks"]
                      if check["claim"] == "fresh-evidence")
         self.assertIn(infrastructure_delivery["id"], {node["id"] for node in fresh["required_nodes"]})
@@ -315,6 +371,8 @@ class VregWorkflowTest(unittest.TestCase):
                      title="DUT 第二组回归结果方案",
                      output_paths=[path.replace("regression/", "regression-other/")
                                    for path in other["output_paths"]])
+        other["regression_config"]["regression_group"] = "other"
+        other["regression_config"]["submit_profile"]["profile_id"] = "local-other"
         self.design([*self.items, other])
         self.finish_infrastructure()
         plans = [node for node in self.store.workstream("VREG")["desired_state"]
@@ -455,7 +513,9 @@ class VregWorkflowTest(unittest.TestCase):
         action = next(action for action in actions if action["kind"] == "ANALYZE_VERIFICATION_FEEDBACK")
         self.assertEqual(action["feedback_routes"][0]["responsible_workstream"], "VSTIM")
         self.assertFalse(any(plan["workstream"] == "VSTIM" for plan in self.store.workstreams()))
-        self.write("verification/results/results/triage-evidence.json", "changed synthetic report\n")
+        report = json.loads(self.last_report.read_text())
+        triage = next(check["report"] for check in report["checks"] if check["claim"] == "triage-evidence")
+        self.write(triage, "changed synthetic report\n")
         self.assertFalse(self.store.node_plan_review_state(delivery["id"])["validation"]["current"])
         actions = self.store.evaluate_closure("VREG")["actions"]
         self.assertFalse(any(action["kind"] == "ANALYZE_VERIFICATION_FEEDBACK" for action in actions))
@@ -591,6 +651,356 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertIn("只有方案与依赖仍有效", prompt)
         for obsolete in ("同工作包", "其他包", "code-deliverable", "工作包"):
             self.assertNotIn(obsolete, prompt)
+
+    def rerun_body(self, delivery, key="fixture-rerun"):
+        state = self.store.node_plan_review_state(delivery["id"])
+        return {"node": delivery["id"], "revision": state["revision"],
+                "definition_digest": state["definition_digest"], "request_key": key,
+                "reviewer": "fixture-owner", "reason": "再次核对同一批准回归组", "confirm": True}
+
+    def test_group_uniqueness_and_seed_repeat_are_approved_configuration(self):
+        invalid = copy.deepcopy(self.items)
+        duplicate = copy.deepcopy(invalid[1])
+        duplicate.update(key="duplicate-results", implementation_key="dut:duplicate-results",
+                         output_paths=["verification/duplicate/result.log"])
+        duplicate["regression_config"]["regression_group"] = "different-name-same-scope"
+        with self.assertRaisesRegex(HarnessError, "同一回归组"):
+            self.design([*invalid, duplicate])
+        for change in ({"repeat": 0}, {"repeat": True}, {"seed_mode": "random", "seed": 17}, {"seed": "random"}):
+            invalid = copy.deepcopy(self.items)
+            invalid[1]["regression_config"].update(change)
+            with self.assertRaises(HarnessError):
+                self.design(invalid)
+        random = copy.deepcopy(self.items)
+        random[1]["regression_config"].update(seed_mode="random")
+        del random[1]["regression_config"]["seed"]
+        del random[1]["regression_config"]["repeat"]
+        self.design(random)
+        self.assertEqual(self.node("regression-results-plan")["regression_config"]["repeat"], 1)
+        self.finish_all()
+        changed = copy.deepcopy(random)
+        changed[1]["regression_config"]["repeat"] = 3
+        self.design(changed)
+        state = self.store.node_plan_review_state(self.node("regression-results-plan")["id"])
+        self.assertFalse(state["completed"])
+        self.assertFalse(any(node["role"] == "regression-results-deliverable"
+                             for node in self.store.workstream("VREG")["desired_state"]))
+
+    def test_rerun_keeps_plan_infrastructure_history_and_requires_new_acceptance(self):
+        delivery = self.finish_all()
+        plan = self.store.workstream("VREG")
+        old = self.store.node_plan_review_state(delivery["id"])
+        old_round = old["regression_execution"]["current"]
+        old_report = self.last_report
+        old_contents = old_report.read_text()
+        plan_head = self.head("art.code_plan:vreg:dut:results")["data"]["current"]
+        body = self.rerun_body(delivery)
+        saved = self.http.post("/api/code/regression-rerun", body, self.http.server.write_token)
+        self.assertEqual(saved["result"]["round"]["status"], "REQUESTED")
+        self.assertEqual(saved["result"]["round"]["round_number"], 2)
+        repeated = self.http.post("/api/code/regression-rerun", body, self.http.server.write_token)
+        self.assertEqual(repeated["result"]["round"]["id"], saved["result"]["round"]["id"])
+        state = self.cli("code", "status", delivery["id"])
+        self.assertFalse(state["completed"])
+        self.assertFalse(state["validation"]["current"])
+        self.assertFalse(state["regression_execution"]["current"]["execution_confirmed"])
+        self.assertEqual(self.store.workstream("VREG")["revision"], plan["revision"])
+        self.assertEqual(self.head("art.code_plan:vreg:dut:results")["data"]["current"], plan_head)
+        self.assertEqual(self.head("cap.vreg:executor-ready")["status"], "VALID")
+        self.assertNotEqual(self.head("cap.vreg:fresh-evidence")["status"], "VALID")
+        self.assertFalse(self.store.evaluate_closure("VREG")["ready"])
+        with self.assertRaisesRegex(HarnessError, "不能重复启动"):
+            code.request_regression_rerun(self.store, self.rerun_body(delivery, "duplicate-inflight"))
+        with self.assertRaises(HarnessError):
+            code.validate(self.store, delivery["id"], str(old_report.relative_to(self.root)))
+        self.write(str(old_report.relative_to(self.root)), "replaced old output for synthetic new run")
+        query = urllib.parse.urlencode({"node": delivery["id"], "round_id": old_round["id"],
+                                      "file": str(old_report.relative_to(self.root))})
+        with self.http.get("/api/code/regression-history-file?" + query) as response:
+            historical = json.load(response)
+        self.assertEqual(historical["content"], old_contents)
+        self.results(approve=False)
+        self.assertTrue(self.validate(delivery)["ready"])
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["completed"])
+        self.approve(delivery)
+        current = self.store.node_plan_review_state(delivery["id"])
+        self.assertEqual(current["regression_execution"]["current"]["status"], "ACCEPTED")
+        self.assertEqual(len(current["regression_execution"]["history"]), 2)
+        self.assertEqual(len(current["completion_reviews"]), len(old["completion_reviews"]) + 1)
+        self.assertTrue(self.store.evaluate_closure("VREG")["ready"])
+
+    def test_rerun_cli_and_stale_or_unauthorized_requests_fail_closed(self):
+        delivery = self.finish_all()
+        body = self.rerun_body(delivery, "cli-rerun")
+        for modified in ({"revision": 0}, {"definition_digest": "a" * 64}, {"confirm": False}):
+            with self.assertRaises(HarnessError):
+                code.request_regression_rerun(self.store, {**body, **modified})
+        with self.assertRaises(urllib.error.HTTPError) as exc:
+            self.http.post("/api/code/regression-rerun", body, "wrong-token")
+        self.assertEqual(exc.exception.code, 403)
+        saved = self.cli("code", "rerun", delivery["id"], "--revision", str(body["revision"]),
+                         "--definition-digest", body["definition_digest"], "--request-key", body["request_key"],
+                         "--reviewer", body["reviewer"], "--reason", body["reason"], "--confirm")
+        self.assertEqual(saved["round"]["status"], "REQUESTED")
+        self.assertEqual(ProjectStore(self.root).node_plan_review_state(delivery["id"])["regression_execution"]["current"]["id"], saved["round"]["id"])
+        with self.assertRaises(HarnessError):
+            code.request_regression_rerun(self.store, {**body, "reason": "changed reused request"})
+        binding = saved["round"]["execution_binding"]
+        self.cli("code", "execution-start", delivery["id"], "--binding", json.dumps(binding))
+        self.assertEqual(self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["status"], "RUNNING")
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["execution_confirmed"])
+
+    def test_new_execution_round_changes_service_action_without_restarting_workflow(self):
+        self.finish_infrastructure()
+        delivery = self.results()
+        initial = self.store.workstream("VREG")
+        task = next(t for t in service._candidates_for_plan(self.store, initial, False) if t["action"]["target"] == delivery["id"])
+        with self.store.connect() as db:
+            db.execute("INSERT INTO agent_service_runs(id,task_key,revision,action_json,status,created_at) VALUES(?,?,?,?,?,?)",
+                       ("synthetic-attempt", task["key"], task["revision"], json.dumps(task), "COMPLETED", now()))
+        self.assertTrue(self.validate(delivery)["ready"])
+        self.approve(delivery)
+        saved = code.request_regression_rerun(self.store, self.rerun_body(delivery))
+        current = self.store.workstream("VREG")
+        next_task = next(t for t in service._candidates_for_plan(self.store, current, False) if t["action"]["target"] == delivery["id"])
+        self.assertNotEqual(next_task["key"], task["key"])
+        self.assertEqual(next_task["execution_binding"]["round_id"], saved["round"]["id"])
+        self.assertFalse(service.task_is_current(self.store, task))
+        self.assertTrue(service.task_is_current(self.store, next_task))
+
+    def test_agent_failure_preserves_unknown_tool_state_until_same_round_evidence(self):
+        self.finish_infrastructure()
+        self.approve(self.node("regression-results-plan"))
+        delivery = self.node("regression-results-deliverable")
+
+        def fail_cli():
+            task = next(t for t in service._candidates_for_plan(self.store, self.store.workstream("VREG"), False)
+                        if t["action"]["target"] == delivery["id"])
+            child = mock.Mock(returncode=1)
+            child.poll.return_value = 1
+            with service.project_lock(self.store) as fd, \
+                    mock.patch.object(service, "candidates", return_value=[task]), \
+                    mock.patch.object(service, "runtime_command", return_value=["synthetic-no-eda"]), \
+                    mock.patch.object(service.subprocess, "Popen", return_value=child), \
+                    mock.patch.object(service, "end_process"):
+                service.execute_task(self.store, "codex", task, fd)
+
+        fail_cli()
+        current = self.store.node_plan_review_state(delivery["id"])["regression_execution"]
+        self.assertEqual(current["current"]["status"], "FAILED")
+        self.assertFalse(current["current"]["execution_confirmed"])
+        code.request_regression_rerun(self.store, self.rerun_body(delivery, "after-cli-only-failure"))
+        self.results(approve=False)  # Registers a tool invocation, without executing EDA.
+        fail_cli()
+        current = self.store.node_plan_review_state(delivery["id"])["regression_execution"]
+        self.assertEqual(current["current"]["status"], "INTERRUPTED")
+        self.assertFalse(current["can_rerun"])
+        with self.assertRaisesRegex(HarnessError, "工具结果尚未核实"):
+            code.request_regression_rerun(self.store, self.rerun_body(delivery, "unsafe-new-job"))
+        with self.assertRaisesRegex(HarnessError, "不得重复提交"):
+            code.start_regression_execution(self.store, delivery["id"], current["current"]["execution_binding"], "Project Main Agent")
+        # Reconcile the original run using real file-backed synthetic evidence;
+        # no execution-start replay or automatic acceptance is needed.
+        self.assertTrue(self.validate(delivery)["ready"])
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.assertEqual(state["regression_execution"]["current"]["status"], "VALIDATED")
+        self.assertTrue(state["regression_execution"]["current"]["execution_confirmed"])
+        self.assertFalse(state["completed"])
+        self.approve(delivery)
+
+    def test_execution_manifest_must_match_approved_group_and_current_rechecks_scope(self):
+        self.finish_infrastructure()
+        delivery = self.results()
+        self.assertTrue(self.validate(delivery)["ready"])
+        self.approve(delivery)
+        # Persisted facts are rechecked on every current-receipt read, not just
+        # when the report was originally ingested.
+        with self.store.connect() as db:
+            row = db.execute("SELECT id,payload_json FROM code_validations WHERE node_id=? ORDER BY rowid DESC LIMIT 1",
+                             (delivery["id"],)).fetchone()
+            receipt = json.loads(row["payload_json"])
+            execution = next(check["validation"]["facts"] for check in receipt["checks"] if check["claim"] == "execution-evidence")
+            execution["batches"][0]["regression_group"] = "other-unapproved-group"
+            db.execute("UPDATE code_validations SET payload_json=? WHERE id=?", (json.dumps(receipt), row["id"]))
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.assertFalse(state["validation"]["current"])
+        self.assertFalse(state["completed"])
+        self.assertNotEqual(self.head("cap.vreg:fresh-evidence")["status"], "VALID")
+
+        # An internally consistent new manifest is still rejected if it does
+        # not execute the approved group; hashes alone do not confer authority.
+        wrapper = json.loads(self.last_report.read_text())
+        check = next(check for check in wrapper["checks"] if check["claim"] == "execution-evidence")
+        report_path = self.root / check["report"]
+        report = json.loads(report_path.read_text())
+        batch_artifact = next(artifact for artifact in report["artifacts"] if artifact["path"].endswith(".batch.json"))
+        batch = json.loads((self.root / batch_artifact["path"]).read_text())
+        batch["regression_group"] = "other-unapproved-group"
+        self.write_json(batch_artifact["path"], batch)
+        batch_artifact["sha256"] = self.store._digest(self.root / batch_artifact["path"])
+        report["result"]["batch_manifest_digests"] = [batch_artifact["sha256"]]
+        self.write_json(check["report"], report)
+        checked = code.validate(self.store, delivery["id"], str(self.last_report.relative_to(self.root)))
+        self.assertFalse(checked["ready"])
+        self.assertTrue(any("其他 group" in reason for reason in checked["blockers"]), checked["blockers"])
+        current = self.store.node_plan_review_state(delivery["id"])
+        self.assertFalse(current["can_approve"])
+        self.assertEqual(current["regression_execution"]["current"]["status"], "INTERRUPTED")
+        self.assertFalse(current["regression_execution"]["can_rerun"])
+
+    def test_submit_config_change_and_missing_legacy_config_require_reapproval(self):
+        delivery = self.finish_all()
+        body = self.rerun_body(delivery)
+        self.write(self.submit_profile["submit_file"], "changed synthetic submit source")
+        with self.assertRaisesRegex(HarnessError, "方案尚未批准或已经失效"):
+            code.request_regression_rerun(self.store, self.rerun_body(delivery))
+        current = self.store.workstream("VREG")
+        for node in current["desired_state"]:
+            if "regression_config" in node:
+                del node["regression_config"]
+        with self.store.connect() as db:
+            db.execute("UPDATE workstreams SET desired_json=? WHERE name='VREG'", (json.dumps(current["desired_state"]),))
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.assertFalse(state["completed"])
+        self.assertFalse(state["regression_execution"]["can_rerun"])
+
+    def test_plan_reapproval_cannot_supersede_unknown_dispatched_or_running_round(self):
+        items = copy.deepcopy(self.items)
+        self.write("result-criteria.md", "synthetic original result criteria")
+        items[1]["input_files"].append("result-criteria.md")
+        items[1]["source_refs"].append("result-criteria.md")
+        self.design(items)
+        self.finish_infrastructure()
+        delivery = self.results()
+        plan = self.node("regression-results-plan")
+        original = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]
+        self.write("result-criteria.md", "synthetic changed result criteria")
+        for status in ("DISPATCHED", "RUNNING", "INTERRUPTED"):
+            with self.subTest(status=status), self.store.connect() as db:
+                db.execute("UPDATE regression_execution_rounds SET status=? WHERE id=?", (status, original["id"]))
+            state = self.store.node_plan_review_state(plan["id"])
+            self.assertFalse(state["completed"])
+            self.assertFalse(state["can_approve"])
+            self.assertTrue(any("先核对旧任务" in reason for reason in state["blockers"]), state["blockers"])
+            with self.assertRaisesRegex(HarnessError, "先核对旧任务"):
+                self.store.complete_node_plan_review(plan["id"], state["definition_digest"], "fixture-owner")
+            execution = self.store.node_plan_review_state(delivery["id"])["regression_execution"]
+            self.assertEqual(len(execution["history"]), 1)
+            self.assertEqual(execution["current"]["id"], original["id"])
+            self.assertEqual(execution["current"]["status"], status)
+        # Terminal execution evidence can reconcile the original tool run even
+        # though fresh-evidence correctly blocks its old plan's acceptance.
+        self.assertFalse(self.validate(delivery)["ready"])
+        self.assertEqual(self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["status"], "FAILED")
+        self.approve(plan)
+        execution = self.store.node_plan_review_state(delivery["id"])["regression_execution"]
+        self.assertEqual(len(execution["history"]), 2)
+        self.assertEqual(execution["history"][0]["status"], "SUPERSEDED")
+        self.assertEqual(execution["current"]["status"], "REQUESTED")
+
+    def test_unknown_round_cannot_end_using_new_or_unrecoverable_approved_config(self):
+        self.finish_infrastructure()
+        delivery = self.results()
+        original = copy.deepcopy(delivery["regression_config"])
+        round_id = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["id"]
+        plan = self.store.workstream("VREG")
+        for node in plan["desired_state"]:
+            if node.get("implementation_key") == delivery["implementation_key"]:
+                node["regression_config"]["repeat"] = 2
+        with self.store.connect() as db:
+            db.execute("UPDATE workstreams SET desired_json=? WHERE name='VREG'", (json.dumps(plan["desired_state"]),))
+        # Even a complete report for today's changed settings is not proof that
+        # the original approved one-run job has ended.
+        checked = self.validate(self.node("regression-results-deliverable"))
+        self.assertFalse(checked["ready"])
+        current = self.store.node_plan_review_state(delivery["id"])
+        self.assertEqual(current["regression_execution"]["current"]["status"], "INTERRUPTED")
+        self.assertFalse(current["regression_execution"]["can_rerun"])
+        self.assertTrue(any("原批准配置" in reason for reason in checked["blockers"]))
+
+        for node in plan["desired_state"]:
+            if node.get("implementation_key") == delivery["implementation_key"]:
+                node["regression_config"] = copy.deepcopy(original)
+        with self.store.connect() as db:
+            db.execute("UPDATE workstreams SET desired_json=? WHERE name='VREG'", (json.dumps(plan["desired_state"]),))
+            db.execute("UPDATE regression_execution_rounds SET config_json='{}' WHERE id=?", (round_id,))
+        checked = self.validate(self.node("regression-results-deliverable"))
+        self.assertFalse(checked["ready"])
+        current = self.store.node_plan_review_state(delivery["id"])
+        self.assertEqual(current["regression_execution"]["current"]["status"], "INTERRUPTED")
+        self.assertFalse(current["regression_execution"]["can_rerun"])
+        self.assertTrue(any("确切的批准执行配置" in reason for reason in current["regression_execution"]["blockers"]))
+
+    def regression_revision_snapshot(self):
+        with self.store.read_connect() as db:
+            result = {"workstream": dict(db.execute("SELECT * FROM workstreams WHERE name='VREG'").fetchone())}
+            for table in ("regression_execution_rounds", "node_plan_reviews", "node_plan_section_reviews", "events", "activities", "agent_assignments"):
+                result[table] = [dict(row) for row in db.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+        result["files"] = {str(path.relative_to(self.root)): self.store._digest(path)
+                           for path in self.root.rglob("*") if path.is_file()
+                           and ".verif-harness" not in path.relative_to(self.root).parts}
+        return result
+
+    def test_design_and_restart_cannot_bypass_unknown_round_or_mutate_history(self):
+        self.finish_infrastructure()
+        delivery = self.results()
+        round_id = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["id"]
+        revision = self.store.workstream("VREG")["revision"]
+        for status in ("DISPATCHED", "RUNNING", "INTERRUPTED"):
+            with self.store.connect() as db:
+                db.execute("UPDATE regression_execution_rounds SET status=? WHERE id=?", (status, round_id))
+            for action in ("design", "restart"):
+                with self.subTest(status=status, action=action):
+                    before = self.regression_revision_snapshot()
+                    with self.assertRaisesRegex(HarnessError, "旧回归任务尚未核实结束"):
+                        if action == "design":
+                            code.design(self.store, "VREG", "vreg-proposal.json")
+                        else:
+                            code.request_change(self.store, {"workstream": "VREG", "kind": "restart", "revision": revision,
+                                                              "reviewer": "fixture-owner", "reason": "synthetic restart", "confirm": True})
+                    self.assertEqual(self.regression_revision_snapshot(), before)
+        # The original approved execution's actual file-backed terminal report
+        # removes the unknown-job guard without inheriting its acceptance.
+        self.assertTrue(self.validate(delivery)["ready"])
+        files = self.regression_revision_snapshot()["files"]
+        replanned = code.design(self.store, "VREG", "vreg-proposal.json")
+        self.assertEqual(replanned["revision"], revision + 1)
+        self.assertEqual(self.regression_revision_snapshot()["files"], files)
+        with self.store.read_connect() as db:
+            self.assertEqual(db.execute("SELECT status FROM regression_execution_rounds WHERE id=?", (round_id,)).fetchone()[0], "VALIDATED")
+        self.assertFalse(any(node["role"] == "regression-results-deliverable" for node in replanned["desired_state"]))
+
+    def test_historical_unknown_round_blocks_new_revision_even_without_current_delivery(self):
+        delivery = self.finish_all()
+        historical_round = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["id"]
+        replanned = code.design(self.store, "VREG", "vreg-proposal.json")
+        # Reproduce a pre-guard/imported history: the current revision has no
+        # delivery, and the uncertain old external job belongs to an old node.
+        with self.store.connect() as db:
+            db.execute("UPDATE regression_execution_rounds SET status='INTERRUPTED' WHERE id=?", (historical_round,))
+        for action in ("design", "restart"):
+            with self.subTest(action=action):
+                before = self.regression_revision_snapshot()
+                with self.assertRaisesRegex(HarnessError, "旧回归任务尚未核实结束"):
+                    if action == "design":
+                        code.design(self.store, "VREG", "vreg-proposal.json")
+                    else:
+                        code.request_change(self.store, {"workstream": "VREG", "kind": "restart", "revision": replanned["revision"],
+                                                          "reviewer": "fixture-owner", "reason": "synthetic restart", "confirm": True})
+                self.assertEqual(self.regression_revision_snapshot(), before)
+
+    def test_undispatched_request_does_not_prevent_replan_or_restart(self):
+        self.finish_infrastructure()
+        self.approve(self.node("regression-results-plan"))
+        delivery = self.node("regression-results-deliverable")
+        original = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]
+        self.assertEqual(original["status"], "REQUESTED")
+        replanned = code.design(self.store, "VREG", "vreg-proposal.json")
+        restarted = code.request_change(self.store, {"workstream": "VREG", "kind": "restart", "revision": replanned["revision"],
+                                                    "reviewer": "fixture-owner", "reason": "synthetic restart", "confirm": True})
+        self.assertEqual(restarted["revision"], replanned["revision"] + 1)
+        with self.store.read_connect() as db:
+            self.assertEqual(db.execute("SELECT status FROM regression_execution_rounds WHERE id=?", (original["id"],)).fetchone()[0], "REQUESTED")
 
 
 if __name__ == "__main__":

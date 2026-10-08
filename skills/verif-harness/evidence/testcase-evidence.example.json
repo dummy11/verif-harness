@@ -1,8 +1,8 @@
 {
-  "schema": "TestcaseEvidence/1",
+  "schema": "TestcaseEvidence/2",
   "claim": "targeted-evidence",
   "revision": "git-or-model-revision",
-  "tool": "regression collector version",
+  "tool": "project testcase collector version",
   "artifacts": [
     {"path": "results/targeted/run.log", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "simulation-log", "analyzed_by": ["xverif"]},
     {"path": "results/targeted/run.vcd", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "waveform", "analyzed_by": ["wavepeek"]},
@@ -11,11 +11,17 @@
   "result": {
     "runs": [
       {
-        "case": "backpressure_test",
+        "case_id": "backpressure_test",
+        "case_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "submit_profile_id": "local-debug",
+        "submit_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "seed": 17,
+        "iteration": 0,
         "verdict": "PASS",
         "uvm_error": 0,
         "uvm_fatal": 0,
+        "checker_engaged": true,
+        "checks": 1,
         "log_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     ]

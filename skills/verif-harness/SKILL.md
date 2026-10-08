@@ -239,7 +239,6 @@ These lower-level modes remain available to implement a closure action:
 - `xverif`
 - `wavepeek`
 - `add-regression-runner`
-- `add-simulator-profile`
 - `add-testcase`
 - `add-coverage-skeleton`
 - `add-assertion-skeleton`

@@ -1,0 +1,38 @@
+{
+  "schema": "RegressionBatchManifest/2",
+  "example_only": true,
+  "example_notice": "仅供字段说明；摘要和轮次都是占位值，不是运行证据。实际 seed 清单必须由 testbench 执行基础设施导出。",
+  "batch_id": "nightly-local-debug",
+  "regression_group": "nightly",
+  "submit_profile": {
+    "schema": "SubmitProfileRef/1",
+    "profile_id": "local-debug",
+    "submit_file": "verification/regression/submit.demo.json",
+    "submit_file_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapter": {"name": "project-submit-export", "version": "1"}
+  },
+  "caselist": {
+    "path": "verification/regression/nightly-local-debug.caselist",
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "seed_mode": "random",
+  "repeat": 2,
+  "timeout_seconds": 3600,
+  "cases": [
+    {
+      "case_id": "demo_test",
+      "case_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "runs": [
+    {"case_id": "demo_test", "seed": 17, "iteration": 0},
+    {"case_id": "demo_test", "seed": 29, "iteration": 1}
+  ],
+  "execution_binding": {
+    "round_id": "round-placeholder-1",
+    "plan_node_id": "workstream:VREG:r1:desired:nightly-results",
+    "plan_revision": 1,
+    "plan_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+  }
+}

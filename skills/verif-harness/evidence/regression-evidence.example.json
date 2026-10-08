@@ -1,21 +1,46 @@
 {
-  "schema": "RegressionEvidence/1",
+  "schema": "RegressionEvidence/3",
+  "example_only": true,
+  "example_notice": "仅供字段说明；摘要、方案和轮次均为占位值，不是验证证据。analysis-report 还必须提供真实适配器 PASS receipt；实际 seed 由 testbench 导出。",
   "claim": "execution-evidence",
   "revision": "git-or-model-revision",
-  "tool": "regression collector version",
+  "tool": "project regression collector version",
   "artifacts": [
     {"path": "results/regression/report.json", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "kind": "analysis-report", "analyzed_by": ["xverif"]},
-    {"path": "results/regression/manifest.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "kind": "regression-manifest", "analyzed_by": ["xverif"]},
-    {"path": "results/regression/smoke_test.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "simulation-log", "analyzed_by": ["xverif"]}
+    {"path": "results/regression/nightly.manifest.json", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "kind": "regression-manifest", "analyzed_by": ["xverif"]},
+    {"path": "verification/regression/nightly-local-debug.caselist", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "kind": "regression-manifest", "analyzed_by": ["xverif"]},
+    {"path": "verification/regression/submit.demo.json", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kind": "configuration", "analyzed_by": ["xverif"]},
+    {"path": "results/regression/demo_test.log", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "kind": "simulation-log", "analyzed_by": ["xverif"]}
   ],
   "result": {
+    "execution_binding": {
+      "round_id": "round-placeholder-1",
+      "plan_node_id": "workstream:VREG:r1:desired:nightly-results",
+      "plan_revision": 1,
+      "plan_digest": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
     "golden_required": true,
-    "batch_seed": "17",
-    "manifest_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "batch_manifest_digests": ["cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
     "results": [
       {
-        "test": "smoke_test",
+        "batch_id": "nightly-local-debug",
+        "case_id": "demo_test",
+        "case_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submit_profile_id": "local-debug",
+        "submit_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "seed": 17,
+        "iteration": 0,
+        "verdict": "PASS",
+        "log_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "batch_id": "nightly-local-debug",
+        "case_id": "demo_test",
+        "case_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "submit_profile_id": "local-debug",
+        "submit_profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "seed": 29,
+        "iteration": 1,
         "verdict": "PASS",
         "log_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
       }

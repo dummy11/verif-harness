@@ -68,6 +68,11 @@ SCHEMAS = {
     "VSTIM": "StimulusCapabilityEvidence/1",
     "VCHK": "CheckingEvidence/1",
     "VCOV": "CoverageEvidence/1",
+    "VCASE": "TestcaseEvidence/2",
+    "VREG": "RegressionEvidence/3",
+}
+
+LEGACY_SCHEMAS = {
     "VCASE": "TestcaseEvidence/1",
     "VREG": "RegressionEvidence/1",
 }
@@ -136,8 +141,11 @@ def _base(path: Path, workstream: str, expected_claim: str) -> tuple[dict[str, A
     if not isinstance(payload, dict):
         raise EvidenceContractError("evidence 顶层必须是对象")
     expected_schema = SCHEMAS[workstream]
-    if payload.get("schema") != expected_schema:
-        raise EvidenceContractError(f"schema 必须是 {expected_schema}")
+    accepted_schemas = {expected_schema, LEGACY_SCHEMAS.get(workstream)} - {None}
+    if workstream == "VREG":
+        accepted_schemas.add("RegressionEvidence/2")
+    if payload.get("schema") not in accepted_schemas:
+        raise EvidenceContractError(f"schema 必须是 " + " 或 ".join(sorted(accepted_schemas)))
     claim = _text(payload.get("claim"), "claim")
     if claim != expected_claim:
         raise EvidenceContractError(f"claim 必须是 {expected_claim}")
@@ -171,11 +179,11 @@ def _base(path: Path, workstream: str, expected_claim: str) -> tuple[dict[str, A
     if not isinstance(result, dict):
         raise EvidenceContractError("result 必须是对象")
     normalized = {
-        "schema": expected_schema, "workstream": workstream, "claim": claim,
+        "schema": payload["schema"], "workstream": workstream, "claim": claim,
         "revision": revision, "tool": tool, "artifacts": artifacts,
     }
     admission_policy, admission_blockers = validate_artifact_policy(
-        workstream, expected_claim, artifacts,
+        workstream, expected_claim, artifacts, schema=payload["schema"],
     )
     normalized["admission_policy"] = admission_policy
     normalized["admission_blockers"] = admission_blockers
@@ -194,6 +202,143 @@ def _bound_digest(normalized: dict[str, Any], value: object, field: str) -> str:
     if digest not in artifact_digests:
         raise EvidenceContractError(f"{field} 未绑定到 artifacts 中的 native artifact")
     return digest
+
+
+def _canonical_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+
+
+def _artifact_file(
+    evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
+    artifact_path: str, artifact_digest: str, kind: str, field: str,
+) -> Path:
+    matches = [
+        item for item in normalized["artifacts"]
+        if item["path"] == artifact_path and item["sha256"] == artifact_digest
+        and item["kind"] == kind
+    ]
+    if len(matches) != 1:
+        raise EvidenceContractError(f"{field} 必须唯一绑定 artifacts 中的 {kind}")
+    root = (artifact_root or evidence_path.parent).resolve()
+    target = (root / artifact_path).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise EvidenceContractError(f"{field} 路径必须属于当前项目") from exc
+    try:
+        if hashlib.sha256(target.read_bytes()).hexdigest() != artifact_digest:
+            raise EvidenceContractError(f"{field} 文件摘要变化，必须重新验证")
+    except OSError as exc:
+        raise EvidenceContractError(f"无法读取 {field}: {exc}") from exc
+    return target
+
+
+def _json_artifact(
+    evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
+    artifact_digest: object, kind: str, schema: str, field: str,
+) -> tuple[dict[str, Any], str]:
+    digest = _bound_digest(normalized, artifact_digest, field)
+    matches = [item for item in normalized["artifacts"]
+               if item["sha256"] == digest and item["kind"] == kind]
+    if len(matches) != 1:
+        raise EvidenceContractError(f"{field} 必须唯一绑定 artifacts 中的 {kind}")
+    target = _artifact_file(
+        evidence_path, normalized, artifact_root, matches[0]["path"], digest, kind, field,
+    )
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvidenceContractError(f"无法读取 {field}: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("schema") != schema:
+        raise EvidenceContractError(f"{field} schema 必须是 {schema}")
+    return payload, digest
+
+
+def _submit_profile_ref(
+    evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
+    value: object, field: str,
+) -> dict[str, str]:
+    if not isinstance(value, dict) or value.get("schema") != "SubmitProfileRef/1":
+        raise EvidenceContractError(f"{field}.schema 必须是 SubmitProfileRef/1")
+    profile_id = _text(value.get("profile_id"), f"{field}.profile_id")
+    if not ID.fullmatch(profile_id):
+        raise EvidenceContractError(f"{field}.profile_id 非法")
+    submit_file = _text(value.get("submit_file"), f"{field}.submit_file")
+    submit_path = Path(submit_file)
+    if submit_path.is_absolute() or ".." in submit_path.parts:
+        raise EvidenceContractError(f"{field}.submit_file 必须是项目内相对路径")
+    submit_file_digest = _digest(value.get("submit_file_digest"), f"{field}.submit_file_digest")
+    profile_digest = _digest(value.get("profile_digest"), f"{field}.profile_digest")
+    adapter = value.get("adapter")
+    if not isinstance(adapter, dict):
+        raise EvidenceContractError(f"{field}.adapter 必须是对象")
+    adapter_name = _text(adapter.get("name"), f"{field}.adapter.name")
+    adapter_version = _text(adapter.get("version"), f"{field}.adapter.version")
+    _artifact_file(
+        evidence_path, normalized, artifact_root, submit_file, submit_file_digest,
+        "configuration", f"{field}.submit_file",
+    )
+    return {
+        "schema": "SubmitProfileRef/1", "profile_id": profile_id,
+        "submit_file": submit_file, "submit_file_digest": submit_file_digest,
+        "profile_digest": profile_digest, "adapter_name": adapter_name,
+        "adapter_version": adapter_version,
+    }
+
+
+def _case_manifest(
+    evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
+    manifest_digest: object, field: str,
+) -> dict[str, Any]:
+    manifest, digest = _json_artifact(
+        evidence_path, normalized, artifact_root, manifest_digest,
+        "case-manifest", "CaseManifest/1", field,
+    )
+    case_id = _text(manifest.get("case_id"), "case_manifest.case_id")
+    if not re.fullmatch(r"[A-Za-z_]\w*", case_id):
+        raise EvidenceContractError("case_manifest.case_id 非法")
+    entry = manifest.get("entry")
+    if not isinstance(entry, dict):
+        raise EvidenceContractError("case_manifest.entry 必须是对象")
+    entry_kind = _text(entry.get("kind"), "case_manifest.entry.kind")
+    if entry_kind not in {"testcase", "sequence"}:
+        raise EvidenceContractError("case_manifest.entry.kind 必须是 testcase/sequence")
+    entry_name = _text(entry.get("name"), "case_manifest.entry.name")
+    if not re.fullmatch(r"[A-Za-z_]\w*", entry_name):
+        raise EvidenceContractError("case_manifest.entry.name 非法")
+    launcher_test = ""
+    if entry_kind == "sequence":
+        launcher_test = _text(entry.get("launcher_test"), "case_manifest.entry.launcher_test")
+        if not re.fullmatch(r"[A-Za-z_]\w*", launcher_test):
+            raise EvidenceContractError("case_manifest.entry.launcher_test 非法")
+    sources = _objects(manifest.get("source_files"), "case_manifest.source_files")
+    if not sources:
+        raise EvidenceContractError("case_manifest.source_files 不能为空")
+    normalized_sources: list[dict[str, str]] = []
+    for index, source in enumerate(sources):
+        source_path = _text(source.get("path"), f"case_manifest.source_files[{index}].path")
+        source_digest = _digest(source.get("sha256"), f"case_manifest.source_files[{index}].sha256")
+        _artifact_file(
+            evidence_path, normalized, artifact_root, source_path, source_digest,
+            "source", f"case_manifest.source_files[{index}]",
+        )
+        normalized_sources.append({"path": source_path, "sha256": source_digest})
+    profile = _submit_profile_ref(
+        evidence_path, normalized, artifact_root, manifest.get("submit_profile"),
+        "case_manifest.submit_profile",
+    )
+    case_digest = _digest(manifest.get("case_digest"), "case_manifest.case_digest")
+    expected = _canonical_digest({key: value for key, value in manifest.items() if key != "case_digest"})
+    if case_digest != expected:
+        raise EvidenceContractError("case_manifest.case_digest 与当前 manifest 内容不一致")
+    return {
+        "id": case_id, "case_digest": case_digest, "manifest_digest": digest,
+        "entry_kind": entry_kind, "entry_name": entry_name,
+        "launcher_test": launcher_test, "source_files": normalized_sources,
+        "submit_profile": profile,
+    }
 
 
 def _venv(path: Path, claim: str) -> dict[str, Any]:
@@ -705,9 +850,10 @@ def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str
     return _finish(normalized, blockers, facts)
 
 
-def _vcase(path: Path, claim: str) -> dict[str, Any]:
+def _vcase(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
     _payload, result, normalized = _base(path, "VCASE", claim)
     blockers: list[str] = []
+    legacy = normalized["schema"] == LEGACY_SCHEMAS["VCASE"]
     if claim == "case-matrix":
         required = set(_strings(result.get("required_features"), "result.required_features", unique=True))
         mappings = _objects(result.get("mappings"), "result.mappings")
@@ -730,44 +876,238 @@ def _vcase(path: Path, claim: str) -> dict[str, Any]:
         if not cases:
             raise EvidenceContractError("result.cases 不能为空")
         seen: set[str] = set()
+        seen_variants: set[tuple[str, str]] = set()
+        case_records: list[dict[str, Any]] = []
         for index, item in enumerate(cases):
             prefix = f"result.cases[{index}]"
-            case_id = _text(item.get("id"), f"{prefix}.id")
-            if case_id in seen:
+            if legacy:
+                case_id = _text(item.get("id"), f"{prefix}.id")
+                _bound_digest(normalized, item.get("source_digest"), f"{prefix}.source_digest")
+            else:
+                manifest = _case_manifest(
+                    path, normalized, artifact_root, item.get("manifest_digest"),
+                    f"{prefix}.manifest_digest",
+                )
+                case_id = manifest["id"]
+                case_records.append(manifest)
+            if legacy and case_id in seen:
                 blockers.append(f"重复 testcase: {case_id}")
+            if not legacy:
+                variant = (case_id, manifest["submit_profile"]["profile_digest"])
+                if variant in seen_variants:
+                    blockers.append(
+                        f"重复 runnable case: {case_id}/{manifest['submit_profile']['profile_id']}"
+                    )
+                seen_variants.add(variant)
             seen.add(case_id)
-            _bound_digest(normalized, item.get("source_digest"), f"{prefix}.source_digest")
             registered = _boolean(item.get("registered"), f"{prefix}.registered")
             compiled = _boolean(item.get("compiled"), f"{prefix}.compiled")
             if not registered or not compiled:
                 blockers.append(f"{case_id} 未注册或未编译")
         facts = {"cases": sorted(seen), "case_count": len(cases)}
+        if not legacy:
+            facts["case_records"] = sorted(case_records, key=lambda item: item["id"])
     else:
         runs = _objects(result.get("runs"), "result.runs")
         if not runs:
             raise EvidenceContractError("result.runs 不能为空")
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[object, ...]] = set()
+        run_records: list[dict[str, Any]] = []
         for index, item in enumerate(runs):
             prefix = f"result.runs[{index}]"
-            case_id = _text(item.get("case"), f"{prefix}.case")
+            if legacy:
+                case_id = _text(item.get("case"), f"{prefix}.case")
+                case_digest = ""
+                profile_id = ""
+                profile_digest = ""
+                iteration = 0
+            else:
+                case_id = _text(item.get("case_id"), f"{prefix}.case_id")
+                case_digest = _digest(item.get("case_digest"), f"{prefix}.case_digest")
+                profile_id = _text(item.get("submit_profile_id"), f"{prefix}.submit_profile_id")
+                if not ID.fullmatch(profile_id):
+                    raise EvidenceContractError(f"{prefix}.submit_profile_id 非法")
+                profile_digest = _digest(
+                    item.get("submit_profile_digest"), f"{prefix}.submit_profile_digest"
+                )
+                iteration = _integer(item.get("iteration"), f"{prefix}.iteration")
             seed = _seed(item.get("seed"), f"{prefix}.seed")
-            key = (case_id, seed)
+            key = ((case_id, seed) if legacy else
+                   (case_id, case_digest, profile_digest, seed, iteration))
             if key in seen:
-                blockers.append(f"重复 targeted run: {case_id}/{seed}")
+                blockers.append(f"重复 targeted run: {case_id}/{seed}/{iteration}")
             seen.add(key)
             verdict = _text(item.get("verdict"), f"{prefix}.verdict")
             errors = _integer(item.get("uvm_error"), f"{prefix}.uvm_error")
             fatals = _integer(item.get("uvm_fatal"), f"{prefix}.uvm_fatal")
-            _bound_digest(normalized, item.get("log_digest"), f"{prefix}.log_digest")
+            log_digest = _bound_digest(normalized, item.get("log_digest"), f"{prefix}.log_digest")
+            checker_engaged = True
+            checks = 1
+            if not legacy:
+                checker_engaged = _boolean(
+                    item.get("checker_engaged"), f"{prefix}.checker_engaged"
+                )
+                checks = _integer(item.get("checks"), f"{prefix}.checks")
             if verdict != "PASS" or errors or fatals:
                 blockers.append(f"{case_id}/{seed} targeted run 未通过")
-        facts = {"runs": len(runs), "executed_cases": sorted({case for case, _seed_value in seen})}
+            if not checker_engaged or checks == 0:
+                blockers.append(f"{case_id}/{seed} 未证明 checker 已实际参与")
+            if not legacy:
+                run_records.append({
+                    "case_id": case_id, "case_digest": case_digest,
+                    "submit_profile_id": profile_id,
+                    "submit_profile_digest": profile_digest, "seed": seed,
+                    "iteration": iteration, "verdict": verdict,
+                    "uvm_error": errors, "uvm_fatal": fatals,
+                    "checker_engaged": checker_engaged, "checks": checks,
+                    "log_digest": log_digest,
+                })
+        executed_cases = sorted(
+            {str(key[0]) for key in seen}
+        )
+        facts = {"runs": len(runs), "executed_cases": executed_cases}
+        if not legacy:
+            facts["run_records"] = run_records
     return _finish(normalized, blockers, facts)
 
 
-def _vreg(path: Path, claim: str) -> dict[str, Any]:
+def _regression_batch_manifest(
+    evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
+    manifest_digest: object, field: str,
+) -> dict[str, Any]:
+    modern = normalized["schema"] == "RegressionEvidence/3"
+    manifest, digest = _json_artifact(
+        evidence_path, normalized, artifact_root, manifest_digest,
+        "regression-manifest", "RegressionBatchManifest/2" if modern else "RegressionBatchManifest/1", field,
+    )
+    batch_id = _text(manifest.get("batch_id"), "batch_manifest.batch_id")
+    if not ID.fullmatch(batch_id):
+        raise EvidenceContractError("batch_manifest.batch_id 非法")
+    regression_group = _text(
+        manifest.get("regression_group"), "batch_manifest.regression_group"
+    )
+    if modern and not ID.fullmatch(regression_group):
+        raise EvidenceContractError("batch_manifest.regression_group 非法")
+    profile = _submit_profile_ref(
+        evidence_path, normalized, artifact_root, manifest.get("submit_profile"),
+        "batch_manifest.submit_profile",
+    )
+    caselist = manifest.get("caselist")
+    if not isinstance(caselist, dict):
+        raise EvidenceContractError("batch_manifest.caselist 必须是对象")
+    caselist_path = _text(caselist.get("path"), "batch_manifest.caselist.path")
+    caselist_digest = _digest(caselist.get("sha256"), "batch_manifest.caselist.sha256")
+    _artifact_file(
+        evidence_path, normalized, artifact_root, caselist_path, caselist_digest,
+        "regression-manifest", "batch_manifest.caselist",
+    )
+    cases = _objects(manifest.get("cases"), "batch_manifest.cases")
+    if not cases:
+        raise EvidenceContractError("batch_manifest.cases 不能为空")
+    seen: set[str] = set()
+    normalized_cases: list[dict[str, str]] = []
+    for index, item in enumerate(cases):
+        prefix = f"batch_manifest.cases[{index}]"
+        case_id = _text(item.get("case_id"), f"{prefix}.case_id")
+        if not re.fullmatch(r"[A-Za-z_]\w*", case_id):
+            raise EvidenceContractError(f"{prefix}.case_id 非法")
+        if case_id in seen:
+            raise EvidenceContractError(f"batch {batch_id} 包含重复 case: {case_id}")
+        seen.add(case_id)
+        normalized_cases.append({
+            "case_id": case_id,
+            "case_digest": _digest(item.get("case_digest"), f"{prefix}.case_digest"),
+        })
+    repeat = _integer(manifest.get("repeat"), "batch_manifest.repeat", 1)
+    batch = {
+        "schema": manifest["schema"],
+        "batch_id": batch_id, "manifest_digest": digest,
+        "regression_group": regression_group, "submit_profile": profile,
+        "caselist_path": caselist_path, "caselist_digest": caselist_digest,
+        "repeat": repeat,
+        "timeout_seconds": _integer(
+            manifest.get("timeout_seconds"), "batch_manifest.timeout_seconds", 1
+        ),
+        "cases": normalized_cases,
+    }
+    if not modern:
+        batch["seed"] = _seed(manifest.get("seed"), "batch_manifest.seed")
+        return batch
+    batch["submit_profile"] = {
+        key: profile[key] for key in (
+            "schema", "profile_id", "submit_file", "submit_file_digest", "profile_digest",
+        )
+    }
+    batch["submit_profile"]["adapter"] = {
+        "name": profile["adapter_name"], "version": profile["adapter_version"],
+    }
+    seed_mode = _text(manifest.get("seed_mode"), "batch_manifest.seed_mode")
+    if seed_mode not in {"random", "fixed"}:
+        raise EvidenceContractError("batch_manifest.seed_mode 必须是 random/fixed")
+    fixed_seed = None
+    if seed_mode == "fixed":
+        fixed_seed = _regression_seed(manifest.get("seed"), "batch_manifest.seed")
+        batch["seed"] = fixed_seed
+    elif "seed" in manifest:
+        raise EvidenceContractError("random batch 不得声明固定 seed；实际 seed 必须逐次记录")
+    runs = _objects(manifest.get("runs"), "batch_manifest.runs")
+    if not runs:
+        raise EvidenceContractError("batch_manifest.runs 不能为空")
+    normalized_runs = []
+    run_ids: set[tuple[str, int]] = set()
+    case_seeds: dict[str, set[str]] = {}
+    for index, item in enumerate(runs):
+        prefix = f"batch_manifest.runs[{index}]"
+        if set(item) != {"case_id", "seed", "iteration"}:
+            raise EvidenceContractError(f"{prefix} 只接受计划运行字段，失败重跑不得计入 repeat")
+        case_id = _text(item.get("case_id"), f"{prefix}.case_id")
+        iteration = _integer(item.get("iteration"), f"{prefix}.iteration")
+        seed = _regression_seed(item.get("seed"), f"{prefix}.seed")
+        key = (case_id, iteration)
+        if case_id not in seen or iteration >= repeat:
+            raise EvidenceContractError(f"{prefix} 不属于 batch 的 case/repeat 范围")
+        if key in run_ids:
+            raise EvidenceContractError(f"重复 batch 计划运行：{case_id}/{iteration}")
+        run_ids.add(key)
+        seeds = case_seeds.setdefault(case_id, set())
+        if seed_mode == "random" and seed in seeds:
+            raise EvidenceContractError(f"random batch 的 {case_id} 每次 iteration 必须记录新 seed")
+        if seed_mode == "fixed" and seed != fixed_seed:
+            raise EvidenceContractError(f"fixed batch 的 {case_id} 必须使用批准的同一 seed")
+        seeds.add(seed)
+        normalized_runs.append({"case_id": case_id, "seed": seed, "iteration": iteration})
+    expected_ids = {(case_id, iteration) for case_id in seen for iteration in range(repeat)}
+    if run_ids != expected_ids:
+        raise EvidenceContractError("batch 计划运行必须完整覆盖每个 case 的全部 repeat 次数")
+    batch.update(seed_mode=seed_mode, runs=normalized_runs,
+                 execution_binding=_execution_binding(manifest.get("execution_binding"), "batch_manifest.execution_binding"))
+    return batch
+
+
+def _execution_binding(value: object, field: str) -> dict[str, Any]:
+    from .vreg_contract import normalize_binding
+    try:
+        return normalize_binding(value)
+    except ValueError as exc:
+        raise EvidenceContractError(f"{field}: {exc}") from exc
+
+
+def _regression_seed(value: object, field: str) -> str:
+    from .vreg_contract import seed_value
+    try:
+        return seed_value(value)
+    except ValueError as exc:
+        raise EvidenceContractError(f"{field}: {exc}") from exc
+
+
+def _vreg(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
     _payload, result, normalized = _base(path, "VREG", claim)
     blockers: list[str] = []
+    legacy = normalized["schema"] == LEGACY_SCHEMAS["VREG"]
+    modern = normalized["schema"] == "RegressionEvidence/3"
+    binding = (_execution_binding(result.get("execution_binding"), "result.execution_binding")
+               if modern and claim in {"execution-evidence", "triage-evidence", "fresh-evidence"}
+               else None)
     if claim == "regression-policy":
         facts = {"policy_digest": _bound_digest(normalized, result.get("policy_digest"), "result.policy_digest"),
                  "manifest_digest": _bound_digest(normalized, result.get("manifest_digest"), "result.manifest_digest"),
@@ -785,38 +1125,148 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
                  "selftest_passed": selftest_passed}
     elif claim == "execution-evidence":
         golden_required = _boolean(result.get("golden_required"), "result.golden_required")
-        _text(result.get("batch_seed"), "result.batch_seed")
-        _bound_digest(normalized, result.get("manifest_digest"), "result.manifest_digest")
+        batches: list[dict[str, Any]] = []
+        expected_runs: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+        if legacy:
+            _text(result.get("batch_seed"), "result.batch_seed")
+            _bound_digest(normalized, result.get("manifest_digest"), "result.manifest_digest")
+        else:
+            manifest_digests = _strings(
+                result.get("batch_manifest_digests"),
+                "result.batch_manifest_digests", unique=True,
+            )
+            batch_ids: set[str] = set()
+            for index, manifest_digest in enumerate(manifest_digests):
+                batch = _regression_batch_manifest(
+                    path, normalized, artifact_root, manifest_digest,
+                    f"result.batch_manifest_digests[{index}]",
+                )
+                if batch["batch_id"] in batch_ids:
+                    blockers.append(f"重复 regression batch: {batch['batch_id']}")
+                batch_ids.add(batch["batch_id"])
+                batches.append(batch)
+                if modern and batch["execution_binding"] != binding:
+                    blockers.append(f"batch {batch['batch_id']} 与证据报告的批准方案或执行轮次不一致")
+                case_versions = {case["case_id"]: case["case_digest"] for case in batch["cases"]}
+                planned_runs = batch["runs"] if modern else [
+                    {"case_id": case["case_id"], "seed": batch["seed"], "iteration": iteration}
+                    for case in batch["cases"] for iteration in range(batch["repeat"])
+                ]
+                for run in planned_runs:
+                    key = (batch["batch_id"], run["case_id"], run["seed"], run["iteration"])
+                    expected_runs[key] = {
+                        "case_digest": case_versions[run["case_id"]],
+                        "submit_profile_id": batch["submit_profile"]["profile_id"],
+                        "submit_profile_digest": batch["submit_profile"]["profile_digest"],
+                    }
         results = _objects(result.get("results"), "result.results")
         if not results:
             raise EvidenceContractError("result.results 不能为空")
-        seen: set[str] = set()
+        seen: set[object] = set()
         acceptable_pass = {"PASS"} if golden_required else {"PASS", "PASS-LIVE"}
         recognized = acceptable_pass | {"FAIL", "ERROR", "TIMEOUT"}
-        failed_runs: list[dict[str, str]] = []
+        failed_runs: list[dict[str, Any]] = []
+        run_records: list[dict[str, Any]] = []
         for index, item in enumerate(results):
-            test = _text(item.get("test"), f"result.results[{index}].test")
-            if test in seen:
-                blockers.append(f"重复 regression test: {test}")
-            seen.add(test)
+            prefix = f"result.results[{index}]"
+            if modern and "rerun_kind" in item:
+                raise EvidenceContractError(f"{prefix} 不接受失败重跑，必须单独登记 triage-evidence")
+            if legacy:
+                test = _text(item.get("test"), f"{prefix}.test")
+                run_key: object = test
+                batch_id = ""
+                iteration = 0
+                case_digest = ""
+                profile_id = ""
+                profile_digest = ""
+            else:
+                batch_id = _text(item.get("batch_id"), f"{prefix}.batch_id")
+                test = _text(item.get("case_id"), f"{prefix}.case_id")
+                case_digest = _digest(item.get("case_digest"), f"{prefix}.case_digest")
+                profile_id = _text(item.get("submit_profile_id"), f"{prefix}.submit_profile_id")
+                if not ID.fullmatch(profile_id):
+                    raise EvidenceContractError(f"{prefix}.submit_profile_id 非法")
+                profile_digest = _digest(
+                    item.get("submit_profile_digest"), f"{prefix}.submit_profile_digest"
+                )
+                iteration = _integer(item.get("iteration"), f"{prefix}.iteration")
             verdict = _text(item.get("verdict"), f"result.results[{index}].verdict")
-            seed = _seed(item.get("seed"), f"result.results[{index}].seed")
-            _bound_digest(normalized, item.get("log_digest"), f"result.results[{index}].log_digest")
+            seed = (_regression_seed if modern else _seed)(item.get("seed"), f"{prefix}.seed")
+            run_key = test if legacy else (batch_id, test, seed, iteration)
+            if run_key in seen:
+                blockers.append(
+                    f"重复 regression run: {batch_id + '/' if batch_id else ''}{test}/{seed}/{iteration}"
+                )
+            seen.add(run_key)
+            log_digest = _bound_digest(normalized, item.get("log_digest"), f"{prefix}.log_digest")
+            if not legacy:
+                expected = expected_runs.get(run_key)
+                if expected is None:
+                    blockers.append(f"{batch_id}/{test}/{seed}/{iteration} 不在 batch manifest 中")
+                else:
+                    if case_digest != expected["case_digest"]:
+                        blockers.append(f"{batch_id}/{test} case digest 与 batch manifest 不一致")
+                    if (profile_id != expected["submit_profile_id"] or
+                            profile_digest != expected["submit_profile_digest"]):
+                        blockers.append(f"{batch_id}/{test} submit profile 与 batch manifest 不一致")
+                run_record = {
+                    "batch_id": batch_id, "case_id": test, "seed": seed, "iteration": iteration,
+                    "case_digest": case_digest, "submit_profile_id": profile_id,
+                    "submit_profile_digest": profile_digest, "verdict": verdict, "log_digest": log_digest,
+                }
+                if modern:
+                    run_record["execution_binding"] = binding
+                run_records.append(run_record)
             if verdict not in recognized:
                 blockers.append(f"{test} verdict 未识别: {verdict}")
             elif verdict not in acceptable_pass:
-                failed_runs.append({"test": test, "seed": seed, "verdict": verdict})
+                failed = {"test": test, "seed": seed, "verdict": verdict}
+                if not legacy:
+                    failed.update({
+                        "batch_id": batch_id, "case_id": test, "iteration": iteration,
+                        "case_digest": case_digest, "submit_profile_id": profile_id,
+                        "submit_profile_digest": profile_digest,
+                    })
+                failed_runs.append(failed)
+        if not legacy:
+            missing = sorted(set(expected_runs) - {key for key in seen if isinstance(key, tuple)})
+            if missing:
+                blockers.append("回归 batch 缺少执行结果：" + "、".join(
+                    f"{batch}/{case}/{seed}/{iteration}"
+                    for batch, case, seed, iteration in missing
+                ))
         facts = {"tests": len(results), "golden_required": golden_required,
                  "acceptable_pass_verdicts": sorted(acceptable_pass),
                  "failed_runs": failed_runs}
+        if not legacy:
+            facts.update({"batch_count": len(batches), "batches": batches,
+                          "run_records": run_records, "runs": run_records})
     elif claim == "triage-evidence":
         failures = _objects(result.get("failures"), "result.failures")
-        normalized_failures: list[dict[str, str]] = []
+        normalized_failures: list[dict[str, Any]] = []
+        seen_failures: set[tuple[object, ...]] = set()
         for index, item in enumerate(failures):
             prefix = f"result.failures[{index}]"
-            test = _text(item.get("test"), f"{prefix}.test")
-            original_seed = _seed(item.get("original_seed"), f"{prefix}.original_seed")
-            rerun_seed = _seed(item.get("rerun_seed"), f"{prefix}.rerun_seed")
+            if legacy:
+                test = _text(item.get("test"), f"{prefix}.test")
+                batch_id = ""
+                iteration = 0
+            else:
+                batch_id = _text(item.get("batch_id"), f"{prefix}.batch_id")
+                test = _text(item.get("case_id"), f"{prefix}.case_id")
+                iteration = _integer(item.get("iteration"), f"{prefix}.iteration")
+            original_seed = (_regression_seed if modern else _seed)(item.get("original_seed"), f"{prefix}.original_seed")
+            rerun_seed = (_regression_seed if modern else _seed)(item.get("rerun_seed"), f"{prefix}.rerun_seed")
+            rerun_kind = ""
+            if modern:
+                rerun_kind = _text(item.get("rerun_kind"), f"{prefix}.rerun_kind")
+                if rerun_kind != "failure-rerun":
+                    raise EvidenceContractError(f"{prefix}.rerun_kind 必须是 failure-rerun，不能作为计划 repeat")
+            failure_key = ((test, original_seed) if legacy else
+                           (batch_id, test, original_seed, iteration))
+            if failure_key in seen_failures:
+                blockers.append(f"重复 triage failure: {batch_id}/{test}/{original_seed}/{iteration}")
+            seen_failures.add(failure_key)
             classification = _text(item.get("classification"), f"{prefix}.classification")
             disposition = _text(item.get("disposition"), f"{prefix}.disposition")
             rerun_verdict = _text(item.get("rerun_verdict"), f"{prefix}.rerun_verdict")
@@ -842,18 +1292,29 @@ def _vreg(path: Path, claim: str) -> dict[str, Any]:
                 blockers.append(f"{test} known-fail 的 rerun verdict 非失败结果")
             if disposition == "accepted-known-fail" and not _text(item.get("waiver_ref"), f"{prefix}.waiver_ref"):
                 blockers.append(f"{test} 的已知失败缺少负责人例外评审引用")
-            normalized_failures.append({
+            failure_record = {
                 "test": test, "original_seed": original_seed, "rerun_seed": rerun_seed,
                 "classification": classification, "disposition": disposition,
                 "rerun_verdict": rerun_verdict, "rerun_log_digest": rerun_log_digest,
                 "waiver_ref": str(item.get("waiver_ref") or ""),
                 "responsible_workstream": owner, "next_action": next_action,
                 "target_implementation_key": target_key,
-            })
+            }
+            if not legacy:
+                failure_record.update({
+                    "batch_id": batch_id, "case_id": test, "iteration": iteration,
+                })
+            if modern:
+                failure_record.update(rerun_kind=rerun_kind, execution_binding=binding)
+            normalized_failures.append(failure_record)
         facts = {"failures": normalized_failures, "failure_count": len(failures)}
     else:
         snapshot_revision = _text(result.get("snapshot_revision"), "result.snapshot_revision")
         facts = {"snapshot_revision": snapshot_revision, "required_nodes": []}
+    if binding is not None:
+        facts["execution_binding"] = binding
+    if modern:
+        facts["schema"] = normalized["schema"]
     return _finish(normalized, blockers, facts)
 
 
@@ -876,4 +1337,8 @@ def validate_workstream_evidence(
         raise EvidenceContractError(f"{workstream} 不支持 claim={claim}")
     if workstream == "VCOV":
         return _vcov(path, claim, artifact_root)
+    if workstream == "VCASE":
+        return _vcase(path, claim, artifact_root)
+    if workstream == "VREG":
+        return _vreg(path, claim, artifact_root)
     return VALIDATORS[workstream](path, claim)

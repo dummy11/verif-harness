@@ -8,7 +8,7 @@ NODE REPORT.json`: `CodeValidation/1` wraps the typed reports below and binds th
 current delivery, revision, inputs and outputs. In particular, VCOV and VREG's
 four direct public node types never use `evidence` to bypass plan approval or
 delivery acceptance. VREG results also bind execution to complete triage and an
-Engine-derived current required evidence set under `RegressionResults/2`.
+Engine-derived current required evidence set under `RegressionResults/4`.
 
 Use `verif-harness evidence NODE REPORT.json` only for historical non-code-model
 VENV, VCHK, VCOV, VCASE, and VREG desired nodes. Standard template nodes infer their claim; custom nodes require
@@ -45,6 +45,9 @@ Schemas and starting examples are in this directory:
 - `checking-evidence.schema.json` / `checking-evidence.example.json`
 - `coverage-evidence.schema.json` / `coverage-evidence.example.json`
 - `coverage-item-manifest.schema.json` / `coverage-item-manifest.example.json`
+- `submit-profile-ref.schema.json` / `submit-profile-ref.example.json`
+- `case-manifest.schema.json` / `case-manifest.example.json`
+- `regression-batch-manifest.schema.json` / `regression-batch-manifest.example.json`
 - `testcase-evidence.schema.json` / `testcase-evidence.example.json`
 - `regression-evidence.schema.json` / `regression-evidence.example.json`
 
@@ -112,3 +115,38 @@ smaller required-node list. Regression execution records raw failures as valid
 execution facts; triage closes them only when every failed test/seed has a
 matching same-seed rerun verdict/log digest and disposition. An accepted known
 failure must reference a Human `WAIVE` review stored in the project database.
+
+`SubmitProfileRef/1` is emitted by the testbench submit adapter. Its source
+submit file remains the project authority for compile, simulation, scheduler,
+license, and site wrapper settings; the control plane validates only the
+project-relative file reference and digests. `CaseManifest/1` binds one
+testcase or executable virtual sequence to one submit profile. The same logical
+case may have multiple manifests for different profiles.
+
+The testbench submit flow also emits one `RegressionBatchManifest/2` and one
+caselist for each regression group/profile binding. A batch cannot mix submit
+profiles. The same case set under two profiles is therefore two batches and two
+caselists. `RegressionEvidence/3` identifies each result and triage record by
+batch, case, seed, and iteration. These manifests are internal artifacts and do
+not create WorkNodes or approval gates.
+
+Modern result plans approve `regression_config`: one group/case set/profile,
+random or fixed seed mode, and positive per-case repeat (default one). The
+testbench resolves every seed and writes the batch's `runs` before launch.
+Random mode uses a fresh seed per planned iteration; fixed mode uses the approved
+seed. Reports and batches bind the same `execution_binding` (round ID, plan node,
+revision and approval digest). The engine checks scope/config identity and all
+planned iterations; a report cannot reduce repeat or replace the current round.
+Failure reruns use original seeds, preserve original failures and remain separate
+from planned repeat. A new whole-group run is owner-authorized on the existing
+result delivery, not a new WorkNode or workflow restart. Old formats remain
+readable as historical contracts but cannot satisfy current result acceptance.
+
+VCOV excluded coverage uses a different gate. The owner provides one exclusion
+file on the current coverage-convergence delivery, and that provision is the
+approval of the file's exclusion scope. `hole-analysis-evidence` must include the
+exact path and SHA-256 as an xverif-analyzed `configuration`, and every excluded
+item must reference that single file-level approval. Agent validation checks
+legality and consistency only; it must not create or infer the approval. A new
+file, changed digest, new VCOV revision, or changed convergence scope requires
+revalidation. Per-item `WAIVE` reviews are not required for this VCOV flow.

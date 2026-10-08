@@ -2,6 +2,11 @@
 
 Add a simulator-neutral launcher and a result-contract collector. This mode
 generates infrastructure; it does not run EDA simulations unless the user asks.
+Project-specific compile, simulation, and scheduler commands remain in the
+testbench submit file. The generic runner consumes only the caselist and
+argv-style command supplied by that flow. A testbench adapter emits the
+`RegressionBatchManifest/2` used as control-plane evidence; this scaffold does
+not parse or generate submit profiles or batch manifests.
 
 ## Preconditions
 
@@ -32,7 +37,8 @@ a missing end-of-test banner as PASS.
 ## Procedure
 
 1. Inspect the existing regression directory. If it already provides isolated
-   runs, seed capture, failed-only rerun, and false-green protection, stop and
+   runs, approved seed modes/repeat counts, seed capture, failed-only replay,
+   and false-green protection, stop and
    recommend reuse instead of replacement.
 2. Copy these scripts additively into `<verif_root>/regress/`:
    - `scripts/run_regression.py`
@@ -45,7 +51,7 @@ a missing end-of-test banner as PASS.
 4. Include `harness_regress.mk` from the existing Makefile only when target
    names do not conflict. If they conflict, leave the include file unhooked and
    report the required manual merge.
-5. Require the project to provide `SIM_CMD` as an argv-style command template
+5. Require the project submit wrapper to provide `SIM_CMD` as an argv-style command template
    containing `{test}` and `{seed}`. Do not use shell interpolation in the
    Python launcher.
 6. Run:
@@ -56,6 +62,27 @@ a missing end-of-test banner as PASS.
 
 7. Run `python3 -m py_compile` on both scripts.
 8. If Markdown was changed, run the project Markdown workflow check.
+
+## Seeds, repeats, and replay
+
+Use `--seed-mode random --repeat N` for a fresh saved seed for each case/iteration,
+or `--seed-mode fixed --seed VALUE --repeat N` to repeat one specified seed.
+Repeat is a positive total count per case, default 1. For legacy standalone
+invocations, fixed mode with `--seed auto` still resolves one seed before launch;
+a VREG approved fixed plan must supply its specified value.
+
+The launcher writes `PortableRegressionRunManifest/1` before starting any job,
+isolates iterations, and exclusively claims a fresh output directory. Never
+reuse a claimed directory. This manifest is not a control-plane evidence report:
+the testbench adapter must separately bind actual executions to the approved
+group, case/profile digests, and current execution round.
+
+Use `--replay-manifest failed-runs.json` with the collector's `failed.caselist`
+for failed-only reruns. Original seeds and iteration identities are preserved
+in a new directory, and an empty failure list is a successful no-op. These
+attempts are failure analysis, not extra planned repeat runs or replacement
+initial results. Full replay uses the original resolved run manifest; a new
+approved-plan random round generates new seeds instead of replaying old ones.
 
 ## Non-overwrite rule
 

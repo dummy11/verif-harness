@@ -1,14 +1,108 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "RegressionEvidence/1",
+  "title": "RegressionEvidence/3",
+  "description": "当前执行证据绑定已批准方案和执行轮次。执行清单是计划 repeat 的结果；失败同 seed 重跑仅在 triage-evidence 登记。",
   "type": "object",
+  "additionalProperties": false,
   "required": ["schema", "claim", "revision", "tool", "artifacts", "result"],
   "properties": {
-    "schema": {"const": "RegressionEvidence/1"},
+    "schema": {"const": "RegressionEvidence/3"},
     "claim": {"enum": ["regression-policy", "executor-ready", "execution-evidence", "triage-evidence", "fresh-evidence"]},
     "revision": {"type": "string", "minLength": 1},
     "tool": {"type": "string", "minLength": 1},
-    "artifacts": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "sha256", "kind", "analyzed_by"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "kind": {"type": "string"}, "analyzed_by": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}}},
-    "result": {"type": "object"}
+    "artifacts": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["path", "sha256", "kind", "analyzed_by"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "kind": {"type": "string"},
+          "analyzed_by": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "result": {"type": "object"},
+    "example_only": {"const": true},
+    "example_notice": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {"if": {"properties": {"claim": {"const": "regression-policy"}}}, "then": {"properties": {"result": {"$ref": "#/$defs/policy"}}}},
+    {"if": {"properties": {"claim": {"const": "executor-ready"}}}, "then": {"properties": {"result": {"$ref": "#/$defs/executor"}}}},
+    {"if": {"properties": {"claim": {"const": "execution-evidence"}}}, "then": {"properties": {"result": {"$ref": "#/$defs/execution"}}}},
+    {"if": {"properties": {"claim": {"const": "triage-evidence"}}}, "then": {"properties": {"result": {"$ref": "#/$defs/triage"}}}},
+    {"if": {"properties": {"claim": {"const": "fresh-evidence"}}}, "then": {"properties": {"result": {"$ref": "#/$defs/fresh"}}}}
+  ],
+  "$defs": {
+    "digest": {"$ref": "regression-batch-manifest.schema.json#/$defs/digest"},
+    "seed": {"$ref": "regression-batch-manifest.schema.json#/$defs/seed"},
+    "caseId": {"$ref": "regression-batch-manifest.schema.json#/$defs/caseId"},
+    "binding": {"$ref": "regression-batch-manifest.schema.json#/$defs/executionBinding"},
+    "text": {"type": "string", "minLength": 1},
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_digest", "manifest_digest", "review_ref", "seed_policy", "timeout_policy", "rerun_policy"],
+      "properties": {
+        "policy_digest": {"$ref": "#/$defs/digest"}, "manifest_digest": {"$ref": "#/$defs/digest"},
+        "review_ref": {"$ref": "#/$defs/text"}, "seed_policy": {"$ref": "#/$defs/text"},
+        "timeout_policy": {"$ref": "#/$defs/text"}, "rerun_policy": {"$ref": "#/$defs/text"}
+      }
+    },
+    "executor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["runner_digest", "collector_digest", "selftest_passed"],
+      "properties": {
+        "runner_digest": {"$ref": "#/$defs/digest"}, "collector_digest": {"$ref": "#/$defs/digest"},
+        "selftest_passed": {"type": "boolean"}
+      }
+    },
+    "execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_binding", "golden_required", "batch_manifest_digests", "results"],
+      "properties": {
+        "execution_binding": {"$ref": "#/$defs/binding"}, "golden_required": {"type": "boolean"},
+        "batch_manifest_digests": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+        "results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/run"}}
+      }
+    },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["batch_id", "case_id", "case_digest", "submit_profile_id", "submit_profile_digest", "seed", "iteration", "verdict", "log_digest"],
+      "properties": {
+        "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "case_id": {"$ref": "#/$defs/caseId"}, "case_digest": {"$ref": "#/$defs/digest"},
+        "submit_profile_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "submit_profile_digest": {"$ref": "#/$defs/digest"}, "seed": {"$ref": "#/$defs/seed"},
+        "iteration": {"type": "integer", "minimum": 0},
+        "verdict": {"enum": ["PASS", "PASS-LIVE", "FAIL", "ERROR", "TIMEOUT"]}, "log_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "triage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_binding", "failures"],
+      "properties": {
+        "execution_binding": {"$ref": "#/$defs/binding"},
+        "failures": {"type": "array", "items": {"$ref": "#/$defs/failure"}}
+      }
+    },
+    "failure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["batch_id", "case_id", "iteration", "original_seed", "rerun_seed", "rerun_kind", "classification", "disposition", "rerun_verdict", "rerun_log_digest"],
+      "properties": {
+        "batch_id": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"},
+        "case_id": {"$ref": "#/$defs/caseId"}, "iteration": {"type": "integer", "minimum": 0},
+        "original_seed": {"$ref": "#/$defs/seed"}, "rerun_seed": {"$ref": "#/$defs/seed"},
+        "rerun_kind": {"const": "failure-rerun"}, "classification": {"$ref": "#/$defs/text"},
+        "disposition": {"$ref": "#/$defs/text"}, "rerun_verdict": {"enum": ["PASS", "FAIL", "ERROR", "TIMEOUT"]},
+        "rerun_log_digest": {"$ref": "#/$defs/digest"}, "waiver_ref": {"$ref": "#/$defs/text"},
+        "responsible_workstream": {"$ref": "#/$defs/text"}, "next_action": {"$ref": "#/$defs/text"},
+        "target_implementation_key": {"$ref": "#/$defs/text"}
+      }
+    },
+    "fresh": {
+      "type": "object", "additionalProperties": false,
+      "required": ["execution_binding", "snapshot_revision"],
+      "properties": {"execution_binding": {"$ref": "#/$defs/binding"}, "snapshot_revision": {"$ref": "#/$defs/text"}}
+    }
   }
 }

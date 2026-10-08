@@ -236,7 +236,10 @@ Agent 会话，由 Agent 展示状态并登记证据。
 
 **Artifact kind（原始产物类型）**明确说明引用文件是 `source`、`build-log`、
 `simulation-log`、`waveform`、`transaction-trace`、`coverage-database`、
-`regression-manifest` 还是 `analysis-report`。**Analyzed by（分析工具）**说明哪个确定性工具
+`case-manifest`、`regression-manifest`、`configuration` 还是 `analysis-report`。
+`case-manifest` 用于绑定 testcase/sequence 与 submit profile；`regression-manifest`
+用于绑定 batch、profile 和 caselist，`configuration` 可以引用 testbench 自己管理的
+submit file。**Analyzed by（分析工具）**说明哪个确定性工具
 读取了该产物；标准合同使用 `xverif` 检查源码、构建/仿真日志、事务轨迹、覆盖率数据库和回归
 清单，使用 `wavepeek` 检查波形。仅有文件路径或在报告中写 PASS 不满足证据准入规则。
 

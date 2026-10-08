@@ -23,7 +23,7 @@ CAPABILITY_MODES = (
     "doctor", "xverif", "wavepeek", "add-interface", "add-shared-pkg",
     "add-uvc-skeleton", "add-harness-layer", "add-env-layer",
     "finalize-filelist-and-make", "add-regression-runner",
-    "add-simulator-profile", "add-testcase", "add-coverage-skeleton",
+    "add-testcase", "add-coverage-skeleton",
     "add-assertion-skeleton", "add-refmodel-bridge", "complete-uvc",
     "complete-scoreboard", "add-ci-hook", "add-performance-gate",
     "regression-triage", "coverage-closure", "assertion-closure",

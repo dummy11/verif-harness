@@ -1,0 +1,20 @@
+{
+  "schema": "CaseManifest/1",
+  "case_id": "backpressure_test",
+  "entry": {"kind": "testcase", "name": "backpressure_test"},
+  "source_files": [
+    {
+      "path": "verification/testbench/test/backpressure_test.svh",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "submit_profile": {
+    "schema": "SubmitProfileRef/1",
+    "profile_id": "local-debug",
+    "submit_file": "verification/regression/submit.demo.json",
+    "submit_file_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapter": {"name": "project-submit-export", "version": "1"}
+  },
+  "case_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

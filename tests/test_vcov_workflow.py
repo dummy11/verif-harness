@@ -1,5 +1,6 @@
 """VCOV four-node governance and convergence using isolated synthetic evidence."""
 
+import base64
 import copy
 import json
 import os
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import unittest
+import urllib.error
 
 from tests import test_vdoc_artifacts as fixtures
 from verif_harness import code_workflow as code
@@ -138,7 +140,27 @@ class VcovWorkflowTest(unittest.TestCase):
         return {"path": name, "sha256": self.store._digest(self.root / name),
                 "kind": kind, "analyzed_by": ["xverif"]}
 
-    def validate(self, node, manifest=None, items=None, via_cli=False, exporter_digest=None, hole_database=None):
+    def provide_exclusions(self, node, content="exclude C.DEMO.2\n", via_cli=False):
+        path = self.write("owner-exclusions.el", content)
+        if via_cli:
+            result = self.cli("code", "provide-exclusions", node["id"],
+                              str(path.relative_to(self.root)), "--reviewer", "fixture-owner",
+                              "--reason", "已核对 C.DEMO.2 不可达", "--confirm")
+        else:
+            result = code.provide_coverage_exclusions(
+                self.store, node["id"], "fixture-owner", "已核对 C.DEMO.2 不可达",
+                confirm=True, source=str(path.relative_to(self.root)),
+            )
+        return result["approval"]
+
+    @staticmethod
+    def waiver(approval):
+        return {"id": approval["id"], "reviewer": approval["reviewer"],
+                "decision_date": approval["created_at"][:10],
+                "rationale": approval["reason"], "status": "Approved"}
+
+    def validate(self, node, manifest=None, items=None, via_cli=False, exporter_digest=None,
+                 hole_database=None, include_exclusion_artifact=True):
         stage = "implementation" if code.vcov_stage(node) == "implementation" else "convergence"
         manifest = copy.deepcopy(self.manifest if manifest is None else manifest)
         manifest_file = self.write_json(f"verification/results/{stage}/coverage-items.json", manifest)
@@ -164,6 +186,10 @@ class VcovWorkflowTest(unittest.TestCase):
                     else "verification/results/convergence/database.json"
                 artifacts = [self.artifact(database, "coverage-database"),
                              self.artifact("verification/results/convergence/analysis.json", "analysis-report"), manifest_artifact]
+                exclusion = state.get("coverage_exclusion", {}).get("current")
+                if claim == "hole-analysis-evidence" and exclusion and include_exclusion_artifact:
+                    artifacts.append({"path": exclusion["path"], "sha256": exclusion["sha256"],
+                                      "kind": "configuration", "analyzed_by": ["xverif"]})
                 result = {"coverage_manifest_digest": manifest_artifact["sha256"]}
                 if claim == "coverage-collection-evidence":
                     result.update(database_ids=["synthetic-current-db"], runs=1, merge_errors=0, stale_shards=0)
@@ -211,7 +237,7 @@ class VcovWorkflowTest(unittest.TestCase):
         receipt = self.validate(delivery, via_cli=True)
         self.assertTrue(receipt["ready"])
         self.assertEqual(self.cli("code", "status", delivery["id"])["validation"]["coverage_contract"],
-                         "CoverageConvergence/2")
+                         "CoverageConvergence/3")
         current = next(n for n in self.view()["nodes"] if n["id"] == delivery["id"])
         self.assertEqual(current["coverage_item_ids"], self.items[0]["coverage_item_ids"])
         self.assertEqual(current["capabilities"], self.items[0]["capabilities"])
@@ -310,18 +336,84 @@ class VcovWorkflowTest(unittest.TestCase):
         for message in ("覆盖计划摘要不属于", "覆盖模型摘要不属于", "覆盖率采集配置摘要不属于"):
             self.assertTrue(any(message in reason for reason in receipt["blockers"]), receipt["blockers"])
 
-    def test_report_declared_approved_exclusion_requires_recorded_owner_decision(self):
+    def test_excluded_items_require_one_owner_provided_file_then_agent_validation(self):
         self.finish_implementation()
         delivery = self.convergence()
+        unapproved = [{"id": "C.DEMO.1", "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"},
+                      {"id": "C.DEMO.2", "status": "excluded", "hits": 0, "plan_ref": "coverage-plan.md",
+                       "waiver": {"id": "not-a-file-approval", "reviewer": "fixture-owner",
+                                  "decision_date": "2026-09-30", "rationale": "synthetic declared exception",
+                                  "status": "Approved"}}]
+        receipt = self.validate(delivery, items=unapproved)
+        self.assertFalse(receipt["ready"])
+        self.assertTrue(receipt["blockers"])
+        self.assertTrue(any("尚未为当前收敛范围提供" in reason for reason in receipt["blockers"]))
+        action = next(a for a in self.store.evaluate_closure("VCOV")["actions"] if a["target"] == delivery["id"])
+        self.assertEqual(action["kind"], "PROVIDE_COVERAGE_EXCLUSIONS")
+        self.assertEqual(action["executor"], "human")
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["can_approve"])
+
+        approval = self.provide_exclusions(delivery, via_cli=True)
         items = [{"id": "C.DEMO.1", "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"},
                  {"id": "C.DEMO.2", "status": "excluded", "hits": 0, "plan_ref": "coverage-plan.md",
-                  "waiver": {"id": "not-a-recorded-decision", "reviewer": "fixture-owner",
-                             "decision_date": "2026-09-30", "rationale": "synthetic declared exception",
-                             "status": "Approved"}}]
+                  "waiver": self.waiver(approval)}]
+        missing_file = self.validate(delivery, items=items, include_exclusion_artifact=False)
+        self.assertFalse(missing_file["ready"])
+        self.assertTrue(any("没有引用并检查" in reason for reason in missing_file["blockers"]))
+        mismatched = copy.deepcopy(items)
+        mismatched[1]["waiver"]["id"] = "different-file-approval"
+        wrong_reference = self.validate(delivery, items=mismatched)
+        self.assertFalse(wrong_reference["ready"])
+        self.assertTrue(any("同一个" in reason or "当前 exclude 文件审批记录" in reason
+                            for reason in wrong_reference["blockers"]))
         receipt = self.validate(delivery, items=items)
-        self.assertFalse(receipt["ready"])
-        self.assertTrue(any("当前版本的负责人例外批准记录" in reason for reason in receipt["blockers"]))
-        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["can_approve"])
+        self.assertTrue(receipt["ready"], receipt["blockers"])
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.assertEqual(state["validation"]["coverage_exclusion_approval"]["id"], approval["id"])
+        self.assertTrue(state["can_approve"])
+
+    def test_dashboard_file_provision_is_the_approval_and_replacement_invalidates_validation(self):
+        self.finish_implementation()
+        delivery = self.convergence()
+        with self.assertRaises(urllib.error.HTTPError) as rejected:
+            self.http.post("/api/code/coverage-exclusions", {
+                "node": delivery["id"], "reviewer": "http-owner",
+                "filename": "fifo.el", "content_base64": base64.b64encode(b"exclude\n").decode(),
+                "confirm": False,
+            }, self.http.server.write_token)
+        self.assertEqual(rejected.exception.code, 400)
+        rejected.exception.close()
+        response = self.http.post("/api/code/coverage-exclusions", {
+            "node": delivery["id"], "reviewer": "http-owner",
+            "reason": "已核对排除范围", "filename": "fifo.el",
+            "content_base64": base64.b64encode(b"exclude C.DEMO.2\n").decode(),
+            "confirm": True,
+        }, self.http.server.write_token)["result"]
+        approval = response["approval"]
+        self.assertEqual(approval["reviewer"], "http-owner")
+        with self.http.get(
+            "/api/code-exclusion-file?node=" + delivery["id"] + "&path=" + approval["path"]
+            + "&digest=" + approval["sha256"],
+        ) as preview:
+            self.assertIn("C.DEMO.2", json.load(preview)["content"])
+        items = [{"id": "C.DEMO.1", "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"},
+                 {"id": "C.DEMO.2", "status": "excluded", "hits": 0, "plan_ref": "coverage-plan.md",
+                  "waiver": self.waiver(approval)}]
+        self.assertTrue(self.validate(delivery, items=items)["ready"])
+        self.assertTrue(self.store.node_plan_review_state(delivery["id"])["validation"]["current"])
+        self.write(approval["path"], "tampered after approval\n")
+        tampered = self.store.node_plan_review_state(delivery["id"])
+        self.assertIsNone(tampered["coverage_exclusion"]["current"])
+        self.assertFalse(tampered["validation"]["current"])
+        replaced = code.provide_coverage_exclusions(
+            self.store, delivery["id"], "fixture-owner", "修订后的排除范围",
+            confirm=True, content=b"exclude C.DEMO.2 when reset\n", filename="fifo.el",
+        )["approval"]
+        self.assertNotEqual(replaced["id"], approval["id"])
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.assertFalse(state["validation"]["current"])
+        self.assertFalse(state["can_approve"])
+        self.assertEqual(len(state["coverage_exclusion"]["history"]), 2)
 
     def test_feedback_routes_are_current_and_do_not_mutate_upstream(self):
         self.finish_implementation()
@@ -356,6 +448,8 @@ class VcovWorkflowTest(unittest.TestCase):
 
     def test_new_revision_does_not_inherit_old_approval_or_receipts(self):
         self.finish_all()
+        old_delivery = self.node("coverage-convergence-deliverable")
+        exclusion = self.provide_exclusions(old_delivery)
         old = self.store.workstream("VCOV")
         old_versions = code.artifacts(self.store, "VCOV")["versions"]
         self.design()
@@ -365,6 +459,10 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertTrue(all(not self.store.node_plan_review_state(n["id"])["completed"] for n in current["desired_state"]))
         self.assertFalse(self.store.evaluate_closure("VCOV")["ready"])
         self.assertTrue(all(version in code.artifacts(self.store, "VCOV")["versions"] for version in old_versions))
+        with self.store.read_connect() as db:
+            approval_state = code.coverage_exclusion_state(self.store, db, current, old_delivery)
+        self.assertIsNone(approval_state["current"])
+        self.assertEqual(approval_state["history"][-1]["id"], exclusion["id"])
 
     def test_fresh_default_vcov_planning_does_not_create_legacy_nodes(self):
         fresh_root = self.root / "fresh-vcov"
@@ -446,25 +544,37 @@ class VcovWorkflowTest(unittest.TestCase):
     def test_browser_four_types_preview_approval_and_reload(self):
         if not shutil.which("node") or subprocess.run(["node", "-e", "require('playwright')"], capture_output=True).returncode:
             self.skipTest("Node.js and Playwright are required for real browser testing")
-        for stage, title in (("implementation", "实现"), ("convergence", "收敛")):
-            plan = self.node(f"coverage-{stage}-plan")
-            self.browser(plan, "plan", "覆盖率" + title + "方案")
-            delivery = self.implement(approve=False) if stage == "implementation" else self.convergence(approve=False)
-            self.assertTrue(self.validate(delivery)["ready"])
-            self.browser(delivery, "delivery", "覆盖率" + title + "交付",
-                         expectedFileHeading="交付代码" if stage == "implementation" else "交付文件",
-                         previewText="fixture_coverage" if stage == "implementation" else "synthetic")
+        implementation_plan = self.node("coverage-implementation-plan")
+        self.browser(implementation_plan, "plan", "覆盖率实现方案")
+        implementation = self.implement(approve=False)
+        self.assertTrue(self.validate(implementation)["ready"])
+        self.browser(implementation, "delivery", "覆盖率实现交付",
+                     expectedFileHeading="交付代码", previewText="fixture_coverage")
+
+        convergence_plan = self.node("coverage-convergence-plan")
+        self.browser(convergence_plan, "plan", "覆盖率收敛方案")
+        convergence = self.convergence(approve=False)
+        self.browser(convergence, "exclusions", "覆盖率收敛交付")
+        approval = self.store.node_plan_review_state(convergence["id"])["coverage_exclusion"]["current"]
+        items = [{"id": "C.DEMO.1", "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"},
+                 {"id": "C.DEMO.2", "status": "excluded", "hits": 0, "plan_ref": "coverage-plan.md",
+                  "waiver": self.waiver(approval)}]
+        self.assertTrue(self.validate(convergence, items=items)["ready"])
+        self.browser(convergence, "delivery", "覆盖率收敛交付",
+                     expectedFileHeading="交付文件", previewText="synthetic")
         self.assertTrue(self.store.evaluate_closure("VCOV")["ready"])
 
     def browser(self, node, phase, expected_role, **extra):
         config = {"url": self.http.url, "project": dashboard_project_id(self.root),
                   "token": self.http.server.write_token, "workstream": "VCOV", "node": node["id"],
-                  "phase": phase, "expectedRole": expected_role, **extra}
+                  "phase": phase, "expectedRole": expected_role,
+                  "expectedCoverageItems": node.get("coverage_item_ids", []), **extra}
         process = subprocess.run(["node", str(Path(__file__).with_name("dashboard_code_workflow.cjs"))],
                                  input=json.dumps(config), text=True, capture_output=True, timeout=90,
                                  env=os.environ.copy())
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-        self.assertTrue(self.cli("code", "status", node["id"])["completed"])
+        if phase != "exclusions":
+            self.assertTrue(self.cli("code", "status", node["id"])["completed"])
 
 
 if __name__ == "__main__":

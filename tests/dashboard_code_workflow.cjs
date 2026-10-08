@@ -44,18 +44,116 @@ const workstream = config.workstream || 'VENV';
       assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(config.expectedRole));
       assert.equal(await page.locator('#drawer').getByText('工作包', {exact:true}).count(), 0);
     }
-    assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(config.phase === 'plan' ? '等待负责人审批方案' : '等待负责人验收交付'));
+    if (config.expectedRegressionConfig) {
+      const parameters = config.expectedRegressionConfig;
+      const range = page.locator('#drawer .regression-config');
+      for (const value of [parameters.regression_group,parameters.submit_profile.profile_id,parameters.submit_profile.submit_file,
+        ...parameters.cases.map(item => item.case_id)]) assert.ok((await range.innerText()).includes(value));
+      assert.ok((await range.innerText()).includes(parameters.seed_mode === 'random' ? '随机 seed' : '指定 seed：' + parameters.seed));
+      assert.ok((await range.innerText()).includes(String(parameters.repeat ?? 1)));
+      if (config.phase === 'plan') assert.equal(await page.locator('#drawer #regression-rerun').count(), 0);
+    }
+    if (config.phase === 'regression-rerun') {
+      const button = page.locator('#drawer #regression-rerun');
+      assert.equal(await button.isEnabled(), true);
+      const posts = [];
+      page.on('request', request => {
+        if (request.method() === 'POST' && request.url().includes('/api/code/regression-rerun')) posts.push(request.postDataJSON());
+      });
+      await button.click();
+      const form = page.locator('#regression-rerun-form');
+      await form.waitFor();
+      assert.ok((await page.locator('#modal').innerText()).includes('不批准新结果'));
+      assert.equal(await form.locator('[name="seed"],[name="seed_mode"],[name="repeat"]').count(), 0);
+      await form.locator('[name="reviewer"]').fill('browser-owner');
+      await form.locator('[name="reason"]').fill('按当前批准的 FIFO 回归范围重新执行');
+      await form.locator('[name="confirm"]').check();
+      const saved = page.waitForResponse(response => response.url().includes('/api/code/regression-rerun') && response.request().method() === 'POST');
+      await form.evaluate(element => {
+        element.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));
+        element.dispatchEvent(new Event('submit', {bubbles:true,cancelable:true}));
+      });
+      const response = await saved;
+      assert.equal(response.ok(), true);
+      const receipt = await response.json();
+      assert.equal(receipt.dashboard_project_id, config.project);
+      assert.equal(receipt.result.node_id, config.node);
+      assert.equal(posts.length, 1);
+      for (const field of ['cases','submit_profile','seed','seed_mode','repeat']) assert.ok(!Object.hasOwn(posts[0], field));
+      await page.locator('#modal-backdrop').waitFor({state:'hidden'});
+      const round = page.locator('#drawer .regression-execution');
+      assert.ok((await round.innerText()).includes('第 ' + receipt.result.round.round_number + ' 轮'));
+      assert.ok((await round.innerText()).includes('执行请求已登记'));
+      assert.equal(await page.locator('#drawer #regression-rerun').isDisabled(), true);
+      assert.equal(await page.locator('#drawer #node-plan-complete').isDisabled(), true);
+      assert.ok(!(await page.locator('#drawer .drawer-head').innerText()).includes('已验收通过'));
+      await page.reload();
+      await page.locator('#drawer .regression-execution').waitFor();
+      assert.equal(await page.locator('#drawer #regression-rerun').isDisabled(), true);
+      assert.equal(await page.locator('#drawer #node-plan-complete').isDisabled(), true);
+      await page.locator('#drawer .regression-history summary').click();
+      const historicalReport = page.locator('#drawer [data-regression-history-file]').first();
+      await historicalReport.click();
+      await page.locator('#modal pre').waitFor();
+      assert.ok((await page.locator('#modal').innerText()).includes('历史轮次的只读报告'));
+      assert.ok((await page.locator('#modal pre').innerText()).includes(config.historyPreviewText || 'schema'));
+      assert.equal(new URL(page.url()).searchParams.get('project'), config.project);
+      assert.deepEqual(errors, []);
+      console.log('VREG rerun confirmation, one request, authoritative round readback and historical report PASS');
+      return;
+    }
+    const expectedReviewStatus = config.phase === 'plan' ? '等待负责人审批方案'
+      : config.phase === 'exclusions' ? '等待 Agent 验证通过' : '等待负责人验收交付';
+    assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(expectedReviewStatus));
+    if (config.phase === 'exclusions') assert.equal(await page.locator('#drawer #node-plan-complete').isDisabled(), true);
     assert.equal(await page.locator('#drawer .writing-plan-inputs').getAttribute('open'), null);
     assert.doesNotMatch(await page.locator('#drawer .role-node-panel').innerText(), /待确认问题|预计正文交付|方案质量检查/);
+    if (config.phase === 'exclusions') {
+      await page.locator('#drawer #provide-coverage-exclusions').click();
+      const form = page.locator('#coverage-exclusion-form');
+      await form.locator('[name="file"]').setInputFiles({name:'browser-owner.el', mimeType:'text/plain', buffer:Buffer.from('exclude C.DEMO.2\n')});
+      await form.locator('[name="reviewer"]').fill('browser-owner');
+      await form.locator('[name="reason"]').fill('已核对空边界不可达');
+      await form.locator('[name="confirm"]').check();
+      const saved = page.waitForResponse(r => r.url().includes('/api/code/coverage-exclusions') && r.request().method() === 'POST');
+      await form.getByRole('button', {name:'提供并登记审批', exact:true}).click();
+      assert.equal((await saved).ok(), true);
+      await page.locator('#modal-backdrop').waitFor({state:'hidden'});
+      await page.reload();
+      // Refresh preserves the node route and reopens its drawer; do not click
+      // the obscured workstream row behind that already-open drawer.
+      await page.locator('#drawer .coverage-exclusion-card').waitFor();
+      assert.ok((await page.locator('#drawer .coverage-exclusion-card').innerText()).includes('文件中的排除范围已由负责人审批'));
+      assert.equal(await page.locator('#drawer #node-plan-complete').isDisabled(), true);
+      await page.locator('#drawer [data-code-exclusion-file]').click();
+      await page.locator('#modal pre').waitFor();
+      assert.ok((await page.locator('#modal pre').innerText()).includes('C.DEMO.2'));
+      assert.deepEqual(errors, []);
+      return;
+    }
     if (config.phase === 'plan') {
-      assert.deepEqual(await page.locator('#drawer .role-node-panel h4').allTextContents(), ['目标','工作范围','具体工作','实现方式','如何验证','输出','交付条件']);
+      const panel = page.locator('#drawer .role-node-panel');
+      const headings = ['目标','工作范围','具体工作','实现方式','如何验证','输出','交付条件'];
+      if (workstream === 'VCOV' && config.expectedRole === '覆盖率实现方案') {
+        assert.ok(Array.isArray(config.expectedCoverageItems) && config.expectedCoverageItems.length > 0);
+        assert.deepEqual(await panel.locator(':scope > h4').allTextContents(), [...headings,'本方案必须实现的覆盖项']);
+        const coverageHeading = panel.getByRole('heading', {name:'本方案必须实现的覆盖项',exact:true});
+        assert.deepEqual(await coverageHeading.locator('xpath=following-sibling::ul[1]/li').allTextContents(), config.expectedCoverageItems);
+      } else {
+        assert.deepEqual(await panel.locator(':scope > h4').allTextContents(), headings);
+      }
     } else {
       assert.ok((await page.locator('#drawer .role-node-panel').innerText()).includes('检查结论'));
       if (config.expectedFileHeading) {
         assert.equal(await page.locator('#drawer .role-node-panel').getByRole('heading', {name:config.expectedFileHeading, exact:true}).count(), 1);
         if (config.expectedFileHeading === '交付文件') assert.equal(await page.locator('#drawer .role-node-panel').getByRole('heading', {name:'交付代码', exact:true}).count(), 0);
       }
-      await page.locator('#drawer [data-code-file]').first().click();
+      const previewPath = config.previewPath || (config.expectedRole === '覆盖率实现交付' && config.previewText === 'fixture_coverage'
+        ? 'verification/coverage/model.sv' : null);
+      const previewButton = previewPath ? page.locator('#drawer [data-code-file]').filter({hasText:previewPath}).first()
+        : page.locator('#drawer [data-code-file]').first();
+      if (previewPath) assert.equal(await previewButton.innerText(), previewPath);
+      await previewButton.click();
       await page.locator('#modal pre').waitFor();
       assert.ok((await page.locator('#modal pre').innerText()).includes(config.previewText || 'fixture_interface'));
       await page.locator('#modal [data-close-modal]').click();

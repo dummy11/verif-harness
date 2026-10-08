@@ -28,14 +28,111 @@ class EvidenceContractsTest(unittest.TestCase):
                 "path": f"results/native-{index}", "sha256": DIGEST,
                 "kind": selected["kind"], "analyzed_by": [selected["analyzer"]],
             })
-        result = dict(result)
-        payload = {
-            "schema": SCHEMAS[workstream], "claim": claim, "revision": "revision-1",
-            "tool": "test-tool/1", "artifacts": artifacts,
-            "result": result,
-        }
+        result = json.loads(json.dumps(result))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+
+            def write(relative: str, content: bytes) -> tuple[str, str]:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+                return relative, hashlib.sha256(content).hexdigest()
+
+            def bind(kind: str, relative: str, digest: str) -> None:
+                match = next((item for item in artifacts if item["kind"] == kind), None)
+                if match is None:
+                    artifacts.append({
+                        "path": relative, "sha256": digest,
+                        "kind": kind, "analyzed_by": ["xverif"],
+                    })
+                else:
+                    match.update(path=relative, sha256=digest)
+
+            submit_relative, submit_digest = write(
+                "verification/regression/submit.json", b'{"profiles":{"local":{}}}\n',
+            )
+            profile = {
+                "schema": "SubmitProfileRef/1", "profile_id": "local",
+                "submit_file": submit_relative, "submit_file_digest": submit_digest,
+                "profile_digest": "b" * 64,
+                "adapter": {"name": "test-submit-export", "version": "1"},
+            }
+            if workstream == "VCASE" and claim == "case-implementation":
+                source_relative, source_digest = write("verification/tests/demo_test.svh", b"demo\n")
+                bind("source", source_relative, source_digest)
+                bind("configuration", submit_relative, submit_digest)
+                requested = result["cases"][0]
+                manifest = {
+                    "schema": "CaseManifest/1", "case_id": requested.get("id", "demo_test"),
+                    "entry": {"kind": "testcase", "name": requested.get("id", "demo_test")},
+                    "source_files": [{"path": source_relative, "sha256": source_digest}],
+                    "submit_profile": profile,
+                }
+                manifest["case_digest"] = hashlib.sha256(json.dumps(
+                    manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")).hexdigest()
+                manifest_relative, manifest_digest = write(
+                    "verification/regression/demo.case.json",
+                    json.dumps(manifest).encode("utf-8"),
+                )
+                bind("case-manifest", manifest_relative, manifest_digest)
+                result["cases"] = [{
+                    "manifest_digest": manifest_digest,
+                    "registered": requested["registered"], "compiled": requested["compiled"],
+                }]
+            if workstream == "VCASE" and claim == "targeted-evidence":
+                result["runs"] = [{
+                    "case_id": item.pop("case", item.get("case_id", "demo_test")),
+                    "case_digest": item.get("case_digest", "c" * 64),
+                    "submit_profile_id": item.get("submit_profile_id", "local"),
+                    "submit_profile_digest": item.get("submit_profile_digest", "b" * 64),
+                    "iteration": item.get("iteration", 0),
+                    "checker_engaged": item.get("checker_engaged", True),
+                    "checks": item.get("checks", 1),
+                    **{key: value for key, value in item.items() if key != "case_id"},
+                } for item in result["runs"]]
+            if workstream == "VREG" and claim == "execution-evidence":
+                bind("configuration", submit_relative, submit_digest)
+                source_results = result["results"]
+                case_ids = [item.get("case_id") or item.get("test") for item in source_results]
+                caselist_relative, caselist_digest = write(
+                    "verification/regression/nightly.caselist",
+                    ("\n".join(case_ids) + "\n").encode("utf-8"),
+                )
+                artifacts.append({
+                    "path": caselist_relative, "sha256": caselist_digest,
+                    "kind": "regression-manifest", "analyzed_by": ["xverif"],
+                })
+                batch = {
+                    "schema": "RegressionBatchManifest/1", "batch_id": "nightly-local",
+                    "regression_group": "nightly", "submit_profile": profile,
+                    "caselist": {"path": caselist_relative, "sha256": caselist_digest},
+                    "seed": source_results[0]["seed"], "repeat": 1, "timeout_seconds": 60,
+                    "cases": [{"case_id": case_id, "case_digest": "c" * 64}
+                              for case_id in case_ids],
+                }
+                batch_relative, batch_digest = write(
+                    "verification/regression/nightly.batch.json", json.dumps(batch).encode("utf-8"),
+                )
+                bind("regression-manifest", batch_relative, batch_digest)
+                result = {
+                    "golden_required": result["golden_required"],
+                    "batch_manifest_digests": [batch_digest],
+                    "results": [{
+                        "batch_id": "nightly-local", "case_id": case_id,
+                        "case_digest": "c" * 64, "submit_profile_id": "local",
+                        "submit_profile_digest": "b" * 64, "seed": item["seed"],
+                        "iteration": 0, "verdict": item["verdict"],
+                        "log_digest": item["log_digest"],
+                    } for case_id, item in zip(case_ids, source_results)],
+                }
+            if workstream == "VREG" and claim == "triage-evidence":
+                result["failures"] = [{
+                    "batch_id": item.get("batch_id", "nightly-local"),
+                    "case_id": item.pop("test", item.get("case_id", "demo_test")),
+                    "iteration": item.get("iteration", 0),
+                    **{key: value for key, value in item.items() if key != "case_id"},
+                } for item in result["failures"]]
             if workstream == "VCOV" and claim in {
                 "coverage-model", "coverage-collection-evidence", "hole-analysis-evidence",
             } and not legacy:
@@ -58,6 +155,12 @@ class EvidenceContractsTest(unittest.TestCase):
                 result["coverage_manifest_digest"] = manifest_digest
                 if tamper_manifest:
                     manifest_path.write_text(json.dumps({**manifest, "model_digest": "b" * 64}), encoding="utf-8")
+            payload = {
+                "schema": "RegressionEvidence/2" if workstream == "VREG" else SCHEMAS[workstream],
+                "claim": claim, "revision": "revision-1",
+                "tool": "test-tool/1", "artifacts": artifacts,
+                "result": result,
+            }
             path = Path(directory) / "evidence.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
             return validate_workstream_evidence(path, workstream, claim, artifact_root=root)
@@ -387,6 +490,396 @@ class EvidenceContractsTest(unittest.TestCase):
         })
         self.assertFalse(summary["ready"])
         self.assertEqual(summary["facts"]["failures"][0]["responsible_workstream"], "VSTIM")
+
+    def test_same_case_can_bind_multiple_submit_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write(relative: str, value: object) -> tuple[str, str]:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                data = value if isinstance(value, bytes) else json.dumps(value).encode("utf-8")
+                path.write_bytes(data)
+                return relative, hashlib.sha256(data).hexdigest()
+
+            submit_path, submit_digest = write(
+                "tb/submit.json", {"profiles": {"fast": {}, "debug": {}}},
+            )
+            source_path, source_digest = write("tb/demo_test.svh", b"demo\n")
+            artifacts = [
+                {"path": source_path, "sha256": source_digest,
+                 "kind": "source", "analyzed_by": ["xverif"]},
+                {"path": "results/build.log", "sha256": "a" * 64,
+                 "kind": "build-log", "analyzed_by": ["xverif"]},
+                {"path": submit_path, "sha256": submit_digest,
+                 "kind": "configuration", "analyzed_by": ["xverif"]},
+            ]
+            manifest_digests = []
+            for profile_id, profile_digest in (("fast", "b" * 64), ("debug", "d" * 64)):
+                manifest = {
+                    "schema": "CaseManifest/1", "case_id": "demo_test",
+                    "entry": {"kind": "testcase", "name": "demo_test"},
+                    "source_files": [{"path": source_path, "sha256": source_digest}],
+                    "submit_profile": {
+                        "schema": "SubmitProfileRef/1", "profile_id": profile_id,
+                        "submit_file": submit_path, "submit_file_digest": submit_digest,
+                        "profile_digest": profile_digest,
+                        "adapter": {"name": "tb-submit-export", "version": "1"},
+                    },
+                }
+                manifest["case_digest"] = hashlib.sha256(json.dumps(
+                    manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")).hexdigest()
+                relative, digest = write(f"tb/{profile_id}.case.json", manifest)
+                artifacts.append({"path": relative, "sha256": digest,
+                                  "kind": "case-manifest", "analyzed_by": ["xverif"]})
+                manifest_digests.append(digest)
+            evidence = root / "case-evidence.json"
+            evidence.write_text(json.dumps({
+                "schema": "TestcaseEvidence/2", "claim": "case-implementation",
+                "revision": "revision-1", "tool": "tb-submit-export/1", "artifacts": artifacts,
+                "result": {"cases": [{"manifest_digest": digest, "registered": True,
+                                       "compiled": True} for digest in manifest_digests]},
+            }), encoding="utf-8")
+            summary = validate_workstream_evidence(
+                evidence, "VCASE", "case-implementation", artifact_root=root,
+            )
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(summary["facts"]["cases"], ["demo_test"])
+        self.assertEqual(summary["facts"]["case_count"], 2)
+
+    def test_same_case_set_under_two_profiles_is_two_regression_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write(relative: str, value: object) -> tuple[str, str]:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                data = value if isinstance(value, bytes) else json.dumps(value).encode("utf-8")
+                path.write_bytes(data)
+                return relative, hashlib.sha256(data).hexdigest()
+
+            submit_path, submit_digest = write(
+                "tb/submit.json", {"profiles": {"fast": {}, "debug": {}}},
+            )
+            artifacts = [{"path": submit_path, "sha256": submit_digest,
+                          "kind": "configuration", "analyzed_by": ["xverif"]}]
+            batch_digests = []
+            results = []
+            for profile_id, profile_digest in (("fast", "b" * 64), ("debug", "d" * 64)):
+                caselist_path, caselist_digest = write(
+                    f"tb/nightly-{profile_id}.caselist", b"demo_test\n",
+                )
+                batch_id = f"nightly-{profile_id}"
+                batch = {
+                    "schema": "RegressionBatchManifest/1", "batch_id": batch_id,
+                    "regression_group": "nightly",
+                    "submit_profile": {
+                        "schema": "SubmitProfileRef/1", "profile_id": profile_id,
+                        "submit_file": submit_path, "submit_file_digest": submit_digest,
+                        "profile_digest": profile_digest,
+                        "adapter": {"name": "tb-submit-export", "version": "1"},
+                    },
+                    "caselist": {"path": caselist_path, "sha256": caselist_digest},
+                    "seed": 17, "repeat": 1, "timeout_seconds": 60,
+                    "cases": [{"case_id": "demo_test", "case_digest": "c" * 64}],
+                }
+                batch_path, batch_digest = write(f"tb/{batch_id}.json", batch)
+                artifacts.extend([
+                    {"path": caselist_path, "sha256": caselist_digest,
+                     "kind": "regression-manifest", "analyzed_by": ["xverif"]},
+                    {"path": batch_path, "sha256": batch_digest,
+                     "kind": "regression-manifest", "analyzed_by": ["xverif"]},
+                ])
+                batch_digests.append(batch_digest)
+                results.append({
+                    "batch_id": batch_id, "case_id": "demo_test", "case_digest": "c" * 64,
+                    "submit_profile_id": profile_id, "submit_profile_digest": profile_digest,
+                    "seed": 17, "iteration": 0, "verdict": "PASS", "log_digest": "e" * 64,
+                })
+            artifacts.extend([
+                {"path": "results/run.log", "sha256": "e" * 64,
+                 "kind": "simulation-log", "analyzed_by": ["xverif"]},
+                {"path": "results/analysis.json", "sha256": "f" * 64,
+                 "kind": "analysis-report", "analyzed_by": ["xverif"]},
+            ])
+            evidence = root / "regression-evidence.json"
+            evidence.write_text(json.dumps({
+                "schema": "RegressionEvidence/2", "claim": "execution-evidence",
+                "revision": "revision-1", "tool": "tb-submit-export/1", "artifacts": artifacts,
+                "result": {"golden_required": True,
+                           "batch_manifest_digests": batch_digests, "results": results},
+            }), encoding="utf-8")
+            summary = validate_workstream_evidence(
+                evidence, "VREG", "execution-evidence", artifact_root=root,
+            )
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(summary["facts"]["batch_count"], 2)
+        self.assertEqual({item["submit_profile"]["profile_id"]
+                          for item in summary["facts"]["batches"]}, {"fast", "debug"})
+
+
+class RegressionRoundEvidenceTest(unittest.TestCase):
+    """Synthetic adapter fixtures prove contracts, never simulator execution."""
+
+    @staticmethod
+    def binding() -> dict:
+        return {
+            "round_id": "round-1",
+            "plan_node_id": "workstream:VREG:r1:desired:nightly-results",
+            "plan_revision": 1, "plan_digest": "1" * 64,
+        }
+
+    def execution(
+        self, *, mode: str = "random", batch_edit=None, result_edit=None,
+        manifest_schema: str = "RegressionBatchManifest/2", tamper: bool = False,
+    ) -> dict:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = []
+
+            def write(relative: str, value: object, kind: str) -> str:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                data = value if isinstance(value, bytes) else json.dumps(value).encode()
+                target.write_bytes(data)
+                digest = hashlib.sha256(data).hexdigest()
+                artifacts.append({"path": relative, "sha256": digest, "kind": kind,
+                                  "analyzed_by": ["xverif"]})
+                return digest
+
+            submit_path = "tb/submit.json"
+            submit_digest = write(submit_path, {"profiles": {"local": {}}}, "configuration")
+            profile = {
+                "schema": "SubmitProfileRef/1", "profile_id": "local",
+                "submit_file": submit_path, "submit_file_digest": submit_digest,
+                "profile_digest": "b" * 64,
+                "adapter": {"name": "synthetic-submit-export", "version": "1"},
+            }
+            caselist = "tb/nightly.caselist"
+            caselist_digest = write(caselist, b"demo_test\nedge_test\n", "regression-manifest")
+            batch = {
+                "schema": manifest_schema, "batch_id": "nightly-local",
+                "regression_group": "nightly", "submit_profile": profile,
+                "caselist": {"path": caselist, "sha256": caselist_digest},
+                "seed_mode": mode, "repeat": 2, "timeout_seconds": 60,
+                "cases": [{"case_id": case_id, "case_digest": "c" * 64}
+                          for case_id in ("demo_test", "edge_test")],
+                "runs": [
+                    {"case_id": "demo_test", "seed": "00017", "iteration": 0},
+                    {"case_id": "demo_test", "seed": 29, "iteration": 1},
+                    {"case_id": "edge_test", "seed": 17, "iteration": 0},
+                    {"case_id": "edge_test", "seed": 31, "iteration": 1},
+                ],
+                "execution_binding": self.binding(),
+            }
+            if mode == "fixed":
+                batch["seed"] = "00017"
+                for run in batch["runs"]:
+                    run["seed"] = 17
+            if batch_edit is not None:
+                batch_edit(batch)
+            manifest_path = "tb/nightly.batch.json"
+            manifest_digest = write(manifest_path, batch, "regression-manifest")
+            log_digest = write("results/run.log", b"synthetic adapter input\n", "simulation-log")
+            write("results/analysis.json", {
+                "adapter_schema_version": 1, "state": "PASS", "blockers": [],
+                "request_sha256": "d" * 64, "operation": "synthetic-export",
+                "tool_identity": {"state": "PASS", "executed_tool": "synthetic-xverif"},
+            }, "analysis-report")
+            result = {
+                "execution_binding": self.binding(), "golden_required": True,
+                "batch_manifest_digests": [manifest_digest],
+                "results": [{
+                    "batch_id": batch["batch_id"], "case_id": run["case_id"],
+                    "case_digest": "c" * 64, "submit_profile_id": "local",
+                    "submit_profile_digest": "b" * 64, "seed": run["seed"],
+                    "iteration": run["iteration"], "verdict": "PASS", "log_digest": log_digest,
+                } for run in batch["runs"]],
+            }
+            if result_edit is not None:
+                result_edit(result)
+            if tamper:
+                (root / manifest_path).write_text(json.dumps({**batch, "timeout_seconds": 90}))
+            path = root / "evidence.json"
+            path.write_text(json.dumps({
+                "schema": "RegressionEvidence/3", "claim": "execution-evidence",
+                "revision": "revision-1", "tool": "synthetic-export/1",
+                "artifacts": artifacts, "result": result,
+            }))
+            return validate_workstream_evidence(path, "VREG", "execution-evidence", artifact_root=root)
+
+    def result_claim(self, claim: str, result: dict) -> dict:
+        # Raw artifact admission is tested by ProjectStore separately. This
+        # parser fixture preserves every required artifact class and binding.
+        artifacts = []
+        for index, requirement in enumerate(policy_for("VREG", claim)["requirements"]):
+            selected = requirement["alternatives"][0]
+            artifacts.append({"path": f"results/synthetic-{index}", "sha256": DIGEST,
+                              "kind": selected["kind"], "analyzed_by": [selected["analyzer"]]})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            path.write_text(json.dumps({
+                "schema": "RegressionEvidence/3", "claim": claim, "revision": "revision-1",
+                "tool": "synthetic-export/1", "artifacts": artifacts, "result": result,
+            }))
+            return validate_workstream_evidence(path, "VREG", claim)
+
+    def test_random_iterations_export_actual_numeric_seeds_and_current_binding(self) -> None:
+        summary = self.execution()
+        self.assertTrue(summary["ready"], summary["blockers"])
+        facts = summary["facts"]
+        self.assertEqual(facts["schema"], "RegressionEvidence/3")
+        self.assertEqual(facts["execution_binding"], self.binding())
+        self.assertEqual(facts["runs"], facts["run_records"])
+        self.assertEqual(len(facts["run_records"]), 4)
+        batch = facts["batches"][0]
+        self.assertEqual(batch["schema"], "RegressionBatchManifest/2")
+        self.assertEqual(batch["seed_mode"], "random")
+        self.assertNotIn("seed", batch)
+        self.assertEqual([run["seed"] for run in batch["runs"]], ["17", "29", "17", "31"])
+        self.assertEqual(batch["submit_profile"]["adapter"],
+                         {"name": "synthetic-submit-export", "version": "1"})
+        self.assertTrue(all(run["execution_binding"] == self.binding() for run in facts["runs"]))
+
+    def test_fixed_repeat_reuses_normalized_seed(self) -> None:
+        summary = self.execution(mode="fixed")
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(summary["facts"]["batches"][0]["seed"], "17")
+        self.assertEqual({run["seed"] for run in summary["facts"]["runs"]}, {"17"})
+
+    def test_case_sliced_batch_is_self_contained_without_expanding_scope(self) -> None:
+        def slice_batch(batch: dict) -> None:
+            batch["cases"] = batch["cases"][:1]
+            batch["runs"] = batch["runs"][:2]
+        summary = self.execution(batch_edit=slice_batch)
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(summary["facts"]["batches"][0]["cases"],
+                         [{"case_id": "demo_test", "case_digest": "c" * 64}])
+
+    def test_failed_scheduled_run_is_execution_fact_not_a_hidden_rerun(self) -> None:
+        summary = self.execution(result_edit=lambda result: result["results"][0].update(verdict="FAIL"))
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(len(summary["facts"]["failed_runs"]), 1)
+        self.assertEqual(summary["facts"]["failed_runs"][0]["seed"], "17")
+        self.assertEqual(summary["facts"]["runs"][0]["verdict"], "FAIL")
+        self.assertEqual(len(summary["facts"]["runs"]), 4)
+
+    def test_random_reuse_placeholder_bool_and_zero_seeds_are_rejected(self) -> None:
+        for invalid in ("17", "random", "<seed>", True, 0, -1, 1.5):
+            with self.subTest(seed=invalid), self.assertRaises(EvidenceContractError):
+                self.execution(batch_edit=lambda batch: batch["runs"][1].update(seed=invalid))
+        with self.assertRaises(EvidenceContractError):
+            self.execution(batch_edit=lambda batch: batch.update(seed=17))
+        for invalid in ("random", True, 0):
+            with self.subTest(result_seed=invalid), self.assertRaises(EvidenceContractError):
+                self.execution(result_edit=lambda result: result["results"][0].update(seed=invalid))
+
+    def test_fixed_run_cannot_change_seed(self) -> None:
+        with self.assertRaisesRegex(EvidenceContractError, "同一 seed"):
+            self.execution(mode="fixed", batch_edit=lambda batch: batch["runs"][1].update(seed=29))
+
+    def test_manifest_requires_exact_case_times_repeat_and_no_failure_rerun(self) -> None:
+        mutations = [
+            lambda batch: batch["runs"].pop(),
+            lambda batch: batch["runs"].append(dict(batch["runs"][0])),
+            lambda batch: batch["runs"][0].update(case_id="other_test"),
+            lambda batch: batch["runs"][0].update(iteration=2),
+            lambda batch: batch["runs"][0].update(rerun_kind="failure-rerun"),
+        ]
+        for index, mutation in enumerate(mutations):
+            with self.subTest(mutation=index), self.assertRaises(EvidenceContractError):
+                self.execution(batch_edit=mutation)
+
+    def test_execution_missing_extra_repeated_or_wrong_version_run_fails_closed(self) -> None:
+        mutations = [
+            lambda result: result["results"].pop(),
+            lambda result: result["results"].append({**result["results"][0], "seed": 41}),
+            lambda result: result["results"].append(dict(result["results"][0])),
+            lambda result: result["results"][0].update(case_digest="d" * 64),
+            lambda result: result["results"][0].update(submit_profile_digest="e" * 64),
+            lambda result: result["results"][0].update(seed=43),
+        ]
+        for index, mutation in enumerate(mutations):
+            with self.subTest(mutation=index):
+                summary = self.execution(result_edit=mutation)
+                self.assertFalse(summary["ready"])
+        with self.assertRaisesRegex(EvidenceContractError, "triage-evidence"):
+            self.execution(result_edit=lambda result: result["results"][0].update(rerun_kind="failure-rerun"))
+
+    def test_current_round_and_approved_plan_must_match_actual_manifest(self) -> None:
+        for field, value in (("round_id", "round-old"), ("plan_revision", 2),
+                             ("plan_digest", "2" * 64),
+                             ("plan_node_id", "workstream:VREG:r1:desired:other-results")):
+            with self.subTest(field=field):
+                summary = self.execution(result_edit=lambda result: result["execution_binding"].update({field: value}))
+                self.assertFalse(summary["ready"])
+                self.assertTrue(any("执行轮次不一致" in item for item in summary["blockers"]))
+        with self.assertRaises(EvidenceContractError):
+            self.execution(result_edit=lambda result: result.pop("execution_binding"))
+
+    def test_legacy_batch_and_changed_manifest_are_not_modern_execution(self) -> None:
+        with self.assertRaisesRegex(EvidenceContractError, "RegressionBatchManifest/2"):
+            self.execution(manifest_schema="RegressionBatchManifest/1")
+        with self.assertRaisesRegex(EvidenceContractError, "摘要变化"):
+            self.execution(tamper=True)
+
+    def test_failure_rerun_is_separate_same_seed_triage(self) -> None:
+        failure = {
+            "batch_id": "nightly-local", "case_id": "demo_test", "iteration": 0,
+            "original_seed": "00017", "rerun_seed": 17, "rerun_kind": "failure-rerun",
+            "classification": "CHECKER", "disposition": "fixed", "rerun_verdict": "PASS",
+            "rerun_log_digest": DIGEST,
+        }
+        result = {"execution_binding": self.binding(), "failures": [failure]}
+        summary = self.result_claim("triage-evidence", result)
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(summary["facts"]["failures"][0]["rerun_kind"], "failure-rerun")
+        self.assertEqual(summary["facts"]["failures"][0]["original_seed"], "17")
+        result["failures"][0]["rerun_seed"] = 29
+        summary = self.result_claim("triage-evidence", result)
+        self.assertFalse(summary["ready"])
+        self.assertTrue(any("same-seed" in item for item in summary["blockers"]))
+        result["failures"][0]["rerun_kind"] = "planned-repeat"
+        with self.assertRaisesRegex(EvidenceContractError, "failure-rerun"):
+            self.result_claim("triage-evidence", result)
+
+    def test_result_claims_require_well_formed_binding_but_infrastructure_does_not(self) -> None:
+        for claim, result in (("triage-evidence", {"failures": []}),
+                              ("fresh-evidence", {"snapshot_revision": "revision-1"})):
+            with self.subTest(claim=claim), self.assertRaises(EvidenceContractError):
+                self.result_claim(claim, result)
+            summary = self.result_claim(claim, {**result, "execution_binding": self.binding()})
+            self.assertTrue(summary["ready"], summary["blockers"])
+            self.assertEqual(summary["facts"]["execution_binding"], self.binding())
+        for invalid in ({**self.binding(), "plan_revision": True},
+                        {**self.binding(), "plan_node_id": "workstream:VCOV:r1:desired:plan"},
+                        {**self.binding(), "plan_digest": "placeholder"},
+                        {**self.binding(), "command": "unsupported"}):
+            with self.subTest(binding=invalid), self.assertRaises(EvidenceContractError):
+                self.result_claim("fresh-evidence", {"snapshot_revision": "revision-1", "execution_binding": invalid})
+        infrastructure = self.result_claim("executor-ready", {
+            "runner_digest": DIGEST, "collector_digest": DIGEST, "selftest_passed": True,
+        })
+        self.assertTrue(infrastructure["ready"])
+        self.assertEqual(infrastructure["facts"]["schema"], "RegressionEvidence/3")
+        self.assertNotIn("execution_binding", infrastructure["facts"])
+
+    def test_public_examples_describe_one_consistent_placeholder_round(self) -> None:
+        evidence_root = Path(__file__).resolve().parents[1] / "skills/verif-harness/evidence"
+        batch = json.loads((evidence_root / "regression-batch-manifest.example.json").read_text())
+        report = json.loads((evidence_root / "regression-evidence.example.json").read_text())
+        for name, value in (("regression-batch-manifest", batch), ("regression-evidence", report)):
+            schema = json.loads((evidence_root / f"{name}.schema.json").read_text())
+            self.assertEqual(value["schema"], schema["properties"]["schema"]["const"])
+            self.assertTrue(value["example_only"])
+            self.assertIn("不是", value["example_notice"])
+        self.assertEqual(batch["execution_binding"], report["result"]["execution_binding"])
+        self.assertEqual(batch["seed_mode"], "random")
+        self.assertEqual(len(batch["runs"]), len(batch["cases"]) * batch["repeat"])
+        planned = {(run["case_id"], str(run["seed"]), run["iteration"]) for run in batch["runs"]}
+        actual = {(run["case_id"], str(run["seed"]), run["iteration"]) for run in report["result"]["results"]}
+        self.assertEqual(planned, actual)
 
 
 if __name__ == "__main__":

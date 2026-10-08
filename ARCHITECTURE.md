@@ -42,7 +42,24 @@ scopes must be consumed by required convergence scopes; implementation alone
 cannot satisfy VCOV. Approved `coverage_item_ids` bind the item universe.
 `CoverageItemManifest/1` binds that universe to current plan inputs and model
 outputs, and every convergence report must use the selected accepted manifest.
+When convergence contains excluded items, the owner provides one exclusion file;
+that provision is the semantic approval of the file's exclusion scope. ProjectStore
+binds its digest to the current revision and convergence delivery. Agent validation
+checks the file through xverif and requires the hole report and every excluded item
+to reference that same file-level approval. It does not add per-item waiver gates.
+Replacing the file or changing its content or scope invalidates prior validation;
+owner acceptance of the convergence delivery remains the final gate.
 Old validation receipts require revalidation under the current coverage contract.
+VCASE treats a runnable case as a testcase or executable virtual sequence bound
+to one testbench-owned submit profile. The testbench submit file remains the
+configuration authority; the control plane stores only project-relative
+references and content digests. A logical testcase may therefore have multiple
+`CaseManifest/1` variants, one per submit profile. VREG consumes testbench-emitted
+`RegressionBatchManifest/2` files. Each batch owns one submit profile and one
+caselist, so the same case set under different profiles is represented by
+different batches. Execution and triage identities are
+`batch_id + case_id + seed + iteration`. These manifests are controlled internal
+artifacts, not public WorkNodes.
 VREG exposes four direct WorkNode types: `regression-infrastructure-plan`,
 `regression-infrastructure-deliverable`, `regression-results-plan`, and
 `regression-results-deliverable`, without a public package layer. Infrastructure
@@ -51,12 +68,25 @@ depends only on accepted documents and environment; its acceptance derives
 consume accepted infrastructure capabilities plus stimulus, checking, testcase
 and coverage capabilities. All required infrastructure must be consumed by
 required results, and both kinds of deliveries must be accepted before VREG
-can be satisfied. Failed execution test/seed pairs must exactly match triage;
+can be satisfied. Failed execution batch/case/seed/iteration tuples must exactly match triage;
 known failures require a current VREG owner waiver. Engine derives the current
 required upstream evidence set, rechecking it on reads and acceptance; result
 deliveries do not wait for their own or each other's acceptance. Old result
-receipts require revalidation under `RegressionResults/2`. Historical generic
+receipts require revalidation under `RegressionResults/4`. Historical generic
 roles and approvals remain stored without automatic migration or approval.
+Each result plan governs one regression group: its case set and one testbench
+submit profile. `regression_config` binds case/profile digests, random or fixed
+seed mode, and positive per-case repeat (default one) to approval. Seed generation,
+retention, same-seed rerun and replay are infrastructure responsibilities, not
+control-plane execution logic. Random runs retain resolved unique per-case seeds;
+fixed mode repeats the approved seed. Batch and `RegressionEvidence/3` reports bind
+`execution_binding` to the approved plan and current round. The owner requests
+another round only from its result delivery, with atomic identity/permission and
+in-flight checks. This preserves the unchanged plan and executor, creates no new
+WorkNodes or workstream revision, and revokes the old result's current validation,
+acceptance and capability before dispatch. Historical files and governance records
+remain available. A saved request or dispatched Agent is not evidence of simulator
+execution; every new result still needs validation and owner acceptance.
 Uncovered coverage items and unresolved regression failures
 carry an explicit responsible workstream and next action. Main Agent records a
 bounded upstream replan or revalidation request; findings never mutate upstream

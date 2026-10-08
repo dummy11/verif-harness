@@ -13,7 +13,6 @@ from pathlib import Path
 
 
 SKILL = Path(__file__).resolve().parents[1]
-PROFILE = SKILL / "add-simulator-profile/scripts/generate_profile.py"
 UVC = SKILL / "complete-uvc/scripts/generate_uvc.py"
 SCOREBOARD = SKILL / "complete-scoreboard/scripts/generate_scoreboard.py"
 TRIAGE = SKILL / "regression-triage/scripts/triage_regression.py"
@@ -33,32 +32,6 @@ def run(*args: object, cwd: Path | None = None) -> subprocess.CompletedProcess[s
 
 
 class FreezeToolsTest(unittest.TestCase):
-    def test_simulator_profile_generates_normalized_outputs(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            profile, make = root / "profile.json", root / "profile.mk"
-            result = run(
-                PROFILE, "--spec", SKILL / "add-simulator-profile/simulator-profile.example.json",
-                "--profile-out", profile, "--make-out", make,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(profile.read_text())["status"], "configured")
-            self.assertIn("SIM_COMPILE := verilator", make.read_text())
-
-    def test_simulator_profile_rejects_secret_material(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            spec = json.loads((SKILL / "add-simulator-profile/simulator-profile.example.json").read_text())
-            spec["compile_tokens"].append("27000@" + "host.example.invalid")
-            source = root / "profile.json"
-            source.write_text(json.dumps(spec))
-            result = run(
-                PROFILE, "--spec", source, "--profile-out", root / "out.json",
-                "--make-out", root / "out.mk",
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertFalse((root / "out.json").exists())
-
     def test_uvc_and_scoreboard_generate_concrete_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

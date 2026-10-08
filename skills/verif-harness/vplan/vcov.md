@@ -31,8 +31,22 @@ coverpoint、bin、cross、采样时机、收集和导出链路。它不以达�
 收敛交付必须同时验证 `coverage-collection-evidence` 和 `hole-analysis-evidence`。
 采集证据绑定当前版本、数据库分片和合并结果；数据库不得有合并错误或过期分片。缺口分析
 逐项给出 covered（已命中）、excluded（已批准排除）或 uncovered（未覆盖）。excluded
-必须引用当前版本中可核对的负责人例外批准记录，不能仅凭报告自写的 Approved 字样；
-未有该记录时仍阻止验收。uncovered 必须明确责任工作流和下一步动作，并阻止收敛验收。
+由负责人提供当前 exclude 文件；提供动作本身表示负责人已经批准文件中的排除范围，不再逐项
+建立 WAIVE 审批。ProjectStore 保存文件路径、SHA-256、负责人、说明、VCOV revision 和收敛节点
+范围。Agent 只验证文件合法性，并要求 `hole-analysis-evidence` 把该文件作为 xverif 分析过的
+`configuration` 原始产物引用；每个 excluded 项都必须引用同一个文件级审批记录，不能仅凭报告
+自写 Approved 字样。文件缺失、内容或范围变化、报告引用不一致都会阻止验收。uncovered 必须
+明确责任工作流和下一步动作，并阻止收敛验收。最后仍由负责人验收完整收敛结果。
+
+负责人可以在 Dashboard 的覆盖率收敛交付节点提供文件，或使用：
+
+```text
+verif-harness code provide-exclusions NODE path/to/exclusions.el \
+  --reviewer NAME --reason "已核对不可达范围" --confirm
+```
+
+Agent 随后重新生成缺口报告并执行 `code validate NODE report.json`。这一步只检查合法性和一致性，
+不会再次批准排除范围，也不会代替最终交付验收。
 
 实现与收敛共用受控覆盖项清单 `CoverageItemManifest/1`。清单记录覆盖计划摘要
 `plan_digest`、覆盖模型摘要 `model_digest`、计划必需覆盖项全集 `planned_item_ids` 和模型

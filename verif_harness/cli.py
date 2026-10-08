@@ -338,6 +338,26 @@ def build_parser() -> argparse.ArgumentParser:
     project_argument(code_status); code_status.add_argument("node")
     code_validate = code_commands.add_parser("validate", help="检查并登记当前交付版本的验证证据，不代替负责人验收")
     project_argument(code_validate); code_validate.add_argument("node"); code_validate.add_argument("report")
+    code_rerun = code_commands.add_parser("rerun", help="按当前已批准方案登记新的回归轮次；不重启工作流，也不直接启动仿真")
+    project_argument(code_rerun); code_rerun.add_argument("node", help="对应回归结果交付节点")
+    code_rerun.add_argument("--revision", type=int, required=True)
+    code_rerun.add_argument("--definition-digest", required=True)
+    code_rerun.add_argument("--request-key", required=True, help="本次请求的唯一标识；保存结果未知时用相同标识核对")
+    code_rerun.add_argument("--reviewer")
+    code_rerun.add_argument("--reason", default="")
+    code_rerun.add_argument("--confirm", action="store_true")
+    code_start = code_commands.add_parser("execution-start", help="Main Agent 登记当前回归工具调用；不是仿真完成或通过证据")
+    project_argument(code_start); code_start.add_argument("node")
+    code_start.add_argument("--binding", required=True, help="code status 返回的当前 execution_binding JSON")
+    code_start.add_argument("--actor", default="Project Main Agent")
+    code_exclusions = code_commands.add_parser(
+        "provide-exclusions",
+        help="负责人为覆盖率收敛交付提供 exclude 文件；提供即表示文件中的排除范围已经审批",
+    )
+    project_argument(code_exclusions); code_exclusions.add_argument("node"); code_exclusions.add_argument("file")
+    code_exclusions.add_argument("--reviewer")
+    code_exclusions.add_argument("--reason", default="")
+    code_exclusions.add_argument("--confirm", action="store_true", help="确认该文件中的排除范围已经负责人审批")
     code_artifacts = code_commands.add_parser("artifacts", help="查看批准方案、代码交付历史和下游可用状态")
     project_argument(code_artifacts)
 
@@ -998,6 +1018,24 @@ def main(arguments: list[str] | None = None) -> int:
             with store.operation():
                 if args.code_command == "validate":
                     emit(code_workflow.validate(store, args.node, args.report))
+                elif args.code_command == "rerun":
+                    emit(code_workflow.request_regression_rerun(store, {
+                        "node": args.node, "revision": args.revision,
+                        "definition_digest": args.definition_digest, "request_key": args.request_key,
+                        "reviewer": reviewer_identity(store.root, args.reviewer),
+                        "reason": args.reason, "confirm": args.confirm,
+                    }))
+                elif args.code_command == "execution-start":
+                    try:
+                        binding = json.loads(args.binding)
+                    except ValueError as exc:
+                        raise HarnessError("回归执行轮次绑定必须是 code status 返回的 JSON") from exc
+                    emit(code_workflow.start_regression_execution(store, args.node, binding, args.actor))
+                elif args.code_command == "provide-exclusions":
+                    emit(code_workflow.provide_coverage_exclusions(
+                        store, args.node, reviewer_identity(store.root, args.reviewer),
+                        args.reason, confirm=args.confirm, source=args.file,
+                    ))
                 elif args.code_command == "status":
                     code_workflow.refresh(store)
                     emit(code_workflow.review_state(store, args.node))

@@ -8,7 +8,7 @@ from typing import Any
 ARTIFACT_KINDS = {
     "document", "source", "build-log", "simulation-log", "waveform",
     "transaction-trace", "coverage-database", "regression-manifest",
-    "analysis-report", "configuration",
+    "case-manifest", "analysis-report", "configuration",
 }
 
 
@@ -32,6 +32,7 @@ TRACE = requirement(
 )
 COVERAGE_DB = requirement("覆盖率数据库已导出并通过一致性检查", ("coverage-database", "xverif"))
 MANIFEST = requirement("回归测试清单已通过执行器检查", ("regression-manifest", "xverif"))
+CASE_MANIFEST = requirement("用例清单已通过适配器检查", ("case-manifest", "xverif"))
 ANALYSIS = requirement("结构化分析结果已保存", ("analysis-report", "xverif"), ("analysis-report", "wavepeek"))
 XVERIF_ANALYSIS = requirement("结构化分析结果由 xverif 生成", ("analysis-report", "xverif"))
 DOCUMENT = requirement("验证文档已经负责人评审", ("document", "human-review"))
@@ -80,7 +81,10 @@ EVIDENCE_POLICIES: dict[str, dict[str, dict[str, Any]]] = {
     },
     "VCASE": {
         "case-matrix": {"requirements": [DOCUMENT], "basis": "reviewed-feature-mapping"},
-        "case-implementation": {"requirements": [SOURCE, BUILD], "basis": "compiled-registration"},
+        "case-implementation": {
+            "requirements": [SOURCE, BUILD, CONFIG, CASE_MANIFEST],
+            "basis": "compiled-case-and-submit-profile-binding",
+        },
         "targeted-evidence": {"requirements": [SIM, TRACE, ANALYSIS], "basis": "targeted-simulation"},
     },
     "VREG": {
@@ -93,10 +97,12 @@ EVIDENCE_POLICIES: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
-def policy_for(workstream: str, claim: str) -> dict[str, Any] | None:
+def policy_for(workstream: str, claim: str, *, schema: str | None = None) -> dict[str, Any] | None:
     policy = EVIDENCE_POLICIES.get(workstream, {}).get(claim)
     if policy is None:
         return None
+    if schema == "TestcaseEvidence/1" and workstream == "VCASE" and claim == "case-implementation":
+        policy = {"requirements": [SOURCE, BUILD], "basis": "compiled-registration"}
     return {
         "version": "EvidenceAdmissionPolicy/1",
         "workstream": workstream,
@@ -107,9 +113,9 @@ def policy_for(workstream: str, claim: str) -> dict[str, Any] | None:
 
 
 def validate_artifact_policy(
-    workstream: str, claim: str, artifacts: list[dict[str, Any]],
+    workstream: str, claim: str, artifacts: list[dict[str, Any]], *, schema: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
-    policy = policy_for(workstream, claim)
+    policy = policy_for(workstream, claim, schema=schema)
     if policy is None:
         return {}, [f"{workstream}/{claim} 没有明确 evidence admission policy"]
     blockers: list[str] = []

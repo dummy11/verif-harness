@@ -552,6 +552,7 @@
       SUBMIT_REVIEW_FEEDBACK:'提交当前审批意见给 Agent',
       APPLY_REVIEW_FEEDBACK:'Agent 处理审批意见并修改内容',
       IMPLEMENT_AND_VALIDATE:'Agent 实现代码并验证',
+      PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的 exclude 文件',
       ANALYZE_VERIFICATION_FEEDBACK:'Agent 分析覆盖率或回归反馈并登记上游动作',
       APPLY_WORKFLOW_CHANGE:'Agent 分析工作节点变更并形成下一版方案',
       HUMAN_REVIEW:'等待负责人评审当前计划'
@@ -706,6 +707,7 @@
         const actions = workstream.closure?.actions || [];
         if (actions.some(a => a.kind === 'APPLY_WORKFLOW_CHANGE' || a.kind === 'APPLY_REVIEW_FEEDBACK')) return '等待 Agent 按负责人意见修改';
         if (actions.some(a => a.kind === 'HUMAN_REVIEW')) return '等待负责人审批方案或验收交付';
+        if (actions.some(a => a.kind === 'PROVIDE_COVERAGE_EXCLUSIONS')) return '等待负责人提供已审批的覆盖率 exclude 文件';
         if (actions.some(a => a.kind === 'ANALYZE_VERIFICATION_FEEDBACK')) return '等待 Agent 分析反馈并登记上游动作';
         if (actions.some(a => a.kind === 'IMPLEMENT_AND_VALIDATE')) return '等待 Agent 完成实现和验证';
         if (actions.some(a => a.kind === 'WAIT_FOR_DEPENDENCY')) return '等待前置文档或交付验收';
@@ -906,7 +908,8 @@
       const node = findNode(nodeId || state.reviewPlanNode || state.reviewDeliveryNode || state.node || question?.node_id || question?.target);
       const w = workstream(node?.workstream || question?.workstream || state.workstream || state.reviewWorkstream || (state.reviseVdocPlan ? 'VDOC' : ''));
       return JSON.stringify([state.project, w?.revision, node?.id, node?.definition_digest,
-        node?.plan_review?.definition_digest, node?.delivery_review?.definition_digest,
+        node?.plan_review?.definition_digest, node?.plan_review?.regression_execution?.current?.round_id,
+        node?.plan_review?.regression_execution?.current?.plan_digest, node?.delivery_review?.definition_digest,
         node?.delivery_review?.document_digest, node?.document?.digest, node?.document?.content_digest, node?.document?.content_changed,
         question ? [question.id, question.status, question.revision, question.prompt, question.context, question.options] : null]);
     }
@@ -1676,7 +1679,9 @@
       const feedback = nodeFeedbackState(n);
       if (feedback.draft_count) return `请提交当前 ${feedback.draft_count} 条审批意见给 Agent`;
       if (feedback.processing_count) return `Agent 待处理 ${feedback.processing_count} 条审批意见`;
-      if (isCodeNode(n)) return n.plan_review?.completed ? '' : n.plan_review?.can_approve
+      const round = !isCodePlanNode(n) && regressionNodeStage(n) === 'results' ? n.plan_review?.regression_execution?.current : null;
+      if (round && ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED','FAILED'].includes(round.status)) return regressionRoundStatusLabel(round.status);
+      if (isCodeNode(n)) return codeApprovalCompleted(n) ? '' : planApprovalAvailable(n)
         ? (isCodePlanNode(n) ? `等待负责人审批${codeNodeObjectLabel(n)}` : `等待负责人验收${codeNodeObjectLabel(n)}`)
         : (n.plan_review?.blockers || ['等待 Agent 实现并验证'])[0];
       if (n.plan_review && n.plan_review.status !== 'APPROVED') {
@@ -1712,7 +1717,11 @@
     }
     function nodeProgressState(n) {
       if (isCodeNode(n)) {
-        const complete = Boolean(n.plan_review?.completed);
+        const complete = codeApprovalCompleted(n);
+        if (!isCodePlanNode(n) && regressionNodeStage(n) === 'results' && n.plan_review?.regression_execution?.current) {
+          return {ratio:complete ? 100 : 0,current:complete ? 1 : 0,total:1,
+            metric:complete ? '当前轮次已验收' : '当前轮次尚未验收',basis:'仅以当前轮次的负责人验收和必需验证结果计算，不代表执行时间或运行进度'};
+        }
         return {ratio:complete ? 100 : 0, current:complete ? 1 : 0, total:1,
           metric:complete ? '已批准当前版本' : '当前版本尚未批准', basis:'仅以当前版本的负责人审批和必需验证结果计算'};
       }
@@ -1788,12 +1797,15 @@
     function codeStatusBadge(n) {
       const review = n.plan_review || {};
       const plan = isCodePlanNode(n);
-      const label = review.completed ? (plan ? '方案已批准' : '已验收通过')
+      const complete = codeApprovalCompleted(n);
+      const round = !plan && regressionNodeStage(n) === 'results' ? review.regression_execution?.current : null;
+      const label = complete ? (plan ? '方案已批准' : '已验收通过')
         : review.feedback?.unresolved_count ? '等待处理审批意见'
-        : review.can_approve ? (plan ? '等待负责人审批方案' : '等待负责人验收交付')
+        : round && ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED','FAILED'].includes(round.status) ? regressionRoundStatusLabel(round.status)
+        : planApprovalAvailable(n) ? (plan ? '等待负责人审批方案' : '等待负责人验收交付')
         : plan || (review.blockers || []).some(reason => reason.includes('前置结果')) ? '等待前置事项处理'
         : '等待 Agent 验证通过';
-      return `<span class="badge ${review.completed ? 'VALID' : 'PENDING'}">${statusPulse(nodeMotion(n))}${escapeHtml(label)}</span>`;
+      return `<span class="badge ${complete ? 'VALID' : 'PENDING'}">${statusPulse(nodeMotion(n))}${escapeHtml(label)}</span>`;
     }
     function nodeStatusHtml(n) {
       const status = n.closure_assessment?.conclusion || n.status;
@@ -2028,7 +2040,7 @@
         const document = documentLabel ? `<div class="work-node-document">文档：${escapeHtml(documentLabel)}</div>` : '';
         const feedbackReady = nodeFeedbackState(n).can_approve;
         const approval = (n.role === 'document-writing-plan' || isCodeNode(n)) && n.plan_review
-          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !n.plan_review.completed && feedbackReady ? '' : 'disabled'}>${n.plan_review.completed ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
+          ? `<div class="node-row-approval"><button type="button" class="btn small primary" data-approve-plan-node="${escapeHtml(n.id)}" ${planApprovalAvailable(n) && !(isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) && feedbackReady ? '' : 'disabled'}>${(isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) ? '已批准全部内容' : '批准全部内容'}</button></div>` : '';
         return `<tr><td><div class="work-node-name">${toggle}<div class="work-node-copy"><button class="node-link" data-open-node="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</button>${document}</div></div></td><td><div>${escapeHtml(nodeRoleLabel(n))}</div><div class="row-meta">${n.required ? '计划要求完成' : '补充工作'}</div></td><td>${nodeProgressHtml(n)}</td><td>${nodeStatusHtml(n)}${approval}</td></tr>`;
       }).join('');
     }
@@ -2051,7 +2063,7 @@
       document.querySelectorAll('[data-approve-plan-node]').forEach(button => button.onclick = event => {
         event.stopPropagation();
         const n = findNode(button.dataset.approvePlanNode);
-        if (!planApprovalAvailable(n) || n.plan_review.completed || !nodeFeedbackState(n).can_approve) { toast('当前方案存在未处理审批意见或不能重复审批，请刷新后核对节点状态', true); return; }
+        if (!planApprovalAvailable(n) || (isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed) || !nodeFeedbackState(n).can_approve) { toast('当前方案存在未处理审批意见或不能重复审批，请刷新后核对节点状态', true); return; }
         openNodePlanCompletionModal(n);
       });
       document.querySelectorAll('[data-open-node]').forEach(button => button.onclick = event => { event.stopPropagation(); openNodeTab(button.dataset.openNode); });
@@ -2430,9 +2442,10 @@
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
         : `<div class="notice"><strong>当前还不能批准。</strong> ${escapeHtml((n.plan_review.blockers || ['Agent 需要先补齐当前 DUT 的文档工作分解']).join('；'))}</div>${isCodeNode(n) ? `${planReviewFormHtml(n)}<section><h2>审批历史记录</h2>${planReviewHistoryHtml(n)}</section>` : ''}`;
       const feedback = nodeFeedbackState(n);
-      const canComplete = available && !n.plan_review.completed && feedback.can_approve;
-      const completionLabel = n.plan_review.completed ? '已批准全部内容' : available || isCodeNode(n) ? '批准全部内容' : '方案待补齐';
-      const completionTitle = n.plan_review.completed
+      const completed = isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed;
+      const canComplete = available && !completed && feedback.can_approve;
+      const completionLabel = completed ? '已批准全部内容' : available || isCodeNode(n) ? '批准全部内容' : '方案待补齐';
+      const completionTitle = completed
         ? '当前方案的全部内容已批准；提交新的审批意见后需要重新审批'
         : feedback.unresolved_count ? '当前审批意见尚未由 Agent 处理完成，不能批准未修改的内容'
         : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
@@ -2441,7 +2454,10 @@
     }
 
     function planApprovalAvailable(n) {
-      if (isCodeNode(n)) return Boolean(n.plan_review?.can_approve);
+      if (isCodeNode(n)) {
+        const round = !isCodePlanNode(n) && regressionNodeStage(n) === 'results' ? n.plan_review?.regression_execution?.current : null;
+        return Boolean(n.plan_review?.can_approve) && (!round || ['VALIDATED','ACCEPTED'].includes(round.status));
+      }
       return Boolean(n?.role === 'document-writing-plan' && n.plan_review && workstream(n.workstream))
         && !vdocPlanReviewState(workstream(n.workstream)).needsRefinement;
     }
@@ -2468,6 +2484,40 @@
       return null;
     }
     function isResultFileNode(n) { return isCoverageConvergenceNode(n) || regressionNodeStage(n) === 'results'; }
+    function codeApprovalCompleted(n) {
+      const round = !isCodePlanNode(n) && regressionNodeStage(n) === 'results' ? n.plan_review?.regression_execution?.current : null;
+      return Boolean(n.plan_review?.completed) && (!round || round.status === 'ACCEPTED');
+    }
+    function regressionConfig(n) { return n.regression_config || n.plan_review?.regression_config; }
+    function regressionConfigComplete(config) {
+      return Boolean(config?.regression_group && config.cases?.length && config.cases.every(item => item.case_id && item.case_digest)
+        && config.submit_profile?.profile_id && config.submit_profile?.submit_file && config.submit_profile?.submit_file_digest
+        && config.submit_profile?.profile_digest && config.submit_profile?.adapter?.name && config.submit_profile?.adapter?.version
+        && ['random','fixed'].includes(config.seed_mode) && Number.isInteger(config.repeat ?? 1) && (config.repeat ?? 1) >= 1
+        && (config.seed_mode !== 'fixed' || String(config.seed ?? '').length));
+    }
+    function regressionConfigHtml(n, approved=false) {
+      if (regressionNodeStage(n) !== 'results') return '';
+      const config = regressionConfig(n);
+      if (!regressionConfigComplete(config)) return '<div class="notice regression-config-missing">当前节点未登记完整的回归执行合同；请由 Agent 形成包含回归组、case 集合、submit profile 和运行参数的新方案，不能沿用历史记录授权执行。</div>';
+      const profile = config.submit_profile;
+      return `<section class="detail-card regression-config"><h4>${approved ? '已批准的回归执行范围' : '回归执行范围'}</h4><dl class="kv"><dt>回归组</dt><dd>${escapeHtml(config.regression_group)}</dd><dt>Case 集合</dt><dd><ul>${config.cases.map(item => `<li>${escapeHtml(item.case_id)}</li>`).join('')}</ul></dd><dt>Submit profile（testbench 提交配置）</dt><dd>${escapeHtml(profile.profile_id)} · ${escapeHtml(profile.submit_file)}</dd><dt>Seed 模式</dt><dd>${config.seed_mode === 'random' ? '随机 seed（每轮由 testbench 生成并记录）' : `指定 seed：${escapeHtml(config.seed)}`}</dd><dt>每个 case 的重复次数</dt><dd>${escapeHtml(config.repeat ?? 1)}</dd></dl><details><summary>查看配置版本绑定</summary><pre>${escapeHtml(JSON.stringify({cases:config.cases,submit_profile:profile}, null, 2))}</pre></details></section>`;
+    }
+    function regressionRoundStatusLabel(status) {
+      return ({REQUESTED:'执行请求已登记，等待 Agent 接续',DISPATCHED:'Agent 已接续，等待运行记录',RUNNING:'Agent 已登记执行，等待验证证据',INTERRUPTED:'执行状态待核实，等待 Agent 核对工具任务',VALIDATED:'当前轮次证据已验证，等待负责人验收',FAILED:'当前轮次验证未通过',ACCEPTED:'当前轮次已验收通过',SUPERSEDED:'历史轮次已被新结果取代'})[status] || '轮次状态待核对';
+    }
+    function regressionExecutionHtml(n) {
+      if (isCodePlanNode(n) || regressionNodeStage(n) !== 'results') return '';
+      const execution = n.plan_review?.regression_execution || {};
+      const round = execution.current;
+      const inFlight = round && ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED'].includes(round.status);
+      const typed = n.role === 'regression-results-deliverable' && regressionConfigComplete(regressionConfig(n));
+      const bound = round?.execution_binding?.plan_node_id && round?.execution_binding?.plan_revision && round?.execution_binding?.plan_digest;
+      const history = (execution.history || []).filter(item => item.round_id !== round?.round_id);
+      return `<section class="detail-card regression-execution"><h4>当前回归轮次</h4>${round
+        ? `<p>第 ${escapeHtml(round.round_number)} 轮 · ${escapeHtml(regressionRoundStatusLabel(round.status))}</p><div class="row-meta">${escapeHtml(round.requested_by || '负责人')} · ${shortTime(round.requested_at)}</div>`
+        : '<p>尚未登记当前轮次；等待当前方案批准并由 Agent 接续。</p>'}<p class="row-meta">执行请求和运行记录不等于验证证据；新一轮结果必须重新验证和验收，不继承历史验收。</p>${typed ? `<button type="button" class="btn" id="regression-rerun" ${execution.can_rerun && bound && !inFlight ? '' : 'disabled'}>按已批准方案重新回归</button>${!execution.can_rerun || !bound || inFlight ? `<p class="row-meta">${escapeHtml((execution.blockers || []).join('；') || (inFlight ? '当前轮次尚在处理中，不能重复发起。' : '当前执行条件尚未满足，请先核对方案和前置交付。'))}</p>` : ''}` : ''}${history.length ? `<details class="detail-group regression-history"><summary>查看历史回归轮次与报告</summary><div class="detail-group-body">${history.slice().reverse().map(item => `<section class="detail-card"><strong>第 ${escapeHtml(item.round_number)} 轮 · ${escapeHtml(regressionRoundStatusLabel(item.status).replace('当前轮次', '本轮'))}</strong><div class="row-meta">${escapeHtml(item.requested_by || '负责人')} · ${shortTime(item.requested_at)}${item.accepted_at ? ' · 此历史结果曾由负责人验收' : ''}</div><ul>${(item.files || []).map(file => `<li>${file.available === false ? `${escapeHtml(file.path)} · 归档报告不可读取` : `<button class="node-link" data-regression-history-file="${escapeHtml(JSON.stringify({round_id:item.round_id,path:file.path,sha256:file.sha256}))}">${escapeHtml(file.path)}</button>`}</li>`).join('') || '<li>本轮尚无归档报告</li>'}</ul></section>`).join('')}</div></details>` : ''}</section>`;
+    }
     function codeNodeObjectLabel(n) {
       const plan = isCodePlanNode(n);
       if (n?.workstream === 'VCOV') {
@@ -2485,7 +2535,11 @@
       return plan ? '代码实现方案' : '代码交付及验证证据';
     }
     function codeNodeHtml(n) {
-      const validation = n.plan_review?.validation;
+      const currentRound = n.plan_review?.regression_execution?.current;
+      const validation = regressionNodeStage(n) === 'results' && !isCodePlanNode(n)
+        && currentRound && !['VALIDATED','FAILED','ACCEPTED'].includes(currentRound.status) ? null : n.plan_review?.validation;
+      const exclusion = n.plan_review?.coverage_exclusion?.current;
+      const exclusionHistory = n.plan_review?.coverage_exclusion?.history || [];
       const question = (n.agent_questions || []).find(q => q.status === 'OPEN');
       const fileButton = file => `<button class="node-link" data-code-file="${escapeHtml(JSON.stringify(file))}">${escapeHtml(file.path)}</button>`;
       const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><h4>目标</h4><p>${escapeHtml(n.statement)}</p>` + [
@@ -2493,8 +2547,13 @@
         ['如何验证','validation_methods'],['输出','deliverables'],['交付条件','acceptance_criteria'],
       ].map(([label, key]) => `<h4>${label}</h4><ul>${planListHtml(n[key])}</ul>`).join('')
         + (n.workstream === 'VCOV' && (n.coverage_item_ids || []).length
-          ? `<h4>本方案必须实现的覆盖项</h4><ul>${planListHtml(n.coverage_item_ids)}</ul>` : '');
-      const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${validation
+          ? `<h4>本方案必须实现的覆盖项</h4><ul>${planListHtml(n.coverage_item_ids)}</ul>` : '') + regressionConfigHtml(n);
+      const exclusionBody = !isCodePlanNode(n) && isCoverageConvergenceNode(n)
+        ? `<section class="detail-card coverage-exclusion-card"><h4>负责人提供的 exclude 文件</h4>${exclusion
+          ? `<p><button class="node-link" data-code-exclusion-file="${escapeHtml(JSON.stringify(exclusion))}">${escapeHtml(exclusion.path)}</button></p><div class="row-meta">由 ${escapeHtml(exclusion.reviewer)} 于 ${shortTime(exclusion.created_at)} 提供；文件中的排除范围已由负责人审批。</div><p>${escapeHtml(exclusion.reason)}</p>`
+          : '<p>尚未提供。覆盖率结果没有排除项时可不提供；存在排除项时，Agent validation 前必须由负责人提供。</p>'}<button type="button" class="btn" id="provide-coverage-exclusions">${exclusion ? '重新提供 exclude 文件' : '提供 exclude 文件'}</button><p class="row-meta">提供文件即表示其中的排除范围已经人工审批；Agent 只检查文件合法性、版本绑定和报告引用是否一致。</p>${exclusionHistory.length ? `<details class="detail-group"><summary>查看 exclude 文件提供历史</summary><div class="detail-group-body"><ul>${exclusionHistory.slice().reverse().map(item => `<li>${escapeHtml(item.path)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}${exclusion?.id === item.id ? ' · 当前有效' : ' · 历史记录'}</li>`).join('')}</ul></div></details>` : ''}</section>`
+        : '';
+      const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
         ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
           <h4>${isResultFileNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
           ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}
@@ -2509,6 +2568,128 @@
         if (state.project !== project || !findNode(n.id)) return;
         openModal(`<h2>${escapeHtml(path)}</h2><pre>${escapeHtml(result.content)}</pre><button class="btn" data-close-modal>关闭</button>`);
       } catch (error) { toast(String(error), true); }
+    }
+    async function showRegressionHistoryFile(n, file) {
+      const project = state.project;
+      try {
+        const params = new URLSearchParams({project,node:n.id,round_id:file.round_id,file:file.path});
+        const result = await approvalRequest(`/api/code/regression-history-file?${params}`, {headers:{'X-Verif-Token':token}});
+        if (state.project !== project || !findNode(n.id)) return;
+        if (result.dashboard_project_id !== project || result.node_id !== n.id || result.round_id !== file.round_id
+          || result.path !== file.path || result.sha256 !== file.sha256) throw new Error('返回的报告与所选项目、节点、轮次或文件版本不一致');
+        openModal(`<h2>历史回归报告</h2><p>${escapeHtml(file.path)}</p><div class="notice">这是历史轮次的只读报告，不代表当前轮次已通过验证或验收。</div><pre>${escapeHtml(result.content)}</pre><button class="btn" data-close-modal>关闭</button>`);
+      } catch (error) { if (state.project === project) toast(`无法读取历史报告：${error.message}`, true); }
+    }
+    function openRegressionRerunModal(n) {
+      const currentNode = findNode(n.id);
+      const execution = currentNode?.plan_review?.regression_execution;
+      if (currentNode?.role !== 'regression-results-deliverable' || !regressionConfigComplete(regressionConfig(currentNode))
+        || !execution?.can_rerun || !execution.current?.execution_binding?.plan_digest
+        || ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED'].includes(execution.current.status)) {
+        toast(execution?.current?.status === 'INTERRUPTED' ? regressionRoundStatusLabel('INTERRUPTED') : '当前节点尚不能重新回归，请刷新后核对已批准方案及当前轮次。', true); return;
+      }
+      openModal(`<h2>确认按已批准方案重新回归？</h2><p><strong>${escapeHtml(humanText(currentNode.title))}</strong></p>${regressionConfigHtml(currentNode, true)}<div class="notice">只能使用上面已批准的范围和参数，不能在这里改动。确认仅授权 Agent 接续新一轮执行，不批准新结果；新结果需要重新验证和负责人验收，历史报告与验收记录保留。</div><form id="regression-rerun-form"><div class="field"><label>负责人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>重新回归原因（选填）</label><textarea name="reason"></textarea></div><div class="field"><label><input name="confirm" type="checkbox" style="width:auto" required> 我确认按已批准范围和参数执行新一轮回归</label></div><div class="notice" data-submit-status role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button type="button" class="btn" data-refresh-rerun hidden>刷新执行请求状态</button><button type="submit" class="btn primary">确认重新回归</button></div></form>`);
+      $('#modal').dataset.planNode = currentNode.id;
+      $('#modal').dataset.scope = draftScope(null, currentNode.id);
+      $('#regression-rerun-form').dataset.requestKey = crypto.randomUUID();
+      $('#regression-rerun-form').onsubmit = async event => {
+        event.preventDefault(); submittingForm = null;
+        await submitRegressionRerun(event.target, currentNode);
+      };
+    }
+    async function submitRegressionRerun(form, n) {
+      if (form.dataset.submitted || $('#modal').dataset.stale === 'true') return;
+      const project = state.project, sequence = modalSequence;
+      const current = () => state.project === project && modalSequence === sequence;
+      const binding = n.plan_review.regression_execution?.current?.execution_binding;
+      const button = form.querySelector('[type="submit"]');
+      const refresh = form.querySelector('[data-refresh-rerun]');
+      const notice = form.querySelector('[data-submit-status]');
+      const show = message => { notice.hidden = false; notice.textContent = message; };
+      const execution = findNode(n.id)?.plan_review?.regression_execution;
+      if (!execution?.can_rerun || ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED'].includes(execution.current?.status)) {
+        show(execution?.current?.status === 'INTERRUPTED' ? regressionRoundStatusLabel('INTERRUPTED') : '当前轮次尚不能重新回归，请刷新节点核对。');
+        button.disabled = true; return;
+      }
+      const data = Object.fromEntries(new FormData(form));
+      if (!data.confirm) { show('请先确认按已批准范围和参数重新回归。'); return; }
+      Object.assign(data, {node:n.id,definition_digest:n.plan_review.definition_digest,
+        revision:n.plan_review.revision,request_key:form.dataset.requestKey,confirm:true,dashboard_project:project,include_snapshot:false});
+      rememberReviewer(data.reviewer);
+      form.dataset.submitted = 'true'; form.dataset.pending = 'true';
+      button.disabled = true; button.textContent = '正在登记执行请求…';
+      form.setAttribute('aria-busy', 'true');
+      form.querySelectorAll('input,textarea').forEach(field => { if (field.type === 'checkbox') field.disabled = true; else field.readOnly = true; });
+      show('正在保存新轮次执行授权，请勿重复提交。');
+      let saved = false;
+      const refreshState = async () => {
+        if (!current()) return;
+        refresh.hidden = true; form.dataset.pending = 'true';
+        show(saved ? '执行请求已保存，正在读取当前轮次…' : '正在核对执行请求，不会重复提交…');
+        try {
+          const snapshot = await approvalRequest(`/api/snapshot?project=${encodeURIComponent(project)}`, {headers:{'X-Verif-Token':token}});
+          if (!current()) return;
+          if (snapshot.dashboard_project_id !== project) throw new Error('返回的项目与当前项目不一致');
+          const node = (snapshot.workstreams || []).flatMap(item => item.nodes || []).find(item => item.id === n.id);
+          const reread = node?.plan_review?.regression_execution;
+          const round = [reread?.current,...(reread?.history || [])].find(item => item?.request_key === data.request_key);
+          if (!node || node.plan_review?.revision !== data.revision) throw new Error('节点版本已变化，请返回节点重新核对；不会重新提交');
+          if (!round) throw new Error(saved ? '已收到保存结果，但尚未读取到对应轮次' : '暂未查到本次执行请求；不会自动重试提交');
+          if (!binding || round.execution_binding?.plan_node_id !== binding.plan_node_id
+            || round.execution_binding?.plan_revision !== binding.plan_revision || round.execution_binding?.plan_digest !== binding.plan_digest) throw new Error('读取的执行请求不属于刚才确认的已批准方案');
+          saved = true;
+          setSnapshot(snapshot); closeModal(true);
+          toast(`第 ${round.round_number} 轮执行请求已登记；${regressionRoundStatusLabel(round.status)}`);
+        } catch (error) {
+          if (current()) { show((saved ? '执行请求已保存，但轮次状态暂未刷新。' : '尚未确认保存结果，请勿重新提交。') + `${error.message}。可以刷新执行请求状态核对。`); refresh.hidden = false; }
+        } finally { delete form.dataset.pending; form.removeAttribute('aria-busy'); }
+      };
+      refresh.onclick = refreshState;
+      try {
+        const body = await approvalRequest('/api/code/regression-rerun', {method:'POST',headers:{'Content-Type':'application/json','X-Verif-Token':token},body:JSON.stringify(data)});
+        if (!current()) return;
+        if (body.dashboard_project_id !== project || body.result?.node_id !== n.id || body.result?.revision !== data.revision
+          || body.result?.round?.request_key !== data.request_key) throw new Error('未收到当前节点及本次请求的执行授权保存结果');
+        saved = true; delete form.dataset.dirty; button.textContent = '执行请求已保存';
+        await refreshState();
+      } catch (error) {
+        if (!current()) return;
+        if (error.rejected) {
+          show(`执行请求未保存：${error.message}`); delete form.dataset.submitted;
+          button.disabled = $('#modal').dataset.stale === 'true'; button.textContent = '确认重新回归';
+          form.querySelectorAll('input,textarea').forEach(field => { field.disabled = false; field.readOnly = false; });
+        } else { show(`暂未收到保存结果，可能已保存。请刷新执行请求状态核对，不要重复提交。${error.message}`); refresh.hidden = false; }
+      } finally { delete form.dataset.pending; form.removeAttribute('aria-busy'); }
+    }
+    async function showCoverageExclusionFile(n, path, digest) {
+      const project = state.project;
+      try {
+        const result = await approvalRequest(`/api/code-exclusion-file?project=${encodeURIComponent(state.project)}&node=${encodeURIComponent(n.id)}&path=${encodeURIComponent(path)}&digest=${encodeURIComponent(digest)}`, {headers:{'X-Verif-Token':token}});
+        if (state.project !== project || !findNode(n.id)) return;
+        openModal(`<h2>已审批的覆盖率 exclude 文件</h2><pre>${escapeHtml(result.content)}</pre><button class="btn" data-close-modal>关闭</button>`);
+      } catch (error) { toast(String(error), true); }
+    }
+    function exclusionFileBase64(file) {
+      return file.arrayBuffer().then(buffer => {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 32768) {
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+        }
+        return btoa(binary);
+      });
+    }
+    function openCoverageExclusionModal(n) {
+      openModal(`<h2>提供覆盖率 exclude 文件</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice">提供文件即表示你已经审批文件中的全部排除范围。Agent 随后只检查文件是否合法、是否绑定当前 VCOV 版本，以及缺口报告是否引用同一文件。</div><form id="coverage-exclusion-form"><div class="field"><label>exclude 文件（最大 512 KiB）</label><input name="file" type="file" required></div><div class="field"><label>负责人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>审批说明（选填）</label><textarea name="reason" placeholder="例如：已核对不可达状态和工具排除规则"></textarea></div><div class="field"><label><input name="confirm" type="checkbox" style="width:auto" required> 我确认该文件中的排除范围已经人工审批</label></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">提供并登记审批</button></div></form>`);
+      $('#coverage-exclusion-form').onsubmit = async event => {
+        event.preventDefault();
+        const form = event.target, file = form.elements.file.files[0];
+        if (!file || file.size === 0 || file.size > 512 * 1024) { toast('请选择一个不超过 512 KiB 的非空 exclude 文件', true); return; }
+        const data = Object.fromEntries(new FormData(form));
+        data.node = n.id; data.filename = file.name; data.content_base64 = await exclusionFileBase64(file); data.confirm = true;
+        delete data.file; rememberReviewer(data.reviewer);
+        await post('/api/code/coverage-exclusions', data, 'exclude 文件及负责人审批已登记；等待 Agent 重新验证覆盖率结果');
+      };
     }
     function openCodeWorkflowChange(w, kind) {
       const title = {add:'添加节点',remove:'删除节点',restart:'重新启动工作流'}[kind];
@@ -3001,6 +3182,12 @@
       if (planNode) {
         bindPlanSectionReviewForms(n, root);
         root.querySelectorAll('[data-code-file]').forEach(button => button.onclick = () => { const file = JSON.parse(button.dataset.codeFile); showCodeFile(n, file.path, file.sha256); });
+        root.querySelectorAll('[data-regression-history-file]').forEach(button => button.onclick = () => showRegressionHistoryFile(n, JSON.parse(button.dataset.regressionHistoryFile)));
+        const rerun = root.querySelector('#regression-rerun');
+        if (rerun && !rerun.disabled) rerun.onclick = () => openRegressionRerunModal(n);
+        root.querySelectorAll('[data-code-exclusion-file]').forEach(button => button.onclick = () => { const file = JSON.parse(button.dataset.codeExclusionFile); showCoverageExclusionFile(n, file.path, file.sha256); });
+        const provideExclusions = root.querySelector('#provide-coverage-exclusions');
+        if (provideExclusions) provideExclusions.onclick = () => openCoverageExclusionModal(n);
         const complete = root.querySelector('#node-plan-complete');
         if (complete && !complete.disabled) complete.onclick = () => openNodePlanCompletionModal(n);
         bindNodeLinks();

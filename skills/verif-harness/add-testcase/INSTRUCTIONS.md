@@ -1,8 +1,9 @@
 # add-testcase — add one compile-safe test and virtual sequence
 
 Use after a testcase is approved in the testcase plan. This mode creates one
-test/vseq pair and package registrations, but never promotes the test into the
-default passed regression.
+test/vseq pair, package registrations, and a CaseManifest bound to a
+testbench-owned SubmitProfileRef. It never promotes the test into a regression
+caselist; the testbench submit flow owns batch and caselist generation.
 
 ## Preconditions
 
@@ -12,6 +13,9 @@ default passed regression.
   stage are documented.
 - Identify an existing base test and base virtual sequence with the intended
   semantics.
+- Obtain a `SubmitProfileRef/1` emitted by the testbench submit flow. The ref
+  records only the project-relative submit-file path and digests; verif-harness
+  never copies or interprets site-specific commands, queues, licenses, or URLs.
 
 ## Procedure
 
@@ -21,6 +25,7 @@ Run a dry-run first:
 python3 <skill-dir>/add-testcase/scripts/add_testcase.py \
   --test-name <prefix>_<name>_test \
   --base-test <prefix>_base_test --base-vseq <prefix>_job_vseq_base \
+  --submit-profile-ref <verif_root>/regress/submit-profile-ref.json \
   --dry-run
 ```
 
@@ -29,12 +34,14 @@ Then rerun without `--dry-run`. The script:
 - creates `<verif_root>/testbench/test/<test-name>.svh`;
 - creates `<verif_root>/testbench/env/vseq/<vseq-name>.svh`;
 - inserts vseq/test includes before the corresponding package `endpackage`;
+- creates a `CaseManifest/1` under `<verif_root>/regress/cases/` by default;
 - refuses existing files, duplicate includes, unsafe identifiers, and
   ambiguous package discovery.
 
-Use `--candidate-caselist <path>` only for a focused, explicitly selected
-candidate list. Never pass the default regression caselist before dynamic PASS
-and the project's add-only promotion review.
+Select `--entry-kind testcase|sequence`. A sequence entry records the generated
+test as its launcher. The manifest binds the entry and source digests to the
+SubmitProfileRef. Caselist generation remains a separate, testbench-owned
+promotion decision after dynamic evidence is available.
 
 ## After generation
 

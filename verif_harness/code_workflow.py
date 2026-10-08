@@ -6,8 +6,11 @@ evidence admission rules check them before a delivery can be offered for review.
 from __future__ import annotations
 
 import json
+import copy
 import hashlib
+import os
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -23,10 +26,12 @@ DELIVERY_ROLES = {"code-deliverable", *VCOV_DELIVERY_ROLES, *VREG_DELIVERY_ROLES
 ROLES = PLAN_ROLES | DELIVERY_ROLES
 VCOV_IMPLEMENTATION_CLAIMS = {"coverage-model", "coverage-collection"}
 VCOV_CONVERGENCE_CLAIMS = {"coverage-collection-evidence", "hole-analysis-evidence"}
-VCOV_VALIDATION_CONTRACT = "CoverageConvergence/2"
+VCOV_VALIDATION_CONTRACT = "CoverageConvergence/3"
+MAX_COVERAGE_EXCLUSION_BYTES = 512 * 1024
 VREG_INFRASTRUCTURE_CLAIMS = {"regression-policy", "executor-ready"}
 VREG_RESULTS_CLAIMS = {"execution-evidence", "triage-evidence", "fresh-evidence"}
-VREG_VALIDATION_CONTRACT = "RegressionResults/2"
+VCASE_VALIDATION_CONTRACT = "TestcaseExecution/2"
+VREG_VALIDATION_CONTRACT = "RegressionResults/4"
 VCOV_ROLE_LABELS = {
     "coverage-implementation-plan": "覆盖率实现方案",
     "coverage-implementation-deliverable": "覆盖率实现交付",
@@ -134,7 +139,34 @@ CREATE TABLE IF NOT EXISTS code_artifact_versions (
  PRIMARY KEY(artifact_id,version), UNIQUE(artifact_id,signature)
 );
 CREATE TABLE IF NOT EXISTS code_watched_files (path TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS coverage_exclusion_approvals (
+ id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
+ revision INTEGER NOT NULL, scope_digest TEXT NOT NULL,
+ path TEXT NOT NULL, sha256 TEXT NOT NULL, reviewer TEXT NOT NULL,
+ reason TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS coverage_exclusion_approvals_node
+ ON coverage_exclusion_approvals(node_id,revision);
+CREATE TABLE IF NOT EXISTS regression_execution_rounds (
+ id TEXT PRIMARY KEY, node_id TEXT NOT NULL, revision INTEGER NOT NULL,
+ round_number INTEGER NOT NULL, plan_digest TEXT NOT NULL,
+ request_digest TEXT NOT NULL DEFAULT '',
+ config_json TEXT NOT NULL DEFAULT '{}',
+ request_key TEXT NOT NULL, requested_by TEXT NOT NULL, reason TEXT NOT NULL,
+ status TEXT NOT NULL, requested_at TEXT NOT NULL, dispatched_at TEXT,
+ validated_at TEXT, accepted_at TEXT, validation_id TEXT,
+ activity_id TEXT, archive_json TEXT NOT NULL DEFAULT '{}',
+ UNIQUE(node_id,request_key), UNIQUE(node_id,round_number)
+);
+CREATE INDEX IF NOT EXISTS regression_execution_rounds_node
+ ON regression_execution_rounds(node_id,round_number);
 """
+
+
+def migrate(connection):
+    # Do not reconstruct early development rounds from today's configuration.
+    if "config_json" not in {row[1] for row in connection.execute("PRAGMA table_info(regression_execution_rounds)")}:
+        connection.execute("ALTER TABLE regression_execution_rounds ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def modern(plan):
@@ -160,6 +192,256 @@ def coverage_items(node):
     return bool(isinstance(value, list) and value and all(
         isinstance(identifier, str) and ID.fullmatch(identifier)
         for identifier in value) and len(value) == len(set(value)))
+
+
+def regression_config(node):
+    from .vreg_contract import normalize_config
+    return normalize_config(node.get("regression_config"))
+
+
+def execution_round(connection, node_id):
+    row = connection.execute(
+        "SELECT * FROM regression_execution_rounds WHERE node_id=? ORDER BY round_number DESC LIMIT 1",
+        (node_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def execution_binding(plan, node, value):
+    return {"round_id": value["id"], "plan_node_id": node["parent_id"],
+            "plan_revision": value["revision"], "plan_digest": value["plan_digest"]}
+
+
+def _new_execution_round(db, plan, node, plan_digest, request_key, reviewer, reason, timestamp):
+    identifier = "regression-round:" + uuid.uuid4().hex
+    number = db.execute("SELECT COALESCE(MAX(round_number),0)+1 FROM regression_execution_rounds WHERE node_id=?",
+                        (node["id"],)).fetchone()[0]
+    db.execute(
+        "INSERT INTO regression_execution_rounds(id,node_id,revision,round_number,plan_digest,request_key,"
+        "requested_by,reason,status,requested_at,config_json) VALUES(?,?,?,?,?,?,?,?,'REQUESTED',?,?)",
+        (identifier, node["id"], plan["revision"], number, plan_digest, request_key, reviewer, reason, timestamp,
+         encoded(regression_config(node))),
+    )
+    return execution_round(db, node["id"])
+
+
+def _round_files(store, connection, value):
+    archived = json.loads(value.get("archive_json") or "{}")
+    if archived:
+        return [{"path": path, "sha256": item["sha256"],
+                 "available": bool(item.get("archive_path") and (store.root / item["archive_path"]).is_file())}
+                for path, item in archived.items()]
+    receipt = connection.execute("SELECT payload_json FROM code_validations WHERE id=?",
+                                 (value.get("validation_id"),)).fetchone()
+    files = json.loads(receipt[0]).get("files", []) if receipt else []
+    result = []
+    for item in files:
+        try:
+            path = local_path(store, item["path"])
+            available = file_snapshot(store, [path])[0]["sha256"] == item["sha256"]
+        except (ValueError, RuntimeError):
+            available = False
+        result.append({**item, "available": available})
+    return result
+
+
+def regression_execution_state(store, connection, plan, node, parent_state=None):
+    if not is_delivery(node) or vreg_stage(node) != "results":
+        return None
+    if parent_state is None:
+        parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
+        parent_state = review_state(store, parent["id"], plan, parent, connection) if parent else None
+    rows = [dict(row) for row in connection.execute(
+        "SELECT * FROM regression_execution_rounds WHERE node_id=? ORDER BY round_number",
+        (node["id"],),
+    )]
+    reasons = blockers(connection, node["id"])
+    if not parent_state or not parent_state["completed"]:
+        reasons.append("对应回归结果方案尚未批准或已经失效")
+    if node.get("role") != "regression-results-deliverable":
+        reasons.append("旧结果节点尚未具备完整回归合同，请重新形成方案")
+    try:
+        config = regression_config(node)
+        if parent_state and config != parent_state.get("regression_config"):
+            reasons.append("回归执行参数与对应批准方案不一致，请重新形成方案")
+    except ValueError as exc:
+        reasons.append("请重新形成包含回归组和执行参数的结果方案：" + str(exc))
+    latest = rows[-1] if rows else None
+    if latest:
+        from .vreg_contract import normalize_config
+        try:
+            normalize_config(json.loads(latest["config_json"]))
+        except (ValueError, TypeError):
+            reasons.append("原轮次缺少确切的批准执行配置，不能重新回归或推定旧任务结束")
+    if latest and latest["status"] == "INTERRUPTED":
+        reasons.append("工具结果尚未核实，请 Main Agent 核对原轮次工具状态并登记证据")
+    elif latest and latest["status"] in {"REQUESTED", "DISPATCHED", "RUNNING"}:
+        reasons.append("当前回归轮次尚未结束，不能重复启动")
+    if connection.execute("SELECT 1 FROM activities WHERE node_id=? AND status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT')",
+                          (node["id"],)).fetchone():
+        reasons.append("对应回归结果交付仍有在途 Agent 工作")
+    from .store import now
+    if connection.execute("SELECT 1 FROM agent_assignments WHERE node_id=? AND status='ACTIVE' AND lease_expires_at>?",
+                          (node["id"], now())).fetchone():
+        reasons.append("对应回归结果交付仍有有效的 Agent 任务租约")
+    def project(value):
+        receipt = connection.execute("SELECT payload_json FROM code_validations WHERE id=?", (value.get("validation_id"),)).fetchone()
+        report = json.loads(receipt[0]) if receipt else {}
+        recorded_runs = any(
+            check.get("claim") == "execution-evidence"
+            and check.get("validation", {}).get("facts", {}).get("execution_binding") == execution_binding(plan, node, value)
+            and check.get("validation", {}).get("facts", {}).get("run_records")
+            for check in report.get("checks", [])
+        )
+        return {key: item for key, item in value.items() if key not in {"archive_json", "config_json"}} | {
+            "round_id": value["id"],
+            "execution_binding": execution_binding(plan, node, value),
+            "files": _round_files(store, connection, value),
+            "execution_confirmed": bool(recorded_runs),
+        }
+    return {"current": project(latest) if latest else None,
+            "history": [project(value) for value in rows], "can_rerun": not reasons,
+            "blockers": reasons}
+
+
+def _archive_execution_round(store, db, value):
+    """Preserve available project-owned evidence before fixed output paths change."""
+    if not value or not value.get("validation_id"):
+        return
+    receipt = db.execute("SELECT payload_json FROM code_validations WHERE id=?", (value["validation_id"],)).fetchone()
+    if not receipt:
+        return
+    archived = json.loads(value.get("archive_json") or "{}")
+    for item in json.loads(receipt[0]).get("files", []):
+        if item["path"] in archived:
+            continue
+        record = {"sha256": item["sha256"], "archive_path": None}
+        archived[item["path"]] = record
+        try:
+            path = local_path(store, item["path"])
+        except ValueError:
+            continue
+        if file_snapshot(store, [path])[0]["sha256"] != item["sha256"]:
+            continue
+        destination = store.state / "regression-rounds" / value["id"].split(":", 1)[1] / item["sha256"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists():
+            shutil.copyfile(store.root / path, destination)
+        if file_snapshot(store, [str(destination)])[0]["sha256"] != item["sha256"]:
+            error("归档期间历史回归文件发生变化，请核对后重试")
+        record["archive_path"] = str(destination.relative_to(store.root))
+    db.execute("UPDATE regression_execution_rounds SET archive_json=? WHERE id=?", (encoded(archived), value["id"]))
+
+
+def request_regression_rerun(store, body):
+    """Persist execution intent; never start a simulator or restart the workstream."""
+    from .store import now
+    refresh(store)
+    node_id = str(body.get("node", ""))
+    reviewer = str(body.get("reviewer", "")).strip()
+    reason = str(body.get("reason", "")).strip()
+    key = str(body.get("request_key", "")).strip()
+    if not reviewer or not key or len(key) > 160 or body.get("confirm") is not True:
+        error("重新回归必须填写负责人、请求标识并再次确认")
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        plan, node = selected(store, node_id, db)
+        if plan["workstream"] != "VREG" or node.get("role") != "regression-results-deliverable":
+            error("重新回归只能绑定当前回归结果交付节点")
+        previous = db.execute("SELECT * FROM regression_execution_rounds WHERE node_id=? AND request_key=?", (node_id, key)).fetchone()
+        if previous:
+            if (previous["revision"] != body.get("revision") or previous["requested_by"] != reviewer
+                    or previous["reason"] != reason or previous["request_digest"] != body.get("definition_digest")):
+                error("此请求标识已用于不同的重新回归要求")
+            result_id = previous["id"]
+        else:
+            state = review_state(store, node_id, plan, node, db)
+            execution = state["regression_execution"]
+            if body.get("revision") != plan["revision"] or body.get("definition_digest") != state["definition_digest"]:
+                error("回归方案、结果或工作流版本已变化，请刷新后重新确认")
+            if not execution["can_rerun"]:
+                error("当前不能重新回归：" + "；".join(execution["blockers"]))
+            _archive_execution_round(store, db, execution_round(db, node_id))
+            parent = next(n for n in plan["desired_state"] if n["id"] == node["parent_id"])
+            parent_state = review_state(store, parent["id"], plan, parent, db)
+            if not parent_state["completed"]:
+                error("归档期间回归方案或依赖发生变化，请重新确认")
+            value = _new_execution_round(db, plan, node, parent_state["definition_digest"], key, reviewer, reason, now())
+            db.execute("UPDATE regression_execution_rounds SET request_digest=? WHERE id=?", (body["definition_digest"], value["id"]))
+            result_id = value["id"]
+    refresh(store)
+    state = review_state(store, node_id)
+    result = next(r for r in state["regression_execution"]["history"] if r["id"] == result_id)
+    return {"node_id": node_id, "revision": state["revision"], "round": result,
+            "regression_execution": state["regression_execution"],
+            "auto_closure": store.evaluate_closure("VREG")}
+
+
+def start_regression_execution(store, node_id, binding, actor):
+    """Main Agent records a tool invocation, not completion or live simulator proof."""
+    from .store import PROJECT_AGENT_ACTOR, now
+    from .vreg_contract import normalize_binding
+    try:
+        binding = normalize_binding(binding)
+    except ValueError as exc:
+        error("回归执行轮次绑定无效：" + str(exc))
+    refresh(store)
+    if actor != PROJECT_AGENT_ACTOR:
+        error("只有 Project Main Agent 可以登记回归工具调用")
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        plan, node = selected(store, node_id, db)
+        if plan["workstream"] != "VREG" or node.get("role") != "regression-results-deliverable":
+            error("回归调用必须绑定当前回归结果交付")
+        value = execution_round(db, node_id)
+        if not value or binding != execution_binding(plan, node, value):
+            error("回归调用不属于当前执行轮次")
+        parent = next(n for n in plan["desired_state"] if n["id"] == node["parent_id"])
+        parent_state = review_state(store, parent["id"], plan, parent, db)
+        if not parent_state["completed"] or parent_state["definition_digest"] != value["plan_digest"] or blockers(db, node_id):
+            error("回归方案或授权已失效，不能登记工具调用")
+        if regression_config(node) != regression_config(parent):
+            error("回归执行参数与对应批准方案不一致，不能登记工具调用")
+        from .vreg_contract import normalize_config
+        try:
+            original_config = normalize_config(json.loads(value["config_json"]))
+        except (ValueError, TypeError):
+            error("原轮次缺少确切的批准执行配置，不能登记工具调用")
+        if original_config != regression_config(node):
+            error("当前执行配置与本轮原批准配置不一致，不能登记工具调用")
+        if value["status"] == "INTERRUPTED":
+            error("原轮次工具状态尚未核实；请核对任务后沿同一轮次登记真实证据，不得重复提交")
+        if value["status"] not in {"REQUESTED", "DISPATCHED", "RUNNING"}:
+            error("本轮已有验证结果；重新执行需要新的回归轮次")
+        db.execute("UPDATE regression_execution_rounds SET status='RUNNING' WHERE id=?", (value["id"],))
+    return review_state(store, node_id)["regression_execution"]
+
+
+def regression_history_content(store, node_id, round_id, path):
+    plan, node = selected(store, node_id)
+    if plan["workstream"] != "VREG" or not is_delivery(node) or vreg_stage(node) != "results":
+        error("此节点不提供回归历史文件")
+    with store.read_connect() as db:
+        row = db.execute("SELECT * FROM regression_execution_rounds WHERE id=? AND node_id=?", (round_id, node_id)).fetchone()
+        if not row:
+            error("当前项目和交付节点中找不到此回归轮次")
+        value = dict(row)
+        files = {f["path"]: f for f in _round_files(store, db, value)}
+        item = files.get(path)
+        if not item or not item["available"]:
+            error("此历史文件未登记或已经不可用；不能用当前文件代替历史证据")
+        archived = json.loads(value["archive_json"] or "{}")
+        resolved = store.root / local_path(store, archived[path]["archive_path"] if path in archived else path)
+    if resolved.stat().st_size > 2 * 1024 * 1024:
+        error("历史文件超过 2 MiB，不能在 Dashboard 预览")
+    data = resolved.read_bytes()
+    if hashlib.sha256(data).hexdigest() != item["sha256"]:
+        error("历史回归文件摘要已变化，不能预览为旧证据")
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError:
+        error("Dashboard 只预览 UTF-8 历史回归文件")
+    return {"node_id": node_id, "round_id": round_id, "path": path, "sha256": item["sha256"], "content": content}
 
 
 def vcov_stage(node):
@@ -326,6 +608,35 @@ def dependency_snapshot(connection, node):
     return result
 
 
+def coverage_exclusion_scope_digest(plan, node):
+    """Bind an owner-provided exclude file to one convergence delivery scope."""
+    return digest({
+        "workstream": plan["workstream"], "revision": plan["revision"],
+        "node_id": node["id"], "implementation_key": node.get("implementation_key"),
+        "parent_id": node.get("parent_id"), "inputs": node.get("inputs", []),
+        "output_paths": node.get("output_paths", []),
+        "acceptance_criteria": node.get("acceptance_criteria", []),
+        "capabilities": node.get("capabilities", []),
+    })
+
+
+def coverage_exclusion_state(store, connection, plan, node):
+    """Return immutable approval history and the current file-level approval."""
+    rows = [dict(row) for row in connection.execute(
+        "SELECT * FROM coverage_exclusion_approvals WHERE node_id=? ORDER BY rowid",
+        (node["id"],),
+    )]
+    scope = coverage_exclusion_scope_digest(plan, node)
+    latest = rows[-1] if rows else None
+    current = None
+    if latest and latest["workstream"] == "VCOV" and latest["revision"] == plan["revision"] \
+            and latest["scope_digest"] == scope:
+        observed = file_snapshot(store, [latest["path"]])
+        if observed and observed[0]["sha256"] == latest["sha256"]:
+            current = dict(latest)
+    return {"scope_digest": scope, "current": current, "latest": latest, "history": rows}
+
+
 def identity(store, connection, plan, node):
     deps = dependency_snapshot(connection, node)
     manifest_path = store.state / 'project.json'
@@ -344,6 +655,15 @@ def identity(store, connection, plan, node):
                    (node['id'],))]}
     if is_delivery(node):
         payload["outputs"] = file_snapshot(store, node["output_paths"])
+        if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
+            value = execution_round(connection, node["id"])
+            payload["execution_binding"] = execution_binding(plan, node, value) if value else None
+    if plan["workstream"] == "VCOV" and is_delivery(node) and vcov_stage(node) == "convergence":
+        exclusion = coverage_exclusion_state(store, connection, plan, node)
+        payload["coverage_exclusion"] = ({
+            key: exclusion["current"][key]
+            for key in ("id", "path", "sha256", "reviewer", "created_at")
+        } if exclusion["current"] else None)
     return digest(payload), payload
 
 
@@ -370,19 +690,18 @@ def validation_current(store, connection, plan, node, signature):
                         and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
     if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
         value["current"] = False
+    if plan["workstream"] == "VCASE" and value.get("testcase_contract") != VCASE_VALIDATION_CONTRACT:
+        value["current"] = False
     if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
-        if value.get("regression_contract") != VREG_VALIDATION_CONTRACT:
+        current_round = execution_round(connection, node["id"])
+        if (value.get("regression_contract") != VREG_VALIDATION_CONTRACT or not current_round
+                or value.get("execution_binding") != execution_binding(plan, node, current_round)):
             value["current"] = False
         elif value["current"]:
-            current = store._current_desired_nodes(connection)
-            for check in value.get("checks", []):
-                if check.get("claim") != "fresh-evidence":
-                    continue
-                evidence = check.get("validation", {})
-                refreshed = {**evidence, "facts": dict(evidence.get("facts", {}))}
-                reasons = store._derive_fresh_evidence(connection, node["id"], refreshed, current)
-                if reasons or refreshed["facts"].get("required_nodes") != evidence.get("facts", {}).get("required_nodes"):
-                    value["current"] = False
+            checks = copy.deepcopy(value.get("checks", []))
+            reasons = _vreg_result_blockers(store, connection, plan, node, checks)
+            if reasons or checks != value.get("checks", []):
+                value["current"] = False
     return value
 
 
@@ -433,11 +752,44 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
                 not value.startswith(("cap.doc:", "cap.venv:")) for value in inputs):
             reasons.append("回归基础设施只能依赖已验收文档和验证环境，不能等待最终回归结果，请重新形成方案")
         if vreg_stage(node) == "results":
+            try:
+                config = regression_config(node)
+                if config["submit_profile"]["submit_file"] not in node.get("input_files", []):
+                    reasons.append("回归 submit 配置未纳入当前方案输入，请重新形成方案")
+                elif next((source["sha256"] for source in snapshot["sources"]
+                           if source["path"] == config["submit_profile"]["submit_file"]), None) != config["submit_profile"]["submit_file_digest"]:
+                    reasons.append("回归 submit 文件已变化，必须重新形成包含当前文件版本的结果方案")
+                from .vreg_contract import group_identity
+                for other in plan["desired_state"]:
+                    if not is_plan(other) or vreg_stage(other) != "results" or other["implementation_key"] == node["implementation_key"]:
+                        continue
+                    other_config = regression_config(other)
+                    if (config["regression_group"] == other_config["regression_group"]
+                            or group_identity(config) == group_identity(other_config)):
+                        reasons.append("同一回归组对应多个结果方案，请重新形成方案")
+                if is_delivery(node) and parent is not None and config != regression_config(parent):
+                    reasons.append("回归执行参数与对应批准方案不一致，请重新形成方案")
+                if is_plan(node):
+                    delivery = next((other for other in plan["desired_state"] if other.get("parent_id") == node_id), None)
+                    previous_round = execution_round(connection, delivery["id"]) if delivery else None
+                    if (previous_round and previous_round["plan_digest"] != approval_digest
+                            and previous_round["status"] in {"DISPATCHED", "RUNNING", "INTERRUPTED"}):
+                        reasons.append("旧回归任务尚未核实结束，请先核对旧任务并登记真实证据，再重新批准方案")
+            except ValueError as exc:
+                reasons.append("回归结果方案缺少合法回归组或执行参数，请重新形成方案：" + str(exc))
             infrastructure = {ids(n["implementation_key"], "VREG")[2]
                               for n in plan["desired_state"] if is_plan(n) and vreg_stage(n) == "infrastructure"}
             own_inputs = {value for value in inputs if value.startswith("cap.vreg:")}
             if not own_inputs or not own_inputs <= infrastructure:
                 reasons.append("回归结果方案必须明确关联当前回归基础设施能力，不能依赖结果能力，请重新形成方案")
+            if is_delivery(node):
+                current_round = execution_round(connection, node_id)
+                if current_round is None:
+                    reasons.append("当前结果交付未登记执行轮次，请重新形成方案")
+                elif parent is not None:
+                    parent_state = review_state(store, parent["id"], plan, parent, connection)
+                    if current_round["plan_digest"] != parent_state["definition_digest"] or current_round["revision"] != plan["revision"]:
+                        reasons.append("当前回归轮次未绑定当前批准方案，请重新形成方案")
     if workstream == "VCOV":
         if is_delivery(node):
             parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
@@ -462,6 +814,9 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
                     if not manifests or observed != manifests:
                         reasons.append("覆盖率收敛证据的覆盖项清单与已验收实现不一致：" + claim)
     complete = bool(completion and not reasons)
+    exclusion = (coverage_exclusion_state(store, connection, plan, node)
+                 if workstream == "VCOV" and is_delivery(node) and vcov_stage(node) == "convergence"
+                 else None)
     return {"node_id": node_id, "workstream": workstream, "revision": plan["revision"],
             "definition_digest": approval_digest, "input_signature": signature,
             "status": "APPROVED" if complete else "PENDING", "completed": complete,
@@ -470,6 +825,10 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
             "sections": [{"section": "writing-plan", "status": "APPROVED" if complete else "PENDING"}],
             "feedback": feedback, "can_approve": not reasons, "blockers": reasons,
             "validation": validation, "code_files": snapshot.get("outputs", []),
+            "coverage_exclusion": exclusion,
+            "regression_config": node.get("regression_config"),
+            "regression_execution": (regression_execution_state(store, connection, plan, node)
+                                     if workstream == "VREG" and vreg_stage(node) == "results" else None),
             "dependencies": snapshot['dependencies'], "sources": snapshot['sources']}
 
 
@@ -630,6 +989,12 @@ def _sync_watched_files(store, connection):
             ).fetchone()
             if previous:
                 watched.update(value["path"] for value in json.loads(previous[0]).get("files", []))
+            exclusion = connection.execute(
+                "SELECT path FROM coverage_exclusion_approvals WHERE node_id=? ORDER BY rowid DESC LIMIT 1",
+                (item["id"],),
+            ).fetchone()
+            if exclusion:
+                watched.add(exclusion["path"])
     connection.execute("DELETE FROM code_watched_files")
     connection.executemany(
         "INSERT INTO code_watched_files VALUES(?)", [(path,) for path in sorted(watched)],
@@ -657,6 +1022,8 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
     normalized = []
     known_keys = set()
     known_outputs = set()
+    known_groups = set()
+    known_group_names = set()
     for raw in nodes:
         allowed_roles = ({"code-plan", *VCOV_PLAN_ROLES} if workstream == "VCOV" else
                          {"code-plan", *VREG_PLAN_ROLES} if workstream == "VREG" else {"code-plan"})
@@ -697,6 +1064,22 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             if item["role"] != "code-plan" and item["role"] != canonical:
                 error("回归节点类型与验证要求不一致")
             item["role"] = canonical
+            if inferred == "results":
+                from .vreg_contract import group_identity
+                try:
+                    item["regression_config"] = regression_config(raw)
+                except ValueError as exc:
+                    error("回归结果方案必须明确回归组及执行参数：" + str(exc))
+                group = item["regression_config"]
+                submit_path = local_path(store, group["submit_profile"]["submit_file"])
+                group["submit_profile"]["submit_file"] = submit_path
+                identity_key = group_identity(group)
+                if identity_key in known_groups or group["regression_group"] in known_group_names:
+                    error("同一回归组只能对应一个回归结果方案")
+                known_groups.add(identity_key)
+                known_group_names.add(group["regression_group"])
+                if file_snapshot(store, [submit_path])[0]["sha256"] != group["submit_profile"]["submit_file_digest"]:
+                    error("回归方案引用的 submit 配置文件缺失或摘要已经变化")
             if inferred == "infrastructure" and any(
                     not value.startswith(("cap.doc:", "cap.venv:")) for value in item["inputs"]):
                 error("回归基础设施只能依赖已验收文档和验证环境，不能依赖激励、检查、用例、覆盖率或最终回归结果")
@@ -720,6 +1103,8 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 error("工作节点的输出范围不能重叠" if workstream in {"VCOV", "VREG"} else "工作包的输出范围不能重叠")
             known_outputs.add(path)
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
+        if workstream == "VREG" and vreg_stage(item) == "results":
+            item["input_files"] = sorted(set([*item["input_files"], item["regression_config"]["submit_profile"]["submit_file"]]))
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
             error("input_files 必须逐项引用实际输入文件，目录仅用于界面展示")
         item.update(required=raw.get("required", True), purpose=item["statement"],
@@ -758,6 +1143,12 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         revision = old["revision"] + 1 if old else 1
         if restart and (not old or restart["revision"] != old["revision"]):
             error(f"{workstream} 版本已变化，请刷新后重新确认")
+        if workstream == "VREG" and db.execute(
+                "SELECT 1 FROM regression_execution_rounds WHERE status IN ('DISPATCHED','RUNNING','INTERRUPTED') LIMIT 1"
+        ).fetchone():
+            # Include orphaned/historical rounds: cancelling an Agent or changing
+            # its public node revision cannot establish an external job's end.
+            error("旧回归任务尚未核实结束，请先让 Agent 核对旧任务结束事实，再重新形成方案或重启 VREG")
         previous = json.loads(old["desired_json"]) if old else []
         previous_edges = [dict(row) for row in db.execute(
             "SELECT e.* FROM edges e JOIN nodes n ON n.id=e.target WHERE n.workstream=?",
@@ -845,6 +1236,19 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
             db.execute("INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], plan["revision"], expected, "APPROVE", reviewer.strip(), reason.strip(), timestamp))
             if is_plan(node):
                 create_delivery(store, db, plan, node, timestamp)
+                if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
+                    delivery = next(n for n in plan["desired_state"] if n.get("parent_id") == node["id"])
+                    previous = execution_round(db, delivery["id"])
+                    if not previous or previous["plan_digest"] != expected:
+                        if previous:
+                            _archive_execution_round(store, db, previous)
+                            db.execute("UPDATE regression_execution_rounds SET status='SUPERSEDED' WHERE id=?", (previous["id"],))
+                        _new_execution_round(db, plan, delivery, expected, "initial:" + review_id,
+                                             reviewer.strip(), "按已批准方案执行本轮回归", timestamp)
+            elif plan["workstream"] == "VREG" and vreg_stage(node) == "results":
+                value = execution_round(db, node_id)
+                db.execute("UPDATE regression_execution_rounds SET status='ACCEPTED',accepted_at=? WHERE id=?",
+                           (timestamp, value["id"]))
         else:
             if state["feedback"]["processing_count"]:
                 error("上一批意见仍在等待 Agent 处理")
@@ -918,7 +1322,7 @@ def _feedback_routes(workstream, claim, facts):
             routes.append({
                 "source_workstream": workstream,
                 "source_claim": claim,
-                "finding": item.get("test"),
+                "finding": item.get("case_id") or item.get("test"),
                 "responsible_workstream": item.get("responsible_workstream"),
                 "target_implementation_key": item.get("target_implementation_key") or "",
                 "next_action": item.get("next_action") or "",
@@ -934,23 +1338,91 @@ def _vreg_result_blockers(store, connection, plan, node, checks):
         claim = check["claim"]
         value = check["validation"]["facts"]
         facts.setdefault(claim, {})[digest(value)] = value
-    executed = [(item["test"], item["seed"])
-                for value in facts.get("execution-evidence", {}).values() for item in value.get("failed_runs", [])]
+    from .vreg_contract import execution_blockers, normalize_config
+    current_round = execution_round(connection, node["id"])
+    try:
+        config = regression_config(node)
+        if current_round is None:
+            reasons.append("结果交付尚未登记当前执行轮次")
+        else:
+            original_config = normalize_config(json.loads(current_round["config_json"]))
+            if original_config != config:
+                reasons.append("当前方案执行参数与本轮原批准配置不一致，旧任务只能按原配置核对结束事实")
+            binding = execution_binding(plan, node, current_round)
+            for claim in VREG_RESULTS_CLAIMS:
+                for value in facts.get(claim, {}).values():
+                    if value.get("execution_binding") != binding:
+                        reasons.append("回归证据未绑定当前方案和执行轮次：" + claim)
+            batches = [batch for value in facts.get("execution-evidence", {}).values() for batch in value.get("batches", [])]
+            reasons.extend(execution_blockers(config, batches, binding))
+    except ValueError as exc:
+        reasons.append("回归结果方案或轮次合同不完整：" + str(exc))
+    def run_key(item, seed_field):
+        return (
+            item.get("batch_id") or "",
+            item.get("case_id") or item.get("test") or "",
+            item.get(seed_field) or "",
+            int(item.get("iteration") or 0),
+        )
+
+    def run_label(key):
+        batch, case, seed, iteration = key
+        return "/".join(part for part in (batch, case, str(seed), str(iteration)) if part != "")
+
+    executed = [run_key(item, "seed")
+                for value in facts.get("execution-evidence", {}).values()
+                for item in value.get("failed_runs", [])]
     failures = [item for value in facts.get("triage-evidence", {}).values() for item in value.get("failures", [])]
-    triaged = [(item["test"], item["original_seed"]) for item in failures]
+    triaged = [run_key(item, "original_seed") for item in failures]
     if len(executed) != len(set(executed)) or len(triaged) != len(set(triaged)):
-        reasons.append("回归执行或失败分类包含重复的 test/seed 记录")
+        reasons.append("回归执行或失败分类包含重复的 batch/case/seed/iteration 记录")
     missing, extra = set(executed) - set(triaged), set(triaged) - set(executed)
     if missing:
-        reasons.append("回归执行失败尚未分类处理：" + "、".join(f"{test}/{seed}" for test, seed in sorted(missing)))
+        reasons.append("回归执行失败尚未分类处理：" + "、".join(run_label(key) for key in sorted(missing)))
     if extra:
-        reasons.append("失败分类包含当前回归执行不存在的失败：" + "、".join(f"{test}/{seed}" for test, seed in sorted(extra)))
+        reasons.append("失败分类包含当前回归执行不存在的失败：" + "、".join(run_label(key) for key in sorted(extra)))
     for item in failures:
         if item.get("disposition") != "accepted-known-fail":
             continue
         record = connection.execute("SELECT * FROM reviews WHERE id=? AND verdict='WAIVE'", (item.get("waiver_ref"),)).fetchone()
         if record is None or record["workstream"] != "VREG" or record["revision"] != plan["revision"]:
-            reasons.append(item["test"] + " 的已知失败没有当前 VREG 版本的负责人例外批准记录")
+            reasons.append((item.get("case_id") or item.get("test") or "case") +
+                           " 的已知失败没有当前 VREG 版本的负责人例外批准记录")
+    accepted_cases: set[tuple[str, str, str]] = set()
+    for row in connection.execute(
+        "SELECT id,data_json FROM nodes WHERE id LIKE 'art.code:vcase:%' AND status='VALID'"
+    ):
+        head = json.loads(row["data_json"] or "{}").get("current")
+        if not isinstance(head, dict) or not isinstance(head.get("version"), int):
+            continue
+        version = connection.execute(
+            "SELECT payload_json FROM code_artifact_versions WHERE artifact_id=? AND version=?",
+            (row["id"], head["version"]),
+        ).fetchone()
+        if version is None:
+            continue
+        validation = json.loads(version["payload_json"]).get("validation") or {}
+        if validation.get("testcase_contract") != VCASE_VALIDATION_CONTRACT:
+            continue
+        for check in validation.get("checks", []):
+            if check.get("claim") != "case-implementation":
+                continue
+            for item in check.get("validation", {}).get("facts", {}).get("case_records", []):
+                accepted_cases.add((
+                    item["id"], item["case_digest"],
+                    item["submit_profile"]["profile_digest"],
+                ))
+    if accepted_cases:
+        for value in facts.get("execution-evidence", {}).values():
+            for batch in value.get("batches", []):
+                profile_digest = batch["submit_profile"]["profile_digest"]
+                for item in batch.get("cases", []):
+                    key = (item["case_id"], item["case_digest"], profile_digest)
+                    if key not in accepted_cases:
+                        reasons.append(
+                            f"batch {batch['batch_id']} 引用了未验收的完整 case："
+                            f"{item['case_id']}/{batch['submit_profile']['profile_id']}"
+                        )
     current = store._current_desired_nodes(connection)
     for check in checks:
         if check["claim"] == "fresh-evidence":
@@ -976,8 +1448,23 @@ def validate(store, node_id, report_path):
     if not isinstance(report, dict) or report.get("schema") != "CodeValidation/1" or report.get("node_id") != node_id or report.get("revision") != plan["revision"] or report.get("input_signature") != signature:
         error("验证报告必须绑定当前项目节点、revision 和 input_signature")
     workstream = plan["workstream"]
+    result_round = None
+    if workstream == "VREG" and vreg_stage(node) == "results":
+        from .vreg_contract import normalize_binding
+        try:
+            report["execution_binding"] = normalize_binding(report.get("execution_binding"))
+        except ValueError as exc:
+            error("回归验证报告必须绑定当前方案和执行轮次：" + str(exc))
+        with store.read_connect() as db:
+            result_round = execution_round(db, node_id)
+        if (result_round is None or report.get("execution_binding") != execution_binding(plan, node, result_round)
+                or result_round["status"] not in {"RUNNING", "INTERRUPTED", "VALIDATED", "FAILED", "ACCEPTED"}):
+            error("验证报告必须绑定已登记工具调用的当前回归轮次，不能沿用旧轮次报告")
     if {d['id'] for d in snapshot['dependencies']} != {ids(node['implementation_key'], workstream)[0]} or any(d["status"] != "VALID" or not d['current'] for d in snapshot["dependencies"]):
-        error("批准的代码方案已失效，不能登记验证结果")
+        if result_round and result_round["status"] in {"RUNNING", "INTERRUPTED"}:
+            reasons.append("批准的代码方案已失效；本报告仅核对原轮次结束事实，不构成交付验收或新执行授权")
+        else:
+            error("批准的代码方案已失效，不能登记验证结果")
     if report.get("checked_by") != PROJECT_AGENT_ACTOR or not str(report.get("summary", "")).strip():
         error("Main Agent 必须检查验证结果并填写摘要")
     outputs = file_snapshot(store, node["output_paths"], required=True)
@@ -994,6 +1481,8 @@ def validate(store, node_id, report_path):
     delivered_artifacts = set()
     feedback_routes = []
     facts_by_claim = {}
+    exclusion_approval = None
+    excluded_items = []
     for check in checks:
         criterion = check.get("criterion") if isinstance(check, dict) else None
         if criterion not in node["acceptance_criteria"]:
@@ -1008,6 +1497,10 @@ def validate(store, node_id, report_path):
         evidence_path = store.root / local_path(store, check["report"])
         expected_files.update({v['path']: v['sha256'] for v in file_snapshot(store, [local_path(store, evidence_path)], required=True)})
         result = _validate_evidence(store, evidence_path, workstream, check["claim"])
+        if workstream == "VCASE" and result.get("schema") != "TestcaseEvidence/2":
+            error("当前 VCASE 交付必须使用 TestcaseEvidence/2 绑定 submit profile")
+        if workstream == "VREG" and result.get("schema") != "RegressionEvidence/3":
+            error("当前 VREG 交付必须使用 RegressionEvidence/3 绑定批准方案和执行轮次")
         result["artifacts"] = store._verify_evidence_artifacts(result["artifacts"])
         store._apply_revision_check(result)
         result['ready'] = not result['blockers']
@@ -1031,6 +1524,53 @@ def validate(store, node_id, report_path):
     for smoke in facts_by_claim.get('environment-smoke-evidence', []):
         if not builds or any(smoke.get('environment_digest') != b.get('environment_digest') for b in builds):
             reasons.append("集成工作包的 smoke 必须与本次构建使用同一版本的验证环境")
+    if workstream == "VCASE":
+        matrix_cases = {
+            case
+            for facts in facts_by_claim.get("case-matrix", [])
+            for mapping in facts.get("mappings", [])
+            for case in mapping.get("cases", [])
+        }
+        case_records = [
+            item for facts in facts_by_claim.get("case-implementation", [])
+            for item in facts.get("case_records", [])
+        ]
+        implemented_cases = {item["id"] for item in case_records}
+        missing_implementations = sorted(matrix_cases - implemented_cases)
+        if missing_implementations:
+            reasons.append("用例矩阵中的 case 尚未实现：" + "、".join(missing_implementations))
+        implemented_variants = {
+            (item["id"], item["submit_profile"]["profile_digest"]): item
+            for item in case_records
+        }
+        run_records = [
+            item for facts in facts_by_claim.get("targeted-evidence", [])
+            for item in facts.get("run_records", [])
+        ]
+        executed_variants = {
+            (item["case_id"], item["submit_profile_digest"])
+            for item in run_records
+        }
+        missing_runs = sorted(set(implemented_variants) - executed_variants)
+        if missing_runs:
+            reasons.append("完整 case 尚无定向执行证据：" + "、".join(
+                f"{case}/{implemented_variants[(case, profile)]['submit_profile']['profile_id']}"
+                for case, profile in missing_runs
+            ))
+        for item in run_records:
+            key = (item["case_id"], item["submit_profile_digest"])
+            current_case = implemented_variants.get(key)
+            if current_case is None:
+                reasons.append(
+                    f"定向执行未绑定当前完整 case："
+                    f"{item['case_id']}/{item['submit_profile_id']}"
+                )
+            elif (item["case_digest"] != current_case["case_digest"] or
+                  item["submit_profile_id"] != current_case["submit_profile"]["profile_id"]):
+                reasons.append(
+                    f"定向执行的 case/submit profile 摘要与当前实现不一致："
+                    f"{item['case_id']}/{item['submit_profile_id']}"
+                )
     if workstream == "VCOV" and vcov_stage(node) == "implementation":
         source_digests = {source["sha256"] for source in snapshot["sources"]}
         output_digests = {output["sha256"] for output in snapshot["outputs"]}
@@ -1047,6 +1587,7 @@ def validate(store, node_id, report_path):
     if workstream == "VCOV" and vcov_stage(node) == "convergence":
         with store.read_connect() as db:
             expected_manifests, manifest_reasons = _vcov_expected_manifests(store, db, plan, node)
+            exclusion_approval = coverage_exclusion_state(store, db, plan, node)["current"]
         reasons.extend(manifest_reasons)
         for claim in sorted(VCOV_CONVERGENCE_CLAIMS):
             observed = {facts.get("coverage_manifest_digest") for facts in facts_by_claim.get(claim, [])}
@@ -1064,19 +1605,29 @@ def validate(store, node_id, report_path):
             databases_by_claim[claim] = databases
         if databases_by_claim["coverage-collection-evidence"] != databases_by_claim["hole-analysis-evidence"]:
             reasons.append("缺口分析没有使用本轮采集和合并的同一覆盖率数据库")
-        with store.read_connect() as db:
-            for facts in facts_by_claim.get("hole-analysis-evidence", []):
-                for item in facts.get("items", []):
-                    if item.get("status") != "excluded":
-                        continue
-                    waiver = item.get("waiver") or {}
-                    record = db.execute("SELECT * FROM reviews WHERE id=? AND verdict='WAIVE'", (waiver.get("id"),)).fetchone()
-                    if (record is None or record["workstream"] != "VCOV" or record["revision"] != plan["revision"]
-                            or record["reviewer"] != waiver.get("reviewer")
-                            or record["created_at"][:10] != waiver.get("decision_date")
-                            or not re.search(r"(?<![A-Za-z0-9_.:-])" + re.escape(item["id"])
-                                             + r"(?![A-Za-z0-9_.:-])", record["reason"])):
-                        reasons.append(item["id"] + " 的排除项没有当前版本的负责人例外批准记录")
+        excluded_items = [item for facts in facts_by_claim.get("hole-analysis-evidence", [])
+                          for item in facts.get("items", []) if item.get("status") == "excluded"]
+        if excluded_items and exclusion_approval is None:
+            reasons.append("覆盖率报告包含排除项，但负责人尚未为当前收敛范围提供已审批的 exclude 文件")
+        if excluded_items and exclusion_approval is not None:
+            analyzed = [artifact for check in checks if check["claim"] == "hole-analysis-evidence"
+                        for artifact in check["validation"]["artifacts"]
+                        if artifact["path"] == exclusion_approval["path"]
+                        and artifact["sha256"] == exclusion_approval["sha256"]
+                        and artifact["kind"] == "configuration"
+                        and "xverif" in artifact.get("analyzed_by", [])]
+            if not analyzed:
+                reasons.append("缺口分析没有引用并检查负责人提供的当前 exclude 文件")
+            expected_waiver = {
+                "id": exclusion_approval["id"],
+                "reviewer": exclusion_approval["reviewer"],
+                "decision_date": exclusion_approval["created_at"][:10],
+                "rationale": exclusion_approval["reason"],
+                "status": "Approved",
+            }
+            for item in excluded_items:
+                if item.get("waiver") != expected_waiver:
+                    reasons.append(item["id"] + " 没有引用负责人提供的当前 exclude 文件审批记录")
     if workstream == "VREG" and vreg_stage(node) == "results":
         with store.read_connect() as db:
             reasons.extend(_vreg_result_blockers(store, db, plan, node, checks))
@@ -1084,6 +1635,11 @@ def validate(store, node_id, report_path):
                "blockers": reasons, "checks": checks, "feedback_routes": feedback_routes}
     if workstream == "VCOV":
         receipt["coverage_contract"] = VCOV_VALIDATION_CONTRACT
+        if vcov_stage(node) == "convergence":
+            receipt["coverage_exclusion_approval"] = exclusion_approval
+            receipt["needs_coverage_exclusion"] = bool(excluded_items and exclusion_approval is None)
+    if workstream == "VCASE":
+        receipt["testcase_contract"] = VCASE_VALIDATION_CONTRACT
     if workstream == "VREG" and vreg_stage(node) == "results":
         receipt["regression_contract"] = VREG_VALIDATION_CONTRACT
     if {v['path']: v['sha256'] for v in receipt['files']} != expected_files:
@@ -1101,6 +1657,22 @@ def validate(store, node_id, report_path):
             if previous_scope != latest_scope or any(reason not in reasons for reason in latest_reasons):
                 error("登记期间必需回归证据或负责人例外批准发生变化，请重新验证")
         db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (identifier, node_id, plan["revision"], signature, encoded(receipt), timestamp))
+        if result_round is not None:
+            from .vreg_contract import execution_blockers, normalize_config
+            execution_checks = [check for check in checks if check["claim"] == "execution-evidence"]
+            execution_facts = {digest(check["validation"]["facts"]): check["validation"]["facts"]
+                               for check in execution_checks}.values()
+            try:
+                terminal_execution = (bool(execution_checks)
+                                      and all(check["validation"]["ready"] for check in execution_checks)
+                                      and not execution_blockers(normalize_config(json.loads(result_round["config_json"])),
+                                          [batch for facts in execution_facts for batch in facts.get("batches", [])],
+                                          execution_binding(plan, node, result_round)))
+            except (ValueError, TypeError):
+                terminal_execution = False
+            round_status = "VALIDATED" if receipt["ready"] else "FAILED" if terminal_execution else "INTERRUPTED"
+            db.execute("UPDATE regression_execution_rounds SET status=?,validated_at=?,validation_id=? WHERE id=?",
+                       (round_status, timestamp, identifier, result_round["id"]))
         _sync_watched_files(store, db)
     refresh(store)
     return {"id": identifier, "ready": receipt["ready"], "blockers": reasons,
@@ -1313,6 +1885,10 @@ def closure(store, plan, persist, states=None):
             kind, actor, reason = "HUMAN_REVIEW", "human", "等待负责人" + (
                 ("审批" if is_plan(node) else "验收") + node_label(node, workstream)
             )
+        elif (workstream == "VCOV" and is_delivery(node) and vcov_stage(node) == "convergence"
+              and validation.get("current") and validation.get("needs_coverage_exclusion")):
+            kind, actor = "PROVIDE_COVERAGE_EXCLUSIONS", "human"
+            reason = "覆盖率报告包含排除项；请负责人提供已审批的 exclude 文件，随后由 Agent 重新验证"
         else:
             kind, actor, reason = "IMPLEMENT_AND_VALIDATE", "reasoning", "；".join(state["blockers"])
             if routes:
@@ -1325,6 +1901,7 @@ def closure(store, plan, persist, states=None):
                 kind, actor = "WAIT_FOR_DEPENDENCY", "deterministic"
         actions.append({"kind": kind, "target": node["id"], "executor": actor, "reason": reason,
                         "batch_ids": feedback["batch_ids"],
+                        "execution_binding": ((state.get("regression_execution") or {}).get("current") or {}).get("execution_binding"),
                         "feedback_routes": routes})
     for action in actions:
         action.update(priority=1 if action["executor"] == "human" else 3, suggested_mode="plan" if action["target"] == f"workstream:{workstream}" else "code")
@@ -1399,6 +1976,77 @@ def request_change(store, body):
     return store.human_action(identifier)
 
 
+def provide_coverage_exclusions(
+    store, node_id, reviewer, reason="", *, confirm=False, source=None,
+    content=None, filename=None,
+):
+    """Record one owner-provided exclusion file as the approval for its contents."""
+    from .store import now
+    refresh(store)
+    reviewer = str(reviewer or "").strip()
+    reason = str(reason or "").strip() or "负责人确认该 exclude 文件中的覆盖率排除范围"
+    if not reviewer or confirm is not True:
+        error("提供 exclude 文件必须填写负责人并显式确认；提供即表示其中排除范围已审批")
+    plan, node = selected(store, node_id)
+    if plan["workstream"] != "VCOV" or not is_delivery(node) or vcov_stage(node) != "convergence":
+        error("exclude 文件只能提供给当前 VCOV 覆盖率收敛交付节点")
+    if content is None:
+        if not source:
+            error("必须提供 exclude 文件")
+        source_path = store.root / local_path(store, source)
+        try:
+            raw = source_path.read_bytes()
+        except OSError as exc:
+            error(f"无法读取 exclude 文件：{exc}")
+        original_name = source_path.name
+    else:
+        if not isinstance(content, (bytes, bytearray)):
+            error("exclude 文件内容必须是 bytes")
+        raw = bytes(content)
+        original_name = Path(str(filename or "coverage-exclusions.el")).name
+    if not raw:
+        error("exclude 文件不能为空")
+    if len(raw) > MAX_COVERAGE_EXCLUSION_BYTES:
+        error("exclude 文件不能超过 512 KiB")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", original_name).strip("._-")
+    if not safe_name:
+        safe_name = "coverage-exclusions.el"
+    sha256 = hashlib.sha256(raw).hexdigest()
+    directory = store.state / "coverage-exclusions" / digest(node_id)[:12]
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target = directory / f"{sha256[:16]}-{safe_name}"
+    if target.exists():
+        if hashlib.sha256(target.read_bytes()).hexdigest() != sha256:
+            error("受控 exclude 文件路径存在内容冲突")
+    else:
+        temporary = target.with_name(target.name + ".tmp-" + uuid.uuid4().hex[:8])
+        temporary.write_bytes(raw)
+        temporary.chmod(0o600)
+        os.replace(temporary, target)
+    relative = str(target.relative_to(store.root))
+    identifier, timestamp = "coverage-exclusion:" + uuid.uuid4().hex[:12], now()
+    with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        latest_plan, latest_node = selected(store, node_id, db)
+        if (latest_plan["revision"] != plan["revision"]
+                or coverage_exclusion_scope_digest(latest_plan, latest_node)
+                != coverage_exclusion_scope_digest(plan, node)):
+            error("登记期间覆盖率收敛范围已经变化，请刷新后重新提供 exclude 文件")
+        db.execute(
+            "INSERT INTO coverage_exclusion_approvals VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (identifier, node_id, "VCOV", plan["revision"],
+             coverage_exclusion_scope_digest(plan, node), relative, sha256,
+             reviewer, reason, timestamp),
+        )
+        _sync_watched_files(store, db)
+    refresh(store)
+    state = review_state(store, node_id)
+    return {"approval": state["coverage_exclusion"]["current"],
+            "history_count": len(state["coverage_exclusion"]["history"]),
+            "validation_current": bool(state.get("validation") and state["validation"]["current"]),
+            "auto_closure": store.evaluate_closure("VCOV")}
+
+
 def content(store, node_id, path, expected):
     refresh(store)
     state = review_state(store, node_id)
@@ -1418,3 +2066,28 @@ def content(store, node_id, path, expected):
     except UnicodeDecodeError:
         error("该证据是二进制文件，请使用对应的验证工具查看")
     return {"node_id": node_id, "path": path, "content": text + ("\n（仅预览前 64 KiB）" if len(data) > 65536 else "")}
+
+
+def coverage_exclusion_content(store, node_id, path, expected):
+    refresh(store)
+    plan, node = selected(store, node_id)
+    if plan["workstream"] != "VCOV" or not is_delivery(node) or vcov_stage(node) != "convergence":
+        error("该节点没有覆盖率 exclude 文件")
+    with store.read_connect() as db:
+        state = coverage_exclusion_state(store, db, plan, node)
+    approval = state["current"]
+    if not approval or approval["path"] != path or approval["sha256"] != expected:
+        error("该 exclude 文件不属于当前覆盖率收敛范围，或文件版本已经变化")
+    safe = store.root / local_path(store, path)
+    try:
+        data = safe.read_bytes()
+    except OSError as exc:
+        error(f"无法读取当前 exclude 文件：{exc}")
+    if hashlib.sha256(data).hexdigest() != expected:
+        error("读取期间 exclude 文件已经变化，请刷新")
+    try:
+        preview = data[:65536].decode("utf-8")
+    except UnicodeDecodeError:
+        error("该 exclude 文件不是 UTF-8 文本；Agent 仍可通过专用工具分析")
+    return {"node_id": node_id, "path": path,
+            "content": preview + ("\n（仅预览前 64 KiB）" if len(data) > 65536 else "")}

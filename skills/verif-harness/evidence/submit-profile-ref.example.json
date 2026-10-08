@@ -1,0 +1,11 @@
+{
+  "schema": "SubmitProfileRef/1",
+  "profile_id": "local-debug",
+  "submit_file": "verification/regression/submit.demo.json",
+  "submit_file_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "adapter": {
+    "name": "project-submit-export",
+    "version": "1"
+  }
+}

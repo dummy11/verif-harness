@@ -787,6 +787,11 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="plan-approval-controls"', html)
         self.assertIn('id="node-plan-complete"', html)
         self.assertIn("/api/reviews/node-plan-complete", html)
+        self.assertIn('id="provide-coverage-exclusions"', html)
+        self.assertIn("/api/code/coverage-exclusions", html)
+        self.assertIn("/api/code-exclusion-file", html)
+        self.assertIn("提供文件即表示其中的排除范围已经人工审批", html)
+        self.assertIn("PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的 exclude 文件'", html)
         completion_modal = html[html.index("function openNodePlanCompletionModal"):
                                 html.index("async function approvalRequest")]
         self.assertIn("批准说明（选填）", completion_modal)
@@ -854,6 +859,13 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("回归基础设施交付", html)
         self.assertIn("回归结果方案", html)
         self.assertIn("回归结果交付", html)
+        self.assertIn('id="regression-rerun"', html)
+        self.assertIn("按已批准方案重新回归", html)
+        self.assertIn("/api/code/regression-rerun", html)
+        self.assertIn("/api/code/regression-history-file", html)
+        self.assertIn("data-regression-history-file", node_drawer)
+        self.assertIn("openRegressionRerunModal(n)", node_drawer)
+        self.assertIn("新一轮结果必须重新验证和验收，不继承历史验收", html)
         self.assertNotIn("回归工作方案", html)
         self.assertNotIn("回归交付及证据", html)
         self.assertIn("代码交付及验证证据", html)
@@ -2429,6 +2441,9 @@ vm.runInContext(`
   const deliveryBody = codeNodeHtml(delivery);
   assert.ok(deliveryBody.includes('<h4>交付文件</h4>'));
   assert.ok(!deliveryBody.includes('<h4>交付代码</h4>'));
+  assert.ok(deliveryBody.includes('负责人提供的 exclude 文件'));
+  assert.match(deliveryBody, /id="provide-coverage-exclusions"/);
+  assert.ok(deliveryBody.includes('提供文件即表示其中的排除范围已经人工审批'));
   assert.doesNotMatch(deliveryBody, /工作包/);
   assert.match(deliveryBody, /data-code-file=/);
   assert.equal(nodeRoleLabel({role:'code-plan',workstream:'VENV'}), '代码实现方案');
@@ -2465,6 +2480,14 @@ vm.runInContext(`
     plan_review:{completed:false,can_approve:true,status:'PENDING',definition_digest:'current-regression-' + index},
   }));
   const regression = {...w,workstream:'VREG',revision:2,objective:'核对 FIFO 当前回归结果',nodes:regressionNodes};
+  const regressionConfigFixture = {
+    regression_group:'fifo-boundaries',cases:[{case_id:'fifo_full',case_digest:'case-full'}],
+    submit_profile:{schema:'SubmitProfileRef/1',profile_id:'local',submit_file:'tb/submit.json',
+      submit_file_digest:'submit-current',profile_digest:'profile-current',adapter:{name:'fixture',version:'1'}},
+    seed_mode:'fixed',seed:'17',
+  };
+  regressionNodes[2].regression_config = regressionConfigFixture;
+  regressionNodes[3].plan_review.regression_config = regressionConfigFixture;
   state.snapshot.workstreams.push(regression);
   for (let index = 0; index < regressionNodes.length; index++) {
     const node = regressionNodes[index], [role,title,plan] = regressionTypes[index];
@@ -2509,6 +2532,37 @@ vm.runInContext(`
   assert.ok(resultsBody.includes('<h4>交付文件</h4>'));
   assert.ok(!resultsBody.includes('<h4>交付代码</h4>'));
   assert.doesNotMatch(resultsBody, /工作包|闭环包/);
+  for (const content of ['fifo-boundaries','fifo_full','tb/submit.json','指定 seed：17','每个 case 的重复次数</dt><dd>1']) assert.ok(resultsBody.includes(content));
+  assert.ok(codeNodeHtml(regressionNodes[2]).includes('回归执行范围'));
+  assert.doesNotMatch(codeNodeHtml(regressionNodes[2]), /id="regression-rerun"/);
+  const randomPlan = {...regressionNodes[2],regression_config:{...regressionConfigFixture,seed_mode:'random',repeat:3}};
+  assert.ok(codeNodeHtml(randomPlan).includes('随机 seed（每轮由 testbench 生成并记录）'));
+  assert.ok(codeNodeHtml(randomPlan).includes('重复次数</dt><dd>3'));
+  const newRound = {...regressionNodes[3],plan_review:{...regressionNodes[3].plan_review,
+    regression_execution:{can_rerun:false,blockers:['当前轮次正在等待 Agent'],
+      current:{round_id:'new-round',round_number:2,status:'REQUESTED'},
+      history:[{round_id:'old-round',round_number:1,status:'ACCEPTED',accepted_at:'2026-10-08',
+        files:[{path:'results/old.json',sha256:'old-digest',available:true},{path:'results/missing.json',available:false}]}]}}};
+  assert.equal(codeApprovalCompleted(newRound), false);
+  assert.equal(nodeProgressState(newRound).ratio, 0);
+  assert.equal(planApprovalAvailable(newRound), false);
+  assert.doesNotMatch(codeStatusBadge(newRound), /已验收通过/);
+  assert.match(codeNodeHtml(newRound), /id="regression-rerun" disabled/);
+  assert.match(codeNodeHtml(newRound), /id="node-plan-complete" disabled/);
+  assert.ok(codeNodeHtml(newRound).includes('第 2 轮'));
+  assert.doesNotMatch(codeNodeHtml(newRound), /data-code-file=/);
+  assert.match(codeNodeHtml(newRound), /data-regression-history-file=/);
+  assert.ok(codeNodeHtml(newRound).includes('归档报告不可读取'));
+  for (const status of ['DISPATCHED','RUNNING','INTERRUPTED','FAILED']) {
+    newRound.plan_review.regression_execution.current.status = status;
+    assert.equal(codeApprovalCompleted(newRound), false);
+    assert.equal(planApprovalAvailable(newRound), false);
+  }
+  const oldResults = {...newRound,role:'code-deliverable'};
+  assert.doesNotMatch(codeNodeHtml(oldResults), /id="regression-rerun"/);
+  const noContract = {...newRound,regression_config:null,plan_review:{...newRound.plan_review,regression_config:null}};
+  assert.ok(codeNodeHtml(noContract).includes('不能沿用历史记录授权执行'));
+  assert.doesNotMatch(codeNodeHtml(noContract), /id="regression-rerun"/);
   const pendingResults = {...regressionNodes[3],plan_review:{completed:false,can_approve:false,status:'PENDING'}};
   assert.ok(codeNodeHtml(pendingResults).includes('当前回归执行结果和失败处理的检查报告'));
   assert.match(codeNodeHtml(pendingResults), /id="node-plan-complete" disabled/);
@@ -2523,6 +2577,193 @@ vm.runInContext(`
   assert.ok(regressionChange.includes('value="regression-node-2"'));
   assert.doesNotMatch(regressionChange, /value="regression-node-1"|value="regression-node-3"|工作包|闭环包/);
 `, context);
+""",
+            text=True, capture_output=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("node"), "Dashboard DOM checks require Node.js")
+    def test_regression_rerun_click_confirmation_readback_and_history(self) -> None:
+        result = subprocess.run(
+            ["node", "-", str(ROOT / "verif_harness/dashboard.html")],
+            input=r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync(process.argv[2], 'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
+const decode = value => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+class Element {
+  constructor(attrs='') {
+    this.attrs = {}; this.dataset = {}; this.children = []; this.textContent = ''; this.hidden = false;
+    for (const match of attrs.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
+      this.attrs[match[1]] = decode(match[2] || '');
+      if (match[1].startsWith('data-')) this.dataset[match[1].slice(5).replace(/-([a-z])/g, (_,v) => v.toUpperCase())] = this.attrs[match[1]];
+    }
+    this.id = this.attrs.id; this.type = this.attrs.type; this.name = this.attrs.name; this.value = this.attrs.value || '';
+    this.disabled = Object.hasOwn(this.attrs, 'disabled'); this.checked = false;
+    const classes = new Set(); this.classList = {add:x => classes.add(x),remove:x => classes.delete(x),contains:x => classes.has(x)};
+  }
+  set innerHTML(value) {
+    this.html = value; this.children = [];
+    for (const match of value.matchAll(/<(button|input|textarea|form|div)\b([^>]*)>/g)) this.children.push(new Element(match[2]));
+    const form = this.children.find(item => item.id === 'regression-rerun-form');
+    if (form) form.children = this.children.filter(item => item !== form);
+  }
+  get innerHTML() { return this.html || ''; }
+  querySelectorAll(selector) {
+    if (selector === 'input,textarea') return this.children.filter(item => ['reviewer','reason','confirm'].includes(item.name));
+    if (selector.startsWith('#')) return this.children.filter(item => item.id === selector.slice(1));
+    const match = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
+    return match ? this.children.filter(item => Object.hasOwn(item.attrs, match[1]) && (!match[2] || item.attrs[match[1]] === match[2])) : [];
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+  setAttribute(name,value) { this.attrs[name] = value; }
+  removeAttribute(name) { delete this.attrs[name]; }
+  contains(item) { return this.children.includes(item); }
+}
+const roots = new Map(['#main','#drawer','#drawer-backdrop','#modal','#modal-backdrop','#toast'].map(key => [key,new Element()]));
+const document = {
+  querySelector:selector => {
+    if (selector.startsWith('meta')) return {content:'test-token'};
+    if (roots.has(selector)) return roots.get(selector);
+    if (selector.includes(' ')) return null;
+    for (const root of roots.values()) { const found = root.querySelector(selector); if (found) return found; }
+    return null;
+  },
+  querySelectorAll:selector => [...roots.values()].flatMap(root => root.querySelectorAll(selector)),
+};
+class FormDataFixture {
+  constructor(form) { this.items = form.children.filter(item => item.name && !item.disabled && (item.type !== 'checkbox' || item.checked)).map(item => [item.name,item.type === 'checkbox' ? 'on' : item.value]); }
+  [Symbol.iterator]() { return this.items[Symbol.iterator](); }
+}
+const context = vm.createContext({assert,document,URL,URLSearchParams,AbortController,
+  FormData:FormDataFixture,crypto:{randomUUID:() => 'fixture-request-key'},
+  window:{location:{search:'',href:'http://localhost/?project=fixture',origin:'http://localhost'},confirm:() => true},
+  localStorage:{getItem:() => '',setItem:() => {}},setTimeout,clearTimeout,
+});
+vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclick")), context);
+vm.runInContext(`
+  let posts = 0, snapshots = 0, postResolve, responseMode = 'deferred', historyMode = 'ok', snapshotMode = 'ok';
+  const config = {regression_group:'fifo-boundaries',cases:[{case_id:'fifo_full',case_digest:'case-digest'}],
+    submit_profile:{schema:'SubmitProfileRef/1',profile_id:'local',submit_file:'tb/submit.json',submit_file_digest:'submit',profile_digest:'profile',adapter:{name:'fixture',version:'1'}},seed_mode:'fixed',seed:'17'};
+  const binding = {round_id:'old',plan_node_id:'results-plan',plan_revision:4,plan_digest:'approved-plan'};
+  const node = {id:'results',title:'FIFO 回归结果',role:'regression-results-deliverable',workstream:'VREG',source_refs:[],
+    regression_config:config,plan_review:{definition_digest:'delivery-current',revision:4,completed:true,can_approve:false,
+      regression_execution:{can_rerun:true,blockers:[],current:{round_id:'old',round_number:1,status:'ACCEPTED',execution_binding:binding},
+        history:[{round_id:'old',round_number:1,status:'ACCEPTED',files:[{path:'results/old.json',sha256:'old-sha',available:true}]}]}}};
+  const snapshot = () => ({dashboard_project_id:'fixture',project:{},workstreams:[{workstream:'VREG',revision:4,nodes:[node]}],model:{nodes:[],edges:[]},agent_questions:[],activities:[]});
+  state.project = 'fixture'; state.snapshot = snapshot(); state.node = node.id;
+  setSnapshot = value => { snapshots++; state.snapshot = value; };
+  fetch = async (url, options={}) => {
+    if (options.method === 'POST') {
+      posts++; const data = JSON.parse(options.body);
+      assert.equal(url, '/api/code/regression-rerun'); assert.equal(data.dashboard_project, 'fixture');
+      assert.equal(data.node, 'results'); assert.equal(data.definition_digest, 'delivery-current'); assert.equal(data.revision, 4);
+      assert.equal(data.confirm, true); assert.equal(data.request_key, 'fixture-request-key');
+      for (const field of ['seed','seed_mode','repeat','cases','regression_group','submit_profile']) assert.ok(!Object.hasOwn(data, field));
+      node.plan_review.regression_execution.current = {round_id:'new',round_number:2,status:'REQUESTED',request_key:data.request_key,execution_binding:{...binding,round_id:'new'}};
+      node.plan_review.regression_execution.can_rerun = false;
+      const body = {dashboard_project_id:'fixture',result:{node_id:'results',revision:4,round:node.plan_review.regression_execution.current}};
+      if (responseMode === 'unknown') throw new Error('lost response');
+      return new Promise(resolve => { postResolve = () => resolve({ok:true,json:async () => body}); });
+    }
+    if (String(url).startsWith('/api/snapshot')) return {ok:true,json:async () => {
+      const value = snapshotMode === 'ok' ? snapshot() : JSON.parse(JSON.stringify(snapshot()));
+      if (snapshotMode === 'foreign-plan') value.workstreams[0].nodes[0].plan_review.regression_execution.current.execution_binding.plan_digest = 'other-plan';
+      if (snapshotMode === 'foreign-project') value.dashboard_project_id = 'foreign';
+      return value;
+    }};
+    const parsed = new URL(url, 'http://localhost');
+    assert.equal(parsed.pathname, '/api/code/regression-history-file');
+    assert.equal(parsed.searchParams.get('project'), 'fixture'); assert.equal(parsed.searchParams.get('node'), 'results');
+    assert.equal(parsed.searchParams.get('round_id'), 'old'); assert.equal(parsed.searchParams.get('file'), 'results/old.json');
+    return {ok:historyMode !== 'missing',status:historyMode === 'missing' ? 400 : 200,json:async () => historyMode === 'missing'
+      ? {error:'历史报告已缺失'} : {dashboard_project_id:historyMode === 'foreign' ? 'foreign' : 'fixture',node_id:'results',round_id:'old',path:'results/old.json',sha256:'old-sha',content:'archived report'}};
+  };
+  async function exercise() {
+    await renderDrawer(node.id, true);
+    const rerun = $('#main').querySelector('#regression-rerun');
+    assert.equal(typeof rerun.onclick, 'function'); assert.equal(posts, 0);
+    rerun.onclick();
+    assert.ok($('#modal').innerHTML.includes('确认按已批准方案重新回归？'));
+    assert.ok($('#modal').innerHTML.includes('指定 seed：17'));
+    assert.ok($('#modal').innerHTML.includes('重复次数</dt><dd>1'));
+    assert.ok($('#modal').innerHTML.includes('不批准新结果'));
+    const form = $('#regression-rerun-form');
+    assert.equal(form.children.filter(item => ['seed','seed_mode','repeat'].includes(item.name)).length, 0);
+    form.children.find(item => item.name === 'reviewer').value = 'fixture-owner';
+    await form.onsubmit({target:form,preventDefault:() => {}});
+    assert.equal(posts, 0); // Confirmation is independently required.
+    form.children.find(item => item.name === 'confirm').checked = true;
+    const saving = form.onsubmit({target:form,preventDefault:() => {}});
+    assert.equal(posts, 1); assert.equal(form.querySelector('[type="submit"]').disabled, true);
+    await form.onsubmit({target:form,preventDefault:() => {}}); assert.equal(posts, 1);
+    postResolve(); await saving;
+    assert.equal(snapshots, 1); assert.equal($('#modal-backdrop').classList.contains('open'), false);
+    assert.equal(codeApprovalCompleted(node), false); assert.equal(planApprovalAvailable(node), false);
+    await renderDrawer(node.id, true);
+    assert.equal($('#main').querySelector('#regression-rerun').disabled, true);
+    assert.equal($('#main').querySelector('#node-plan-complete').disabled, true);
+    const historyButton = $('#main').querySelector('[data-regression-history-file]');
+    assert.equal(typeof historyButton.onclick, 'function'); await historyButton.onclick();
+    assert.ok($('#modal').innerHTML.includes('archived report')); assert.ok($('#modal').innerHTML.includes('只读报告'));
+    closeModal(true); historyMode = 'foreign'; await historyButton.onclick();
+    assert.equal($('#modal-backdrop').classList.contains('open'), false);
+    assert.ok($('#toast').textContent.includes('不一致'));
+    historyMode = 'missing'; await historyButton.onclick(); assert.ok($('#toast').textContent.includes('历史报告已缺失'));
+    // Interrupted CLI continuation cannot prove that the external job has ended.
+    node.plan_review.regression_execution.current.status = 'INTERRUPTED';
+    node.plan_review.regression_execution.can_rerun = true; // Reject even an inconsistent optimistic projection.
+    await renderDrawer(node.id, true);
+    assert.ok($('#main').innerHTML.includes('执行状态待核实，等待 Agent 核对工具任务'));
+    assert.equal($('#main').querySelector('#regression-rerun').disabled, true);
+    assert.equal($('#main').querySelector('#node-plan-complete').disabled, true);
+    assert.equal(codeApprovalCompleted(node), false); assert.equal(nodeProgressState(node).ratio, 0);
+    openRegressionRerunModal(node); assert.equal($('#modal-backdrop').classList.contains('open'), false);
+    assert.ok($('#toast').textContent.includes('执行状态待核实'));
+    node.plan_review.regression_execution.current.status = 'ACCEPTED'; openRegressionRerunModal(node);
+    const interruptedForm = $('#regression-rerun-form'); interruptedForm.children.find(item => item.name === 'confirm').checked = true;
+    node.plan_review.regression_execution.current.status = 'INTERRUPTED';
+    await interruptedForm.onsubmit({target:interruptedForm,preventDefault:() => {}});
+    assert.equal(posts, 1); assert.equal(interruptedForm.querySelector('[type="submit"]').disabled, true);
+    assert.ok(interruptedForm.querySelector('[data-submit-status]').textContent.includes('等待 Agent 核对工具任务'));
+    closeModal(true);
+    // An unknown POST outcome must not be retried. The refresh button only reads the persisted request.
+    node.plan_review.regression_execution.current = {...node.plan_review.regression_execution.current,status:'ACCEPTED'};
+    node.plan_review.regression_execution.can_rerun = true; responseMode = 'unknown';
+    openRegressionRerunModal(node);
+    const unknown = $('#regression-rerun-form'); unknown.children.find(item => item.name === 'confirm').checked = true;
+    await unknown.onsubmit({target:unknown,preventDefault:() => {}});
+    assert.equal(posts, 2); assert.equal(unknown.querySelector('[data-refresh-rerun]').hidden, false);
+    await unknown.onsubmit({target:unknown,preventDefault:() => {}}); assert.equal(posts, 2);
+    await unknown.querySelector('[data-refresh-rerun]').onclick(); assert.equal(posts, 2); assert.equal(snapshots, 2);
+    // Stale modal and a project switch cannot submit or adopt another project's result.
+    node.plan_review.regression_execution.current.status = 'ACCEPTED';
+    node.plan_review.regression_execution.can_rerun = true; openRegressionRerunModal(node);
+    const stale = $('#regression-rerun-form'); stale.children.find(item => item.name === 'confirm').checked = true;
+    $('#modal').dataset.stale = 'true'; await stale.onsubmit({target:stale,preventDefault:() => {}}); assert.equal(posts, 2);
+    closeModal(true); node.plan_review.regression_execution.current.status = 'ACCEPTED';
+    node.plan_review.regression_execution.can_rerun = true;
+    snapshotMode = 'foreign-plan'; openRegressionRerunModal(node);
+    const wrongPlan = $('#regression-rerun-form'); wrongPlan.children.find(item => item.name === 'confirm').checked = true;
+    await wrongPlan.onsubmit({target:wrongPlan,preventDefault:() => {}});
+    await wrongPlan.querySelector('[data-refresh-rerun]').onclick();
+    assert.equal(snapshots, 2); assert.ok(wrongPlan.querySelector('[data-submit-status]').textContent.includes('已批准方案'));
+    snapshotMode = 'foreign-project'; await wrongPlan.querySelector('[data-refresh-rerun]').onclick();
+    assert.equal(snapshots, 2); assert.ok(wrongPlan.querySelector('[data-submit-status]').textContent.includes('项目不一致'));
+    snapshotMode = 'ok'; await wrongPlan.querySelector('[data-refresh-rerun]').onclick(); assert.equal(snapshots, 3);
+    // Switching projects while a write is in flight cannot replace the selected project's state.
+    node.plan_review.regression_execution.current.status = 'ACCEPTED';
+    node.plan_review.regression_execution.can_rerun = true; responseMode = 'deferred'; openRegressionRerunModal(node);
+    const switching = $('#regression-rerun-form'); switching.children.find(item => item.name === 'confirm').checked = true;
+    const pending = switching.onsubmit({target:switching,preventDefault:() => {}});
+    state.project = 'foreign'; postResolve(); await pending; assert.equal(snapshots, 3);
+    closeModal(true); state.project = 'foreign'; historyMode = 'ok';
+    await showRegressionHistoryFile(node, {round_id:'old',path:'results/old.json',sha256:'old-sha'});
+    assert.equal($('#modal-backdrop').classList.contains('open'), false);
+  }
+  exercise();
+`, context).then(() => console.log('VREG rerun DOM clicks, confirmation, request/readback and history PASS')).catch(error => {console.error(error);process.exitCode=1;});
 """,
             text=True, capture_output=True, timeout=15,
         )

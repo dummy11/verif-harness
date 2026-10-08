@@ -85,7 +85,7 @@ class VcovDependencyTest(unittest.TestCase):
             self.store.claim_agent_work(action['id'], 'coverage-planner', 'CoverageEngineer',
                                         '修改方案', write_scope=plan['output_paths'])
 
-    def test_waiver_for_a_longer_item_id_does_not_approve_a_prefix(self):
+    def test_per_item_waive_does_not_replace_owner_provided_exclusion_file(self):
         self.fixture.finish_implementation()
         delivery = self.fixture.convergence()
         timestamp = now()
@@ -101,7 +101,9 @@ class VcovDependencyTest(unittest.TestCase):
         ]
         result = self.fixture.validate(delivery, items=items)
         self.assertFalse(result['ready'])
-        self.assertTrue(any('负责人例外批准记录' in reason for reason in result['blockers']))
+        self.assertTrue(any('尚未为当前收敛范围提供' in reason for reason in result['blockers']))
+        action = next(a for a in self.store.evaluate_closure('VCOV')['actions'] if a['target'] == delivery['id'])
+        self.assertEqual(action['kind'], 'PROVIDE_COVERAGE_EXCLUSIONS')
 
 
 if __name__ == '__main__':

@@ -134,6 +134,14 @@ This repository contains public, reusable verification infrastructure.
   `art.code_plan`；跨工作包和下游依赖验收后派生的 `cap.<workstream>`。不得用旧 capability 工作节点、方案批准或工具
   PASS 代替代码交付可用。相关输入变化使方案、交付及能力失效；仅输出代码或验证
   证据变化时保留未变化方案。新版本不得继承旧批准或旧证据。
+- 完整 testcase 必须由 testcase 或可执行 virtual sequence 入口与 testbench 自己维护的
+  submit profile 共同确定。submit profile 所在文件是 testbench 配置事实源，包含编译、
+  仿真和提交所需的工程配置；verif-harness 只保存项目内路径、profile ID、源文件摘要和
+  profile 摘要，不复制、不拼装也不执行 VCS、LSF、license 或站点 wrapper 配置。同一组
+  case 绑定不同 submit profile 时必须形成不同的回归 batch 和 caselist；相同 case 可以
+  出现在不同 batch，结果按 batch、case、seed 和 iteration 联合标识。testbench 生成的
+  CaseManifest、RegressionBatchManifest 和 caselist 是节点内部受控产物，不增加公开工作
+  节点或审批入口；任一引用、摘要或内容变化都必须按依赖范围触发重新验证。
 - VCOV 直接使用覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付四种
   公开节点类型，不增加工作包层级。方案角色分别为 `coverage-implementation-plan` 和
   `coverage-convergence-plan`；批准后建立对应 `-deliverable` 交付节点。
@@ -142,6 +150,11 @@ This repository contains public, reusable verification infrastructure.
   与 `hole-analysis-evidence`，依赖当前有效的环境、激励、检查、用例、回归执行器
   `cap.vreg:executor-ready` 和明确关联的覆盖率实现能力。清单必须对应已批准范围、
   当前计划输入和模型输出；全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
+  收敛结果包含 excluded 项时，exclude 文件由负责人提供；提供动作本身表示负责人已经批准
+  文件中的排除范围，不再逐项建立 WAIVE 审批。Agent 只检查该文件是否合法、是否绑定当前
+  revision 和收敛节点、缺口分析是否引用同一路径与摘要，以及所有 excluded 项是否引用这一个
+  文件级审批记录。文件被替换、内容变化或节点范围变化后必须重新验证，最后仍由负责人验收
+  覆盖率收敛交付结果。
   `implementation_key` 仅为内部关联；派生的产物和能力不增加公开节点或审批。
 - VREG 直接使用回归基础设施方案、回归基础设施交付、回归结果方案、回归结果交付四种
   公开节点类型，不增加工作包层级。方案角色分别为 `regression-infrastructure-plan` 和
@@ -157,6 +170,24 @@ This repository contains public, reusable verification infrastructure.
   不增加公开能力节点、审批或进度。
   未覆盖项和未关闭回归失败必须记录责任工作流及下一步动作；Main Agent 分析后登记
   上游重规划/重验证要求，不得由 finding 自动修改、批准或关闭上游节点。
+- VREG 的每个回归结果方案只对应一个回归 group：case 集合与一个 testbench submit
+  profile。当前方案内不得重复登记同一 group 或同一 case 集合/profile 绑定；批准后
+  建立一个对应结果交付。`regression_config` 将 case 版本、profile 引用、seed 模式和
+  repeat 纳入方案批准：随机模式每次执行保存一个新的实际 seed；指定模式各次使用同一
+  seed；repeat 是每个 case 的计划总次数，正整数，默认 1。改变范围、profile、seed
+  模式/指定值或 repeat 需要重新审批；按批准随机策略生成实际 seed 不属于方案修改。
+  保存 seed、重跑和复现由现有回归/仿真脚本实现，控制面不另建执行器或拼装站点配置。
+- “按已批准方案重新回归”只出现在回归结果交付节点，与结果验收分开；负责人再次确认
+  后登记绑定当前节点、版本、方案摘要和幂等标识的新执行轮次。方案/依赖失效、有阻塞或
+  同组仍有在途执行时禁止启动。不得复用工作流重启、增加公开 batch/seed 节点或复制
+  方案批准。新轮次开始前撤销旧结果作为当前交付的验证、验收和能力，保留未变化方案、
+  基础设施和历史文件/记录；新轮次仍需验证和负责人验收。保存请求、Agent 接续和实际
+  回归执行必须分别说明。失败原 seed 重跑属于失败分析，不计入计划 repeat。
+  已派发、已登记工具调用或中断后状态待核对的旧任务，不能通过重新审批、重新规划或
+  工作流重启绕过；原轮次配置必须不可变保存。失效方案下的原任务结束事实只能解除
+  未知状态，不能生成可验收交付、有效能力或新执行授权；原配置缺失时保持阻塞。
+  `RegressionBatchManifest/2` 与 `RegressionEvidence/3` 绑定当前批准方案和执行轮次；
+  旧批次/旧轮次证据不能自动迁移为当前 `RegressionResults/4` 验收依据。
 - 六类验证工作流页面均参照 VDOC，仅提供当前项目状态、工作节点列表及添加、删除、重启入口。
   添加和删除仅记录下一版方案要求；重启需要再次确认，保存新旧版本和操作人、原因，
   不删除文件、证据和审批历史。详情和列表共用节点审批，批准说明选填，意见批次未

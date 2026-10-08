@@ -225,6 +225,21 @@ class V1ControlPlaneTest(unittest.TestCase):
     def materialize_evidence_example(self, filename: str) -> Path:
         source = ROOT / "skills/verif-harness/evidence" / filename
         payload = json.loads(source.read_text(encoding="utf-8"))
+        if payload["schema"] == "RegressionEvidence/3":
+            # This suite deliberately exercises persisted non-code-model VREG
+            # history. Modern execution rounds belong to test_vreg_workflow;
+            # adapting a public example here must not relax production gates.
+            payload["schema"] = "RegressionEvidence/2"
+            result = payload["result"]
+            result.pop("execution_binding", None)
+            if payload["claim"] == "execution-evidence":
+                run = dict(result["results"][0])
+                run["iteration"] = 0
+                run.pop("rerun_kind", None)
+                result["results"] = [run]
+            for failure in result.get("failures", []):
+                failure.pop("rerun_kind", None)
+                failure.pop("execution_binding", None)
         digest_replacements: dict[str, str] = {}
         for index, artifact in enumerate(payload["artifacts"]):
             path = self.root / artifact["path"]
@@ -247,6 +262,36 @@ class V1ControlPlaneTest(unittest.TestCase):
                 return [bind_artifacts(item) for item in value]
             return digest_replacements.get(value, value)
 
+        if payload["schema"] == "RegressionEvidence/2" and payload["claim"] == "execution-evidence":
+            result = payload["result"]
+            run = result["results"][0]
+            batch_artifact = next(item for item in payload["artifacts"]
+                                  if item["path"].endswith(".manifest.json"))
+            caselist_artifact = next(item for item in payload["artifacts"]
+                                     if item["path"].endswith(".caselist"))
+            submit_artifact = next(item for item in payload["artifacts"]
+                                   if item["kind"] == "configuration")
+            old_batch_digest = result["batch_manifest_digests"][0]
+            batch = {
+                "schema": "RegressionBatchManifest/1", "batch_id": run["batch_id"],
+                "regression_group": "nightly",
+                "submit_profile": {
+                    "schema": "SubmitProfileRef/1", "profile_id": run["submit_profile_id"],
+                    "submit_file": submit_artifact["path"],
+                    "submit_file_digest": submit_artifact["sha256"],
+                    "profile_digest": run["submit_profile_digest"],
+                    "adapter": {"name": "fixture-submit-export", "version": "1"},
+                },
+                "caselist": {"path": caselist_artifact["path"],
+                             "sha256": caselist_artifact["sha256"]},
+                "seed": run["seed"], "repeat": 1, "timeout_seconds": 60,
+                "cases": [{"case_id": run["case_id"],
+                           "case_digest": digest_replacements.get(run["case_digest"], run["case_digest"])}],
+            }
+            batch_path = self.root / batch_artifact["path"]
+            batch_path.write_text(json.dumps(batch) + "\n", encoding="utf-8")
+            batch_artifact["sha256"] = hashlib.sha256(batch_path.read_bytes()).hexdigest()
+            digest_replacements[old_batch_digest] = batch_artifact["sha256"]
         payload["result"] = bind_artifacts(payload["result"])
         self.attach_coverage_manifest(payload, filename)
         target = self.root / filename
@@ -1885,6 +1930,24 @@ class V1ControlPlaneTest(unittest.TestCase):
             recorded = self.run_cli("evidence", desired, filename, "--claim", claim)
             self.assertEqual(recorded["verdict"], "PASS", (workstream, recorded))
             self.assertTrue(recorded["validation"]["ready"])
+
+    def test_regression_example_fixture_explicitly_keeps_historical_batch_contract(self) -> None:
+        report = self.materialize_evidence_example("regression-evidence.example.json")
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema"], "RegressionEvidence/2")
+        self.assertNotIn("execution_binding", payload["result"])
+        self.assertEqual(len(payload["result"]["results"]), 1)
+        run = payload["result"]["results"][0]
+        self.assertEqual(run["iteration"], 0)
+        self.assertNotIn("rerun_kind", run)
+        artifact = next(item for item in payload["artifacts"]
+                        if item["sha256"] == payload["result"]["batch_manifest_digests"][0])
+        manifest = json.loads((self.root / artifact["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema"], "RegressionBatchManifest/1")
+        self.assertEqual(manifest["repeat"], 1)
+        self.assertEqual(manifest["seed"], run["seed"])
+        self.assertEqual([case["case_id"] for case in manifest["cases"]], [run["case_id"]])
+        self.assertNotIn("execution_binding", manifest)
 
     def test_standard_node_claim_cannot_be_overridden(self) -> None:
         self.bootstrap()

@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
 
 
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def safe_identifier(value: str, label: str) -> str:
@@ -43,6 +45,62 @@ def insert_include(text: str, filename: str) -> str:
         raise SystemExit("ERROR: package must contain exactly one endpackage line")
     pos = matches[0].start()
     return text[:pos].rstrip() + "\n" + directive + "\n" + text[pos:]
+
+
+def file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_digest(value: object) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def project_path(root: Path, value: str, label: str) -> Path:
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise SystemExit(f"ERROR: {label} must be a project-relative path")
+    target = (root / relative).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: {label} must stay under project root") from exc
+    return target
+
+
+def load_submit_profile_ref(root: Path, path: Path) -> dict:
+    source = path if path.is_absolute() else root / path
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"ERROR: cannot read SubmitProfileRef: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("schema") != "SubmitProfileRef/1":
+        raise SystemExit("ERROR: submit profile ref schema must be SubmitProfileRef/1")
+    profile_id = payload.get("profile_id")
+    if not isinstance(profile_id, str) or not re.fullmatch(r"[A-Za-z0-9_.:-]+", profile_id):
+        raise SystemExit("ERROR: submit profile ref profile_id is invalid")
+    submit_file = payload.get("submit_file")
+    if not isinstance(submit_file, str) or not submit_file.strip():
+        raise SystemExit("ERROR: submit profile ref submit_file is invalid")
+    submit_path = project_path(root, submit_file, "submit_file")
+    if not submit_path.is_file():
+        raise SystemExit(f"ERROR: submit_file does not exist: {submit_file}")
+    source_digest = payload.get("submit_file_digest")
+    if not isinstance(source_digest, str) or not SHA256.fullmatch(source_digest):
+        raise SystemExit("ERROR: submit_file_digest must be lowercase SHA-256")
+    if file_digest(submit_path) != source_digest:
+        raise SystemExit("ERROR: submit_file_digest does not match current submit file")
+    profile_digest = payload.get("profile_digest")
+    if not isinstance(profile_digest, str) or not SHA256.fullmatch(profile_digest):
+        raise SystemExit("ERROR: profile_digest must be lowercase SHA-256")
+    adapter = payload.get("adapter")
+    if (not isinstance(adapter, dict) or
+            not isinstance(adapter.get("name"), str) or not adapter["name"].strip() or
+            not isinstance(adapter.get("version"), str) or not adapter["version"].strip()):
+        raise SystemExit("ERROR: submit profile ref adapter name/version are required")
+    return payload
 
 
 def test_source(test_name: str, base_test: str, vseq_name: str) -> str:
@@ -88,7 +146,9 @@ def main() -> int:
     parser.add_argument("--vseq-name")
     parser.add_argument("--base-test", required=True)
     parser.add_argument("--base-vseq", required=True)
-    parser.add_argument("--candidate-caselist", type=Path)
+    parser.add_argument("--submit-profile-ref", type=Path, required=True)
+    parser.add_argument("--entry-kind", choices=("testcase", "sequence"), default="testcase")
+    parser.add_argument("--case-manifest-out", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -111,26 +171,24 @@ def main() -> int:
     env_pkg = unique_package(verif_root / "testbench" / "env", "_env_pkg.sv")
     test_path = test_dir / f"{test_name}.svh"
     vseq_path = vseq_dir / f"{vseq_name}.svh"
-    for path in (test_path, vseq_path):
+    submit_profile = load_submit_profile_ref(root, args.submit_profile_ref)
+    safe_profile = re.sub(r"[^A-Za-z0-9_.-]+", "-", submit_profile["profile_id"])
+    manifest_path = args.case_manifest_out
+    if manifest_path is None:
+        manifest_path = verif_root / "regress" / "cases" / f"{test_name}--{safe_profile}.case.json"
+    elif not manifest_path.is_absolute():
+        manifest_path = root / manifest_path
+    manifest_path = manifest_path.resolve()
+    try:
+        manifest_path.relative_to(root)
+    except ValueError as exc:
+        raise SystemExit("ERROR: case manifest must stay under project root") from exc
+    for path in (test_path, vseq_path, manifest_path):
         if path.exists():
             raise SystemExit(f"ERROR: refusing to overwrite: {path}")
     new_test_pkg = insert_include(test_pkg.read_text(encoding="utf-8"), test_path.name)
     new_env_pkg = insert_include(env_pkg.read_text(encoding="utf-8"), f"vseq/{vseq_path.name}")
-    caselist = args.candidate_caselist
-    if caselist and not caselist.is_absolute():
-        caselist = root / caselist
-    if caselist and caselist.is_file():
-        entries = {
-            line.split("#", 1)[0].strip().split()[0]
-            for line in caselist.read_text(encoding="utf-8").splitlines()
-            if line.split("#", 1)[0].strip()
-        }
-        if test_name in entries:
-            raise SystemExit(f"ERROR: testcase already in candidate caselist: {test_name}")
-
-    actions = [str(test_path), str(vseq_path), str(test_pkg), str(env_pkg)]
-    if caselist:
-        actions.append(str(caselist))
+    actions = [str(test_path), str(vseq_path), str(test_pkg), str(env_pkg), str(manifest_path)]
     if args.dry_run:
         print(json.dumps({"dry_run": True, "would_update": actions}, indent=2))
         return 0
@@ -141,13 +199,25 @@ def main() -> int:
     vseq_path.write_text(vseq_source(vseq_name, base_vseq), encoding="utf-8")
     test_pkg.write_text(new_test_pkg, encoding="utf-8")
     env_pkg.write_text(new_env_pkg, encoding="utf-8")
-    if caselist:
-        caselist.parent.mkdir(parents=True, exist_ok=True)
-        prefix = caselist.read_text(encoding="utf-8") if caselist.exists() else ""
-        separator = "\n" if prefix.strip() else ""
-        caselist.write_text(prefix.rstrip() + separator + f"{test_name}\n", encoding="utf-8")
-    print(json.dumps({"created": [str(test_path), str(vseq_path)],
-                      "registered": actions[2:]}, indent=2))
+    source_paths = (test_path, vseq_path, test_pkg, env_pkg)
+    manifest = {
+        "schema": "CaseManifest/1",
+        "case_id": test_name,
+        "entry": ({"kind": "testcase", "name": test_name}
+                  if args.entry_kind == "testcase" else
+                  {"kind": "sequence", "name": vseq_name, "launcher_test": test_name}),
+        "source_files": [
+            {"path": str(path.relative_to(root)), "sha256": file_digest(path)}
+            for path in source_paths
+        ],
+        "submit_profile": submit_profile,
+    }
+    manifest["case_digest"] = canonical_digest(manifest)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"created": [str(test_path), str(vseq_path), str(manifest_path)],
+                      "registered": [str(test_pkg), str(env_pkg)],
+                      "submit_profile_id": submit_profile["profile_id"]}, indent=2))
     return 0
 
 

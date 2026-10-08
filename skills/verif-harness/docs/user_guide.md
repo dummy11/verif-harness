@@ -556,11 +556,41 @@ verif-harness review VCHK
 | `VCHK` | 比较规则和预期行为 | reference model、scoreboard、assertion，以及实际比较/触发/失败统计 | mismatch 无法判断来自 DUT、检查器还是规格 |
 | `VCOV` | 验证点、用例和检查器之间的对应关系 | coverage model、覆盖率数据库导出结果、未覆盖项及处理结果 | 缺少对应激励、用例或检查器 |
 | `VCASE` | 验证点和场景 | testcase/virtual sequence、每个用例的定向仿真结果 | 用例无法稳定复现问题或没有证明目标场景 |
-| `VREG` | 可运行的用例和工具配置 | 批量运行结果、失败重跑和分析、证据版本检查 | RTL/TB 变化，或失败还没有逐项处理 |
+| `VREG` | 已验收基础设施、case 集合及一个 submit profile | 每组结果方案与交付、批量结果、失败分析和当前轮次证据 | case/profile/运行参数变化，或结果尚未收敛 |
 
 表中的 RTL 验证英文词可在[RTL 验证常用词](glossary.md#dv-terms)中逐项查看。
 
-除 VDOC 外，标准模板将节点分为两类：
+#### 当前 VREG：方案、交付与重新回归
+
+VREG 直接使用四种公开节点：回归基础设施方案、基础设施交付、回归结果方案、结果交付，
+不增加工作包。每个 regression group（case 集合＋一个 testbench submit profile）
+对应一个结果方案，方案批准后建立对应结果交付；多个 group 可共享已验收基础设施。
+执行批次、seed、repeat 和失败分析是节点内部记录，不单独建公开节点。
+
+结果方案批准运行参数：随机 seed 模式每次生成并保存新 seed；指定 seed 模式每次使用
+同一个批准值。repeat 为每个 case 的计划总次数，正整数，默认 1。
+保存 seed、失败重跑和复现由已有回归脚本负责。改变 case、profile、seed 模式/指定值
+或 repeat 必须重新审批；按批准随机策略生成实际 seed 不算方案变化。
+
+结果交付节点提供独立的“按已批准方案重新回归”，不与“验收结果”合并。
+负责人再次确认后登记新内部轮次，不重启工作流，也不增加节点。旧报告、日志和审批历史
+保留，但旧验证和验收不能用于新轮次；新结果仍要验证和验收。请求保存或 Agent 接单
+不表示仿真已经启动。外部任务尚在途或中断后状态不明时，禁止重复启动。
+失败同 seed 重跑是失败分析，保留原 iteration，不增加计划 repeat，也不覆盖首次失败。
+
+CLI 对应操作：
+
+```text
+verif-harness code rerun NODE --revision N --definition-digest DIGEST --reviewer NAME --request-key KEY --confirm
+verif-harness code execution-start NODE --binding BINDING_JSON
+```
+
+前者登记负责人确认的请求；后者的 `BINDING_JSON` 是当前轮次返回的 JSON 绑定对象，
+由 Main Agent 在调用已有工具时登记同轮次执行状态；
+都不直接执行 EDA 或生成完成证据。详情见 [VREG](../vplan/vreg.md)。
+
+以下 `capability`、`closure-evidence` 分类是历史标准模板的内部证明分类，
+不是当前 VREG 的公开节点类型：
 
 - [`capability`](glossary.md#node-role)：证明接口定义、实现或执行工具已经准备好；
 - [`closure-evidence`](glossary.md#node-role)：证明这些能力在当前项目版本中实际运行并达到目标。
@@ -663,9 +693,9 @@ VENV 已证明的最小运行能力，因此不会形成相互等待。完整节
 | `VENV` | 确认接口接入、clock/reset、组件职责、配置传递和观测边界；决定最小 smoke 范围 | 只读分析 DUT；实现 interface、harness、agent/env 结构、构建和最小运行入口；运行 compile/elaboration 和 reset/idle smoke | 只在相关 VDOC 与前置节点满足时建议对应实现或运行动作；保存动作指向的目标节点 | 开始需要相关 VDOC；内部按 interface/clock-reset/topology → build → run/observation → smoke 推进，不等待完整 VSTIM/VCHK/VCOV/VCASE/VREG |
 | `VSTIM` | 确认 transaction 字段、握手、合法/非法输入、边界、并发和反压场景 | 实现 driver、sequence、constraint 和场景生成组件；运行场景探针和同 seed 复跑 | 根据 VENV 当前状态判断实现、探针运行或复跑动作是否已解锁 | 设计可与 VENV 并行；实现依赖 VENV interface/topology/build；可达性证据等待 VENV smoke/observation 和 VREG executor |
 | `VCHK` | 确认数值容差、时序对齐、顺序、异常、reset/flush 及 mismatch 处理原则 | 实现 reference-model adapter、scoreboard/checker 和 assertion；运行包含目标场景的比较和断言 | 根据 VENV 与 VSTIM 当前状态列出可以开展的实现或运行动作 | compare policy 可较早完成；实现等待 VENV build；运行证据等待 VSTIM reachability 和 VENV smoke |
-| `VCOV` | 确认 coverage goal、采样条件、bin/cross、不可达判断和豁免理由 | 实现 coverage model 和导出程序；采集/合并覆盖率数据库；分析 hole，必要时返回 VSTIM/VCASE 补场景 | 根据依赖图指出当前可以实现、采集还是分析，不判断覆盖率内容是否合理 | coverage model 可较早完成；收集等待 VENV build 和 VREG executor；正式 hole 分析使用 VSTIM reachability、VCASE targeted evidence 和 VENV smoke |
-| `VCASE` | 确认 testcase 范围、优先级、场景组合和每个验证点需要的检查方式 | 建立 feature/scenario 到 testcase 的矩阵；实现 testcase/virtual sequence；注册并运行定向测试 | 根据 VENV、VSTIM、VCHK 状态列出当前可执行的用例实现或定向运行 | 矩阵可较早完成；实现等待 VSTIM implementation、VENV build 和 VREG executor；运行证据等待 VSTIM reachability、VCHK scoreboard 和 VENV smoke |
-| `VREG` | 确认 smoke/nightly/full 集合、seed、timeout、重跑、known-fail 和正式回归标准 | 建立运行清单、runner、collector 和失败重跑；执行批量回归；对每个失败做 same-seed 重跑和分类 | 根据 VENV 运行入口及其他工作域状态决定 runner 自检、批量执行或失败分析何时可开始 | policy 可较早完成；executor 等待 VENV run-ready；完整 execution/triage/fresh evidence 位于其他工作域运行证据之后 |
+| `VCOV` | 确认 coverage goal、采样条件、bin/cross 和不可达判断；存在排除项时提供已审批的 exclude 文件；最后验收收敛结果 | 实现 coverage model 和导出程序；采集/合并覆盖率数据库；检查 exclude 文件合法性并分析 hole，必要时返回 VSTIM/VCASE 补场景 | 根据依赖图指出当前可以实现、采集还是分析；绑定 exclude 文件版本，但不重新批准文件中的排除范围 | coverage model 可较早完成；收集等待 VENV build 和 VREG executor；正式 hole 分析使用 VSTIM reachability、VCASE targeted evidence 和 VENV smoke |
+| `VCASE` | 确认 testcase 范围、优先级、场景组合、对应 submit profile 和每个验证点需要的检查方式 | 建立 feature/scenario 到 testcase 的矩阵；用 `CaseManifest/1` 把 testcase/virtual sequence 与 testbench submit profile 绑定；注册并运行定向测试 | 核对 case、profile 和定向运行摘要；不解析或执行 testbench 的站点 submit 配置 | 矩阵可较早完成；实现等待 VSTIM implementation、VENV build 和 VREG executor；运行证据等待 VSTIM reachability、VCHK scoreboard 和 VENV smoke |
+| `VREG` | 确认 smoke/nightly/full 集合、submit profile、seed、timeout、重跑、known-fail 和正式回归标准 | 由 testbench submit 工具按 group/profile 生成 batch manifest 和 caselist；执行批量回归；对每个失败做 same-seed 重跑和分类 | 按 batch/case/seed/iteration 核对执行与分类；不生成 VCS/LSF/license 配置 | policy 可较早完成；executor 等待 VENV run-ready；完整 execution/triage/fresh evidence 位于其他工作域运行证据之后 |
 
 #### 实际并行节拍
 
@@ -874,7 +904,7 @@ JSON，检查格式版本、请求 SHA-256、操作、工具身份、`state=PASS
 | `VCHK` | 比较规则（`compare-policy`）、参考模型（`reference-model`）、计分板（`scoreboard`）、断言（`assertions`） | 参考模型、计分板和断言在真实仿真中实际参与工作且没有失败 | 实现源码和构建日志；运行节点必须有 xverif 仿真日志、WavePeek 波形或 xverif 事务轨迹，以及保存的分析结果 |
 | `VCOV` | 覆盖率模型（`coverage-model`）、覆盖率收集工具（`coverage-collection`） | 覆盖数据成功收集（`coverage-collection-evidence`）、每个未覆盖项都有处理结果（`hole-analysis-evidence`） | VDB/UCDB 等覆盖率数据库和 xverif 结构化分析报告，二者都必须登记 |
 | `VCASE` | 用例与验证点对应表（`case-matrix`）、用例实现（`case-implementation`） | 每个已实现用例的定向运行结果（`targeted-evidence`） | 源码和构建日志；定向运行必须有 xverif 仿真日志、WavePeek 波形或 xverif 事务轨迹，以及保存的分析结果 |
-| `VREG` | 回归运行规则（`regression-policy`）、运行和收集工具已可用（`executor-ready`） | 批量执行结果（`execution-evidence`）、每个失败的分析结果（`triage-evidence`）、全部必需证据都对应当前项目版本（`fresh-evidence`） | xverif 检查的运行清单、批量仿真日志、重跑日志和结构化分析报告 |
+| `VREG` | 基础设施交付证明的回归规则及运行/收集工具 | 结果交付中的批量执行、逐项失败分析和当前版本/轮次证据；不是额外公开节点 | testbench 提供的批次清单、xverif 检查的日志和结构化报告 |
 
 各工作域的自动[退出条件](glossary.md#desired-current)如下。这里的“退出”是进入
 `SATISFIED`，不是最终[签核（sign-off）](glossary.md#baseline)：
@@ -905,17 +935,20 @@ JSON，检查格式版本、请求 SHA-256、操作、工具身份、`state=PASS
   `mapped_items == planned_items >= 1`。
 - **VCOV 运行证明完成**：至少登记一个覆盖率数据库 ID 和一次运行；数据库合并没有错误，
   也没有来自旧项目版本或旧配置的数据；每个计划项要么 `covered` 且 `hits > 0`，要么
-  `excluded` 且有 Human 已明确同意的完整豁免记录；
+  `excluded` 且引用负责人为当前收敛节点提供的同一份 exclude 文件审批记录；该文件必须以
+  当前路径和 SHA-256 出现在 xverif 的缺口分析输入中。提供文件即表示其中范围已经人工审批，
+  Agent validation 只检查合法性和一致性，不再逐项建立 WAIVE；
   不允许保留 `uncovered` 项。
-- **VCASE 能力准备完成**：每个必需验证点至少对应一个 testcase；表中的每个 case 都只有一个
-  实现，已登记源码 SHA-256，并且已经注册和编译。
+- **VCASE 能力准备完成**：每个必需验证点至少对应一个 testcase；每个完整 case
+  都由 testcase 或可执行 virtual sequence 与 submit profile 组成，已登记当前源码、
+  submit file 和 profile 摘要，并且已经注册、编译和定向执行。
 - **VCASE 运行证明完成**：每个当前已实现 case 都有至少一次定向 `PASS`，报告记录 case、seed
   和日志 SHA-256，
   且 `uvm_error=0`、`uvm_fatal=0`。
 - **VREG 能力准备完成**：回归规则、运行清单、runner 和 collector 的 SHA-256 已登记；seed、
   timeout 和 rerun 规则非空；运行和收集工具的自检通过。
 - **VREG 执行和[失败分析](glossary.md#triage)完成**：批量执行报告保存 `PASS`、`FAIL`、
-  `ERROR`、`TIMEOUT` 原始结果；`PASS-LIVE` 只能用于非黄金回归。每个失败的 `(test, seed)`
+  `ERROR`、`TIMEOUT` 原始结果；`PASS-LIVE` 只能用于非黄金回归。每个失败的 `(batch, case, seed, iteration)`
   必须恰好有一条使用相同 seed 的分析记录，包含失败类别、重跑结果、重跑日志 SHA-256 和处理结果；
   `accepted-known-fail` 必须引用 SQLite 中真实的 Human `WAIVE` 评审记录。
 - **VREG 当前版本证据**：报告只提供与当前项目版本相同的 `snapshot_revision`；Engine 根据
@@ -1684,7 +1717,7 @@ Dashboard 用于阅读、提意见和登记结论；工程语义仍保存在 Mar
 | VCHK | 一个检查目标、结果检查模块、参考结果路径或断言组，以及实际启用情况 |
 | VCOV | 一个可判断是否完成的覆盖目标或覆盖范围，以及命中、排除和数据版本 |
 | VCASE | 一组功能与用例的对应关系，或一个具体测试用例及定向运行结果 |
-| VREG | 一份回归配置、一个回归批次或一组同类失败及其处理状态 |
+| VREG | 一份基础设施方案/交付，或一个 group 的结果方案/交付；batch、seed、repeat、失败分析和轮次不单独建节点 |
 
 原始日志、波形、覆盖率数据库和单笔事务继续作为节点证据，不作为工作节点。
 
@@ -1982,7 +2015,7 @@ verif-harness evidence SUBJECT SOURCE [--claim CLAIM]
 在规划时已经由 `--evidence-claim` 固定，不能在登记时换成较弱 claim。命令分别校验
 `EnvironmentEvidence/1`、`StimulusCapabilityEvidence/1`、`StimulusReachabilityEvidence/1`、
 `CheckingEvidence/1`、`CoverageEvidence/1`、
-`TestcaseEvidence/1` 或 `RegressionEvidence/1`，然后从内容推导 verdict。VDOC 不接受该
+`TestcaseEvidence/2` 或 `RegressionEvidence/3`（历史版本仍可读，但不能替代当前结果合同），然后从内容推导 verdict。VDOC 不接受该
 入口，工程正文使用 `docs review`。
 
 每个 claim 要提供哪些字段、原始数据来自哪里、什么条件下可以退出，统一见前面的

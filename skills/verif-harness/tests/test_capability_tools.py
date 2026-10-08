@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,7 @@ def config() -> dict:
 
 
 class Stage2PlusToolsTest(unittest.TestCase):
-    def test_add_testcase_registers_candidate_but_not_default(self) -> None:
+    def test_add_testcase_emits_profile_bound_manifest_without_editing_caselist(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / ".harness-config.json").write_text(json.dumps(config()), encoding="utf-8")
@@ -54,17 +55,33 @@ class Stage2PlusToolsTest(unittest.TestCase):
             default = root / "sim/docs/caselist/default_regression.caselist"
             default.parent.mkdir(parents=True)
             default.write_text("smoke_test\n", encoding="utf-8")
-            candidate = root / "sim/docs/caselist/candidate.caselist"
+            submit_file = root / "sim/regress/submit.json"
+            submit_file.parent.mkdir(parents=True)
+            submit_file.write_text('{"profiles":{"local":{}}}\n', encoding="utf-8")
+            submit_ref = root / "sim/regress/submit-profile-ref.json"
+            submit_ref.write_text(json.dumps({
+                "schema": "SubmitProfileRef/1",
+                "profile_id": "local",
+                "submit_file": "sim/regress/submit.json",
+                "submit_file_digest": hashlib.sha256(submit_file.read_bytes()).hexdigest(),
+                "profile_digest": "a" * 64,
+                "adapter": {"name": "demo-submit-export", "version": "1"},
+            }), encoding="utf-8")
             result = run(
                 ADD_TEST, "--project-root", root, "--test-name", "feature_test",
                 "--base-test", "demo_base_test", "--base-vseq", "demo_base_vseq",
-                "--candidate-caselist", candidate,
+                "--submit-profile-ref", submit_ref,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((test_dir / "feature_test.svh").is_file())
             self.assertTrue((env_dir / "vseq/feature_vseq.svh").is_file())
-            self.assertEqual(candidate.read_text(encoding="utf-8"), "feature_test\n")
             self.assertEqual(default.read_text(encoding="utf-8"), "smoke_test\n")
+            manifest_path = root / "sim/regress/cases/feature_test--local.case.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema"], "CaseManifest/1")
+            self.assertEqual(manifest["submit_profile"]["profile_id"], "local")
+            self.assertEqual(manifest["entry"], {"kind": "testcase", "name": "feature_test"})
+            self.assertEqual(len(manifest["case_digest"]), 64)
             self.assertIn('`include "feature_test.svh"', (test_dir / "demo_test_pkg.sv").read_text())
             self.assertIn('`include "vseq/feature_vseq.svh"', (env_dir / "demo_env_pkg.sv").read_text())
 

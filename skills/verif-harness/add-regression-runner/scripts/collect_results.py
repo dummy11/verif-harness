@@ -28,6 +28,9 @@ class Result:
     mismatch_lanes: int | None
     residual_beats: int | None
     log: str
+    iteration: int = 0
+    returncode: int | None = None
+    timed_out: bool = False
 
 
 def atomic_write(path: Path, text: str) -> None:
@@ -74,6 +77,8 @@ def scrape(test: str, log: Path, banner_re: re.Pattern[str], require_golden: boo
                 verdict = "FAIL"
         else:
             verdict = "NO-COMPARE" if require_golden else "PASS-LIVE"
+        if banners[-1].group(1) != test or (counts and any(int(counts.group(i)) for i in (1, 2))):
+            verdict = "FAIL"
     return Result(
         test=test,
         verdict=verdict,
@@ -94,12 +99,13 @@ def markdown(results: list[Result], seed: str, require_golden: bool) -> str:
         f"- Seed: `{seed}`",
         f"- Golden required: `{int(require_golden)}`",
         "",
-        "| Test | Verdict | Seed | UVM_ERROR | UVM_FATAL | Golden | Mismatch | Residual |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| Test | Verdict | Seed | UVM_ERROR | UVM_FATAL | Golden | Mismatch | Residual | Iteration | Returncode | Timeout |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for item in results:
         values = [item.test, item.verdict, item.seed, item.uvm_error, item.uvm_fatal,
-                  int(item.golden_engaged), item.mismatch_lanes, item.residual_beats]
+                  int(item.golden_engaged), item.mismatch_lanes, item.residual_beats,
+                  item.iteration, item.returncode, int(item.timed_out)]
         lines.append("| " + " | ".join("-" if value is None else str(value) for value in values) + " |")
     passing = sum(item.verdict in ({"PASS"} if require_golden else {"PASS", "PASS-LIVE"}) for item in results)
     lines.extend(["", f"Result: **{passing}/{len(results)} acceptable**.", ""])
@@ -123,16 +129,72 @@ def main() -> int:
         banner_re = re.compile(args.result_regex)
     else:
         banner_re = re.compile(rf"{re.escape(args.result_prefix)}\s+(\S+)\s*:\s*(PASSED|FAILED)")
-    results = [scrape(test, args.runs_dir / test / args.logname, banner_re, args.require_golden) for test in tests]
+    run_manifest_path = args.runs_dir / "run_manifest.json"
+    if not tests and not run_manifest_path.is_file():
+        raise SystemExit("ERROR: empty caselist is allowed only for a resolved failure-rerun manifest")
+    run_manifest = None
+    failed_runs = []
+    if run_manifest_path.is_file():
+        # Validate paths and resolved seeds using the same portable infrastructure
+        # helper, not a second control-plane interpretation of submit settings.
+        from run_regression import replay_runs
+        run_manifest, planned = replay_runs(run_manifest_path, tests)
+        results = []
+        batch_path = args.runs_dir / "batch.json"
+        observed = {}
+        if batch_path.is_file():
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+            for execution in batch.get("results", []):
+                key = (execution.get("test"), execution.get("iteration"))
+                if key in observed:
+                    raise SystemExit("ERROR: batch receipt contains duplicate runs")
+                observed[key] = execution
+        original_by_key = {(row["test"], row["iteration"]): row for row in run_manifest["runs"]}
+        for row in planned:
+            original = original_by_key[(row["test"], row["iteration"])]
+            subdir = Path(original["run_subdir"])
+            if subdir.is_absolute() or ".." in subdir.parts:
+                raise SystemExit("ERROR: run manifest references an unsafe run directory")
+            item = scrape(row["test"], args.runs_dir / subdir / args.logname, banner_re, args.require_golden)
+            item.iteration = row["iteration"]
+            execution = observed.get((row["test"], row["iteration"]))
+            if execution is None:
+                item.verdict = "CRASH" if item.verdict != "NOLOG" else "NOLOG"
+            else:
+                item.returncode = execution.get("returncode")
+                item.timed_out = execution.get("timed_out", False)
+                if (isinstance(item.returncode, bool) or not isinstance(item.returncode, int)
+                        or not isinstance(item.timed_out, bool) or execution.get("seed") != row["seed"]
+                        or item.returncode != 0 or item.timed_out):
+                    item.verdict = "FAIL"
+            if item.seed is not None and item.seed != row["seed"]:
+                item.verdict = "FAIL"
+            item.seed = row["seed"]
+            results.append(item)
+            acceptable = {"PASS"} if args.require_golden else {"PASS", "PASS-LIVE"}
+            if item.verdict not in acceptable:
+                failed_runs.append(row)
+        if set(observed) - {(row["test"], row["iteration"]) for row in planned}:
+            raise SystemExit("ERROR: batch receipt contains execution outside the selected manifest")
+    else:
+        results = [scrape(test, args.runs_dir / test / args.logname, banner_re, args.require_golden) for test in tests]
     seed_path = args.runs_dir / "batch_seed.txt"
     seed = seed_path.read_text(encoding="utf-8").strip() if seed_path.is_file() else "unknown"
+    if run_manifest is not None and run_manifest["seed_mode"] == "random":
+        seed = "per-run; see resolved run manifest"
     out = args.out or args.runs_dir / "report.md"
     atomic_write(out, markdown(results, seed, args.require_golden))
     atomic_write(args.runs_dir / "report.json", json.dumps({"seed": seed, "results": [asdict(item) for item in results]}, indent=2) + "\n")
     acceptable = {"PASS"} if args.require_golden else {"PASS", "PASS-LIVE"}
-    failed = [item.test for item in results if item.verdict not in acceptable]
+    failed = list(dict.fromkeys(item.test for item in results if item.verdict not in acceptable))
     atomic_write(args.runs_dir / "failed.caselist", "".join(f"{name}\n" for name in failed))
     atomic_write(args.runs_dir / "seed.txt", f"{seed}\n")
+    if run_manifest is not None:
+        atomic_write(args.runs_dir / "failed-runs.json", json.dumps({
+            "schema": "PortableRegressionRunManifest/1", "seed_mode": run_manifest["seed_mode"],
+            "repeat": run_manifest["repeat"], "run_kind": "failure-rerun",
+            "tests": failed, "runs": failed_runs,
+        }, indent=2) + "\n")
     print(out)
     return 1 if failed else 0
 

@@ -146,6 +146,7 @@ def _candidates_for_plan(store, plan, include_attempted):
             continue
         review = None
         code_dependencies = None
+        execution_binding = None
         if desired and desired.get("role") == "document-deliverable":
             state = store.document_delivery_review_state(target, plan, desired)
             review = {key: state.get(key) for key in ("definition_digest", "document_digest", "semantic_revision")}
@@ -153,8 +154,10 @@ def _candidates_for_plan(store, plan, include_attempted):
             state = store.node_plan_review_state(target)
             review = {key: state.get(key) for key in ('definition_digest', 'input_signature')}
             code_dependencies = state['dependencies']
+            execution_binding = ((state.get('regression_execution') or {}).get('current') or {}).get('execution_binding')
         payload = {"action": action, "revision": plan["revision"], "definition": desired, "workstream": name,
                    "code_dependencies": code_dependencies,
+                   "execution_binding": execution_binding,
                    "document_version": review,
                    "answers": [{key: q.get(key) for key in
                                 ("id", "status", "answer_option", "answer_text", "answered_at")}
@@ -206,6 +209,11 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
             "结果方案必须明确关联当前基础设施 cap.vreg:<implementation_key> 及已验收的激励、检查、用例和覆盖率能力。\n"
             "回归执行失败与分类记录必须精确一致，例外必须有当前 VREG 版本的负责人批准，证据范围由 Engine 派生。\n"
             "所有必需基础设施和结果交付均验收后才完成 VREG；失败反馈由 Main Agent 分析并登记责任工作流变更。\n"
+            "每个结果方案对应一个 regression_config 回归组，批准后严格按 case 集合、submit profile、seed 模式和值、repeat 执行。\n"
+            "读取当前 regression_execution.execution_binding；先用 code execution-start 登记工具调用，再调用 testbench 现有提交工具。\n"
+            "若当前轮次为 INTERRUPTED，工具状态尚未核实：只核对原任务并沿同一 binding 登记真实证据，不得重复提交新任务。\n"
+            "随机模式由工具为每次计划执行生成新 seed 并保存，指定模式使用批准值；失败同 seed 重跑不计入计划 repeat。\n"
+            "CodeValidation/1 和全部结果证据必须绑定当前 execution_binding；不得沿用旧轮次结果或复制 submit 配置。\n"
             "交付依赖对应批准的 art.code_plan；只有方案与依赖仍有效，才可在对应交付节点的约定输出范围实现、执行和分析。"
             if workstream == "VREG" else
             f"方案输入只依赖已验收的上游 capability 或同工作流其他包的 cap.{cap_prefix}；交付依赖同工作包批准的 art.code_plan。\n"
@@ -277,7 +285,9 @@ def task_is_current(store, task):
             state = store.node_plan_review_state(task['action']['target'])
         except HarnessError:
             return False
-        return state['dependencies'] == task['code_dependencies']
+        current_binding = ((state.get('regression_execution') or {}).get('current') or {}).get('execution_binding')
+        return (state['dependencies'] == task['code_dependencies']
+                and current_binding == task.get('execution_binding'))
     return True
 
 
@@ -321,6 +331,11 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
                                        cwd=store.root, stdin=subprocess.DEVNULL, stdout=output,
                                        stderr=subprocess.STDOUT, start_new_session=True,
                                        pass_fds=(lock_fd,))
+            if task.get('execution_binding'):
+                with store.connect() as connection:
+                    connection.execute("UPDATE regression_execution_rounds SET status='DISPATCHED',dispatched_at=? "
+                                       "WHERE id=? AND status='REQUESTED'",
+                                       (now(), task['execution_binding']['round_id']))
             started = time.monotonic()
             while process.poll() is None:
                 if stop_requested(store):
@@ -348,6 +363,12 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
             end_process(process)
         store.update_activity(activity_id, "COMPLETED" if status == "COMPLETED" else "FAILED", summary)
         with store.connect() as connection:
+            if task.get('execution_binding') and status != 'COMPLETED':
+                # CLI termination says nothing about a separately submitted EDA job.
+                connection.execute("UPDATE regression_execution_rounds SET status=CASE WHEN status='RUNNING' "
+                                   "THEN 'INTERRUPTED' ELSE 'FAILED' END "
+                                   "WHERE id=? AND status IN ('REQUESTED','DISPATCHED','RUNNING')",
+                                   (task['execution_binding']['round_id'],))
             connection.execute("UPDATE agent_service_runs SET status=?,summary=?,ended_at=? WHERE id=?",
                                (status, summary, now(), run_id))
 

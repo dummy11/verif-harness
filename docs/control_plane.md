@@ -46,16 +46,44 @@ VCOV 才满足完成条件，只实现覆盖模型不能完成整条工作流。
 `CoverageItemManifest/1`。清单包含计划和模型版本及计划必需覆盖项全集；模型映射、
 采集范围和缺口分析必须与当前清单一致。清单遗漏、重复、额外项或版本变化会阻止收敛。
 实现方案中的必需覆盖项随方案一起审批并在节点详情展示，收敛不能自行缩小批准范围。
+如果缺口结论包含 excluded 项，负责人先在收敛交付节点提供 exclude 文件；提供即表示
+文件中的排除范围已经人工审批，不再为每个排除项重复建立 WAIVE。CLI 对应命令为
+`code provide-exclusions NODE FILE --reviewer NAME --confirm`，Dashboard 提供同一受控入口。
+Agent 随后用 `code validate` 检查文件合法性、当前 revision/节点绑定，以及缺口报告是否引用
+相同路径、SHA-256 和同一个文件级审批记录。替换或修改文件会使旧 validation 和交付验收失效。
+最终覆盖率收敛结果仍由负责人单独验收。
 旧验证记录继续保留，缺少当前合同信息时必须重新验证；过期缺口报告不再触发反馈动作。
+VCASE 中的完整 case 由 testcase 或可执行 virtual sequence 与一个 submit profile
+共同确定。submit file 是 testbench 的配置事实源；verif-harness 只记录项目内路径、
+profile ID、submit file 摘要和 profile 摘要，不复制、解析或执行 VCS、LSF、license
+与站点 wrapper 配置。同一 testcase 可以用多个 `CaseManifest/1` 分别绑定不同
+profile。testbench 的 submit 工具再生成 `RegressionBatchManifest/2` 和 caselist；每个
+batch 只绑定一个 profile，因此同一组 case 使用不同 profile 时必须成为不同
+batch/caselist。执行和分类记录以 batch、case、seed 和 iteration 联合标识。
 VREG 按“回归基础设施方案 → 基础设施交付 → 结果方案 → 结果交付”推进。基础设施只依赖
 已验收文档和环境；验收后派生有效的 `cap.vreg:executor-ready` 汇总能力。结果方案通过
 `cap.vreg:<implementation_key>` 明确关联当前方案中的已验收基础设施范围，同时依赖当前
 文档、环境、激励、检查、用例和覆盖能力，基础设施不反向等待最终结果。必需基础设施和结果
 节点都完成验收后，VREG 才满足完成条件，执行器可用不等于整条 VREG 完成。
-结果验证必须核对执行失败与分类记录的 test/seed 一致性，以及当前 VREG 版本的真实例外
+结果验证必须核对执行失败与分类记录的 batch/case/seed/iteration 一致性，以及当前 VREG 版本的真实例外
 批准。Engine 派生当前必需上游证据清单，并在读取和验收时重新核对；报告不得自行缩小范围。
 结果交付不等待自身或其他结果交付先验收，所有结果的最终验收由整体完成条件检查。
-旧结果验证记录保留，缺少 `RegressionResults/2` 合同时必须重新验证。
+旧结果验证记录保留，缺少 `RegressionResults/4` 合同时必须重新验证。
+结果方案按 group（case 集合＋一个 submit profile）一一分解，基础设施可复用。
+方案中的 `regression_config` 将 case/profile 版本和运行参数一起纳入批准：随机 seed
+模式每次保存新实际 seed，指定模式每次使用同一个 seed；repeat 为每个 case 的计划
+总次数，正整数，默认 1。保存、重跑和复现由已有回归脚本实现，控制面只核对合同和证据。
+参数改变需重新审批，按批准随机策略生成 seed 不算修改方案。
+
+“按已批准方案重新回归”只在结果交付节点提供，与验收结果分开。负责人再次确认后
+通过 `/api/code/regression-rerun` 或 `code rerun` 登记同一 ProjectStore 执行请求；
+请求绑定当前节点、批准版本、内容摘要和幂等标识。失效依赖、有阻塞或在途执行时拒绝。
+只新增内部执行轮次，不重启 VREG、不增加公开节点；保存请求不等于实际执行。
+旧验证、验收和结果能力不计入新轮次，历史报告/文件与批准记录保留；新结果独立验证和验收。
+失败同 seed 重跑属于失败分析，与整组重新回归和计划 repeat 分开计数。
+`RegressionBatchManifest/2` 与 `RegressionEvidence/3` 将执行记录绑定当前方案和轮次；
+重复或漏跑、混入其他 group/profile、旧轮次记录均不能验收。Dashboard 保存后重新读取
+当前权威状态；未收到保存结果不自动重试，历史报告通过项目/节点/轮次受控接口读取。
 coverage hole 或未关闭 regression failure 必须登记责任工作流和下一步动作。Main Agent
 分析后向上游登记重规划或重验证要求；只有实际上游版本或证据变化才沿依赖图自动传播
 `REVALIDATION_REQUIRED`，分析结论本身不会自动修改、批准或关闭上游节点。
@@ -116,7 +144,7 @@ Agent 已经在工作时，可在框架目录的另一个终端运行以下命�
 ```
 
 需要后台自动接续时，退出交互 CLI 后显式运行 `agent-service start`。
-服务从同一个 SQLite 数据库读取当前 VDOC closure，串行调用所选 CLI 的非交互模式。
+服务从同一个 SQLite 数据库读取当前 VDOC 和代码工作流允许的动作，串行调用所选 CLI 的非交互模式。
 审批意见提交、批准全部内容及工程问题回答都先保存；服务随后重新检查当前版本并
 执行允许的动作。注销或重新注册 Dashboard 不删除这些记录，也不终止该服务。
 
@@ -136,7 +164,10 @@ Kimi 使用非交互 `--prompt`，探测到旧版 `--print` 时一并使用；�
 新版 Kimi 的受管轮次显式加载同版本随包提供的 Main Agent profile；不会覆盖你自定义的
 交互 profile，也不依赖旧 profile 中仍可能存在的后台 await 指令。
 
-服务只自动处理 VDOC，不自动推进其他验证工作流、运行 EDA、批准、冻结或发布。
+服务可接续 VDOC、已批准代码交付以及已登记回归轮次；核心控制面不直接执行 EDA 命令，
+Main Agent 仍通过项目已有工具执行并登记证据。服务不批准、冻结或发布。
+回归请求保存只表示已登记；Agent 启动只表示接单。Agent 中断后若工具是否结束尚不明确，
+轮次标为“外部任务状态待核对”，禁止重复启动；核对后须提交同轮次的真实证据。
 存在阻塞问题时持久化问题并结束本轮，不依赖内存中的 await；回答后重新取任务。
 同一输入只尝试一次，失败、未推进或意外中断会保留日志，不无限重试。
 确认文件与记录后，先 stop 并等待停止，再运行 `agent-service retry` 和 start。

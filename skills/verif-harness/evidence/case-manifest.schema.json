@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CaseManifest/1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "case_id", "entry", "source_files", "submit_profile", "case_digest"],
+  "properties": {
+    "schema": {"const": "CaseManifest/1"},
+    "case_id": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "entry": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": {"const": "testcase"},
+            "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "name", "launcher_test"],
+          "properties": {
+            "kind": {"const": "sequence"},
+            "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+            "launcher_test": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+          }
+        }
+      ]
+    },
+    "source_files": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "submit_profile": {"$ref": "submit-profile-ref.schema.json"},
+    "case_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

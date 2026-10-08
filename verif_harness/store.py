@@ -1216,7 +1216,8 @@ for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documen
                "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
                "review_feedback_items", "review_agent_checks", "node_closure_reviews",
                "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks",
-               "code_validations", "workflow_launch_decisions"):
+               "code_validations", "coverage_exclusion_approvals", "regression_execution_rounds",
+               "workflow_launch_decisions"):
     for _operation in ("INSERT", "UPDATE", "DELETE"):
         SCHEMA += f"""
 CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
@@ -1350,6 +1351,7 @@ class ProjectStore:
                 raise HarnessError("检测到不兼容的 v1 开发态数据库；请移走 .verif-harness 后重新 bootstrap")
             connection.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
             vdoc_artifacts.migrate(connection, now())
+            code_workflow.migrate(connection)
             if not connection.execute("SELECT 1 FROM meta WHERE key='vdoc_cap_dependencies'").fetchone():
                 self._reconcile_default_dependencies(connection)
                 connection.execute("INSERT INTO meta VALUES('vdoc_cap_dependencies','1')")
@@ -2749,6 +2751,11 @@ class ProjectStore:
             if revision is None or revision[0] != task["revision"]:
                 raise HarnessError(f"自动接续动作已不是当前 {name} 版本，请重新读取")
             target = task["action"]["target"]
+            binding = task.get("execution_binding")
+            if binding:
+                value = code_workflow.execution_round(connection, target)
+                if not value or value["id"] != binding["round_id"] or value["plan_digest"] != binding["plan_digest"]:
+                    raise HarnessError("回归执行轮次已经变化；不能启动旧 Agent 动作")
             node = connection.execute("SELECT workstream FROM nodes WHERE id=?", (target,)).fetchone()
             connection.execute(
                 "INSERT INTO activities(id,node_id,workstream,operation,status,actor,message,log_path,created_at,updated_at) "
@@ -2762,6 +2769,9 @@ class ProjectStore:
                 "VALUES(?,?,?,?,'RUNNING',?,?)",
                 (run_id, task["key"], task["revision"], json_text(task), activity_id, timestamp),
             )
+            if binding:
+                connection.execute("UPDATE regression_execution_rounds SET activity_id=? WHERE id=?",
+                                   (activity_id, binding["round_id"]))
         return activity_id
 
     def update_activity(
@@ -6447,26 +6457,76 @@ class ProjectStore:
         if workstream == "VCASE" and claim == "targeted-evidence":
             implementation = facts("VCASE", "case-implementation")
             if implementation is not None:
-                missing = sorted(
-                    set(implementation.get("cases", [])) - set(summary["facts"].get("executed_cases", []))
-                )
-                if missing:
-                    blockers.append("尚无 targeted PASS 的 implemented testcase: " + ", ".join(missing))
+                case_records = implementation.get("case_records", [])
+                run_records = summary["facts"].get("run_records", [])
+                if case_records and run_records:
+                    implemented = {
+                        (item["id"], item["submit_profile"]["profile_digest"]): item
+                        for item in case_records
+                    }
+                    executed = {
+                        (item["case_id"], item["submit_profile_digest"])
+                        for item in run_records
+                    }
+                    missing = sorted(set(implemented) - executed)
+                    if missing:
+                        blockers.append("尚无 targeted PASS 的 runnable case: " + ", ".join(
+                            f"{case}/{implemented[(case, profile)]['submit_profile']['profile_id']}"
+                            for case, profile in missing
+                        ))
+                    for item in run_records:
+                        key = (item["case_id"], item["submit_profile_digest"])
+                        current_case = implemented.get(key)
+                        if current_case is None:
+                            blockers.append(
+                                f"targeted run 未绑定当前 runnable case: "
+                                f"{item['case_id']}/{item['submit_profile_id']}"
+                            )
+                        elif (item["case_digest"] != current_case["case_digest"] or
+                              item["submit_profile_id"] != current_case["submit_profile"]["profile_id"]):
+                            blockers.append(
+                                f"targeted run 的 case/submit profile 摘要与当前实现不一致: "
+                                f"{item['case_id']}/{item['submit_profile_id']}"
+                            )
+                else:
+                    missing = sorted(
+                        set(implementation.get("cases", [])) -
+                        set(summary["facts"].get("executed_cases", []))
+                    )
+                    if missing:
+                        blockers.append("尚无 targeted PASS 的 implemented testcase: " + ", ".join(missing))
 
         if workstream == "VREG" and claim == "triage-evidence":
             execution = facts("VREG", "execution-evidence")
             if execution is not None:
-                expected = {(item["test"], item["seed"]) for item in execution.get("failed_runs", [])}
+                def failure_key(item: dict[str, Any], seed_field: str) -> tuple[str, str, str, int]:
+                    return (
+                        str(item.get("batch_id") or ""),
+                        str(item.get("case_id") or item.get("test") or ""),
+                        str(item.get(seed_field) or ""),
+                        int(item.get("iteration") or 0),
+                    )
+
+                def failure_label(item: tuple[str, str, str, int]) -> str:
+                    return "/".join(value for value in map(str, item) if value != "")
+
+                expected = {
+                    failure_key(item, "seed") for item in execution.get("failed_runs", [])
+                }
                 observed = {
-                    (item["test"], item["original_seed"])
+                    failure_key(item, "original_seed")
                     for item in summary["facts"].get("failures", [])
                 }
                 missing = sorted(expected - observed)
                 extra = sorted(observed - expected)
                 if missing:
-                    blockers.append("regression failure 尚未 triage: " + ", ".join(f"{test}/{seed}" for test, seed in missing))
+                    blockers.append("regression failure 尚未 triage: " + ", ".join(
+                        failure_label(item) for item in missing
+                    ))
                 if extra:
-                    blockers.append("triage 含当前 execution 不存在的 failure: " + ", ".join(f"{test}/{seed}" for test, seed in extra))
+                    blockers.append("triage 含当前 execution 不存在的 failure: " + ", ".join(
+                        failure_label(item) for item in extra
+                    ))
             for item in summary["facts"].get("failures", []):
                 if item.get("disposition") != "accepted-known-fail":
                     continue
@@ -6474,7 +6534,10 @@ class ProjectStore:
                     "SELECT 1 FROM reviews WHERE id=? AND verdict='WAIVE'", (item.get("waiver_ref"),)
                 ).fetchone()
                 if waiver is None:
-                    blockers.append(f"{item['test']} 的 waiver_ref 不是 SQLite 中已登记的负责人例外评审")
+                    blockers.append(
+                        f"{item.get('case_id') or item.get('test')} 的 waiver_ref "
+                        "不是 SQLite 中已登记的负责人例外评审"
+                    )
         return blockers
 
     def _derive_fresh_evidence(
