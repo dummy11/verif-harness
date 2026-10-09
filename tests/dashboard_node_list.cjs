@@ -74,6 +74,10 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert.equal(await planRow.locator('[data-approve-plan-node]').isDisabled(), true);
     assert.equal(await planRow.locator('.node-progress-ring').evaluate(el => getComputedStyle(el).animationName), 'none');
     assert.equal(await bodyRow.locator('.node-progress-ring').evaluate(el => getComputedStyle(el).animationName), 'progress-breathe');
+    const vdocNavState = page.locator('[data-nav-workstream="VDOC"] .nav-state');
+    assert.equal(await vdocNavState.getAttribute('data-motion'), 'waiting');
+    assert.equal(await vdocNavState.evaluate(el => getComputedStyle(el).animationName), 'status-breathe');
+    assert.equal(await vdocNavState.evaluate(el => getComputedStyle(el).backgroundColor), await vdocNavState.evaluate(el => getComputedStyle(el).color));
     assert.ok(await bodyRow.getByRole('progressbar').getAttribute('title'));
     assert.equal(await page.locator('[data-node-list-filter="all"]').getAttribute('aria-pressed'), 'true');
     await page.locator('[data-node-list-filter="human"]').click();
@@ -112,6 +116,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
 
     await page.emulateMedia({reducedMotion:'reduce'});
     assert.equal(await bodyRow.locator('.node-progress-ring').evaluate(el => getComputedStyle(el).animationName), 'none');
+    assert.equal(await vdocNavState.evaluate(el => getComputedStyle(el).animationName), 'none');
     assert.equal(await bodyRow.getByRole('progressbar').textContent(), '0%');
     await page.locator('#theme').click();
     await checkAlignment();

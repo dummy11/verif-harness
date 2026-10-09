@@ -1,6 +1,7 @@
 # verif-harness 术语表
 
-配合[工作机制](mechanism.md)阅读；命令与参数见[用户指南](user_guide.md)。
+配合[工作机制](mechanism.md)和[用户指南](user_guide.md)阅读；底层入口见
+[Agent/CI 命令索引](command_reference.md)，精确参数以当前 CLI 的 `--help` 为准。
 
 <a id="control-plane"></a>
 ## 控制面、Agent、Skill

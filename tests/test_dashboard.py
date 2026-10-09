@@ -706,7 +706,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("function progressRing(value, label, small=false, motion='none')", html)
         self.assertIn("@keyframes progress-breathe", html)
         self.assertIn("@keyframes status-breathe", html)
-        self.assertIn(".state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; }", html)
+        self.assertIn(".state-dot, .status-pulse, .nav-state, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; }", html)
         self.assertNotIn("animation: progress-breathe 2.2s ease-in-out infinite", html)
         self.assertIn('class="node-progress-bar"', html)
         self.assertIn('class="progress-ring node-progress-ring"', html)

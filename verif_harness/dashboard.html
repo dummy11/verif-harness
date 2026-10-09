@@ -67,7 +67,8 @@
     .nav-glyph { width: 25px; flex: 0 0 auto; color: var(--brand); font-size: 19px; line-height: 1; text-align: center; }
     .nav-count { min-width: 22px; display: grid; place-items: center; margin-left: auto; padding: 2px 6px; border-radius: 99px; color: var(--yellow); background: var(--yellow-bg); font-size: 11px; font-weight: 800; }
     .nav-item .nav-code { width: 52px; color: var(--brand); font-size: 12px; font-weight: 800; }
-    .nav-item .nav-state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
+    .nav-item .nav-state { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    .nav-item .nav-state:is([data-motion="active"], [data-motion="waiting"]) { color: var(--motion-color); animation: status-breathe var(--motion-period) ease-in-out infinite; }
     @media (min-width: 761px) {
       .layout.sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
       body.sidebar-collapsed .brand { width: 76px; flex-basis: 76px; justify-content: center; padding-inline: 10px; }
@@ -423,7 +424,7 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } .dot.connecting { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .nav-state, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } .dot.connecting { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .modal-actions { width: 100%; } .plan-approval-controls > .modal-actions .btn { flex: 1 1 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-list-tools { width: 100%; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
     @media (max-width: 760px) {
@@ -752,6 +753,7 @@
       if ((w.activities || []).some(activityIsRunning)) return 'active';
       return statusMotion(w.lifecycle);
     }
+    const workstreamNavState = (workstream) => `<span class="nav-state ${escapeHtml(workstream.lifecycle)}" data-motion="${workstreamMotion(workstream)}" aria-hidden="true"></span>`;
     const workstreamStatusBadge = (workstream) => `<span class="badge ${escapeHtml(workstream.lifecycle)}" title="系统值：${escapeHtml(workstream.lifecycle)}">${statusPulse(workstreamMotion(workstream))}${escapeHtml(workstreamStatusLabel(workstream))}</span>`;
     const agentStatusBadge = (value) => { const label = AGENT_STATUS_LABELS[value] || STATUS_LABELS[value] || value; return `<span class="badge ${escapeHtml(value)}" title="当前状态：${escapeHtml(label)}">${escapeHtml(label)}</span>`; };
     const roleLabel = value => ROLE_LABELS[value] || value || '未说明';
@@ -1165,7 +1167,7 @@
         <button class="nav-item ${primary === 'risk' ? 'active' : ''}" data-nav="risk" type="button" title="风险与变更"><span class="nav-glyph" aria-hidden="true">△</span><span class="nav-name">风险与变更</span>${risks ? `<span class="nav-count">${risks}</span>` : ''}</button>
         <div class="nav-label workstream-label">工作流</div>
         ${items.map(w => `<button class="nav-item ${state.workstream === w.workstream && !primary ? 'active' : ''}" data-nav-workstream="${escapeHtml(w.workstream)}" type="button" title="${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}">
-          <span class="nav-code">${escapeHtml(w.workstream)}</span><span class="nav-name">${escapeHtml(workstreamLabel(w.workstream))}</span><span class="nav-state ${escapeHtml(w.lifecycle)}"></span>
+          <span class="nav-code">${escapeHtml(w.workstream)}</span><span class="nav-name">${escapeHtml(workstreamLabel(w.workstream))}</span>${workstreamNavState(w)}
         </button>`).join('')}
         `;
       $('#sidebar-toggle').onclick = () => {

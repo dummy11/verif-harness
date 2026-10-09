@@ -21,5 +21,6 @@ verif-harness freeze VDOC
 `.verif-harness/`。Agent 不得修改 DUT RTL、代替 Human review/waiver/freeze，或把工具
 退出码冒充验证结论。
 
-完整操作与参数见[用户指南](docs/user_guide.md)，系统边界见
+负责人操作见[用户指南](docs/user_guide.md)，底层入口见
+[Agent/CI 命令索引](docs/command_reference.md)，系统边界见
 [Skill 架构](docs/architecture.md)。

@@ -126,7 +126,7 @@ Coverage、cover property 和波形只能作为 VSTIM 补充材料。Planner 把
 项目 adapter/extractor 将明确事实转换成绑定 revision 与原始文件 SHA-256 的 JSON 报告，
 动态运行目标还必须同时登记 xverif 或 WavePeek 生成的结构化分析结果；再由专用 validator
 决定节点状态。当前没有内置支持所有工具格式的 extractor。具体形式和
-退出条件见[用户指南](skills/verif-harness/docs/user_guide.md#步骤-4把工程结果登记为证据)。
+退出条件见[用户指南](skills/verif-harness/docs/user_guide.md#证据与完成判断)。
 
 ## 五个核心子系统
 
@@ -169,8 +169,10 @@ Human 决定。
   动作如何生成、依赖失效如何传播，以及当前实现边界。
 - [术语表](skills/verif-harness/docs/glossary.md)：目标、工作域、知识节点、证据、
   finding、closure、人工门禁、基线和 runtime 的含义与区别。
-- [用户指南](skills/verif-harness/docs/user_guide.md)：安装、从 bootstrap 到 final freeze
-  的完整步骤、全部命令及参数、常见闭环场景。
+- [用户指南](skills/verif-harness/docs/user_guide.md)：setup、bootstrap、七条工作流、反馈闭环与
+  故障恢复。
+- [Agent/CI 命令索引](skills/verif-harness/docs/command_reference.md)：底层 CLI 入口、调用者与
+  权限边界；精确参数以当前 `--help` 为准。
 - [架构说明](ARCHITECTURE.md)：控制环、状态模型、子系统与 RTL 分层边界。
 - [故障排查](skills/verif-harness/docs/troubleshooting.md)：运行环境与工具问题。
 - [Skill 入口](skills/verif-harness/SKILL.md)：Codex/Kimi 使用 verif-harness 时的行为边界。

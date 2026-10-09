@@ -83,18 +83,23 @@ vm.runInContext(`
 
   const w = {workstream:'VCHK', lifecycle:'ACTIVE', revision:1, nodes:[], progress:{required:4,satisfied:1}, closure:{ready:false,actions:[]}};
   assert.match(wsCard(w), /class="ws-meter" data-motion="none" style="--value:25;/);
+  assert.match(workstreamNavState(w), /class="nav-state ACTIVE" data-motion="none"/);
   assert.doesNotMatch(workstreamStatusBadge(w), /正在/);
   w.activities = [{status:'RUNNING', execution_confirmed:true}];
   assert.match(wsCard(w), /class="ws-meter" data-motion="active" style="--value:25;/);
+  assert.match(workstreamNavState(w), /class="nav-state ACTIVE" data-motion="active"/);
   w.activities = [];
   w.waiting_for_human = [{source:'agent-question'}];
   assert.match(wsCard(w), /class="ws-meter" data-motion="waiting" style="--value:25;/);
+  assert.match(workstreamNavState(w), /class="nav-state ACTIVE" data-motion="waiting"/);
   w.waiting_for_human = [];
   w.lifecycle = 'REVIEW';
   assert.match(wsCard(w), /class="ws-meter" data-motion="waiting" style="--value:25;/);
+  assert.match(workstreamNavState(w), /class="nav-state REVIEW" data-motion="waiting"/);
   assert.match(workstreamStatusCardHtml(w), /status-pulse/);
   w.lifecycle = 'SATISFIED'; w.closure.ready = true; w.progress.satisfied = 4;
   assert.match(wsCard(w), /class="ws-meter" data-motion="none" style="--value:100;/);
+  assert.match(workstreamNavState(w), /class="nav-state SATISFIED" data-motion="none"/);
   assert.doesNotMatch(workstreamStatusBadge(w), /status-pulse/);
 
   const vdoc = {
