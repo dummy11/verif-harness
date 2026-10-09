@@ -38,7 +38,19 @@ const workstream = config.workstream || 'VENV';
       assert.deepEqual(errors, []);
       return;
     }
-    await table.locator(`[data-open-node="${config.node}"]`).click();
+    if (config.pendingNavigation) {
+      const pendingNav = page.locator('[data-nav="pending"]');
+      assert.ok(Number(await pendingNav.locator('.nav-count').innerText()) > 0);
+      await pendingNav.click();
+      await page.locator('.pending-status-card').waitFor();
+      assert.equal(new URL(page.url()).searchParams.get('project'), config.project);
+      const pendingNode = page.locator(`#main [data-open-node="${config.node}"]`);
+      assert.ok((await pendingNode.innerText()).startsWith('验收：'));
+      assert.ok((await pendingNode.locator('xpath=ancestor::div[contains(@class,"list-row")]').innerText()).includes('待验收'));
+      await pendingNode.click();
+    } else {
+      await table.locator(`[data-open-node="${config.node}"]`).click();
+    }
     await page.locator('#drawer #node-plan-complete').waitFor();
     if (config.expectedRole) {
       assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(config.expectedRole));
@@ -194,6 +206,14 @@ const workstream = config.workstream || 'VENV';
     await approved.waitFor();
     assert.equal(await approved.innerText(), '已批准全部内容');
     assert.equal(await approved.isDisabled(), true);
+    assert.equal(await approved.evaluate(element => getComputedStyle(element).cursor), 'not-allowed');
+    if (config.pendingNavigation) {
+      await page.locator('[data-nav="pending"]').click();
+      await page.locator('.pending-status-card').waitFor();
+      assert.equal(await page.locator(`#main [data-open-node="${config.node}"]`).count(), 0);
+      await page.locator(`[data-nav-workstream="${workstream}"]`).click();
+      await approved.waitFor();
+    }
     assert.ok((await approved.locator('xpath=ancestor::tr').innerText()).includes(config.phase === 'plan' ? '方案已批准' : '已验收通过'));
     if (config.phase === 'plan') assert.ok((await table.innerText()).includes('等待 Agent 验证通过'));
     assert.deepEqual(errors, []);

@@ -604,10 +604,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     await_human = commands.add_parser(
         "await-human",
-        help="等待负责人提交当前版本的正式评审或把审批意见交给 Main Agent",
+        help="等待当前版本的节点审批、交付验收或提交给 Main Agent 的审批意见",
     )
     project_argument(await_human)
     await_human.add_argument("workstream", choices=tuple(WORKSTREAM_TEMPLATES), type=str.upper)
+    await_human.add_argument(
+        "--node", action="append", default=[],
+        help="可重复；只等待当前工作流内指定的公开方案或交付节点",
+    )
     await_human.add_argument(
         "--revision", type=int,
         help="省略时在调用开始时绑定当前 revision；旧 revision 会被拒绝",
@@ -1161,7 +1165,7 @@ def main(arguments: list[str] | None = None) -> int:
         elif args.command == "await-human":
             emit(store.await_human_review(
                 args.workstream, args.revision, args.after_review,
-                args.timeout, args.activity,
+                args.timeout, args.activity, args.node,
             ))
         elif args.command == "check": emit(store.scan())
         elif args.command == "closure":

@@ -4671,6 +4671,7 @@ class ProjectStore:
         self, workstream: str, revision: int | None = None,
         after_review_id: str | None = None, timeout: float = 60.0,
         activity_id: str | None = None,
+        node_ids: Iterable[str] | None = None,
     ) -> dict[str, Any]:
         """Wait for a revision-bound review decision or submitted opinion batch.
 
@@ -4680,6 +4681,7 @@ class ProjectStore:
         """
         if timeout < 0:
             raise HarnessError("await-human timeout 不能小于 0")
+        invoked_at = now()
         name = self.normalize_workstream(workstream)
         plan = self.workstream(name)
         selected_revision = plan["revision"] if revision is None else revision
@@ -4689,26 +4691,68 @@ class ProjectStore:
                 "旧 revision 的评审不能恢复当前工作"
             )
         closure = self.evaluate_closure(name, persist=False)
-        has_pending_checkpoint = any(
-            item.get("kind") in {"HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK"}
-            and item.get("executor") == "human"
-            for item in closure["actions"]
-        )
+        public_nodes = {
+            item["id"]: item for item in plan["desired_state"]
+            if item.get("role") in {
+                "document-writing-plan", "document-deliverable", *code_workflow.ROLES,
+            }
+        }
+        requested_nodes = set(node_ids or ())
+        if requested_nodes - public_nodes.keys():
+            raise HarnessError("等待验收的节点不属于当前工作流和版本")
+        pending_nodes = {
+            item["target"] for item in closure["actions"]
+            if item["kind"] in {
+                "HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK", "APPLY_REVIEW_FEEDBACK",
+            } and item["target"] in public_nodes
+        }
+
+        def node_review_state(node: dict[str, Any]) -> dict[str, Any]:
+            if node.get("role") == "document-deliverable":
+                return self.document_delivery_review_state(node["id"])
+            return self.node_plan_review_state(node["id"])
+
+        bound_nodes = requested_nodes or (public_nodes.keys() if after_review_id else pending_nodes)
+        bindings = {identifier: node_review_state(public_nodes[identifier])
+                    for identifier in public_nodes if identifier in bound_nodes}
+        seen_reviews = {
+            identifier: {
+                row["id"] for row in [*state.get("completion_reviews", []), *state.get("reviews", [])]
+                if row["created_at"] < invoked_at
+            } for identifier, state in bindings.items()
+        }
 
         cursor_rowid: int | None = None
+        cursor_created_at: str | None = None
+        cursor_table = "reviews"
         if after_review_id:
             with self.read_connect() as connection:
-                cursor = connection.execute(
-                    "SELECT rowid,workstream,revision,verdict FROM reviews WHERE id=?",
-                    (after_review_id,),
-                ).fetchone()
+                cursor = None
+                for table in ("reviews", "node_plan_reviews", "document_delivery_reviews"):
+                    cursor = connection.execute(
+                        f"SELECT rowid,workstream,revision,verdict,created_at FROM {table} WHERE id=?",
+                        (after_review_id,),
+                    ).fetchone()
+                    if cursor is not None:
+                        cursor_table = table
+                        break
             if cursor is None:
                 raise HarnessError(f"未知 review: {after_review_id}")
             if cursor["workstream"] != name or int(cursor["revision"]) != selected_revision:
                 raise HarnessError("--after-review 必须属于同一 Workstream 和 revision")
-            if cursor["verdict"] not in {"APPROVE", "REJECT", "MODIFY", "CLARIFY"}:
-                raise HarnessError("--after-review 必须引用正式 Workstream Review")
+            if cursor["verdict"] not in {"APPROVE", "REJECT", "MODIFY", "CLARIFY", "PROVISIONAL"}:
+                raise HarnessError("--after-review 必须引用正式工作流评审或节点审批")
             cursor_rowid = int(cursor["rowid"])
+            cursor_created_at = cursor["created_at"]
+
+        # Node-mode waits must not replay an old whole-workflow plan approval
+        # while the owner is reviewing a later delivery in the same revision.
+        legacy_floor = None
+        if bindings and not after_review_id:
+            with self.read_connect() as connection:
+                legacy_floor = connection.execute(
+                    "SELECT COALESCE(MAX(rowid),0) FROM reviews"
+                ).fetchone()[0]
 
         activity: dict[str, Any] | None = None
         if activity_id:
@@ -4723,6 +4767,9 @@ class ProjectStore:
             )
 
         def matching_review() -> dict[str, Any] | None:
+            if (requested_nodes or code_workflow.modern(plan) or cursor_table != "reviews"
+                    or any(node.get("role") == "document-deliverable" for node in public_nodes.values())):
+                return None
             filters = [
                 "workstream=?", "revision=?",
                 "verdict IN ('APPROVE','REJECT','MODIFY','CLARIFY')",
@@ -4732,6 +4779,9 @@ class ProjectStore:
             if cursor_rowid is not None:
                 filters.append("rowid>?")
                 values.append(cursor_rowid)
+            elif legacy_floor is not None:
+                filters.append("rowid>?")
+                values.append(legacy_floor)
             with self.read_connect() as connection:
                 row = connection.execute(
                     "SELECT rowid,* FROM reviews WHERE " + " AND ".join(filters)
@@ -4745,18 +4795,64 @@ class ProjectStore:
             return result
 
         def matching_feedback_batch() -> dict[str, Any] | None:
-            if name != "VDOC":
-                return None
             return next((
                 item for item in self.review_feedback_batches("PENDING")
                 if item["workstream"] == name
                 and int(item["revision"]) == selected_revision
+                and item["node_id"] in bindings
+                and item["batch_id"] in current_states[item["node_id"]]["feedback"]["batch_ids"]
             ), None)
+
+        def matching_node_review() -> tuple[str, dict[str, Any]] | None:
+            for identifier, state in current_states.items():
+                review = state.get("current_completion") or state.get("current_review")
+                if review is None or state.get("feedback", {}).get("unresolved_count"):
+                    continue
+                if after_review_id:
+                    if review["id"] == after_review_id or review["created_at"] < cursor_created_at:
+                        continue
+                    table = ("document_delivery_reviews" if public_nodes[identifier].get("role")
+                             == "document-deliverable" else "node_plan_reviews")
+                    if table == cursor_table:
+                        with self.read_connect() as connection:
+                            rowid = connection.execute(
+                                f"SELECT rowid FROM {table} WHERE id=?", (review["id"],),
+                            ).fetchone()[0]
+                        if rowid <= cursor_rowid:
+                            continue
+                elif review["id"] in seen_reviews[identifier]:
+                    continue
+                return identifier, review
+            return None
+
+        def invalid_checkpoint(message: str) -> None:
+            if activity_id and self.activity(activity_id)["status"] not in {
+                "COMPLETED", "FAILED", "CANCELLED",
+            }:
+                self.update_activity(activity_id, "PENDING", message)
+            raise HarnessError(message)
+
+        def current_bound_states() -> dict[str, dict[str, Any]]:
+            current_plan = self.workstream(name)
+            if current_plan["revision"] != selected_revision:
+                invalid_checkpoint("工作流版本已变化；旧 revision 的评审不能恢复当前工作")
+            states = {}
+            for identifier, bound in bindings.items():
+                state = node_review_state(public_nodes[identifier])
+                if (state["definition_digest"] != bound["definition_digest"]
+                        or state.get("document_digest") != bound.get("document_digest")):
+                    invalid_checkpoint("等待审批的节点内容或验证证据版本已变化；请重新核对当前节点")
+                states[identifier] = state
+            return states
 
         started = time.monotonic()
         while True:
+            current_states = current_bound_states()
             feedback_batch = matching_feedback_batch()
             if feedback_batch is not None:
+                current_states = current_bound_states()
+                if matching_feedback_batch() != feedback_batch:
+                    continue
                 if activity_id:
                     activity = self.update_activity(
                         activity_id, "RUNNING",
@@ -4769,6 +4865,8 @@ class ProjectStore:
                         "action": "APPLY_REVIEW_FEEDBACK", "workstream": name,
                         "revision": selected_revision,
                         "node_id": feedback_batch["node_id"],
+                        "definition_digest": bindings[feedback_batch["node_id"]]["definition_digest"],
+                        "document_digest": bindings[feedback_batch["node_id"]].get("document_digest", ""),
                     },
                     "review": None,
                     "feedback_batch": feedback_batch,
@@ -4776,8 +4874,34 @@ class ProjectStore:
                     "next": "apply_review_feedback",
                     "activity": activity,
                 }
+            node_review = matching_node_review()
+            if node_review is not None:
+                identifier, review = node_review
+                document = public_nodes[identifier].get("role") == "document-deliverable"
+                current_closure = self.evaluate_closure(name, persist=False)
+                current_states = current_bound_states()
+                if matching_node_review() != node_review:
+                    continue
+                if activity_id:
+                    activity = self.update_activity(
+                        activity_id, "RUNNING", "已收到当前节点审批；Main Agent 需要重新核对下一步动作",
+                    )
+                return {
+                    "schema": "HumanCheckpoint/1", "status": "DECIDED",
+                    "checkpoint": {
+                        "action": "CHECK_DOCUMENT_REVIEW" if document else "HUMAN_REVIEW",
+                        "workstream": name, "revision": selected_revision,
+                        "node_id": identifier,
+                        "definition_digest": bindings[identifier]["definition_digest"],
+                        "document_digest": bindings[identifier].get("document_digest", ""),
+                    },
+                    "review": review, "feedback_batch": None,
+                    "resume": True, "next": "check_document_review" if document else "closure",
+                    "closure": current_closure, "activity": activity,
+                }
             review = matching_review()
             if review is not None:
+                current_bound_states()
                 verdict = review["verdict"]
                 if activity_id:
                     activity = self.update_activity(
@@ -4802,10 +4926,21 @@ class ProjectStore:
                     }[verdict],
                     "activity": activity,
                 }
+            current_closure = self.evaluate_closure(name, persist=False)
+            current_states = current_bound_states()
+            # An approval may have been saved while Closure was being read.
+            if matching_node_review() or matching_feedback_batch() or matching_review():
+                continue
+            has_pending_checkpoint = any(
+                item.get("kind") in {"HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK"}
+                and item.get("executor") == "human"
+                and (not requested_nodes or item["target"] in requested_nodes)
+                for item in current_closure["actions"]
+            )
             if not has_pending_checkpoint:
                 if activity_id:
                     self.update_activity(
-                        activity_id, "RUNNING",
+                        activity_id, "PENDING",
                         f"{name} 工作流版本 {selected_revision} 当前没有等待负责人处理的评审",
                     )
                 raise HarnessError(
@@ -4819,6 +4954,10 @@ class ProjectStore:
                     "checkpoint": {
                         "action": "HUMAN_REVIEW", "workstream": name,
                         "revision": selected_revision,
+                        "nodes": [{
+                            "node_id": identifier, "definition_digest": bound["definition_digest"],
+                            "document_digest": bound.get("document_digest", ""),
+                        } for identifier, bound in bindings.items()],
                     },
                     "review": None,
                     "feedback_batch": None,
@@ -8184,8 +8323,16 @@ class ProjectStore:
                 )
                 if delivery_count:
                     pending_parts.append(f"{delivery_count} 项文档正文验收")
-                if pending_review_count > delivery_count:
-                    pending_parts.append(f"{pending_review_count - delivery_count} 项方案审批")
+                code_delivery_count = sum(
+                    item.get("source") == "closure"
+                    and code_workflow.is_delivery({"role": item.get("target_role")})
+                    for item in waiting_for_human
+                )
+                if code_delivery_count:
+                    pending_parts.append(f"{code_delivery_count} 项验证交付验收")
+                remaining_reviews = pending_review_count - delivery_count - code_delivery_count
+                if remaining_reviews:
+                    pending_parts.append(f"{remaining_reviews} 项方案审批或意见提交")
             if pending_confirmation_count:
                 pending_parts.append(f"{pending_confirmation_count} 项文档确认")
             project_agent_status = "WAITING_FOR_HUMAN"
@@ -8208,10 +8355,10 @@ class ProjectStore:
                 "尚无可确认的当前执行记录，无需负责人重复提交"
             )
         elif waiting_activity_count:
-            project_agent_status = "WAITING_FOR_HUMAN"
+            project_agent_status = "UNCONFIRMED"
             project_agent_message = (
-                f"Agent 有 {waiting_activity_count} 项工作等待负责人处理；"
-                "当前没有开放的 Agent 问题，请查看工作状态"
+                f"{waiting_activity_count} 项活动记录显示 Agent 在等待负责人，但当前没有对应待办；"
+                "等待状态不一致，请在 Agent CLI 重新核对当前节点，不要重复审批"
             )
         elif running_activity_count:
             project_agent_status = "RUNNING"

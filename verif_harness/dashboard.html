@@ -366,7 +366,8 @@
     .plan-approval-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-top: 12px; }
     .plan-approval-controls > .detail-group { margin-top: 0; min-width: 0; }
     .plan-approval-controls > .modal-actions .btn { min-height: 42px; }
-    .plan-approval-controls > .modal-actions .btn:disabled { color: var(--muted); background: var(--panel-2); border-color: var(--line); cursor: not-allowed; }
+    .plan-approval-controls > .modal-actions .btn:disabled,
+    .node-row-approval .btn:disabled { color: var(--muted); background: var(--panel-2); border-color: var(--line); cursor: not-allowed; }
     .metric-list { display: grid; gap: 8px; }
     .metric-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(90px, auto) minmax(120px, auto); gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
     .compact-meta { color: var(--muted); font-size: 11px; }
@@ -1234,6 +1235,8 @@
     }
     function pendingItemStatusLabel(item, targetNode) {
       if (item.source === 'agent-question') return '待回答';
+      if (item.source === 'closure' && item.action === 'SUBMIT_REVIEW_FEEDBACK') return '待提交意见';
+      if (item.source === 'closure' && isCodeNode(targetNode || {})) return isCodePlanNode(targetNode) ? '待审批' : '待验收';
       if (item.source === 'closure' && targetNode?.role === 'document-writing-plan') return '待审批';
       if (item.source === 'closure' && targetNode?.role === 'document-deliverable') return '待验收';
       if (item.source === 'closure') return '待评审';
@@ -1597,9 +1600,9 @@
           ? `${documentName} · ${nodeName}` : nodeName;
         const contextualAction = a.source === 'workflow-launch'
           ? '选择其余验证工作流启动方式'
-          : a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-writing-plan'
+          : a.action === 'HUMAN_REVIEW' && (targetNode?.role === 'document-writing-plan' || isCodePlanNode(targetNode))
           ? `审批：${objectName}`
-          : a.action === 'HUMAN_REVIEW' && targetNode?.role === 'document-deliverable'
+          : a.action === 'HUMAN_REVIEW' && (targetNode?.role === 'document-deliverable' || (isCodeNode(targetNode) && !isCodePlanNode(targetNode)))
             ? `验收：${objectName}`
             : a.source === 'document-item'
               ? `${humanActionLabel(a.action)}：${documentName || nodeName}`
@@ -1849,6 +1852,9 @@
         : `<div class="node-attention">⚠ ${escapeHtml(attention)}</div>`;
       const badge = isCodeNode(n) ? codeStatusBadge(n)
         : n.role === 'document-writing-plan' && n.plan_review ? planReviewStatusBadge(n.plan_review.status)
+        : n.role === 'document-deliverable' && n.delivery_review?.status === 'PENDING'
+          && !(n.next_actions || []).some(action => action.kind === 'HUMAN_REVIEW' && action.executor === 'human')
+          ? `<span class="badge PENDING">${escapeHtml((n.next_actions || []).some(action => action.kind === 'WAIT_FOR_DEPENDENCY') ? '等待前置工作完成' : '等待 Agent 核对正文验收条件')}</span>`
         : n.role === 'document-deliverable' && n.delivery_review
           ? deliveryReviewStatusBadge(n.delivery_review.status, deliveryReviewIsRunning(n))
           : statusBadge(status, motion);
@@ -1880,9 +1886,12 @@
       const openAgentQuestions = (n.agent_questions || []).filter(item => item.status === 'OPEN');
       if (openAgentQuestions.length) return `Agent 等待你回答 ${openAgentQuestions.length} 个问题`;
       if (pendingDocumentItems.length) return `需要处理文档中的 ${pendingDocumentItems.length} 个问题或决定`;
-      if ((n.activities || []).some(item => item.status === 'WAITING_FOR_HUMAN')) return '当前工作正在等待负责人决定';
       const humanAction = (n.next_actions || []).find(item => item.executor === 'human');
       if (humanAction) return humanText(humanAction.reason || actionLabel(humanAction.kind));
+      if (isCodeNode(n) || ['document-writing-plan','document-deliverable'].includes(n.role)) {
+        return '当前不需要负责人处理';
+      }
+      if ((n.activities || []).some(item => item.status === 'WAITING_FOR_HUMAN')) return '当前工作正在等待负责人决定';
       if (['CLOSED','VALID','WAIVED','APPROVED'].includes(n.closure_assessment?.conclusion || n.status)) {
         return '当前不需要负责人处理';
       }

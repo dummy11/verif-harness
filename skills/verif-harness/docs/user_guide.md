@@ -1923,7 +1923,7 @@ Agent 在 Closure 明确要求 `HUMAN_REVIEW` 时使用。Human 通常不直接�
 
 ```text
 verif-harness await-human WORKSTREAM [--revision N] [--after-review REVIEW_ID] \
-  [--timeout SECONDS] [--activity ACTIVITY_ID]
+  [--node NODE_ID ...] [--timeout SECONDS] [--activity ACTIVITY_ID]
 ```
 
 | 参数 | 说明 |
@@ -1931,11 +1931,16 @@ verif-harness await-human WORKSTREAM [--revision N] [--after-review REVIEW_ID] \
 | `WORKSTREAM` | 当前等待正式评审的 Workstream |
 | `--revision` | 绑定待评审版本；省略时在命令开始时锁定当前 revision；旧版本会被拒绝 |
 | `--after-review` | 同一 revision 需要再次评审时，忽略指定 Review 及更早决定 |
+| `--node` | 可重复；只等待当前工作流、当前版本内指定的公开方案或交付节点 |
 | `--timeout` | 单次等待秒数，默认 60；超时返回结构化 `TIMEOUT`，可安全重试 |
 | `--activity` | 等待时把该 Activity 置为 `WAITING_FOR_HUMAN`；收到决定后恢复 `RUNNING` |
 
-返回 `HumanCheckpoint/1`。只有正式 Workstream Review 才会返回 `DECIDED`；普通评论、修改请求或
-旧 revision Review 均不能冒充批准。`resume` 仅在 verdict 为 `APPROVE` 时为 `true`。
+返回 `HumanCheckpoint/1`。七类工作流的当前节点方案批准或交付验收也会返回 `DECIDED`，
+包含节点、版本和内容摘要；下一步是重新读取 Closure，不表示整条工作流已经批准或完成。
+VDOC 正文验收返回 `CHECK_DOCUMENT_REVIEW`，仍须 Main Agent 检查正文、审批和依赖。
+仅保存修改意见不唤醒，提交整批意见后返回 `APPLY_REVIEW_FEEDBACK`。旧版本、节点内容或
+验证证据变化时拒绝继续旧等待。旧式 Workstream Review 继续保留原有结果和 `resume` 语义。
+命令超时不取消当前待办；已退出的 Agent 不会因保存审批而自动恢复执行。
 
 ### `plan WORKSTREAM`
 
