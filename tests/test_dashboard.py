@@ -631,6 +631,9 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("项目级 Agent 当前空闲，没有已登记活动", html)
         self.assertIn("你也可以在当前主 Agent 对话中回答，两处会自动同步", html)
         self.assertIn("回答只用于继续当前工作", html)
+        self.assertIn("你已回答工程问题", html)
+        self.assertIn("这是工程问题回答，不等于工作节点的方案审批或交付验收", html)
+        self.assertIn("工程问题回答只用于补充输入", html)
         self.assertIn("WAITING_FOR_HUMAN:'等待你处理'", html)
         self.assertIn("function pendingItemStatusLabel(item, targetNode)", html)
         self.assertIn("return '待审批'", html)
@@ -1246,6 +1249,25 @@ class DashboardTest(unittest.TestCase):
                 "id": question["id"], "option": "sv", "reviewer": "bob",
             }, self.server.write_token)
         self.assertEqual(captured.exception.code, 400)
+
+    def test_agent_question_cannot_masquerade_as_formal_node_approval(self) -> None:
+        node_id = self.plan["desired_state"][0]["id"]
+        before = self.store.dashboard_snapshot()["agent_question_history"]
+        with self.assertRaisesRegex(HarnessError, "不能代替方案审批"):
+            self.store.ask_agent_question(
+                node_id, "是否批准当前方案？", [
+                    {"id": "approve-all", "label": "批准全部内容", "description": "批准当前方案"},
+                    {"id": "revise", "label": "要求修改", "description": "退回 Agent 修订"},
+                ],
+            )
+        with self.assertRaisesRegex(HarnessError, "不能要求负责人作出正式审批"):
+            self.store.ask_agent_question(
+                node_id, "下一步怎么处理？", [
+                    {"id": "yes", "label": "批准 VCHK 当前方案", "description": "继续实现"},
+                    {"id": "revise", "label": "要求修改", "description": "退回 Agent 修订"},
+                ],
+            )
+        self.assertEqual(self.store.dashboard_snapshot()["agent_question_history"], before)
 
     def test_cli_answer_is_pushed_to_dashboard_event_stream(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]

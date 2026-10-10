@@ -285,6 +285,17 @@ def template_nodes(template: dict[str, Any]) -> list[tuple[str, str, str, str]]:
 
 
 DESIRED_KEY = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+AGENT_QUESTION_RESERVED_GATE_OPTION = re.compile(
+    r"(?:^|[-_.])(approve|approval|accept|acceptance|reject|waive|waiver|freeze|unfreeze)(?:$|[-_.])",
+    re.IGNORECASE,
+)
+AGENT_QUESTION_RESERVED_GATE_LABEL = re.compile(
+    r"批准全部内容|方案审批|交付验收|验收通过|例外批准|批准例外|冻结基线|"
+    r"(?:批准|审批).{0,20}(?:方案|交付|节点)|(?:方案|交付|节点).{0,20}(?:批准|审批)|"
+    r"\b(?:approve|accept).{0,20}(?:plan|delivery|node)|"
+    r"\b(?:plan|delivery|node).{0,20}(?:approval|acceptance)|\b(?:waiver|freeze)\b",
+    re.IGNORECASE,
+)
 PROJECT_NODE_ROLES: dict[str, set[str]] = {
     "VDOC": {"document-writing-plan", "document-deliverable"},
     "VENV": {"code-plan", "code-deliverable"},
@@ -840,7 +851,7 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  临时选择器，也不得让两个入口形成两套问题状态。",
         "- 当前 Agent 对话必须显示已登记问题的 ID、正文、上下文、全部选项、推荐项和影响。",
         "  Kimi 交互会话使用成对 checkpoint：先执行 `agent-question ask --no-wait` 并展示",
-        "  返回的问题，再立即把 `agent-question await QUESTION_ID --timeout 300` 启动为 Kimi",
+        "  返回的问题，再立即把 `agent-question await QUESTION_ID --timeout 1800` 启动为 Kimi",
         "  Bash 后台任务，然后把普通输入框还给负责人；等待负责人时不得前台执行 `await` 或",
         "  调用 `WaitFor`。负责人在对话中回答后，Main Agent 必须立即用 `agent-question answer`",
         "  写回同一 ID；Dashboard 将实时同步为已回答。负责人在 Dashboard 回答后，同一 CLI",
@@ -848,6 +859,12 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "  checkpoint 属于错误。其他 runtime",
         "  若没有等价的完成通知后台任务，则保留阻塞型 `ask`。Dashboard 答案是持久化状态，",
         "  不会向没有活动 checkpoint 的 idle 会话注入 prompt。",
+        "- agent-question 只收集工程输入，不能把方案审批、交付验收、例外批准或 freeze",
+        "  包装成问答选项。Closure 要求负责人决定时，Main Agent 必须显示当前节点和 Dashboard",
+        "  操作，再把 `await-human WORKSTREAM --revision REVISION --node NODE_ID --timeout 1800`",
+        "  启动为 Kimi 后台任务。收到 ANSWERED 或 DECIDED 后，必须先在当前对话明确回显已记录的",
+        "  问题或节点、当前版本、决定和下一步，再分派 worker 或继续执行；TIMEOUT 后待办仍存在时",
+        "  重新建立同类后台 checkpoint，不得另建 agent-question 或自行假定批准。",
         "- Agent 开始非简单分析或后台子任务前必须登记 Activity。计划建立前使用",
         "  `activity start project`，使负责人不依赖 SSH 或终端也能看到真实运行状态。",
         "- Agent 在对话后自行调用 verif-harness CLI；CLI 默认值不构成负责人授权。",
@@ -3453,10 +3470,20 @@ class ProjectStore:
                 raise HarnessError("agent question option id 只能包含字母、数字、点、下划线和连字符")
             if option_id.lower() == "other":
                 raise HarnessError("agent question option id 不能使用保留值 other")
+            if AGENT_QUESTION_RESERVED_GATE_OPTION.search(option_id):
+                raise HarnessError(
+                    "agent-question 只能收集工程输入，不能代替方案审批、交付验收、"
+                    "例外批准或 freeze；请使用当前节点的正式入口并通过 await-human 等待决定"
+                )
             if option_id in seen:
                 raise HarnessError(f"agent question option id 重复: {option_id}")
             if not label:
                 raise HarnessError("agent question option label 不能为空")
+            if AGENT_QUESTION_RESERVED_GATE_LABEL.search(label):
+                raise HarnessError(
+                    "agent-question 选项不能要求负责人作出正式审批或验收；"
+                    "请使用当前节点的正式入口并通过 await-human 等待决定"
+                )
             seen.add(option_id)
             normalized.append({"id": option_id, "label": label, "description": description})
         if not 2 <= len(normalized) <= 8:

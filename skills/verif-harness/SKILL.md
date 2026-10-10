@@ -139,10 +139,12 @@ Workstream. Project lifecycle is separate.
   without reliable completion-notifying background tasks. Kimi interactive sessions
   instead use one paired bridge: register with `ask --no-wait`, display the
   structured question, then immediately start `agent-question await QUESTION_ID
-  --timeout 300` as a Kimi Bash background task and return control to the normal
+  --timeout 1800` as a Kimi Bash background task and return control to the normal
   input box. Do not call `WaitFor` while Human input is pending. A bare `--no-wait`
   without that background checkpoint is forbidden. On background `TIMEOUT`, check
-  that the question remains `OPEN` and launch another background await. A Dashboard
+  that the question remains `OPEN` and launch another background await. On
+  `ANSWERED`, first print a visible acknowledgement with the persisted answer and
+  concrete next action before dispatching a worker. A Dashboard
   answer completes the active CLI background checkpoint; a CLI-conversation answer
   updates the Dashboard through its live state stream. A Dashboard answer does not
   inject a prompt into an idle session that has no active checkpoint. Use target `project` before
@@ -150,8 +152,13 @@ Workstream. Project lifecycle is separate.
   or node. Include the choices, recommendation, context, and engineering impact.
   Native Codex/Kimi terminal selectors are not a substitute and must not be the
   only place where a blocking question appears. When Closure contains `HUMAN_REVIEW`, bind the current
-  Workstream revision and current Activity with `await-human`; retry bounded
-  TIMEOUT results while the Human is still expected to decide. Continue normal
+  Workstream revision and current Activity with `await-human`; in interactive Kimi
+  run `await-human WORKSTREAM --revision REVISION --node NODE_ID --timeout 1800`
+  as a background task. Formal plan approval, delivery acceptance, waiver, and
+  freeze must never be represented as `agent-question` choices. Retry bounded
+  TIMEOUT results while the Human is still expected to decide. On `DECIDED`, first
+  acknowledge the exact node, revision, recorded decision, and next action in the
+  current conversation, then reread Closure. Continue normal
   work only for `APPROVE`; handle `MODIFY`, `CLARIFY`, and `REJECT` according to
   the returned `next` action. A comment or Human action never satisfies this
   checkpoint. Use

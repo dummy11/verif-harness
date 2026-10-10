@@ -252,13 +252,16 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn("override: true", kimi_main)
         self.assertIn("${base_prompt}", kimi_main)
         self.assertIn("ask ... --no-wait", kimi_main)
-        self.assertIn("agent-question await QUESTION_ID --timeout 300", kimi_main)
+        self.assertIn("agent-question await QUESTION_ID --timeout 1800", kimi_main)
         self.assertIn("run_in_background=true", kimi_main)
         self.assertIn("Do not run that wait in the foreground", kimi_main)
         self.assertIn("do not call\n   `WaitFor`", kimi_main)
         self.assertIn("show the responsible user the returned question ID", kimi_main)
         self.assertIn("address the user as `你` or `负责人`", kimi_main)
         self.assertIn("immediately call `verif-harness agent-question answer`", kimi_main)
+        self.assertIn("Formal plan approval, delivery acceptance", kimi_main)
+        self.assertIn("await-human WORKSTREAM --revision REVISION --node NODE_ID", kimi_main)
+        self.assertIn("visible acknowledgement", kimi_main)
 
 
 if __name__ == "__main__":

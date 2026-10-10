@@ -102,12 +102,14 @@ and questions, and does not write project state.
    question. Show the question ID, prompt, all options, recommendation, and impact
    in the current Agent conversation before waiting. In an interactive Kimi session,
    use the paired bridge from the root Skill: `ask --no-wait`, display the returned
-   question, and immediately launch `agent-question await QUESTION_ID --timeout 300`
+   question, and immediately launch `agent-question await QUESTION_ID --timeout 1800`
    as a Kimi Bash background task. Do not foreground that await or call `WaitFor`
    while Human input is pending. Other runtimes keep the default blocking `ask`
    unless their managed profile provides an equivalent completion-notifying bridge.
    A conversation answer updates the Dashboard live state; a Dashboard answer
-   completes the active CLI background checkpoint. Dashboard answers do not inject
+   completes the active CLI background checkpoint. On `ANSWERED`, print a visible
+   acknowledgement with the persisted answer and concrete next action before
+   dispatching a worker. Dashboard answers do not inject
    prompts into idle sessions without an active checkpoint. Pre-bootstrap field collection remains in the current Agent conversation
    because the Dashboard and its project state do not exist yet.
 

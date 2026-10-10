@@ -1537,7 +1537,10 @@
       const answer = q.status === 'ANSWERED'
         ? `${escapeHtml(q.answered_by || '负责人')} 已回答：${escapeHtml(selected?.label || (q.answer_option === 'other' ? '其他处理方式' : q.answer_option || '未记录'))}${q.answer_text ? ` · ${escapeHtml(q.answer_text)}` : ''}`
         : '等待你的回答；回答后主 Agent 才会继续协调相关工作';
-      return `<article class="agent-event question"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${q.status === 'ANSWERED' ? '你已回应主 Agent' : '主 Agent 需要你的决定'}</strong>${statusBadge(q.status)}<time>${shortTime(q.answered_at || q.created_at)}</time></div><div class="agent-event-message">${escapeHtml(humanText(q.prompt))}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(answer)}</div>${q.context ? `<details><summary>查看提问背景</summary><div class="detail-group-body">${escapeHtml(humanText(q.context))}</div></details>` : ''}</div></article>`;
+      const boundary = q.status === 'ANSWERED'
+        ? '<div class="agent-event-meta">这是工程问题回答，不等于工作节点的方案审批或交付验收。</div>'
+        : '';
+      return `<article class="agent-event question"><div class="agent-event-rail"><span class="agent-event-dot" aria-hidden="true"></span></div><div><div class="agent-event-head"><strong>${q.status === 'ANSWERED' ? '你已回答工程问题' : '主 Agent 需要你的工程判断'}</strong>${statusBadge(q.status)}<time>${shortTime(q.answered_at || q.created_at)}</time></div><div class="agent-event-message">${escapeHtml(humanText(q.prompt))}</div><div class="agent-event-meta">${target.html} · ${escapeHtml(answer)}</div>${boundary}${q.context ? `<details><summary>查看提问背景</summary><div class="detail-group-body">${escapeHtml(humanText(q.context))}</div></details>` : ''}</div></article>`;
     }
     function agentInteractionHistoryHtml(questions) {
       const events = (questions || [])
@@ -1555,7 +1558,7 @@
         const reviewerId = `agent-reviewer-${q.id}`;
         const answerId = `agent-answer-${q.id}`;
         const options = (q.options || []).map(option => `<label class="agent-option"><input type="radio" name="option" value="${escapeHtml(option.id)}" required><span class="agent-option-copy"><span class="agent-option-title">${escapeHtml(humanText(option.label))}${option.id === q.recommended_option ? ' <span class="badge PROVISIONAL">Agent 推荐</span>' : ''}</span><span class="agent-option-description">${escapeHtml(humanText(option.description || '无补充说明'))}</span></span></label>`).join('');
-        return `<article class="agent-question-card"><div class="agent-question-head"><span class="agent-question-kicker">主 Agent 需要你决定</span>${statusBadge(q.status)}</div><h3>${escapeHtml(humanText(q.prompt))}</h3><div class="agent-event-meta">影响范围：${target.html} · ${shortTime(q.created_at)}${recommended ? ` · 推荐 ${escapeHtml(humanText(recommended.label))}` : ''}</div>${q.context ? `<div class="agent-question-context"><strong>为什么现在需要你：</strong>${escapeHtml(humanText(q.context))}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><fieldset class="agent-options"><legend>选择处理方式</legend>${options}<label class="agent-option"><input type="radio" name="option" value="other" required><span class="agent-option-copy"><span class="agent-option-title">其他</span><span class="agent-option-description">提供不同的约束、方案或处理边界</span></span></label></fieldset><div class="agent-response-row"><div class="field"><label for="${escapeHtml(reviewerId)}">回答人</label><input id="${escapeHtml(reviewerId)}" name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label for="${escapeHtml(answerId)}">补充说明</label><textarea id="${escapeHtml(answerId)}" name="answer_text" placeholder="可选；选择“其他”时必填"></textarea></div></div><button class="btn primary agent-submit" type="submit">提交回答</button></form></article>`;
+        return `<article class="agent-question-card"><div class="agent-question-head"><span class="agent-question-kicker">主 Agent 需要你的工程判断</span>${statusBadge(q.status)}</div><h3>${escapeHtml(humanText(q.prompt))}</h3><div class="agent-event-meta">影响范围：${target.html} · ${shortTime(q.created_at)}${recommended ? ` · 推荐 ${escapeHtml(humanText(recommended.label))}` : ''}</div>${q.context ? `<div class="agent-question-context"><strong>为什么现在需要你：</strong>${escapeHtml(humanText(q.context))}</div>` : ''}<form data-agent-question-form="${escapeHtml(q.id)}"><fieldset class="agent-options"><legend>选择处理方式</legend>${options}<label class="agent-option"><input type="radio" name="option" value="other" required><span class="agent-option-copy"><span class="agent-option-title">其他</span><span class="agent-option-description">提供不同的约束、方案或处理边界</span></span></label></fieldset><div class="agent-response-row"><div class="field"><label for="${escapeHtml(reviewerId)}">回答人</label><input id="${escapeHtml(reviewerId)}" name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label for="${escapeHtml(answerId)}">补充说明</label><textarea id="${escapeHtml(answerId)}" name="answer_text" placeholder="可选；选择“其他”时必填"></textarea></div></div><button class="btn primary agent-submit" type="submit">提交回答</button></form><div class="agent-side-note">工程问题回答只用于补充输入，不代替工作节点的方案审批、交付验收、例外批准或 freeze。</div></article>`;
       }).join('');
     }
     function renderAgentInteractionPage() {
@@ -1609,7 +1612,7 @@
           const data = Object.fromEntries(new FormData(event.target));
           data.id = form.dataset.agentQuestionForm;
           rememberReviewer(data.reviewer);
-          await post('/api/agent-questions/answer', data, '回答已保存；请在 Agent 工作状态中查看是否已接续');
+          await post('/api/agent-questions/answer', data, '工程问题回答已保存；此回答不代替节点审批，请在 Agent 工作状态中查看是否已接续');
         };
       });
     }

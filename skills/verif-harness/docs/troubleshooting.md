@@ -65,11 +65,16 @@
 Main Agent 应先读取该问题的持久化状态，再继续后续 plan、document、evidence 或 review 流程。
 
 新安装或刷新后的受管 Kimi Main Agent 会使用双入口 bridge：先以 `ask --no-wait` 登记并在 Kimi
-对话中显示完整问题，再把 `agent-question await QUESTION_ID --timeout 300` 作为 Bash 后台任务启动。
+对话中显示完整问题，再把 `agent-question await QUESTION_ID --timeout 1800` 作为 Bash 后台任务启动。
 普通输入框不会被等待命令占用；Human 可以直接在当前 Kimi 对话回答，也可以在 Dashboard 回答。
 对话答案由 Main Agent 用 `agent-question answer` 写回同一 ID，Dashboard 答案则使后台任务完成并通知
 Main Agent。等待 Human 时不应调用 `WaitFor`。已有 Kimi 会话需重启后才会加载新的项目 Main Agent
 profile；若仍看到前台 `Ran a command` 长时间等待，可按 `Ctrl+B` 将它移到后台，再在输入框回答。
+
+方案审批、交付验收、例外批准和 freeze 不属于工程问答。Main Agent 应显示当前节点，并把
+`await-human WORKSTREAM --revision REVISION --node NODE_ID --timeout 1800` 作为 Kimi 后台任务启动；
+收到 `DECIDED` 后先在对话中回显节点、版本、决定和下一步，再重新读取 Closure。若历史交互里出现
+“批准全部内容”一类问答，它只是一条工程回答，不能代替节点中的正式审批记录。
 
 ## Workstream 不能 freeze
 

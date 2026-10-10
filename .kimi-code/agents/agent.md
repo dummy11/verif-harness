@@ -40,7 +40,7 @@ For every blocking `agent-question` in an interactive session, use this Kimi int
    context, every option ID/label/description, recommendation, and engineering
    impact in the Kimi conversation. Explicitly say that they may answer either
    here or in Dashboard.
-3. Start `verif-harness agent-question await QUESTION_ID --timeout 300` as a
+3. Start `verif-harness agent-question await QUESTION_ID --timeout 1800` as a
    Kimi Bash background task (`run_in_background=true`) with a clear task
    description. Do not run that wait in the foreground and do not call
    `WaitFor` while user input is pending; return control to the normal Kimi
@@ -48,9 +48,12 @@ For every blocking `agent-question` in an interactive session, use this Kimi int
 4. If the user answers in this conversation, map the reply to the displayed
    option and immediately call `verif-harness agent-question answer` for the
    same question ID. Use option `other` plus `--text` for a free-form answer.
-5. When the background checkpoint reports `ANSWERED`, continue from that
-   persisted answer. If it reports `TIMEOUT` and the question remains `OPEN`,
-   launch another background `await`; do not create a duplicate question.
+5. When the background checkpoint reports `ANSWERED`, immediately print a
+   visible acknowledgement in the Kimi conversation naming the question,
+   persisted answer, and concrete next action before dispatching any worker.
+   Then continue from that answer. If it reports `TIMEOUT` and the question
+   remains `OPEN`, launch another background `await`; do not create a duplicate
+   question.
 
 This paired foreground-registration/background-await flow lets an ordinary Kimi
 reply and a Dashboard answer resolve the same SQLite record. A persisted Kimi
@@ -67,3 +70,14 @@ wake by itself. When recovering an older session, list open or answered
 An answer is engineering input only. It does not approve a Workstream, validate
 a node, create evidence, waive a requirement, freeze a baseline, or authorize
 publication.
+
+Formal plan approval, delivery acceptance, waiver, and freeze are never
+`agent-question` choices. When Closure requires a node review in an interactive
+Kimi session, show the exact current node and Dashboard action, then start
+`verif-harness await-human WORKSTREAM --revision REVISION --node NODE_ID
+--timeout 1800` as a Kimi Bash background task. Do not occupy the foreground.
+On `DECIDED`, immediately print a visible acknowledgement naming the node,
+revision, recorded decision, and next action; then reread Closure before doing
+or dispatching work. On `TIMEOUT`, if the same current-version decision is still
+pending, launch another background `await-human` instead of creating an
+`agent-question` or assuming approval.
