@@ -3264,10 +3264,12 @@
           reason: values.reason,
           payload: {
             request_type: 'vdoc-node-revision',
+            revision: w.revision,
             document_key: documentKey,
             document_path: selected?.document?.path || '',
             node_type: nodeType,
             source_node_id: values.node_id || null,
+            definition_digest: sourceNode?.plan_review?.definition_digest || sourceNode?.delivery_review?.definition_digest || null,
             change_kind: values.change_kind,
           },
         }, values.change_kind === 'add' ? '添加节点请求已保存' : values.change_kind === 'remove' ? '删除节点请求已保存；当前节点和历史仍保留' : '文档修改请求已保存', () => leaveVdocRevisionRequest('VDOC', false));

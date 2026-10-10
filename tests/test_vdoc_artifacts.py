@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from tests import test_dashboard as fixtures
+from verif_harness import agent_service
 from verif_harness.store import HarnessError, ProjectStore, Validity, now
 
 
@@ -70,6 +71,67 @@ class VdocArtifactsTest(unittest.TestCase):
         for _ in range(3):
             self.store.dashboard_snapshot()
         self.assertEqual(self.store.document_artifacts()["versions"], versions)
+
+    def test_vdoc_revision_request_reopens_closure_and_routes_to_main_agent(self):
+        self.prepare()
+        self.finish()
+        revision = self.store.workstream("VDOC")["revision"]
+        with self.assertRaisesRegex(HarnessError, "版本已变化"):
+            self.store.add_human_action(
+                "VDOC", "REQUEST_CHANGE", "fixture-owner", "过期页面提交",
+                {
+                    "request_type": "vdoc-node-revision",
+                    "revision": revision - 1,
+                    "change_kind": "add",
+                    "source_node_id": None,
+                },
+            )
+        change = self.store.add_human_action(
+            "VDOC", "REQUEST_CHANGE", "fixture-owner",
+            "下一版补充接口异常响应的文档撰写方案",
+            {
+                "request_type": "vdoc-node-revision",
+                "revision": revision,
+                "change_kind": "add",
+                "source_node_id": None,
+                "document_key": "verification-plan",
+            },
+        )
+        closure = self.store.evaluate_closure("VDOC")
+        action = next(
+            item for item in closure["actions"]
+            if item["kind"] == "APPLY_WORKFLOW_CHANGE"
+        )
+        self.assertFalse(closure["ready"])
+        self.assertEqual(action["change_id"], change["id"])
+        self.assertEqual(action["change_request"]["change_kind"], "add")
+        task = next(
+            item for item in agent_service.candidates(self.store)
+            if item["action"]["id"] == action["id"]
+        )
+        self.assertEqual(task["workstream"], "VDOC")
+
+        snapshot = self.store.dashboard_snapshot()
+        view = next(
+            item for item in snapshot["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        self.assertEqual((view["progress"]["satisfied"], view["progress"]["required"]), (2, 2))
+        self.assertIsNone(view["progress"]["percentage"])
+        self.assertIn("接口异常响应", "；".join(view["progress"]["percentage_reasons"]))
+        self.assertNotIn(change["id"], {
+            item["id"] for item in snapshot["waiting_for_human"]
+        })
+
+        self.store.resolve_human_action(
+            change["id"], "Project Main Agent", "已分析影响并提交下一版方案",
+        )
+        self.assertTrue(self.store.evaluate_closure("VDOC")["ready"])
+        view = next(
+            item for item in self.store.dashboard_snapshot()["workstreams"]
+            if item["workstream"] == "VDOC"
+        )
+        self.assertEqual(view["progress"]["percentage"], 100)
 
     def test_unsynced_body_edit_revokes_cap_not_plan_and_preserves_snapshot(self):
         self.prepare()

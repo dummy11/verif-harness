@@ -387,6 +387,27 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(len(self.store.workstream('VENV')['desired_state']), 1)
         self.assertIn('APPLY_WORKFLOW_CHANGE', [a['kind'] for a in self.store.evaluate_closure('VENV')['actions']])
 
+    def test_completed_code_workflow_change_fails_progress_closed(self):
+        self.implement()
+        self.validate()
+        self.approve(self.delivery)
+        plan = self.store.workstream("VENV")
+        change = code.request_change(self.store, {
+            "workstream": "VENV", "kind": "add", "revision": plan["revision"],
+            "reviewer": "fixture-owner", "reason": "增加异常复位恢复工作包",
+        })
+        view = next(
+            item for item in self.store.dashboard_snapshot()["workstreams"]
+            if item["workstream"] == "VENV"
+        )
+        self.assertEqual((view["progress"]["satisfied"], view["progress"]["required"]), (2, 2))
+        self.assertFalse(view["closure"]["ready"])
+        self.assertIsNone(view["progress"]["percentage"])
+        self.assertIn("异常复位恢复", "；".join(view["progress"]["percentage_reasons"]))
+        self.assertNotIn(change["id"], {
+            item["id"] for item in self.store.dashboard_snapshot()["waiting_for_human"]
+        })
+
     def test_browser_code_plan_and_delivery_approval(self):
         if not shutil.which('node') or subprocess.run(['node', '-e', "require('playwright')"], capture_output=True).returncode:
             self.skipTest('Node.js and Playwright are required for real browser testing')
@@ -545,6 +566,87 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                 "VREG", ["regression-policy", "executor-ready", "execution-evidence"],
                 ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
             )
+
+    def test_downstream_workflows_only_accept_regression_executor_capability(self):
+        cases = {
+            "VSTIM": (
+                ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+            ),
+            "VCASE": (
+                ["case-implementation", "targeted-evidence"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                 "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"],
+            ),
+            "VCOV": (
+                ["coverage-model", "coverage-collection"],
+                ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                 "cap.vreg:executor-ready"],
+            ),
+        }
+        for workstream, (claims, inputs) in cases.items():
+            with self.subTest(workstream=workstream):
+                invalid = [
+                    value for value in inputs if value != "cap.vreg:executor-ready"
+                ]
+                invalid.append("cap.vreg:fresh-evidence")
+                with self.assertRaisesRegex(HarnessError, "executor-ready"):
+                    self.design(workstream, claims, invalid)
+
+    def test_project_dependency_graph_rejects_cycle_from_persisted_plan(self):
+        plan, _ = self.design(
+            "VSTIM",
+            ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
+            ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+        )
+        corrupted = copy.deepcopy(plan["desired_state"])
+        corrupted[0]["inputs"].append("cap.vreg:fresh-evidence")
+        with self.store.connect() as connection:
+            connection.execute(
+                "UPDATE workstreams SET desired_json=? WHERE name='VSTIM'",
+                (json.dumps(corrupted),),
+            )
+        proposed = [
+            {
+                "implementation_key": "dut:infrastructure",
+                "role": "regression-infrastructure-plan",
+                "title": "DUT 回归基础设施方案",
+                "required": True,
+                "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+                "capabilities": ["regression-policy", "executor-ready"],
+            },
+            {
+                "implementation_key": "dut:results",
+                "role": "regression-results-plan",
+                "title": "DUT 回归结果方案",
+                "required": True,
+                "inputs": ["cap.vstim:reachability-evidence", "cap.vreg:dut:infrastructure"],
+                "capabilities": ["execution-evidence", "triage-evidence", "fresh-evidence"],
+            },
+        ]
+        with self.assertRaisesRegex(HarnessError, "跨工作流能力依赖形成循环"):
+            code._validate_project_dependency_graph(self.store, "VREG", proposed)
+
+    def test_vreg_progress_rejects_ready_closure_with_incomplete_node_count(self):
+        infrastructure = {
+            "id": "infra", "implementation_key": "dut:infrastructure",
+            "role": "regression-infrastructure-plan", "title": "回归基础设施",
+            "required": True, "inputs": [],
+            "capabilities": ["regression-policy", "executor-ready"],
+        }
+        results = {
+            "id": "results", "implementation_key": "dut:results",
+            "role": "regression-results-plan", "title": "回归结果",
+            "required": True, "inputs": ["cap.vreg:dut:infrastructure"],
+            "capabilities": ["execution-evidence", "triage-evidence", "fresh-evidence"],
+        }
+        progress = code.workflow_progress(
+            {"workstream": "VREG", "desired_state": [infrastructure, results]},
+            [infrastructure, results], {"ready": True, "actions": []},
+            {"required": 4, "satisfied": 3},
+        )
+        self.assertIsNone(progress["percentage"])
+        self.assertIn("不一致", "；".join(progress["percentage_reasons"]))
 
     def test_vcase_requires_environment_stimulus_and_checking_not_coverage(self):
         path, _ = self.proposal(

@@ -960,6 +960,8 @@ def workflow_progress(plan, nodes, closure, progress):
         reasons = [action["reason"] for action in closure["actions"]]
         if not reasons:
             reasons = ["节点完成统计与工作流完成条件不一致，请重新核对当前状态"]
+    elif not reasons and closure["ready"] and completed != total:
+        reasons = ["工作流完成结论与当前必需节点统计不一致，请重新计算并核对状态"]
     stages = []
     labels = (("infrastructure", "回归基础设施"), ("results", "回归结果")) if workstream == "VREG" else (
         ("implementation", "覆盖率实现"), ("convergence", "覆盖率收敛"))
@@ -1049,6 +1051,87 @@ def _sync_watched_files(store, connection):
     )
 
 
+def _validate_project_dependency_graph(store, workstream, proposed, connection=None):
+    """Reject cycles across current code plans before a new revision is stored.
+
+    WorkNodes depend on accepted capabilities.  A capability can be either the
+    implementation-specific result or a claim summary backed by every required
+    provider.  Expanding both forms here prevents a locally valid proposal from
+    closing a cross-workstream cycle through an already registered plan.
+    """
+    if connection is None:
+        current = [plan for plan in store.workstreams() if modern(plan)]
+    else:
+        current = [
+            {
+                "workstream": row["name"],
+                "desired_state": json.loads(row["desired_json"]),
+            }
+            for row in connection.execute(
+                "SELECT name,desired_json,context_json FROM workstreams"
+            )
+            if json.loads(row["context_json"]).get("code_model") == 2
+        ]
+    plans = {
+        plan["workstream"]: [
+            node for node in plan["desired_state"] if is_plan(node)
+        ]
+        for plan in current
+    }
+    plans[workstream] = list(proposed)
+    providers: dict[str, set[tuple[str, str]]] = {}
+    labels: dict[tuple[str, str], str] = {}
+    for candidate, nodes in plans.items():
+        for node in nodes:
+            key = node.get("implementation_key")
+            if not isinstance(key, str) or not key:
+                continue
+            token = (candidate, key)
+            labels[token] = f"{candidate}/{node.get('title') or key}"
+            providers.setdefault(ids(key, candidate)[2], set()).add(token)
+            if node.get("required", True):
+                for claim in node.get("capabilities", []):
+                    providers.setdefault(
+                        profile(candidate)["cap_prefix"] + claim, set(),
+                    ).add(token)
+
+    dependencies: dict[tuple[str, str], set[tuple[str, str]]] = {
+        token: set() for token in labels
+    }
+    for candidate, nodes in plans.items():
+        for node in nodes:
+            token = (candidate, node.get("implementation_key"))
+            if token not in dependencies:
+                continue
+            for capability in node.get("inputs", []):
+                dependencies[token].update(providers.get(capability, set()))
+
+    completed: set[tuple[str, str]] = set()
+    active: set[tuple[str, str]] = set()
+    stack: list[tuple[str, str]] = []
+
+    def visit(token):
+        if token in completed:
+            return
+        if token in active:
+            start = stack.index(token)
+            cycle = [*stack[start:], token]
+            error(
+                "跨工作流能力依赖形成循环，无法保证闭环收敛："
+                + " -> ".join(labels[item] for item in cycle)
+            )
+        active.add(token)
+        stack.append(token)
+        for dependency in sorted(dependencies.get(token, set())):
+            visit(dependency)
+        stack.pop()
+        active.remove(token)
+        completed.add(token)
+
+    for token in sorted(dependencies):
+        visit(token)
+
+
 def design(store, workstream, source, objective=None, decisions=None, restart=None):
     from .store import now, Validity
     from .evidence_policy import EVIDENCE_POLICIES
@@ -1133,6 +1216,14 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 error("回归基础设施只能依赖已验收文档和验证环境，不能依赖激励、检查、用例、覆盖率或最终回归结果")
         if not all(v.startswith(settings["input_prefixes"]) for v in item["inputs"]):
             error(f"{workstream} 上游必须使用 " + "、".join(settings["input_prefixes"]) + "，不能依赖工作节点、未验收产物或下游结果")
+        if workstream in {"VSTIM", "VCASE", "VCOV"} and any(
+            value.startswith("cap.vreg:") and value != "cap.vreg:executor-ready"
+            for value in item["inputs"]
+        ):
+            error(
+                f"{workstream} 只能使用回归基础设施验收派生的 "
+                "cap.vreg:executor-ready，不能反向依赖最终回归结果或其他回归能力"
+            )
         if not any(v.startswith("cap.doc:") for v in item["inputs"]):
             error("代码方案必须说明所依据的已验收文档 cap.doc")
         missing_inputs = [
@@ -1187,6 +1278,9 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
     context = {**store.planning_context(workstream), "code_model": 2}
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
+        _validate_project_dependency_graph(
+            store, workstream, normalized, connection=db,
+        )
         old = db.execute("SELECT revision,desired_json FROM workstreams WHERE name=?", (workstream,)).fetchone()
         revision = old["revision"] + 1 if old else 1
         if restart and (not old or restart["revision"] != old["revision"]):

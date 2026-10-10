@@ -101,6 +101,12 @@ vm.runInContext(`
   assert.match(wsCard(w), /class="ws-meter" data-motion="none" style="--value:100;/);
   assert.match(workstreamNavState(w), /class="nav-state SATISFIED" data-motion="none"/);
   assert.doesNotMatch(workstreamStatusBadge(w), /status-pulse/);
+  w.lifecycle = 'ACTIVE'; w.closure.ready = false;
+  w.closure.actions = [{kind:'APPLY_WORKFLOW_CHANGE',reason:'增加异常复位恢复工作包'}];
+  w.progress.percentage = null;
+  w.progress.percentage_reasons = ['增加异常复位恢复工作包'];
+  assert.match(wsCard(w), /待处理/);
+  assert.doesNotMatch(wsCard(w), /100%|--value:100/);
 
   const vdoc = {
     workstream:'VDOC', lifecycle:'ACTIVE', revision:2,
@@ -130,6 +136,12 @@ vm.runInContext(`
   vdoc.closure.actions = [];
   assert.match(wsCard(vdoc), /style="--value:100;/);
   assert.doesNotMatch(wsCard(vdoc), /正文交付节点待登记/);
+  vdoc.closure.ready = false;
+  vdoc.closure.actions = [{kind:'APPLY_WORKFLOW_CHANGE',reason:'新增异常响应文档节点'}];
+  vdoc.progress.percentage = null;
+  vdoc.progress.percentage_reasons = ['新增异常响应文档节点'];
+  assert.match(wsCard(vdoc), /待处理/);
+  assert.doesNotMatch(wsCard(vdoc), /100%|--value:100/);
 
   const vreg = {workstream:'VREG',code_model:true,lifecycle:'ACTIVE',revision:3,nodes:[],waiting_for_human:[],
     progress:{required:4,satisfied:4,registered_required:4,percentage:null,scope_complete:false,

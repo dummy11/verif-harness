@@ -3334,7 +3334,35 @@ class ProjectStore:
             raise HarnessError("human action 必须是 " + ", ".join(sorted(HUMAN_ACTIONS)))
         if not reviewer.strip() or not reason.strip():
             raise HarnessError("human action reviewer 和 reason 不能为空")
+        normalized_payload = dict(payload or {})
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if (
+                selected == "REQUEST_CHANGE"
+                and normalized_payload.get("request_type") == "vdoc-node-revision"
+            ):
+                plan = self._read_workstream(connection, "VDOC")
+                if normalized_payload.get("revision") != plan["revision"]:
+                    raise HarnessError("VDOC 版本已变化，请刷新后重新提交变更要求")
+                change_kind = normalized_payload.get("change_kind")
+                if change_kind not in {"add", "remove", "modify"}:
+                    raise HarnessError("VDOC 变更要求必须是添加、删除或修改")
+                current_nodes = {
+                    item["id"]: item for item in plan["desired_state"]
+                    if item.get("role") in {
+                        "document-writing-plan", "document-deliverable",
+                    }
+                }
+                source_node_id = normalized_payload.get("source_node_id")
+                if change_kind == "add":
+                    if target.upper() != "VDOC" or source_node_id is not None:
+                        raise HarnessError("添加 VDOC 节点必须绑定当前 VDOC 版本，不能伪装成现有节点修改")
+                else:
+                    node = current_nodes.get(str(source_node_id or ""))
+                    if node is None or target != node["id"]:
+                        raise HarnessError("要变更的 VDOC 工作节点已失效，请刷新后重新选择")
+                    if normalized_payload.get("definition_digest") != self._node_plan_digest(plan, node):
+                        raise HarnessError("VDOC 工作节点内容已变化，请刷新后重新提交变更要求")
             node = connection.execute("SELECT 1 FROM nodes WHERE id=?", (target,)).fetchone()
             workstream = connection.execute("SELECT 1 FROM workstreams WHERE name=?", (target.upper(),)).fetchone()
             if node is not None:
@@ -3352,7 +3380,7 @@ class ProjectStore:
                     resolved_by,resolution,created_at,updated_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (action_id, normalized_target, target_type, selected, status, reviewer.strip(),
-                 reason.strip(), json_text(payload or {}), None, None, timestamp, timestamp),
+                 reason.strip(), json_text(normalized_payload), None, None, timestamp, timestamp),
             )
         return self.human_action(action_id)
 
@@ -7187,6 +7215,33 @@ class ProjectStore:
         connector = self.connect if persist else self.read_connect
         with connector() as connection:
             current_desired = {key: item["id"] for key, item in current_nodes.items()}
+            if name == "VDOC":
+                current_vdoc_ids = {
+                    item["id"] for item in plan["desired_state"]
+                }
+                for row in connection.execute(
+                    """SELECT id,target,reason,payload_json
+                       FROM human_actions
+                       WHERE status='OPEN' AND action='REQUEST_CHANGE'
+                       ORDER BY created_at,id""",
+                ):
+                    payload = json.loads(row["payload_json"] or "{}")
+                    if not (
+                        row["target"] == "VDOC"
+                        or row["target"] in current_vdoc_ids
+                        or payload.get("request_type") == "vdoc-node-revision"
+                    ):
+                        continue
+                    actions.append({
+                        "kind": "APPLY_WORKFLOW_CHANGE",
+                        "target": row["target"],
+                        "priority": 2,
+                        "executor": "reasoning",
+                        "suggested_mode": "plan",
+                        "reason": row["reason"],
+                        "change_id": row["id"],
+                        "change_request": payload,
+                    })
             # Internal document units remain part of closure. Read their states and
             # dependencies in bulk, rather than issuing two queries for every unit.
             node_statuses = {
@@ -8095,7 +8150,15 @@ class ProjectStore:
             )]
             explicit_waiting = [
                 {**item, "source": "human-action"}
-                for item in workstream_human_actions if item["status"] == "OPEN"
+                for item in workstream_human_actions
+                if item["status"] == "OPEN"
+                and not (
+                    item["action"] == "REQUEST_CHANGE"
+                    and (
+                        item.get("payload", {}).get("next_revision_only") is True
+                        or item.get("payload", {}).get("request_type") == "vdoc-node-revision"
+                    )
+                )
             ]
             workstream_agent_questions = [
                 item for item in agent_questions
@@ -8176,6 +8239,30 @@ class ProjectStore:
                 progress.update(code_workflow.workflow_progress(
                     plan, desired_nodes, workstream_closure, progress,
                 ))
+            if "percentage" not in progress:
+                percentage_reasons: list[str] = []
+                if required_total and satisfied >= required_total and not workstream_closure["ready"]:
+                    percentage_reasons = list(dict.fromkeys(
+                        item.get("reason") or "当前工作流还有未完成动作"
+                        for item in workstream_closure.get("actions", [])
+                    ))
+                    if not percentage_reasons:
+                        percentage_reasons = [
+                            "节点完成统计与工作流完成条件不一致，请重新核对当前状态"
+                        ]
+                elif workstream_closure["ready"] and satisfied != required_total:
+                    percentage_reasons = [
+                        "工作流完成结论与当前必需节点统计不一致，请重新计算并核对状态"
+                    ]
+                progress.update({
+                    "completion_ready": workstream_closure["ready"],
+                    "percentage_reasons": percentage_reasons,
+                    "percentage": (
+                        None if percentage_reasons
+                        else satisfied * 100 // required_total if required_total
+                        else 0
+                    ),
+                })
             workstream_views.append({
                 "workstream": plan["workstream"],
                 "code_model": code_workflow.modern(plan),
