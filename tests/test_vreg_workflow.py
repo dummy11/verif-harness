@@ -310,6 +310,38 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertTrue(any(action["kind"] == "REFINE_DESIRED_STATE" and "回归结果方案" in action["reason"]
                             for action in closure["actions"]))
         self.assertEqual(self.head("cap.vreg:executor-ready")["status"], "VALID")
+        view = self.view()
+        progress = view["progress"]
+        self.assertEqual((progress["satisfied"], progress["required"]), (2, 2))
+        self.assertFalse(progress["scope_complete"])
+        self.assertIsNone(progress["percentage"])
+        self.assertIn("回归结果方案", "；".join(progress["percentage_reasons"]))
+        infrastructure, results = progress["stages"]
+        self.assertEqual((infrastructure["satisfied"], infrastructure["required"]), (2, 2))
+        self.assertEqual(results["required"], 0)
+        self.assertEqual(progress["current_rounds"], [])
+        snapshot = self.cli("dashboard", "--snapshot")
+        self.assertEqual(next(w for w in snapshot["workstreams"] if w["workstream"] == "VREG")["progress"], progress)
+        self.assertEqual(len(view["nodes"]), 2)  # No manufactured results nodes.
+
+    def test_progress_reserves_deliveries_without_inventing_result_groups(self):
+        progress = self.view()["progress"]
+        self.assertTrue(progress["scope_complete"])
+        self.assertEqual(progress["percentage"], 0)
+        self.assertEqual(progress["pending_registration"], 2)
+        self.assertEqual([(s["satisfied"], s["required"], s["pending_registration"])
+                          for s in progress["stages"]], [(0, 2, 1), (0, 2, 1)])
+
+    def test_completed_nodes_with_pending_workflow_change_do_not_show_overall_100(self):
+        self.finish_all()
+        plan = self.store.workstream("VREG")
+        code.request_change(self.store, {"workstream": "VREG", "kind": "add", "revision": plan["revision"],
+                                        "reviewer": "fixture-owner", "reason": "增加当前 DUT 的回归范围"})
+        view = self.view()
+        self.assertEqual(view["progress"]["satisfied"], 4)
+        self.assertFalse(view["closure"]["ready"])
+        self.assertIsNone(view["progress"]["percentage"])
+        self.assertIn("增加当前 DUT", "；".join(view["progress"]["percentage_reasons"]))
 
     def test_approved_required_plan_without_delivery_cannot_finish_vreg(self):
         delivery = self.finish_all()
@@ -403,6 +435,8 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertFalse(closure["ready"])
         self.assertTrue(any(action["kind"] == "REFINE_DESIRED_STATE" and "基础设施" in action["reason"]
                             for action in closure["actions"]))
+        self.assertFalse(self.view()["progress"]["scope_complete"])
+        self.assertIsNone(self.view()["progress"]["percentage"])
 
     def test_execution_failures_require_complete_triage_and_recorded_waivers(self):
         self.finish_infrastructure()
@@ -532,6 +566,9 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertNotEqual(self.head("cap.vreg:fresh-evidence")["status"], "VALID")
         self.assertFalse(self.cli("closure", "--workstream", "VREG")["ready"])
         self.assertFalse(self.view()["closure"]["ready"])
+        progress = self.view()["progress"]
+        self.assertEqual(progress["percentage"], 25)
+        self.assertFalse(progress["current_rounds"][0]["completed"])
 
     def test_new_revision_does_not_inherit_old_approval_or_receipts(self):
         self.finish_all()
@@ -544,6 +581,9 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertTrue(all(not self.store.node_plan_review_state(node["id"])["completed"] for node in current["desired_state"]))
         self.assertFalse(self.store.evaluate_closure("VREG")["ready"])
         self.assertTrue(all(version in code.artifacts(self.store, "VREG")["versions"] for version in versions))
+        progress = self.view()["progress"]
+        self.assertEqual((progress["satisfied"], progress["required"], progress["percentage"]), (0, 4, 0))
+        self.assertEqual(progress["current_rounds"], [])
 
     def test_new_vreg_cli_planning_does_not_create_legacy_nodes(self):
         fresh_root = self.root / "fresh-vreg"
@@ -693,6 +733,7 @@ class VregWorkflowTest(unittest.TestCase):
         old_round = old["regression_execution"]["current"]
         old_report = self.last_report
         old_contents = old_report.read_text()
+        self.assertEqual(self.view()["progress"]["percentage"], 100)
         plan_head = self.head("art.code_plan:vreg:dut:results")["data"]["current"]
         body = self.rerun_body(delivery)
         saved = self.http.post("/api/code/regression-rerun", body, self.http.server.write_token)
@@ -709,6 +750,13 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertEqual(self.head("cap.vreg:executor-ready")["status"], "VALID")
         self.assertNotEqual(self.head("cap.vreg:fresh-evidence")["status"], "VALID")
         self.assertFalse(self.store.evaluate_closure("VREG")["ready"])
+        progress = self.view()["progress"]
+        self.assertEqual(progress["percentage"], 75)
+        self.assertEqual([(s["satisfied"], s["required"]) for s in progress["stages"]], [(2, 2), (1, 2)])
+        self.assertEqual(len(progress["current_rounds"]), 1)
+        self.assertEqual(progress["current_rounds"][0]["round_number"], 2)
+        self.assertEqual(progress["current_rounds"][0]["status"], "REQUESTED")
+        self.assertFalse(progress["current_rounds"][0]["completed"])
         with self.assertRaisesRegex(HarnessError, "不能重复启动"):
             code.request_regression_rerun(self.store, self.rerun_body(delivery, "duplicate-inflight"))
         with self.assertRaises(HarnessError):
@@ -722,12 +770,20 @@ class VregWorkflowTest(unittest.TestCase):
         self.results(approve=False)
         self.assertTrue(self.validate(delivery)["ready"])
         self.assertFalse(self.store.node_plan_review_state(delivery["id"])["completed"])
+        self.assertEqual(self.view()["progress"]["percentage"], 75)
         self.approve(delivery)
         current = self.store.node_plan_review_state(delivery["id"])
         self.assertEqual(current["regression_execution"]["current"]["status"], "ACCEPTED")
         self.assertEqual(len(current["regression_execution"]["history"]), 2)
         self.assertEqual(len(current["completion_reviews"]), len(old["completion_reviews"]) + 1)
         self.assertTrue(self.store.evaluate_closure("VREG")["ready"])
+        self.assertEqual(self.view()["progress"]["percentage"], 100)
+        self.assertTrue(self.view()["progress"]["current_rounds"][0]["completed"])
+        # A third round still counts one current deliverable, not two historical passes.
+        code.request_regression_rerun(self.store, self.rerun_body(delivery, "third-round"))
+        progress = self.view()["progress"]
+        self.assertEqual((progress["satisfied"], progress["required"], progress["percentage"]), (3, 4, 75))
+        self.assertEqual(progress["current_rounds"][0]["round_number"], 3)
 
     def test_rerun_cli_and_stale_or_unauthorized_requests_fail_closed(self):
         delivery = self.finish_all()

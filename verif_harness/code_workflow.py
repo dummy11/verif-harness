@@ -942,6 +942,54 @@ def vreg_structure_blockers(plan):
     return reasons
 
 
+def workflow_progress(plan, nodes, closure, progress):
+    """Project current completion, never accumulated rounds or execution time.
+
+    An absent results/convergence scope has no known denominator. Keep the
+    registered-node counts for audit, but do not turn them into overall 100%.
+    This projection creates neither placeholder WorkNodes nor approval facts.
+    """
+    workstream = plan["workstream"]
+    if workstream not in {"VREG", "VCOV"}:
+        return {}
+    scope_blockers = (vreg_structure_blockers(plan) if workstream == "VREG"
+                      else vcov_structure_blockers(plan))
+    reasons = list(scope_blockers)
+    total, completed = progress["required"], progress["satisfied"]
+    if not reasons and completed == total and not closure["ready"]:
+        reasons = [action["reason"] for action in closure["actions"]]
+        if not reasons:
+            reasons = ["节点完成统计与工作流完成条件不一致，请重新核对当前状态"]
+    stages = []
+    labels = (("infrastructure", "回归基础设施"), ("results", "回归结果")) if workstream == "VREG" else (
+        ("implementation", "覆盖率实现"), ("convergence", "覆盖率收敛"))
+    for key, label in labels:
+        required = [n for n in nodes if n.get("required", True) and stage(n, workstream) == key]
+        pending = sum(is_plan(n) and not any(
+            is_delivery(d) and d.get("parent_id") == n["id"]
+            and d.get("implementation_key") == n.get("implementation_key")
+            for d in required) for n in required)
+        stages.append({"key": key, "label": label, "registered_required": len(required),
+                       "required": len(required) + pending, "pending_registration": pending,
+                       "satisfied": sum(bool((n.get("plan_review") or {}).get("completed"))
+                                        for n in required)})
+    rounds = []
+    if workstream == "VREG":
+        for n in nodes:
+            if not n.get("required", True) or not is_delivery(n) or vreg_stage(n) != "results":
+                continue
+            review = n.get("plan_review") or {}
+            current = (review.get("regression_execution") or {}).get("current")
+            if current:
+                rounds.append({"node_id": n["id"], "title": n["title"],
+                               "round_number": current["round_number"], "status": current["status"],
+                               "completed": bool(review.get("completed"))})
+    return {"scope_complete": not scope_blockers, "scope_blockers": scope_blockers,
+            "completion_ready": closure["ready"], "percentage_reasons": reasons,
+            "percentage": completed * 100 // total if total and not reasons else None,
+            "stages": stages, "current_rounds": rounds}
+
+
 def _vcov_expected_manifests(store, connection, plan, node):
     """Resolve accepted implementation reports through explicit capability inputs."""
     owner = node if is_plan(node) else next(

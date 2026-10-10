@@ -277,6 +277,12 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertFalse(closure["ready"])
         self.assertTrue(any(a["kind"] == "REFINE_DESIRED_STATE" and "收敛方案" in a["reason"]
                             for a in closure["actions"]))
+        progress = self.view()["progress"]
+        self.assertEqual((progress["satisfied"], progress["required"]), (2, 2))
+        self.assertFalse(progress["scope_complete"])
+        self.assertIsNone(progress["percentage"])
+        self.assertIn("收敛方案", "；".join(progress["percentage_reasons"]))
+        self.assertEqual(progress["stages"][1]["required"], 0)
 
     def test_historical_receipt_without_manifest_contract_requires_revalidation(self):
         delivery = self.finish_implementation()

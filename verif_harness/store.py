@@ -8172,6 +8172,10 @@ class ProjectStore:
             }
             if vdoc_progress is not None:
                 progress["vdoc"] = vdoc_progress
+            if code_workflow.modern(plan):
+                progress.update(code_workflow.workflow_progress(
+                    plan, desired_nodes, workstream_closure, progress,
+                ))
             workstream_views.append({
                 "workstream": plan["workstream"],
                 "code_model": code_workflow.modern(plan),

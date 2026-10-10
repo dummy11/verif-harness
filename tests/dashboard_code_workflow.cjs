@@ -20,6 +20,32 @@ const workstream = config.workstream || 'VENV';
     await table.waitFor();
     assert.deepEqual(await table.locator('th').allTextContents(), ['节点名称','节点类型','进度','状态 / 操作']);
     assert.equal(await page.locator('#review-ws').count(), 0);
+    if (config.phase === 'regression-progress' || config.phase === 'regression-rerun') {
+      const incomplete = config.phase === 'regression-progress';
+      const summary = await page.locator('.project-status-card').innerText();
+      assert.ok(summary.includes('回归基础设施：2/2'));
+      assert.ok(summary.includes(incomplete ? '回归结果：尚未形成必需方案' : '回归结果：2/2'));
+      await page.locator('[data-nav="overview"]').click();
+      const card = page.locator('.ws-card[data-workstream="VREG"]');
+      await card.waitFor();
+      assert.equal(await card.locator('.ws-meter strong').innerText(), incomplete ? '待完善' : '100%');
+      if (incomplete) {
+        assert.ok((await card.innerText()).includes('回归结果方案'));
+        assert.doesNotMatch(await card.locator('.ws-meter').getAttribute('style'), /--value:100/);
+        await page.reload();
+        await card.waitFor();
+        assert.equal(await card.locator('.ws-meter strong').innerText(), '待完善');
+      }
+      await card.click();
+      await table.waitFor();
+      assert.equal(new URL(page.url()).searchParams.get('project'), config.project);
+      assert.equal(new URL(page.url()).searchParams.get('workstream'), 'VREG');
+      if (incomplete) {
+        assert.deepEqual(errors, []);
+        console.log('VREG incomplete scope has no overall percentage; navigation and reload PASS');
+        return;
+      }
+    }
     if (config.phase === 'changes') {
       for (const name of ['添加节点', '删除节点', '重新启动工作流']) {
         await page.getByRole('button', {name, exact:true}).click();
@@ -109,6 +135,19 @@ const workstream = config.workstream || 'VENV';
       await page.locator('#modal pre').waitFor();
       assert.ok((await page.locator('#modal').innerText()).includes('历史轮次的只读报告'));
       assert.ok((await page.locator('#modal pre').innerText()).includes(config.historyPreviewText || 'schema'));
+      await page.locator('#modal [data-close-modal]').click();
+      await page.locator('#close-drawer').click();
+      assert.ok((await page.locator('.project-status-card').innerText()).includes('回归结果：1/2'));
+      await page.locator('[data-nav="overview"]').click();
+      const card = page.locator('.ws-card[data-workstream="VREG"]');
+      await card.waitFor();
+      assert.equal(await card.locator('.ws-meter strong').innerText(), '75%');
+      assert.ok((await card.innerText()).includes('第 ' + receipt.result.round.round_number + ' 轮 · 执行请求已登记'));
+      await page.reload();
+      await card.waitFor();
+      assert.equal(await card.locator('.ws-meter strong').innerText(), '75%');
+      await card.click();
+      await table.waitFor();
       assert.equal(new URL(page.url()).searchParams.get('project'), config.project);
       assert.deepEqual(errors, []);
       console.log('VREG rerun confirmation, one request, authoritative round readback and historical report PASS');

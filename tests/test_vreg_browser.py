@@ -29,6 +29,23 @@ class VregBrowserTest(unittest.TestCase):
         self.scenario.setUp()
         self.addCleanup(self.scenario.tearDown)
 
+    def test_browser_infrastructure_only_has_no_overall_percentage(self):
+        scenario = self.scenario
+        scenario.design([scenario.items[0]])
+        scenario.finish_infrastructure()
+        process = subprocess.run(
+            [self.node_executable, str(Path(__file__).with_name("dashboard_code_workflow.cjs"))],
+            input=json.dumps({
+                "url": scenario.http.url, "project": dashboard_project_id(scenario.root),
+                "token": scenario.http.server.write_token, "workstream": "VREG",
+                "phase": "regression-progress",
+            }),
+            text=True, capture_output=True, timeout=90, env=os.environ.copy(),
+        )
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        self.assertIn("incomplete scope has no overall percentage", process.stdout)
+        self.assertIsNone(scenario.view()["progress"]["percentage"])
+
     def test_browser_rerun_preserves_approved_plan_and_revokes_old_acceptance(self):
         scenario = self.scenario
         delivery = scenario.finish_all()
@@ -107,6 +124,7 @@ class VregBrowserTest(unittest.TestCase):
         self.assertEqual(projected["plan_review"]["regression_execution"], execution)
         self.assertFalse(projected["plan_review"]["completed"])
         self.assertEqual(view["revision"], revision)
+        self.assertEqual(view["progress"]["percentage"], 75)
 
 
 if __name__ == "__main__":

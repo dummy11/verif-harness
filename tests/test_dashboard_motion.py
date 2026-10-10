@@ -131,6 +131,44 @@ vm.runInContext(`
   assert.match(wsCard(vdoc), /style="--value:100;/);
   assert.doesNotMatch(wsCard(vdoc), /正文交付节点待登记/);
 
+  const vreg = {workstream:'VREG',code_model:true,lifecycle:'ACTIVE',revision:3,nodes:[],waiting_for_human:[],
+    progress:{required:4,satisfied:4,registered_required:4,percentage:null,scope_complete:false,
+      percentage_reasons:['尚未登记必需的回归结果方案'],
+      stages:[{label:'回归基础设施',required:4,satisfied:4},{label:'回归结果',required:0,satisfied:0}],current_rounds:[]},
+    closure:{ready:false,actions:[{kind:'REFINE_DESIRED_STATE',reason:'尚未登记必需的回归结果方案'}]}};
+  const originalVreg = JSON.stringify(vreg);
+  assert.equal(percent(vreg.progress), null);
+  assert.match(wsCard(vreg), /待完善/);
+  assert.match(wsCard(vreg), /整体百分比暂不可计算/);
+  assert.match(wsCard(vreg), /回归结果：尚未形成必需方案/);
+  assert.doesNotMatch(wsCard(vreg), /100%|--value:100/);
+  assert.ok(workstreamStatusCardHtml(vreg).includes('已登记节点：4 / 4'));
+  assert.match(workstreamStatusCardHtml(vreg), /尚未登记必需的回归结果方案/);
+  state.snapshot = {workstreams:[vreg],activities:[],project:{}};
+  assert.match(projectStatusCardHtml(), /回归结果：尚未形成必需方案/);
+  assert.equal(JSON.stringify(vreg), originalVreg);
+  vreg.progress.scope_complete = true; vreg.progress.percentage = 75;
+  vreg.progress.percentage_reasons = []; vreg.progress.satisfied = 3;
+  vreg.progress.stages[0] = {label:'回归基础设施',required:2,satisfied:2};
+  vreg.progress.stages[1] = {label:'回归结果',required:2,satisfied:1};
+  vreg.progress.current_rounds = [{title:'nightly 结果交付',round_number:2,status:'REQUESTED',completed:false}];
+  assert.match(wsCard(vreg), /75%/);
+  assert.match(wsCard(vreg), /第 2 轮 · 执行请求已登记/);
+  assert.doesNotMatch(wsCard(vreg), /100%|回归正在执行|已验收通过/);
+  assert.ok(workstreamStatusCardHtml(vreg).includes('回归结果：1/2'));
+  vreg.progress.current_rounds[0].status = 'ACCEPTED';
+  assert.match(wsCard(vreg), /旧结果已失效/);
+  assert.doesNotMatch(wsCard(vreg), /当前轮次已验收通过/);
+  vreg.progress.percentage = 100; vreg.progress.satisfied = 4;
+  vreg.progress.current_rounds[0].completed = true; vreg.closure.ready = true;
+  assert.match(wsCard(vreg), /100%/);
+  assert.match(wsCard(vreg), /当前轮次已验收通过/);
+  vreg.progress.percentage = null; vreg.closure.ready = false;
+  vreg.progress.percentage_reasons = ['等待 Agent 分析新增回归范围'];
+  assert.match(wsCard(vreg), /待处理/);
+  assert.doesNotMatch(wsCard(vreg), /100%|--value:100/);
+  assert.equal(percent({required:200,satisfied:199}), 99);
+
   const riskNode = {
     id:'risk-node', title:'验证计划正文验收', role:'document-deliverable',
     definition_origin:'project-proposal', status:'STALE',

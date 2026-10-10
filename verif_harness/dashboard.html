@@ -143,6 +143,9 @@
     .ws-meter::after { content: ''; position: absolute; right: -2px; bottom: -2px; left: -2px; height: 40px; background: var(--panel); }
     .ws-card:hover .ws-meter::before, .ws-card:hover .ws-meter::after, .ws-card:focus-visible .ws-meter::before, .ws-card:focus-visible .ws-meter::after { background: var(--panel-2); }
     .ws-meter strong { position: relative; z-index: 1; margin-top: -2px; font-size: 21px; }
+    .ws-meter.incomplete strong { font-size: 16px; }
+    .workflow-progress-details { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .workflow-progress-details > div { margin-top: 4px; }
     .ws-meter span { position: absolute; z-index: 2; bottom: 13px; color: var(--muted); font-size: 10px; }
     .ws-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     .ws-foot span:last-child { margin-left: auto; white-space: nowrap; }
@@ -810,8 +813,10 @@
     const claimLabel = value => CLAIM_LABELS[value] || humanText(value) || '未说明';
     const artifactLabel = value => ARTIFACT_LABELS[value] || CLAIM_LABELS[value] || humanText(value) || '未说明';
     const shortTime = (value) => value ? new Date(value).toLocaleString('zh-CN', {hour12:false}) : '—';
-    const percent = (progress) => progress.required ? Math.round(progress.satisfied * 100 / progress.required) : 0;
+    const percent = (progress) => Object.hasOwn(progress, 'percentage')
+      ? progress.percentage : progress.required ? Math.floor(progress.satisfied * 100 / progress.required) : 0;
     function workstreamProgressRemainingText(w) {
+      if ((w.progress?.percentage_reasons || []).length) return w.progress.percentage_reasons.join('；');
       const remaining = Math.max(0, (w.progress?.required || 0) - (w.progress?.satisfied || 0));
       const pending = w.workstream === 'VDOC' ? Number(w.progress?.pending_registration || 0) : 0;
       return pending
@@ -821,6 +826,20 @@
     function workstreamProgressPendingNote(w) {
       const pending = w.workstream === 'VDOC' ? Number(w.progress?.pending_registration || 0) : 0;
       return pending ? `；${pending} 个正文交付节点待登记` : '';
+    }
+    function workstreamProgressDetailsHtml(w) {
+      const stages = (w.progress?.stages || []).map(item => `<div>${escapeHtml(item.label)}：${item.required
+        ? `${item.satisfied}/${item.required} 个节点完成${item.pending_registration ? `，${item.pending_registration} 个交付节点待登记` : ''}`
+        : '尚未形成必需方案'}</div>`).join('');
+      const rounds = (w.progress?.current_rounds || []).map(item => `<div>${escapeHtml(humanText(item.title))}：第 ${escapeHtml(item.round_number)} 轮 · ${escapeHtml(
+        item.completed ? '当前轮次已验收通过' : item.status === 'ACCEPTED'
+          ? '旧结果已失效，等待重新验证和验收' : regressionRoundStatusLabel(item.status))}</div>`).join('');
+      return stages || rounds ? `<div class="workflow-progress-details">${stages}${rounds}</div>` : '';
+    }
+    function workstreamProgressSummaryHtml(w) {
+      const incomplete = w.progress?.scope_complete === false;
+      const count = incomplete ? w.progress.registered_required : w.progress.required;
+      return `<strong>${incomplete ? '已登记节点：' : ''}${w.progress.satisfied} / ${count} 个工作节点已有明确完成结论</strong><span>${escapeHtml(workstreamProgressRemainingText(w))}</span>${workstreamProgressDetailsHtml(w)}`;
     }
     const allNodes = () => state.snapshot?.model?.nodes || [];
     const workstream = (name) => state.snapshot?.workstreams?.find(w => w.workstream === name);
@@ -1390,7 +1409,7 @@
         : planReviewActive
         ? `<strong>已批准 ${approvedPlans} / ${writingPlans.length} 项</strong><span>${changedPlans ? `${changedPlans} 项需要修改，` : ''}还有 ${writingPlans.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
-          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>${escapeHtml(workstreamProgressRemainingText(w))}</span>`
+          ? workstreamProgressSummaryHtml(w)
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT 继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
       const next = pendingCount
@@ -1434,14 +1453,20 @@
     }
     function wsCard(w) {
       const p = percent(w.progress);
+      const unknown = p === null;
+      const meterText = unknown ? (w.progress.scope_complete === false ? '待完善' : '待处理') : `${p}%`;
+      const countText = `${w.progress.satisfied}/${w.progress.required} 个节点已有结论`;
+      const progressText = unknown
+        ? `已登记节点 ${w.progress.satisfied}/${w.progress.registered_required}；${workstreamProgressRemainingText(w)}`
+        : countText + workstreamProgressPendingNote(w);
       const motion = workstreamMotion(w);
       const next = humanPendingItems({waiting_for_human:w.waiting_for_human || []}).length
         ? '等待你处理这条工作流的待办'
         : w.closure?.ready ? '当前完成条件已满足' : (w.closure?.actions || [])[0]
           ? actionLabel(w.closure.actions[0].kind) : '继续按工作节点推进';
       return `<article class="card ws-card" data-workstream="${escapeHtml(w.workstream)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(w.workstream)} · ${escapeHtml(workstreamLabel(w.workstream))}"><div class="ws-title"><div class="ws-title-copy"><small>${escapeHtml(w.workstream)}</small><strong>${escapeHtml(workstreamLabel(w.workstream))}</strong></div>${workstreamStatusBadge(w)}</div>
-        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter" data-motion="${motion}" style="--value:${p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--motion-color, var(--brand))'}" role="img" aria-label="${escapeHtml(w.workstream)} 当前版本已有 ${w.progress.satisfied} / ${w.progress.required} 个工作节点达到完成结论"><strong>${p}%</strong><span>工作节点</span></div>
-        <div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${w.progress.satisfied}/${w.progress.required} 个节点已有结论${escapeHtml(workstreamProgressPendingNote(w))}；不代表验证质量</div><span aria-hidden="true">→</span></div></article>`;
+        <div class="ws-objective">${escapeHtml(humanText(w.objective))}</div><div class="ws-meter${unknown ? ' incomplete' : ''}" data-motion="${motion}" style="--value:${unknown ? 0 : p};--meter-color:${w.closure?.ready ? 'var(--green)' : 'var(--motion-color, var(--brand))'}" role="img" aria-label="${escapeHtml(w.workstream)} ${escapeHtml(unknown ? '整体百分比暂不可计算；' + progressText : countText)}"><strong>${meterText}</strong><span>节点完成度</span></div>
+        ${workstreamProgressDetailsHtml(w)}<div class="ws-foot"><div>下一步：<strong>${escapeHtml(next)}</strong><br>方案 ${escapeHtml(revisionLabel(w.revision))} · ${escapeHtml(progressText)}；不代表执行进度或验证质量</div><span aria-hidden="true">→</span></div></article>`;
     }
     function bindOverviewEntries() {
       document.querySelectorAll('[data-open-pending-items]').forEach(button => button.onclick = () => openPendingItemsTab());
@@ -1986,7 +2011,7 @@
         : reviewingPlans
         ? `<strong>已批准 ${approvedPlans} / ${planNodes.length} 项文档撰写方案</strong><span>还有 ${planNodes.length - approvedPlans} 项尚未批准</span>`
         : w.progress.required
-          ? `<strong>${w.progress.satisfied} / ${w.progress.required} 个工作节点已有明确完成结论</strong><span>${escapeHtml(workstreamProgressRemainingText(w))}</span>`
+          ? workstreamProgressSummaryHtml(w)
           : '<strong>尚未形成工作节点</strong><span>需要根据当前 DUT、接口、功能和验证目标继续分解</span>';
       const firstAction = (w.closure?.actions || [])[0];
       const next = waiting.length
