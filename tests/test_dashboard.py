@@ -1289,6 +1289,54 @@ class DashboardTest(unittest.TestCase):
             for item in after["waiting_for_human"]
         ))
 
+    def test_new_agent_question_reaches_event_stream_when_file_stats_are_stale(self) -> None:
+        node_id = self.plan["desired_state"][0]["id"]
+        activity = self.store.create_activity(
+            node_id, "select-checking-scope", "Agent", "正在分析结果检查范围",
+        )
+        watched = {
+            self.store.database,
+            Path(str(self.store.database) + "-wal"),
+            Path(str(self.store.database) + "-journal"),
+            self.store.state / "project.json",
+        }
+        original_stat = Path.stat
+        frozen: dict[Path, os.stat_result | OSError] = {}
+        for path in watched:
+            try:
+                frozen[path] = original_stat(path)
+            except OSError as exc:
+                frozen[path] = exc
+
+        def stale_stat(path, *args, **kwargs):
+            current = Path(path)
+            if current in frozen:
+                value = frozen[current]
+                if isinstance(value, OSError):
+                    raise value
+                return value
+            return original_stat(current, *args, **kwargs)
+
+        with mock.patch.object(Path, "stat", stale_stat):
+            with self.get("/api/events") as events:
+                before = self.read_snapshot_event(events)
+                question = self.store.ask_agent_question(
+                    node_id, "结果检查方案需要采用哪种连接方式？", [
+                        {"id": "dpi", "label": "DPI 连接", "description": "复用当前参考模型"},
+                        {"id": "sv", "label": "SystemVerilog 连接", "description": "在 testbench 内连接"},
+                    ], "dpi", "当前 VCHK 方案需要负责人确认", "Project Main Agent", True,
+                    activity["id"],
+                )
+                after = self.read_snapshot_event(events)
+
+        self.assertNotEqual(before["version"], after["version"])
+        self.assertEqual(after["agent_questions"][0]["id"], question["id"])
+        self.assertEqual(after["activities"][0]["status"], "WAITING_FOR_HUMAN")
+        self.assertTrue(any(
+            item["source"] == "agent-question" and item["question_id"] == question["id"]
+            for item in after["waiting_for_human"]
+        ))
+
     def test_vdoc_questions_are_waiting_and_document_can_be_reviewed_from_node(self) -> None:
         plan = self.store.design_workstream("VDOC", None, [], [], [])
         before_review = self.store.dashboard_snapshot()

@@ -7624,6 +7624,7 @@ class ProjectStore:
             self.state / "project.json",
         ]
         active_assignments: list[sqlite3.Row] = []
+        control_state_version: int | None = None
         try:
             with self.read_connect() as connection:
                 rows = connection.execute("SELECT path FROM documents ORDER BY id").fetchall()
@@ -7632,6 +7633,11 @@ class ProjectStore:
                     "SELECT id,lease_expires_at FROM agent_assignments "
                     "WHERE status='ACTIVE' ORDER BY id"
                 ).fetchall()
+                version = connection.execute(
+                    "SELECT version FROM agent_service_changes WHERE id=1"
+                ).fetchone()
+                if version is not None:
+                    control_state_version = int(version["version"])
             watched.extend(self.root / str(row["path"]) for row in rows)
         except sqlite3.OperationalError:
             # Older bootstraps are upgraded by dashboard_snapshot(); the database
@@ -7644,6 +7650,11 @@ class ProjectStore:
                 signatures.append((str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))
             except OSError:
                 signatures.append((str(path), None, None))
+        # SQLite triggers advance this value in the same transaction as owner
+        # actions, Agent questions, node/revision changes and evidence updates.
+        # File metadata can be delayed on shared filesystems, so it is only a
+        # fallback signal; the transactional version keeps the SSE snapshot live.
+        signatures.append(("control-state", control_state_version))
         observed_at = dt.datetime.now(dt.timezone.utc)
         for row in active_assignments:
             try:

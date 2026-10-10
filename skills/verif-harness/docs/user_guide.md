@@ -667,6 +667,9 @@ verif-harness COMMAND --help
 
 项目状态数据库和 `ProjectStore` 是 Dashboard、CLI、工作流、工作节点、问题、Activity、审批和证据的
 唯一事实源。`model.md`、`plan.md`、Dashboard snapshot 和事件流只是投影，不能单独推进状态。
+Dashboard 事件流以数据库事务版本识别审批、Agent 问题、节点和证据变化，之后重读
+当前项目快照；不把文件时间戳或事件本身当成权威状态。因此在远程或共享文件系统上，
+新的负责人待办和 Agent 问题也应无需手动刷新即可显示。
 
 ```text
 .verif-harness/
