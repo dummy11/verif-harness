@@ -16,7 +16,7 @@ class DashboardConnectionTest(unittest.TestCase):
         self.assertIn("@keyframes connection-breathe", html)
         self.assertIn('id="connection-dot" class="dot connecting"', html)
         self.assertIn(
-            ".dot.connecting { animation: none !important; }",
+            ".dot.connecting, .dot.syncing { animation: none !important; }",
             html,
         )
 
@@ -60,6 +60,12 @@ vm.runInContext(`
   assert.equal($('#connection-dot').className, 'dot live');
   assert.equal($('#connection-text').textContent, '实时连接正常');
 
+  setConnection('syncing');
+  assert.equal(state.connectionState, 'syncing');
+  assert.equal(state.connected, true);
+  assert.equal($('#connection-dot').className, 'dot syncing');
+  assert.equal($('#connection-text').textContent, '连接正常 · 状态同步重试中');
+
   setConnection('offline');
   assert.equal(state.connectionState, 'offline');
   assert.equal(state.connected, false);
@@ -82,6 +88,15 @@ vm.runInContext(`
   stream.onopen();
   assert.equal(state.connectionState, 'live');
   assert.equal(state.connected, true);
+  stream.listeners['sync-retry']({data:'{}'});
+  assert.equal(state.connectionState, 'syncing');
+  assert.equal(state.connected, true);
+  stream.listeners['sync-restored']({data:'{}'});
+  assert.equal(state.connectionState, 'live');
+  setSnapshot = snapshot => { state.snapshot = snapshot; };
+  stream.listeners.snapshot({data:'{"version":"updated"}'});
+  assert.equal(state.snapshot.version, 'updated');
+  assert.equal(state.connectionState, 'live');
   stream.onerror();
   assert.equal(state.connectionState, 'offline');
   assert.equal(state.connected, false);

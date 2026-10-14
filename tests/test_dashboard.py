@@ -77,23 +77,30 @@ class DashboardTest(unittest.TestCase):
             return json.loads(response.read())
 
     @staticmethod
-    def read_snapshot_event(response: urllib.request.addinfourl) -> dict:
+    def read_event(response: urllib.request.addinfourl) -> tuple[str, dict]:
         event = ""
         data: list[str] = []
         while True:
             raw = response.readline()
             if not raw:
-                raise AssertionError("Dashboard event stream closed before the next snapshot")
+                raise AssertionError("Dashboard event stream closed before the next event")
             line = raw.decode("utf-8").rstrip("\r\n")
             if not line:
-                if event == "snapshot" and data:
-                    return json.loads("\n".join(data))
+                if event and data:
+                    return event, json.loads("\n".join(data))
                 event = ""
                 data = []
             elif line.startswith("event:"):
                 event = line.split(":", 1)[1].strip()
             elif line.startswith("data:"):
                 data.append(line.split(":", 1)[1].lstrip())
+
+    @staticmethod
+    def read_snapshot_event(response: urllib.request.addinfourl) -> dict:
+        while True:
+            event, payload = DashboardTest.read_event(response)
+            if event == "snapshot":
+                return payload
 
     def design_minimal_vdoc(self) -> dict:
         def node(
@@ -1310,6 +1317,69 @@ class DashboardTest(unittest.TestCase):
             item["source"] == "agent-question" and item["question_id"] == question["id"]
             for item in after["waiting_for_human"]
         ))
+
+    def test_event_stream_retries_transient_snapshot_conflict(self) -> None:
+        project_id = self.server.default_project_id
+        current = self.server.dashboard_snapshot(project_id, self.store)
+        node_id = self.plan["desired_state"][0]["id"]
+        activity = self.store.create_activity(
+            node_id, "refresh-after-write", "Agent", "正在登记需要负责人处理的问题",
+        )
+        question = self.store.ask_agent_question(
+            node_id, "是否采用当前结果检查范围？", [
+                {"id": "yes", "label": "采用", "description": "按当前范围继续"},
+                {"id": "revise", "label": "调整", "description": "返回 Agent 修改范围"},
+            ], "yes", "用于验证事件流在写入竞争后自动恢复", "Project Main Agent", True,
+            activity["id"],
+        )
+        original = self.server.dashboard_snapshot
+        calls = 0
+
+        def transient(project: str, store: ProjectStore) -> dict:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
+            return original(project, store)
+
+        with mock.patch.object(self.server, "dashboard_snapshot", side_effect=transient):
+            with self.get(f"/api/events?version={current['version']}") as events:
+                retry_event, retry = self.read_event(events)
+                snapshot_event, snapshot = self.read_event(events)
+
+        self.assertEqual(retry_event, "sync-retry")
+        self.assertEqual(retry["schema"], "DashboardSyncRetry/1")
+        self.assertIn("项目状态持续变化", retry["message"])
+        self.assertEqual(snapshot_event, "snapshot")
+        self.assertNotEqual(snapshot["version"], current["version"])
+        self.assertEqual(snapshot["agent_questions"][0]["id"], question["id"])
+        self.assertGreaterEqual(calls, 2)
+
+    def test_event_stream_reports_sync_restored_without_version_change(self) -> None:
+        project_id = self.server.default_project_id
+        current = self.server.dashboard_snapshot(project_id, self.store)
+        original = self.server.dashboard_snapshot
+        calls = 0
+
+        def transient(project: str, store: ProjectStore) -> dict:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
+            return original(project, store)
+
+        with mock.patch.object(self.server, "dashboard_snapshot", side_effect=transient):
+            with self.get(f"/api/events?version={current['version']}") as events:
+                retry_event, _retry = self.read_event(events)
+                restored_event, restored = self.read_event(events)
+
+        self.assertEqual(retry_event, "sync-retry")
+        self.assertEqual(restored_event, "sync-restored")
+        self.assertEqual(restored, {
+            "schema": "DashboardSyncRestored/1",
+            "version": current["version"],
+        })
+        self.assertGreaterEqual(calls, 2)
 
     def test_new_agent_question_reaches_event_stream_when_file_stats_are_stale(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]

@@ -435,16 +435,48 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         previous = previous_version
         last_ping = 0.0
+        retry_message: str | None = None
+
+        def send_event(name: str, payload: dict[str, Any]) -> None:
+            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            self.wfile.write(f"event: {name}\ndata: {data}\n\n".encode("utf-8"))
+            self.wfile.flush()
+
         try:
             while True:
                 if not _project_registration_path(project_id, self.server.registry_dir).is_file():
                     return
-                snapshot = self._snapshot(store, project_id)
+                try:
+                    snapshot = self._snapshot(store, project_id)
+                except HarnessError as exc:
+                    # A snapshot can race with a burst of CLI/Agent writes.  Keep the
+                    # established SSE response alive and retry instead of falling back
+                    # to an invalid JSON response after event-stream headers were sent.
+                    message = str(exc)
+                    if retry_message != message:
+                        send_event("sync-retry", {
+                            "schema": "DashboardSyncRetry/1",
+                            "message": message,
+                        })
+                        retry_message = message
+                        last_ping = time.monotonic()
+                    elif time.monotonic() - last_ping >= 15:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+                        last_ping = time.monotonic()
+                    time.sleep(1)
+                    continue
                 if snapshot["version"] != previous:
-                    data = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
-                    self.wfile.write(f"event: snapshot\ndata: {data}\n\n".encode("utf-8"))
-                    self.wfile.flush()
+                    send_event("snapshot", snapshot)
                     previous = snapshot["version"]
+                    retry_message = None
+                    last_ping = time.monotonic()
+                elif retry_message is not None:
+                    send_event("sync-restored", {
+                        "schema": "DashboardSyncRestored/1",
+                        "version": snapshot["version"],
+                    })
+                    retry_message = None
                     last_ping = time.monotonic()
                 elif time.monotonic() - last_ping >= 15:
                     self.wfile.write(b": keepalive\n\n")

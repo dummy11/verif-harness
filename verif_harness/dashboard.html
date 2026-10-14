@@ -50,6 +50,7 @@
     .connection { margin-left: auto; display: flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; }
     .dot { width: 9px; height: 9px; border-radius: 50%; color: #98a2b3; background: currentColor; }
     .dot.connecting { animation: connection-breathe 2s ease-in-out infinite; }
+    .dot.syncing { color: var(--yellow); animation: connection-breathe 2s ease-in-out infinite; }
     .dot.live { color: #22a663; box-shadow: 0 0 0 4px rgba(34,166,99,.12); }
     .dot.offline { color: #e5484d; }
     @keyframes connection-breathe { 0%, 100% { opacity: .45; box-shadow: 0 0 0 0 transparent; } 50% { opacity: 1; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 18%, transparent); } }
@@ -427,7 +428,7 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.error { background: #a51d2a; }
     @media (max-width: 1050px) { .two-col, .agent-workspace, .agent-work-status-grid, .agent-collaboration-grid { grid-template-columns: 1fr; } }
-    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .nav-state, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } .dot.connecting { animation: none !important; } }
+    @media (prefers-reduced-motion: reduce) { .state-dot, .status-pulse, .nav-state, .ws-meter, .progress-ring, .node-progress-bar { animation: none !important; } .dot.connecting, .dot.syncing { animation: none !important; } }
     @media (max-width: 1190px) { .workstream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 9px; } .sidebar-head, .nav-label, .sidebar-foot { display: none; } .nav-item { width: auto; flex: 0 0 auto; } .nav-item .nav-state { display: none; } .workstream-grid { grid-template-columns: 1fr; } .topbar { padding: 0 12px; gap: 8px; } .brand { width: 42px; flex-basis: 42px; min-width: 42px; padding: 0; border: 0; background: transparent; } .brand > div { display: none; } .project-switcher { min-width: 140px; max-width: 42vw; } .project-unregister { padding-inline: 8px; } .connection span:last-child { display: none; } .search { display: none; } main { padding: 20px 14px 50px; } .node-status-facts { grid-template-columns: 1fr; } .page-head { display: block; } .page-actions { margin: 12px 0 0; } .plan-approval-controls { grid-template-columns: 1fr; } .plan-approval-controls > .modal-actions { width: 100%; } .plan-approval-controls > .modal-actions .btn { flex: 1 1 100%; } .project-status-head { align-items: flex-start; flex-direction: column; } .project-status-badges { justify-content: flex-start; margin-left: 0; } .node-list-tools { width: 100%; margin-left: 0; } .node-table th:nth-child(2), .node-table td:nth-child(2) { display: none; } .risk-table { min-width: 640px; } .risk-table th:nth-child(2), .risk-table td:nth-child(2) { display: table-cell; } .node-progress-cell { min-width: 190px; } .metric-row, .agent-response-row { grid-template-columns: 1fr; } .agent-session-head { align-items: flex-start; } .agent-session-badge { margin-left: 0; } .agent-priority-clear { align-items: flex-start; flex-wrap: wrap; } .agent-priority-clear > .badge { margin-left: 0; } .agent-readonly-details > summary { align-items: flex-start; flex-wrap: wrap; } .agent-readonly-details > summary .count { width: 100%; margin-left: 33px; } .agent-event-head { align-items: flex-start; flex-wrap: wrap; } .agent-event-head time { width: 100%; margin-left: 0; } }
     @media (max-width: 760px) {
@@ -852,6 +853,7 @@
       const view = {
         connecting: {label:'连接中', connected:false},
         live: {label:'实时连接正常', connected:true},
+        syncing: {label:'连接正常 · 状态同步重试中', connected:true},
         offline: {label:'连接中断 · 显示最后状态', connected:false},
       }[connectionState] || {label:'连接中', connected:false};
       state.connected = view.connected;
@@ -1125,6 +1127,12 @@
       stream.addEventListener('snapshot', event => {
         const snapshot = JSON.parse(event.data);
         if (current()) { setConnection('live'); setSnapshot(snapshot); }
+      });
+      stream.addEventListener('sync-retry', () => {
+        if (current()) setConnection('syncing');
+      });
+      stream.addEventListener('sync-restored', () => {
+        if (current()) setConnection('live');
       });
       stream.onerror = () => { if (current()) setConnection('offline'); };
     }
