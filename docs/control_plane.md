@@ -196,6 +196,11 @@ VDOC、VENV、VSTIM、VCHK、VCASE、VCOV 和 VREG。可重复传入 `--node NOD
 指定节点；不指定时等待当前可处理的方案审批、交付验收或审批意见提交。节点批准
 只唤醒 Main Agent 重新读取 Closure，不表示整条工作流已完成。VDOC 正文批准后仍须
 执行 Main Agent 检查；仅保存意见不唤醒，提交整批意见才返回 `APPLY_REVIEW_FEEDBACK`。
+`status WORKSTREAM` 的 `waiting_for_human` 是当前负责人待办的确定性集合；CLI 面向
+负责人的摘要必须逐项使用该集合；其中可由 `await-human` 等待的正式评审另列在
+`awaitable_reviews`，后台等待任务描述只能使用这个子集。`WAIT_FOR_DEPENDENCY` 表示
+节点仍被前置能力阻塞，不得显示为当前待审批或待验收；显式传给
+`await-human --node` 也会被拒绝。
 返回的节点审批 ID 可用于下一次 `--after-review`，旧版本、变化的正文/证据或其他
 项目的记录不能解除等待。超时不取消待办，也不能唤醒已经退出的 Agent。
 工作节点列表没有当前负责人动作时不提示重复批准；禁用的列表审批按钮显示为灰色。

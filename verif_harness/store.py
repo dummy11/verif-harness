@@ -4761,6 +4761,13 @@ class ProjectStore:
                 "HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK", "APPLY_REVIEW_FEEDBACK",
             } and item["target"] in public_nodes
         }
+        unavailable_requested_nodes = requested_nodes - pending_nodes
+        if unavailable_requested_nodes:
+            blocked = "、".join(sorted(unavailable_requested_nodes))
+            raise HarnessError(
+                "--node 只能绑定当前 Closure 中等待负责人处理的评审节点；"
+                f"以下节点当前不可评审（可能仍在等待依赖）：{blocked}"
+            )
 
         def node_review_state(node: dict[str, Any]) -> dict[str, Any]:
             if node.get("role") == "document-deliverable":

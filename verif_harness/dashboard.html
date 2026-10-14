@@ -1620,8 +1620,11 @@
       if (!items.length) return '<div class="empty">当前没有需要你处理的事项</div>';
       return items.map(a => {
         const targetNode = findNode(a.target);
-        const planNodeReview = a.source === 'closure' && Boolean(targetNode?.plan_review);
-        const deliveryNodeReview = a.source === 'closure' && Boolean(targetNode?.delivery_review);
+        const planNodeReview = a.source === 'closure' && Boolean(targetNode?.plan_review)
+          && (targetNode?.role === 'document-writing-plan' || isCodePlanNode(targetNode));
+        const deliveryNodeReview = a.source === 'closure' && Boolean(targetNode?.delivery_review)
+          && (targetNode?.role === 'document-deliverable'
+            || (isCodeNode(targetNode || {}) && !isCodePlanNode(targetNode)));
         const nodeName = humanText(targetNode?.title || a.target_title || '当前工作节点');
         const documentName = humanText(
           targetNode?.document?.title || a.document_title || targetNode?.document_key || ''

@@ -261,6 +261,9 @@ class SetupScriptTest(unittest.TestCase):
         self.assertIn("immediately call `verif-harness agent-question answer`", kimi_main)
         self.assertIn("Formal plan approval, delivery acceptance", kimi_main)
         self.assertIn("await-human WORKSTREAM --revision REVISION --node NODE_ID", kimi_main)
+        self.assertIn("copy only its\n`waiting_for_human` entries", kimi_main)
+        self.assertIn("`WAIT_FOR_DEPENDENCY` is blocked", kimi_main)
+        self.assertIn("exactly the `awaitable_reviews` targets", kimi_main)
         self.assertIn("visible acknowledgement", kimi_main)
 
 

@@ -76,6 +76,13 @@ Formal plan approval, delivery acceptance, waiver, and freeze are never
 Kimi session, show the exact current node and Dashboard action, then start
 `verif-harness await-human WORKSTREAM --revision REVISION --node NODE_ID
 --timeout 1800` as a Kimi Bash background task. Do not occupy the foreground.
+Before describing any owner todo, reread `status WORKSTREAM` and copy only its
+`waiting_for_human` entries. Never infer an approval from an unapproved node or
+from a future workflow step. In particular, `WAIT_FOR_DEPENDENCY` is blocked
+work, not a current approval or acceptance request. The visible background-task
+description must name exactly the `awaitable_reviews` targets, while the overall
+owner-todo count must match `waiting_for_human`. Do not combine blocked nodes or
+other owner actions with the active review checkpoint.
 On `DECIDED`, immediately print a visible acknowledgement naming the node,
 revision, recorded decision, and next action; then reread Closure before doing
 or dispatching work. On `TIMEOUT`, if the same current-version decision is still

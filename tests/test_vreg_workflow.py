@@ -302,6 +302,48 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertTrue(all(node["capabilities"] for node in view["nodes"]))
         self.assertEqual(self.head("cap.vreg:fresh-evidence")["status"], "VALID")
 
+    def test_cli_dashboard_and_checkpoint_share_only_current_owner_reviews(self):
+        infrastructure_plan = self.node("regression-infrastructure-plan")
+        results_plan = self.node("regression-results-plan")
+        self.approve(infrastructure_plan)
+        infrastructure_delivery = self.infrastructure(approve=False)
+        self.assertTrue(self.validate(infrastructure_delivery)["ready"])
+
+        closure = self.store.evaluate_closure("VREG", persist=False)
+        result_action = next(action for action in closure["actions"]
+                             if action["target"] == results_plan["id"])
+        self.assertEqual(result_action["kind"], "WAIT_FOR_DEPENDENCY")
+        self.assertEqual(result_action["executor"], "deterministic")
+        human_targets = [action["target"] for action in closure["actions"]
+                         if action["executor"] == "human"]
+        self.assertEqual(human_targets, [infrastructure_delivery["id"]])
+
+        cli_status = self.cli("status", "VREG")
+        self.assertEqual(
+            [action["target"] for action in cli_status["waiting_for_human"]],
+            human_targets,
+        )
+        self.assertEqual(
+            [action["target"] for action in cli_status["awaitable_reviews"]],
+            human_targets,
+        )
+        dashboard_targets = [
+            action["target"] for action in self.view()["waiting_for_human"]
+            if action["source"] == "closure"
+        ]
+        self.assertEqual(dashboard_targets, human_targets)
+
+        checkpoint = self.store.await_human_review("VREG", timeout=0)
+        self.assertEqual(checkpoint["status"], "TIMEOUT")
+        self.assertEqual(
+            [node["node_id"] for node in checkpoint["checkpoint"]["nodes"]],
+            human_targets,
+        )
+        with self.assertRaisesRegex(HarnessError, "当前不可评审"):
+            self.store.await_human_review(
+                "VREG", timeout=0, node_ids=[results_plan["id"]],
+            )
+
     def test_infrastructure_only_cannot_finish_vreg(self):
         self.design([self.items[0]])
         self.finish_infrastructure()

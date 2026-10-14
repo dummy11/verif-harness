@@ -907,7 +907,21 @@ def main(arguments: list[str] | None = None) -> int:
             with store.operation():
                 if args.workstream:
                     closure = store.evaluate_closure(args.workstream, persist=False)
-                    emit({"plan": store.workstream(args.workstream), "closure": closure})
+                    waiting_for_human = [
+                        action for action in closure["actions"]
+                        if action.get("executor") == "human"
+                    ]
+                    emit({
+                        "plan": store.workstream(args.workstream),
+                        "closure": closure,
+                        "waiting_for_human": waiting_for_human,
+                        "awaitable_reviews": [
+                            action for action in waiting_for_human
+                            if action.get("kind") in {
+                                "HUMAN_REVIEW", "SUBMIT_REVIEW_FEEDBACK",
+                            }
+                        ],
+                    })
                 else:
                     emit(store.status())
         elif args.command == "workflow-launch":

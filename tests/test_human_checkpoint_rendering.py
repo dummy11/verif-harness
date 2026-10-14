@@ -50,6 +50,17 @@ vm.runInContext(`
   body.next_actions = [];
   assert.match(nodeStatusHtml(body), /等待 Agent 核对正文验收条件/);
   assert.doesNotMatch(nodeStatusHtml(body), /待验收/);
+
+  const codeDelivery = {id:'vreg-delivery',role:'regression-infrastructure-deliverable',
+    title:'回归策略交付',status:'REVALIDATION_REQUIRED',work_content:['核对当前回归策略与证据'],
+    plan_review:{sections:[{section:'writing-plan',status:'PENDING'}]},
+    delivery_review:{status:'PENDING'}};
+  state.snapshot = {workstreams:[{workstream:'VREG',nodes:[codeDelivery]}]};
+  const deliveryRow = humanRows([{source:'closure',target:codeDelivery.id,target_type:'node',
+    action:'HUMAN_REVIEW',status:'OPEN',reason:'等待负责人验收回归基础设施交付'}]);
+  assert.match(deliveryRow, /验收：回归策略交付/);
+  assert.match(deliveryRow, /验收内容：核对当前回归策略与支持材料/);
+  assert.doesNotMatch(deliveryRow, /待审批：|方案内容：/);
 `, context);
 """, text=True, capture_output=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
