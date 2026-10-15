@@ -33,6 +33,8 @@ new vm.Script(source);
 const elements = new Map();
 const context = vm.createContext({
   assert, URL, URLSearchParams,
+  clearTimeout: () => {},
+  setTimeout: () => 1,
   window: {
     location: {search: '', href: 'http://dashboard.test/'},
     history: {state: {}, replaceState: () => {}},
@@ -109,8 +111,30 @@ vm.runInContext(`
 await vm.runInContext(`(async () => {
   state.stream = null;
   state.projects = [{id:'project-2', name:'project-2', dut_top:'dut'}];
+  globalThis.fetch = async () => ({
+    ok:false, status:409, statusText:'Conflict',
+    json:async () => ({
+      error:'读取期间项目状态仍在更新',
+      code:'SNAPSHOT_CHANGING', retryable:true,
+    }),
+  });
+  await selectProject('project-2', false);
+  assert.equal(state.connectionState, 'syncing');
+  assert.equal(state.snapshot, null);
+  assert.match($('#main').innerHTML, /项目状态正在更新/);
+  assert.match($('#main').innerHTML, /无需刷新或重复提交审批/);
+  const retryStream = streams[1];
+  retryStream.onopen();
+  assert.equal(state.connectionState, 'syncing');
+  retryStream.listeners['sync-retry']({data:'{}'});
+  assert.equal(state.connectionState, 'syncing');
+  retryStream.listeners.snapshot({data:'{"version":"initial-stable"}'});
+  assert.equal(state.snapshot.version, 'initial-stable');
+  assert.equal(state.connectionState, 'live');
+
+  state.projects.push({id:'project-3', name:'project-3', dut_top:'dut'});
   globalThis.fetch = async () => { throw new Error('snapshot unavailable'); };
-  await assert.rejects(selectProject('project-2', false), /snapshot unavailable/);
+  await assert.rejects(selectProject('project-3', false), /snapshot unavailable/);
   assert.equal(state.connectionState, 'offline');
   assert.equal(state.connected, false);
 })()`, context);

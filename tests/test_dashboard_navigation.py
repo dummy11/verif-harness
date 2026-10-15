@@ -39,6 +39,9 @@ class DashboardNavigationTest(unittest.TestCase):
     def test_reopen_does_not_claim_idle_agent_is_processing(self) -> None:
         self.run_browser_script("dashboard_agent_state.cjs")
 
+    def test_initial_snapshot_conflict_recovers_without_reload(self) -> None:
+        self.run_browser_script("dashboard_snapshot_retry.cjs")
+
     def run_browser_script(self, script: str) -> None:
         if not shutil.which("node"):
             self.skipTest("Node.js is required for browser navigation tests")

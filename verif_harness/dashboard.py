@@ -41,6 +41,14 @@ DASHBOARD_ASSETS = {
     "/assets/markdown-it.min.js": "vendor/markdown-it/markdown-it.min.js",
     "/assets/dashboard-markdown.js": "dashboard_markdown.js",
 }
+SNAPSHOT_CHANGING_CODE = "SNAPSHOT_CHANGING"
+SNAPSHOT_CHANGING_MESSAGE = (
+    "读取期间项目状态仍在更新；Dashboard 将在状态稳定后自动同步最新结果"
+)
+
+
+class DashboardSnapshotChanged(HarnessError):
+    """A retryable race between one snapshot read and authoritative writes."""
 
 
 def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
@@ -245,7 +253,7 @@ class DashboardHTTPServer(ThreadingHTTPServer):
                     with self._snapshot_cache_lock:
                         self._snapshot_cache[project_id] = (final_token, snapshot)
                     return snapshot
-            raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
+            raise DashboardSnapshotChanged(SNAPSHOT_CHANGING_MESSAGE)
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -352,6 +360,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 query = urllib.parse.parse_qs(parsed.query)
                 project_id = self._selected_project_id(query.get("project", [""])[0])
                 self._json(self._snapshot(self.server.project_store(project_id), project_id))
+            except DashboardSnapshotChanged as exc:
+                self._json({
+                    "error": str(exc),
+                    "code": SNAPSHOT_CHANGING_CODE,
+                    "retryable": True,
+                }, HTTPStatus.CONFLICT)
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/approval-status":
@@ -448,7 +462,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     return
                 try:
                     snapshot = self._snapshot(store, project_id)
-                except HarnessError as exc:
+                except DashboardSnapshotChanged as exc:
                     # A snapshot can race with a burst of CLI/Agent writes.  Keep the
                     # established SSE response alive and retry instead of falling back
                     # to an invalid JSON response after event-stream headers were sent.
@@ -466,6 +480,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         last_ping = time.monotonic()
                     time.sleep(1)
                     continue
+                except HarnessError as exc:
+                    send_event("sync-error", {
+                        "schema": "DashboardSyncError/1",
+                        "message": str(exc),
+                    })
+                    return
                 if snapshot["version"] != previous:
                     send_event("snapshot", snapshot)
                     previous = snapshot["version"]
@@ -517,7 +537,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # caller separately rereads the authoritative project snapshot.
                 self._json({"result": result, "dashboard_project_id": project_id})
                 return
-            self._json({"result": result, "snapshot": self._snapshot(store, project_id), "dashboard_project_id": project_id})
+            try:
+                snapshot = self._snapshot(store, project_id)
+            except DashboardSnapshotChanged as exc:
+                # The authoritative write already committed. Return its receipt and
+                # let the existing event stream reread state without inviting a
+                # duplicate submission.
+                self._json({
+                    "result": result,
+                    "snapshot": None,
+                    "snapshot_sync": {
+                        "code": SNAPSHOT_CHANGING_CODE,
+                        "message": str(exc),
+                        "retryable": True,
+                    },
+                    "dashboard_project_id": project_id,
+                })
+                return
+            self._json({
+                "result": result,
+                "snapshot": snapshot,
+                "dashboard_project_id": project_id,
+            })
         except HarnessError as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:  # pragma: no cover - safety boundary for the local HTTP surface

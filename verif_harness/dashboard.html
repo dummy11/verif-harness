@@ -1116,14 +1116,16 @@
       switcher.disabled = state.projects.length < 2;
       $('#project-unregister').disabled = !state.project;
     }
-    function connectProjectStream(projectId) {
+    function connectProjectStream(projectId, waitingForSnapshot=false) {
       if (state.stream) state.stream.close();
-      setConnection('connecting');
+      setConnection(waitingForSnapshot ? 'syncing' : 'connecting');
       const version = state.snapshot?.version || '';
       const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}&version=${encodeURIComponent(version)}`);
       state.stream = stream;
       const current = () => state.project === projectId && state.stream === stream;
-      stream.onopen = () => { if (current()) setConnection('live'); };
+      stream.onopen = () => {
+        if (current()) setConnection(waitingForSnapshot && !state.snapshot ? 'syncing' : 'live');
+      };
       stream.addEventListener('snapshot', event => {
         const snapshot = JSON.parse(event.data);
         if (current()) { setConnection('live'); setSnapshot(snapshot); }
@@ -1133,6 +1135,16 @@
       });
       stream.addEventListener('sync-restored', () => {
         if (current()) setConnection('live');
+      });
+      stream.addEventListener('sync-error', event => {
+        if (!current()) return;
+        let message = '无法继续读取项目状态';
+        try { message = JSON.parse(event.data).message || message; } catch {}
+        setConnection('offline');
+        if (!state.snapshot) $('#main').innerHTML = `<div class="card empty"><strong>无法打开所选项目</strong><p>${escapeHtml(message)}</p><button class="btn" id="retry-project-state" type="button">重新读取项目状态</button></div>`;
+        if ($('#retry-project-state')) $('#retry-project-state').onclick = () => selectProject(projectId, false).catch(error => toast(`读取状态失败：${error}`, true));
+        toast(`读取状态失败：${message}`, true);
+        stream.close();
       });
       stream.onerror = () => { if (current()) setConnection('offline'); };
     }
@@ -1154,6 +1166,12 @@
         const response = await fetch(`/api/snapshot?project=${encodeURIComponent(projectId)}`, {headers:{'X-Verif-Token':token}});
         const body = await response.json();
         if (state.project !== projectId) return;
+        if (response.status === 409 && body.retryable === true && body.code === 'SNAPSHOT_CHANGING') {
+          setConnection('syncing');
+          $('#main').innerHTML = '<div class="card empty" role="status"><strong>项目状态正在更新</strong><p>Dashboard 正在等待一次完整、一致的项目状态；连接保持正常，状态稳定后会自动打开，无需刷新或重复提交审批。</p></div>';
+          connectProjectStream(projectId, true);
+          return;
+        }
         if (!response.ok) throw new Error(body.error || response.statusText);
         setSnapshot(body);
         connectProjectStream(projectId);
@@ -3587,7 +3605,16 @@
         const stillHere = route === viewKey();
         if (stillHere && modal === modalSequence) closeModal(true);
         if (stillHere && afterSuccess) afterSuccess(body);
-        setSnapshot(body.snapshot); toast(success);
+        if (body.snapshot) {
+          setSnapshot(body.snapshot);
+          toast(success);
+        } else if (body.snapshot_sync?.retryable === true) {
+          setConnection('syncing');
+          connectProjectStream(project, !state.snapshot);
+          toast(`${success}；页面状态正在自动同步`);
+        } else {
+          throw new Error('操作已返回，但没有收到可核对的项目状态');
+        }
       }
       catch (error) { toast(String(error), true); }
     }

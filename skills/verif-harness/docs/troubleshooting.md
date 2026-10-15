@@ -55,6 +55,18 @@
 
 完整的单跳和双跳配置见[从本地浏览器访问远端 Dashboard](user_guide.md#从本地浏览器访问远端-dashboard)。
 
+## Dashboard 显示“状态同步重试中”
+
+这表示服务和浏览器连接仍然正常，但本次读取与 CLI/Agent 的控制状态写入发生竞争。Dashboard 会
+等待一次完整、一致的 ProjectStore 快照，稳定后自动打开或刷新页面；不要重复提交审批，也不要用
+工作流重启、重新 bootstrap 或删除 `.verif-harness` 绕过。仅更新时间戳的 Agent heartbeat 不会触发
+这项重试，Activity 进度、任务状态、审批、问题、证据和租约失效等实际可见变化仍会触发同步。
+
+如果页面明确显示“无法继续读取项目状态”，它不是可重试竞争。先在远端运行
+`verif-harness dashboard --status`，再检查账号级 `dashboard.log` 和当前项目 SQLite 的可读性；不要把
+数据库、权限或项目注册错误当成 heartbeat 冲突。写操作已经返回“已保存”时，以保存回执及节点的
+审批状态查询为准；页面刷新失败不表示写入失败，也不能据此自动重试写操作。
+
 ## Dashboard 已回答，但 Kimi CLI 没有继续
 
 先看 Kimi 是否已经回到原生 `>` 提示符。如果是，说明当前 turn 已结束，没有正在等待 Dashboard

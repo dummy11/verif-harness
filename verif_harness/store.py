@@ -1279,17 +1279,85 @@ CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA + workflow_launch.SCHEMA
 
 # Heartbeats and runtime logs must not cause another expensive closure read.
+# Every table below changes facts rendered by dashboard_snapshot(). Keep this
+# transactional version comprehensive so dashboard_change_token() does not have
+# to treat unrelated SQLite/WAL metadata churn as a project-state change.
 for _table in ("workstreams", "nodes", "edges", "findings", "evidence", "documents",
-               "document_reviews", "document_items", "agent_questions", "human_actions",
-               "node_plan_reviews", "node_plan_section_reviews", "document_delivery_reviews",
-               "review_feedback_items", "review_agent_checks", "node_closure_reviews",
-               "review_change_items", "reviews", "agent_assignments", "vdoc_manifest_checks",
-               "code_validations", "coverage_exclusion_approvals", "regression_execution_rounds",
+               "document_revisions", "document_reviews", "document_items",
+               "agent_questions", "human_actions", "node_plan_reviews",
+               "node_plan_section_reviews", "document_delivery_reviews",
+               "document_delivery_provisionals", "review_feedback_items",
+               "review_agent_checks", "node_closure_reviews", "review_change_items",
+               "reviews", "actions", "baselines", "events", "agent_service_runs",
+               "vdoc_artifact_versions", "vdoc_manifest_checks", "vdoc_legacy_units",
+               "code_validations", "code_artifact_versions",
+               "coverage_exclusion_approvals", "regression_execution_rounds",
                "workflow_launch_decisions"):
     for _operation in ("INSERT", "UPDATE", "DELETE"):
         SCHEMA += f"""
 CREATE TRIGGER IF NOT EXISTS service_change_{_table}_{_operation}
 AFTER {_operation} ON {_table} BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+"""
+
+# Activity/assignment heartbeats update timestamps and leases even when the
+# user-visible state is unchanged. Existing databases may already have the old
+# catch-all assignment trigger, so replace it explicitly with semantic triggers.
+SCHEMA += """
+DROP TRIGGER IF EXISTS service_change_agent_assignments_UPDATE;
+CREATE TRIGGER IF NOT EXISTS service_change_agent_assignments_INSERT
+AFTER INSERT ON agent_assignments BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS service_change_agent_assignments_DELETE
+AFTER DELETE ON agent_assignments BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER service_change_agent_assignments_UPDATE
+AFTER UPDATE ON agent_assignments
+WHEN OLD.action_id IS NOT NEW.action_id
+  OR OLD.node_id IS NOT NEW.node_id
+  OR OLD.workstream IS NOT NEW.workstream
+  OR OLD.workstream_revision IS NOT NEW.workstream_revision
+  OR OLD.definition_digest IS NOT NEW.definition_digest
+  OR OLD.runtime IS NOT NEW.runtime
+  OR OLD.agent_id IS NOT NEW.agent_id
+  OR OLD.parent_agent_id IS NOT NEW.parent_agent_id
+  OR OLD.role IS NOT NEW.role
+  OR OLD.runtime_ref IS NOT NEW.runtime_ref
+  OR OLD.status IS NOT NEW.status
+  OR OLD.activity_id IS NOT NEW.activity_id
+  OR OLD.lease_seconds IS NOT NEW.lease_seconds
+  OR OLD.write_scope_json IS NOT NEW.write_scope_json
+  OR OLD.summary IS NOT NEW.summary
+  OR OLD.result_json IS NOT NEW.result_json
+  OR OLD.ended_at IS NOT NEW.ended_at
+BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS service_change_activities_INSERT
+AFTER INSERT ON activities BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS service_change_activities_DELETE
+AFTER DELETE ON activities BEGIN
+  UPDATE agent_service_changes SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS service_change_activities_UPDATE
+AFTER UPDATE ON activities
+WHEN OLD.node_id IS NOT NEW.node_id
+  OR OLD.workstream IS NOT NEW.workstream
+  OR OLD.operation IS NOT NEW.operation
+  OR OLD.status IS NOT NEW.status
+  OR OLD.actor IS NOT NEW.actor
+  OR OLD.message IS NOT NEW.message
+  OR OLD.progress_current IS NOT NEW.progress_current
+  OR OLD.progress_total IS NOT NEW.progress_total
+  OR OLD.log_path IS NOT NEW.log_path
+  OR OLD.ended_at IS NOT NEW.ended_at
+BEGIN
   UPDATE agent_service_changes SET version=version+1 WHERE id=1;
 END;
 """
@@ -7652,9 +7720,6 @@ class ProjectStore:
         """Build a cheap token for facts that can change a Dashboard snapshot."""
         self.require()
         watched = [
-            self.database,
-            Path(str(self.database) + "-wal"),
-            Path(str(self.database) + "-journal"),
             self.state / "project.json",
         ]
         active_assignments: list[sqlite3.Row] = []
@@ -7685,9 +7750,9 @@ class ProjectStore:
             except OSError:
                 signatures.append((str(path), None, None))
         # SQLite triggers advance this value in the same transaction as owner
-        # actions, Agent questions, node/revision changes and evidence updates.
-        # File metadata can be delayed on shared filesystems, so it is only a
-        # fallback signal; the transactional version keeps the SSE snapshot live.
+        # actions, Agent questions, Activity changes, node/revision changes and
+        # evidence updates. Raw database/WAL metadata is deliberately excluded:
+        # heartbeat-only writes do not change the Dashboard's semantic view.
         signatures.append(("control-state", control_state_version))
         observed_at = dt.datetime.now(dt.timezone.utc)
         for row in active_assignments:
@@ -7696,13 +7761,18 @@ class ProjectStore:
                 expired = expires_at <= observed_at
             except (TypeError, ValueError):
                 expired = True
-            signatures.append(("assignment", row["id"], row["lease_expires_at"], expired))
+            # Extending a still-live lease is not a visible state change. The
+            # boundary to/from expired remains part of the token.
+            signatures.append(("assignment", row["id"], expired))
         try:
             with self.read_connect() as connection:
-                service = connection.execute("SELECT heartbeat,status FROM agent_service WHERE id=1").fetchone()
+                service = connection.execute("SELECT * FROM agent_service WHERE id=1").fetchone()
             if service:
-                signatures.append(("agent-service", service["status"],
-                                   observed_at.timestamp() - service["heartbeat"] >= 30))
+                signatures.append((
+                    "agent-service", service["runtime"], service["owner"], service["pid"],
+                    service["status"], service["stop_requested"], service["message"],
+                    observed_at.timestamp() - service["heartbeat"] >= 30,
+                ))
         except sqlite3.OperationalError:
             pass
         return hashlib.sha256(json_text(signatures).encode("utf-8")).hexdigest()[:24]

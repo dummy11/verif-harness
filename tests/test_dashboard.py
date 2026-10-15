@@ -20,8 +20,9 @@ from unittest import mock
 from verif_harness.cli import bootstrap_dashboard, main
 from verif_harness.dashboard import (
     DASHBOARD_HUB_SCHEMA, DASHBOARD_REGISTRY_ENV, create_dashboard_server,
-    dashboard_owner_id, dashboard_project_id, dashboard_status, dashboard_url,
-    ensure_dashboard_running, register_dashboard_project, stop_dashboard,
+    DashboardSnapshotChanged, dashboard_owner_id, dashboard_project_id,
+    dashboard_status, dashboard_url, ensure_dashboard_running,
+    register_dashboard_project, stop_dashboard,
 )
 from verif_harness.store import HarnessError, ProjectStore
 
@@ -1339,7 +1340,7 @@ class DashboardTest(unittest.TestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
-                raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
+                raise DashboardSnapshotChanged("读取期间项目状态仍在更新")
             return original(project, store)
 
         with mock.patch.object(self.server, "dashboard_snapshot", side_effect=transient):
@@ -1349,7 +1350,7 @@ class DashboardTest(unittest.TestCase):
 
         self.assertEqual(retry_event, "sync-retry")
         self.assertEqual(retry["schema"], "DashboardSyncRetry/1")
-        self.assertIn("项目状态持续变化", retry["message"])
+        self.assertIn("项目状态仍在更新", retry["message"])
         self.assertEqual(snapshot_event, "snapshot")
         self.assertNotEqual(snapshot["version"], current["version"])
         self.assertEqual(snapshot["agent_questions"][0]["id"], question["id"])
@@ -1365,7 +1366,7 @@ class DashboardTest(unittest.TestCase):
             nonlocal calls
             calls += 1
             if calls == 1:
-                raise HarnessError("读取期间项目状态持续变化，请稍后刷新；没有更改审批结果")
+                raise DashboardSnapshotChanged("读取期间项目状态仍在更新")
             return original(project, store)
 
         with mock.patch.object(self.server, "dashboard_snapshot", side_effect=transient):
@@ -1380,6 +1381,49 @@ class DashboardTest(unittest.TestCase):
             "version": current["version"],
         })
         self.assertGreaterEqual(calls, 2)
+
+    def test_initial_snapshot_conflict_is_structured_and_retryable(self) -> None:
+        with mock.patch.object(
+            self.server, "dashboard_snapshot",
+            side_effect=DashboardSnapshotChanged("读取期间项目状态仍在更新"),
+        ):
+            with self.assertRaises(urllib.error.HTTPError) as captured:
+                self.get("/api/snapshot")
+        self.assertEqual(captured.exception.code, 409)
+        body = json.load(captured.exception)
+        self.assertEqual(body["code"], "SNAPSHOT_CHANGING")
+        self.assertTrue(body["retryable"])
+        self.assertNotIn("审批结果", body["error"])
+
+    def test_saved_write_returns_receipt_when_snapshot_is_still_changing(self) -> None:
+        with mock.patch.object(
+            self.server, "dashboard_snapshot",
+            side_effect=DashboardSnapshotChanged("读取期间项目状态仍在更新"),
+        ):
+            body = self.post("/api/human-actions", {
+                "target": "VCHK", "action": "COMMENT", "reviewer": "alice",
+                "reason": "补充检查当前 DUT 的结果对比范围",
+            }, self.server.write_token)
+        self.assertEqual(body["result"]["status"], "RECORDED")
+        self.assertIsNone(body["snapshot"])
+        self.assertEqual(body["snapshot_sync"]["code"], "SNAPSHOT_CHANGING")
+        self.assertTrue(body["snapshot_sync"]["retryable"])
+        self.assertTrue(any(
+            item["id"] == body["result"]["id"]
+            for item in self.store.human_actions()
+        ))
+
+    def test_event_stream_stops_retrying_non_transient_snapshot_errors(self) -> None:
+        with mock.patch.object(
+            self.server, "dashboard_snapshot", side_effect=HarnessError("状态数据库不可读"),
+        ):
+            with self.get("/api/events") as events:
+                event, body = self.read_event(events)
+        self.assertEqual(event, "sync-error")
+        self.assertEqual(body, {
+            "schema": "DashboardSyncError/1",
+            "message": "状态数据库不可读",
+        })
 
     def test_new_agent_question_reaches_event_stream_when_file_stats_are_stale(self) -> None:
         node_id = self.plan["desired_state"][0]["id"]

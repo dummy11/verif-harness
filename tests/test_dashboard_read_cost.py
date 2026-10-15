@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import threading
+import time
 import unittest
 import urllib.error
 from unittest import mock
@@ -199,6 +200,82 @@ class DashboardReadCostTest(unittest.TestCase):
         with self.assertRaisesRegex(fixtures.HarnessError, "符号链接"):
             store.sync_documents([self.document["id"]])
 
+    def test_heartbeat_only_writes_do_not_invalidate_dashboard_token(self) -> None:
+        store = self.fixture.store
+        with store.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO agent_service "
+                "(id,runtime,owner,pid,status,heartbeat,stop_requested,message) "
+                "VALUES(1,'codex','Project Main Agent',123,'RUNNING',?,0,'正在处理')",
+                (time.time(),),
+            )
+        token = store.dashboard_change_token()
+        with store.connect() as connection:
+            connection.execute(
+                "UPDATE agent_service SET heartbeat=? WHERE id=1", (time.time(),),
+            )
+        self.assertEqual(store.dashboard_change_token(), token)
+
+        activity = store.create_activity(
+            self.fixture.plan["desired_state"][0]["id"],
+            "heartbeat-token-check", "Agent", "正在处理",
+        )
+        token = store.dashboard_change_token()
+        with store.connect() as connection:
+            connection.execute(
+                "UPDATE activities SET updated_at=? WHERE id=?",
+                ("2099-01-01T00:00:00+00:00", activity["id"]),
+            )
+        self.assertEqual(store.dashboard_change_token(), token)
+
+    def test_existing_assignment_trigger_is_migrated_to_ignore_heartbeats(self) -> None:
+        store = self.fixture.store
+        with store.connect() as connection:
+            connection.execute("DROP TRIGGER service_change_agent_assignments_UPDATE")
+            connection.execute(
+                "CREATE TRIGGER service_change_agent_assignments_UPDATE "
+                "AFTER UPDATE ON agent_assignments BEGIN "
+                "UPDATE agent_service_changes SET version=version+1 WHERE id=1; END"
+            )
+        migrated = fixtures.ProjectStore(store.root)
+        migrated.ensure_dashboard_schema()
+        with migrated.read_connect() as connection:
+            trigger = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' "
+                "AND name='service_change_agent_assignments_UPDATE'"
+            ).fetchone()["sql"]
+        self.assertIn("WHEN", trigger)
+        self.assertNotIn("heartbeat_at", trigger)
+        self.assertNotIn("lease_expires_at", trigger)
+
+    def test_visible_service_and_activity_changes_invalidate_dashboard_token(self) -> None:
+        store = self.fixture.store
+        with store.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO agent_service "
+                "(id,runtime,owner,pid,status,heartbeat,stop_requested,message) "
+                "VALUES(1,'codex','Project Main Agent',123,'WAITING',?,0,'等待新任务')",
+                (time.time(),),
+            )
+        token = store.dashboard_change_token()
+        with store.connect() as connection:
+            connection.execute(
+                "UPDATE agent_service SET status='RUNNING',message='正在处理' WHERE id=1"
+            )
+        self.assertNotEqual(store.dashboard_change_token(), token)
+
+        activity = store.create_activity(
+            self.fixture.plan["desired_state"][0]["id"],
+            "activity-token-check", "Agent", "准备处理",
+        )
+        token = store.dashboard_change_token()
+        with store.connect() as connection:
+            connection.execute(
+                "UPDATE activities SET message='已进入处理阶段' WHERE id=?",
+                (activity["id"],),
+            )
+        self.assertNotEqual(store.dashboard_change_token(), token)
+
     def test_approval_status_is_authorized_current_and_independent_of_snapshot(self) -> None:
         f = self.fixture
         node = next(n for n in f.store.workstream("VDOC")["desired_state"] if n["role"] == "document-writing-plan")
@@ -255,6 +332,39 @@ class DashboardReadCostTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(next(w for w in result["workstreams"] if w["workstream"] == "VCHK")["objective"],
                          "updated fixture objective")
+
+    def test_snapshot_can_finish_while_service_heartbeat_is_recorded(self) -> None:
+        f = self.fixture
+        with f.store.connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO agent_service "
+                "(id,runtime,owner,pid,status,heartbeat,stop_requested,message) "
+                "VALUES(1,'codex','Project Main Agent',123,'RUNNING',?,0,'正在处理')",
+                (time.time(),),
+            )
+        f.server.dashboard_snapshot(f.server.default_project_id, f.store)
+        f.server._snapshot_cache.clear()
+        original = fixtures.ProjectStore.dashboard_snapshot
+        calls = []
+
+        def heartbeat_during_read(store):
+            result = original(store)
+            calls.append(True)
+            with store.connect() as connection:
+                connection.execute(
+                    "UPDATE agent_service SET heartbeat=? WHERE id=1", (time.time(),),
+                )
+            return result
+
+        with mock.patch.object(
+            fixtures.ProjectStore, "dashboard_snapshot", autospec=True,
+            side_effect=heartbeat_during_read,
+        ):
+            with f.get("/api/snapshot") as response:
+                result = json.load(response)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["dashboard_project_id"], f.server.default_project_id)
+        self.assertEqual(result["project"]["name"], "alpha")
 
 
 if __name__ == "__main__":
