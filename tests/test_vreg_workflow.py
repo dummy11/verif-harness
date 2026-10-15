@@ -262,6 +262,50 @@ class VregWorkflowTest(unittest.TestCase):
         self.approve(delivery)
         return delivery
 
+    def test_executor_outage_and_restore_do_not_revise_unchanged_vcov_plan(self):
+        self.finish_infrastructure()
+        executor = self.head("cap.vreg:executor-ready")["data"]["current"]
+        coverage = {
+            "key": "fixture-coverage", "implementation_key": "fixture:coverage",
+            "role": "coverage-implementation-plan", "title": "DUT 覆盖率实现方案",
+            "statement": "实现当前 DUT 的覆盖率模型与采集",
+            "scope": ["当前必需覆盖项"], "work_content": ["实现覆盖率模型"],
+            "implementation_approach": ["按覆盖计划采集"],
+            "validation_methods": ["核对覆盖项与采集证据"],
+            "deliverables": ["覆盖率模型与报告"],
+            "acceptance_criteria": ["覆盖项与证据一致"],
+            "source_refs": ["regression-plan.md"],
+            "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                       "cap.vreg:executor-ready"],
+            "input_files": ["regression-plan.md"],
+            "output_paths": ["verification/coverage/fixture.sv"],
+            "capabilities": ["coverage-model", "coverage-collection"],
+            "coverage_item_ids": ["C.FIXTURE.1"],
+        }
+        self.write_json("vcov-proposal.json", {
+            "schema": "DesiredStateProposal/1", "workstream": "VCOV", "nodes": [coverage],
+        })
+        plan = code.design(self.store, "VCOV", "vcov-proposal.json")
+        node = plan["desired_state"][0]
+        self.approve(node)
+        approved = self.store.node_plan_review_state(node["id"])
+
+        output = self.root / "verification/regression/policy.json"
+        original = output.read_text(encoding="utf-8")
+        output.write_text('{"synthetic": false}', encoding="utf-8")
+        unavailable = self.store.node_plan_review_state(node["id"])
+        self.assertFalse(unavailable["completed"])
+        self.assertFalse(unavailable["can_approve"])
+        same = code.design(self.store, "VCOV", "vcov-proposal.json")
+        self.assertEqual(same["revision"], plan["revision"])
+
+        output.write_text(original, encoding="utf-8")
+        restored = self.store.node_plan_review_state(node["id"])
+        self.assertEqual(self.head("cap.vreg:executor-ready")["data"]["current"], executor)
+        self.assertEqual(restored["definition_digest"], approved["definition_digest"])
+        self.assertTrue(restored["completed"])
+        self.assertEqual(code.design(self.store, "VCOV", "vcov-proposal.json")["revision"], plan["revision"])
+
     def test_four_roles_cli_validation_http_approval_and_fresh_set_share_authority(self):
         infrastructure_plan = self.node("regression-infrastructure-plan")
         results_plan = self.node("regression-results-plan")
@@ -500,7 +544,9 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertTrue(closed["ready"], closed["blockers"])
 
     def test_known_failure_waiver_must_belong_to_current_vreg_revision(self):
-        self.design()  # Establish a real earlier revision in this isolated fixture.
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的执行器检查"
+        self.design(changed)  # Establish a real earlier revision in this isolated fixture.
         self.finish_infrastructure()
         delivery = self.results()
         with self.assertRaises(HarnessError):
@@ -616,7 +662,9 @@ class VregWorkflowTest(unittest.TestCase):
         self.finish_all()
         old = self.store.workstream("VREG")
         versions = code.artifacts(self.store, "VREG")["versions"]
-        self.design()
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的执行器检查"
+        self.design(changed)
         current = self.store.workstream("VREG")
         self.assertEqual(current["revision"], old["revision"] + 1)
         self.assertEqual(len(current["desired_state"]), 2)
@@ -1075,6 +1123,11 @@ class VregWorkflowTest(unittest.TestCase):
         # The original approved execution's actual file-backed terminal report
         # removes the unknown-job guard without inheriting its acceptance.
         self.assertTrue(self.validate(delivery)["ready"])
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的执行器检查"
+        self.write_json("vreg-proposal.json", {
+            "schema": "DesiredStateProposal/1", "workstream": "VREG", "nodes": changed,
+        })
         files = self.regression_revision_snapshot()["files"]
         replanned = code.design(self.store, "VREG", "vreg-proposal.json")
         self.assertEqual(replanned["revision"], revision + 1)
@@ -1086,7 +1139,9 @@ class VregWorkflowTest(unittest.TestCase):
     def test_historical_unknown_round_blocks_new_revision_even_without_current_delivery(self):
         delivery = self.finish_all()
         historical_round = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]["id"]
-        replanned = code.design(self.store, "VREG", "vreg-proposal.json")
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的执行器检查"
+        replanned = self.design(changed)
         # Reproduce a pre-guard/imported history: the current revision has no
         # delivery, and the uncertain old external job belongs to an old node.
         with self.store.connect() as db:
@@ -1108,7 +1163,9 @@ class VregWorkflowTest(unittest.TestCase):
         delivery = self.node("regression-results-deliverable")
         original = self.store.node_plan_review_state(delivery["id"])["regression_execution"]["current"]
         self.assertEqual(original["status"], "REQUESTED")
-        replanned = code.design(self.store, "VREG", "vreg-proposal.json")
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的执行器检查"
+        replanned = self.design(changed)
         restarted = code.request_change(self.store, {"workstream": "VREG", "kind": "restart", "revision": replanned["revision"],
                                                     "reviewer": "fixture-owner", "reason": "synthetic restart", "confirm": True})
         self.assertEqual(restarted["revision"], replanned["revision"] + 1)

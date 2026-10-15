@@ -190,7 +190,9 @@ class HumanCheckpointTest(unittest.TestCase):
 
                 def mutate(_):
                     if change == 'revision':
-                        f.design()
+                        modified = copy.deepcopy(f.item)
+                        modified['statement'] += '，并增加当前设计的接口检查'
+                        f.design([modified])
                     else:
                         (f.root / 'build.log').write_text('changed synthetic evidence\n')
 

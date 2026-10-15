@@ -132,6 +132,10 @@ This repository contains public, reusable verification infrastructure.
   一道人工作业，批准后只重新核对版本与证据有效性，不再增加常规 Agent 验收后检查。
   相同方案、代码、证据、检查结论和执行轮次的重复验证登记只增加审计回执，不得仅因
   回执编号、登记时间或工作节点状态变化，撤销已完成验收或要求负责人重复审批。
+  重新提交与当前公开方案内容、工作流目标和决策相同的方案时，不得仅因前置能力
+  的状态变化创建新 revision 或重复审批；前置能力暂时不可用时阻止推进，恢复到
+  同一有效版本后沿用本 revision 的有效审批。方案范围、输入文件、依赖的实际版本
+  或负责人要求发生实质变化时，仍须重新核对受影响的节点；显式重启仍创建新版本。
 - VENV 方案依赖 `cap.doc`；VSTIM 还依赖 `cap.venv`；VCHK 还依赖
   `cap.venv` 和 `cap.vstim`；VCASE 还依赖 `cap.venv`、`cap.vstim` 和
   `cap.vchk`，不以 VCOV 完成为自身交付条件。交付依赖同一工作包的

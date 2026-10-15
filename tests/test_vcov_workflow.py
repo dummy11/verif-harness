@@ -458,7 +458,9 @@ class VcovWorkflowTest(unittest.TestCase):
         exclusion = self.provide_exclusions(old_delivery)
         old = self.store.workstream("VCOV")
         old_versions = code.artifacts(self.store, "VCOV")["versions"]
-        self.design()
+        changed = copy.deepcopy(self.items)
+        changed[0]["statement"] += "，并增加当前设计的复位检查"
+        self.design(changed)
         current = self.store.workstream("VCOV")
         self.assertEqual(current["revision"], old["revision"] + 1)
         self.assertEqual(len(current["desired_state"]), 2)

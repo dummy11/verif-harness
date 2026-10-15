@@ -157,6 +157,31 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(after["definition_digest"], before["definition_digest"])
         self.assertTrue(after["completed"])
 
+    def test_identical_proposal_does_not_create_revision_or_repeat_approval(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        before = self.store.workstream("VENV")
+        versions = code.artifacts(self.store, "VENV")["versions"]
+        with self.store.read_connect() as db:
+            approvals = db.execute("SELECT COUNT(*) FROM node_plan_reviews WHERE workstream='VENV'").fetchone()[0]
+            replans = db.execute("SELECT COUNT(*) FROM events WHERE kind='venv-replan'").fetchone()[0]
+
+        repeated = self.design()
+        self.assertEqual(repeated["revision"], before["revision"])
+        self.assertEqual(repeated["desired_state"], before["desired_state"])
+        self.assertTrue(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+        self.assertEqual(code.artifacts(self.store, "VENV")["versions"], versions)
+        with self.store.read_connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM node_plan_reviews WHERE workstream='VENV'").fetchone()[0], approvals)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM events WHERE kind='venv-replan'").fetchone()[0], replans)
+
+        code.request_change(self.store, {"workstream": "VENV", "kind": "add",
+                                         "revision": before["revision"], "reviewer": "fixture-owner",
+                                         "reason": "增加复位验证工作包"})
+        with self.assertRaisesRegex(HarnessError, "变更要求"):
+            self.design()
+        self.assertEqual(self.store.workstream("VENV")["revision"], before["revision"])
+
     def test_upstream_document_and_rtl_revoke_plan_and_delivery(self):
         self.implement(); self.validate(); self.approve(self.delivery)
         self.fixture.path.write_text("# Different approved-document input\n")
@@ -582,6 +607,52 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                         if value["workstream"] == workstream)
             self.assertTrue(view["code_model"])
             self.assertEqual(view["progress"]["required"], 2)
+
+    def test_dependency_status_recovery_does_not_cascade_plan_reapproval(self):
+        cases = (
+            ("VSTIM", ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+             "cap.venv:environment-smoke-evidence"),
+            ("VCOV", ["coverage-model", "coverage-collection"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
+             "cap.vreg:executor-ready"),
+        )
+        for index, (workstream, claims, inputs, dependency) in enumerate(cases):
+            if index:
+                self.tearDown()
+                self.setUp()
+            self.seed(*inputs[1:])
+            plan, _ = self.design(workstream, claims, inputs)
+            node = plan["desired_state"][0]
+            state = self.store.node_plan_review_state(node["id"])
+            self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+            approved = self.store.node_plan_review_state(node["id"])
+            self.assertTrue(approved["completed"])
+
+            with self.store.connect() as db:
+                db.execute("UPDATE nodes SET status='REVALIDATION_REQUIRED' WHERE id=?", (dependency,))
+            unavailable = self.store.node_plan_review_state(node["id"])
+            self.assertEqual(unavailable["definition_digest"], approved["definition_digest"])
+            self.assertFalse(unavailable["completed"])
+            self.assertFalse(unavailable["can_approve"])
+
+            self.seed(dependency)
+            restored = self.store.node_plan_review_state(node["id"])
+            self.assertEqual(restored["definition_digest"], approved["definition_digest"])
+            self.assertTrue(restored["completed"])
+            same = self.design(workstream, claims, inputs)[0]
+            self.assertEqual(same["revision"], plan["revision"])
+            self.assertTrue(self.store.node_plan_review_state(node["id"])["completed"])
+
+            with self.store.connect() as db:
+                self.store.upsert_node(db, dependency, "capability", dependency, Validity.VALID,
+                                       data={"derived": True, "current": {"fixture": "new-version"}})
+            changed = self.store.node_plan_review_state(node["id"])
+            self.assertNotEqual(changed["definition_digest"], approved["definition_digest"])
+            self.assertFalse(changed["completed"])
+            self.assertTrue(changed["can_approve"])
+            self.assertEqual(self.design(workstream, claims, inputs)[0]["revision"], plan["revision"])
+            self.assertFalse(self.store.node_plan_review_state(node["id"])["completed"])
 
     def test_profile_specific_gates_fail_closed(self):
         with self.assertRaisesRegex(HarnessError, "同配置同 seed"):

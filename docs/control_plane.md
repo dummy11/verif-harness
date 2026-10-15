@@ -111,6 +111,11 @@ Dashboard 和 CLI 写入后都重新读取同一 ProjectStore 决定，不维护
 添加和删除只登记下一版方案要求；重新启动需要填写原因并再次确认，不删除代码、
 日志、证据、审批或历史节点，也不重启 Dashboard 或 Agent。旧项目提交新代码方案
 时保留历史，旧批准不继承；无法确定新归属的旧依赖保持阻塞，等待 Agent 重新规划。
+同一份公开方案若内容、工作流目标和决策均未变化，再次登记保持当前 revision、节点
+和已完成审批，不会因前置能力仅变为暂时不可用又恢复而批量要求原文重批。前置能力
+不可用期间仍阻止交付推进；恢复到原能力版本后重新读取当前状态。若方案、输入文件
+或依赖的实际版本发生变化，受影响审批和证据仍须重新核对；负责人确认的工作流重启
+总是创建新 revision，旧审批不自动继承。
 
 The v1 control plane uses five cooperating subsystems: VPlan, VModel, VCheck,
 VClosure, and VReason. See the [mode catalog](skill_modes.md) for commands and

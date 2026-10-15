@@ -664,7 +664,11 @@ def identity(store, connection, plan, node):
             key: exclusion["current"][key]
             for key in ("id", "path", "sha256", "reviewer", "created_at")
         } if exclusion["current"] else None)
-    return digest(payload), payload
+    # Status is an availability gate, not a different version of an input.
+    # Keep the historical digest for VALID dependencies while making a
+    # status-only outage/recovery leave the approved subject unchanged.
+    subject = {**payload, "dependencies": [{**dependency, "status": "VALID"} for dependency in deps]}
+    return digest(subject), payload
 
 
 def blockers(connection, node_id):
@@ -1306,7 +1310,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         _validate_project_dependency_graph(
             store, workstream, normalized, connection=db,
         )
-        old = db.execute("SELECT revision,desired_json FROM workstreams WHERE name=?", (workstream,)).fetchone()
+        old = db.execute("SELECT revision,desired_json,objective,decisions_json,context_json FROM workstreams WHERE name=?", (workstream,)).fetchone()
         revision = old["revision"] + 1 if old else 1
         if restart and (not old or restart["revision"] != old["revision"]):
             error(f"{workstream} 版本已变化，请刷新后重新确认")
@@ -1317,6 +1321,25 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             # its public node revision cannot establish an external job's end.
             error("旧回归任务尚未核实结束，请先让 Agent 核对旧任务结束事实，再重新形成方案或重启 VREG")
         previous = json.loads(old["desired_json"]) if old else []
+        if old and not restart and json.loads(old["context_json"]).get("code_model") == 2:
+            existing_plans = {
+                node["implementation_key"]: {key: value for key, value in node.items() if key != "id"}
+                for node in previous if is_plan(node)
+            }
+            proposed_plans = {node["implementation_key"]: node for node in normalized}
+            if (existing_plans == proposed_plans and old["objective"] == (objective or settings["objective"])
+                    and json.loads(old["decisions_json"]) == (decisions or [])):
+                pending_change = db.execute(
+                    "SELECT 1 FROM human_actions WHERE status='OPEN' AND action='REQUEST_CHANGE' "
+                    "AND (target=? OR target LIKE ?) LIMIT 1",
+                    (workstream, f"workstream:{workstream}:%"),
+                ).fetchone()
+                if pending_change:
+                    error("负责人已登记工作节点变更要求；方案仍与当前版本相同，请先落实变更要求")
+                # A status-only dependency transition must not turn the same
+                # public proposal into a new revision and a new approval set.
+                db.execute("ROLLBACK")
+                return {**store.workstream(workstream), "auto_closure": store.evaluate_closure(workstream)}
         previous_edges = [dict(row) for row in db.execute(
             "SELECT e.* FROM edges e JOIN nodes n ON n.id=e.target WHERE n.workstream=?",
             (workstream,),
