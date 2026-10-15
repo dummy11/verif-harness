@@ -25,7 +25,12 @@ are Activities of that delivery, not additional public WorkNode types.
 Main Agent submits `CodeValidation/1` with current output digests and the
 workstream's typed reports covering every approved acceptance condition.
 Existing evidence-admission policies still apply. Validation precedes owner
-acceptance; acceptance binds the exact validation receipt, code and upstream inputs.
+acceptance; acceptance binds the validated code, evidence content, check result,
+current execution round (when applicable), and upstream inputs. Re-registering
+identical validation content creates an audit receipt without changing the
+accepted subject or derived artifact version. Receipt IDs and timestamps are
+audit metadata. Historical ID-bound approvals remain valid only while their
+original evidence content is equivalent to the current validation.
 No post-acceptance Agent check is introduced for code delivery.
 
 Plans depend on accepted `cap.doc` and explicit upstream scope capabilities.

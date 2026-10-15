@@ -114,6 +114,49 @@ class CodeWorkflowTest(unittest.TestCase):
         (self.root / "build.log").write_text("changed log\n")
         self.assertFalse(self.store.node_plan_review_state(self.delivery["id"])["can_approve"])
 
+    def test_identical_validation_receipt_preserves_owner_acceptance_and_capability(self):
+        self.implement()
+        first = self.validate()
+        self.approve(self.delivery)
+        before = self.store.node_plan_review_state(self.delivery["id"])
+        versions = code.artifacts(self.store)["versions"]
+
+        second = self.validate()
+        after = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(after["definition_digest"], before["definition_digest"])
+        self.assertTrue(after["completed"])
+        self.assertEqual(code.artifacts(self.store)["versions"], versions)
+        self.assertTrue(self.store.evaluate_closure("VENV")["ready"])
+
+        self.output.write_text("module changed_interface; endmodule\n")
+        self.validate()
+        changed = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertFalse(changed["completed"])
+        self.assertTrue(changed["can_approve"])
+        self.assertIn("HUMAN_REVIEW", {a["kind"] for a in self.store.evaluate_closure("VENV")["actions"]})
+
+    def test_legacy_receipt_bound_approval_survives_identical_revalidation(self):
+        self.implement()
+        first = self.validate()
+        approval = self.approve(self.delivery)
+        state = self.store.node_plan_review_state(self.delivery["id"])
+        old_digest = code.digest({"definition": state["input_signature"], "validation": first["id"]})
+        with self.store.connect() as db:
+            db.execute("UPDATE node_plan_reviews SET definition_digest=? WHERE id=?",
+                       (old_digest, approval["review_id"]))
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+        self.validate()
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
+    def test_plan_status_only_change_keeps_approval(self):
+        self.approve(self.plan_node)
+        before = self.store.node_plan_review_state(self.plan_node["id"])
+        self.store.set_status(self.plan_node["id"], Validity.REVALIDATION_REQUIRED)
+        after = self.store.node_plan_review_state(self.plan_node["id"])
+        self.assertEqual(after["definition_digest"], before["definition_digest"])
+        self.assertTrue(after["completed"])
+
     def test_upstream_document_and_rtl_revoke_plan_and_delivery(self):
         self.implement(); self.validate(); self.approve(self.delivery)
         self.fixture.path.write_text("# Different approved-document input\n")

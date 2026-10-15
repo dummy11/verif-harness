@@ -130,6 +130,8 @@ This repository contains public, reusable verification infrastructure.
 - 每个方案只批准当前版本。批准后建立对应交付节点；Agent 在交付节点中实现、
   构建、验证并分析结果，全部必需验证通过后才提交负责人验收。负责人批准是最后
   一道人工作业，批准后只重新核对版本与证据有效性，不再增加常规 Agent 验收后检查。
+  相同方案、代码、证据、检查结论和执行轮次的重复验证登记只增加审计回执，不得仅因
+  回执编号、登记时间或工作节点状态变化，撤销已完成验收或要求负责人重复审批。
 - VENV 方案依赖 `cap.doc`；VSTIM 还依赖 `cap.venv`；VCHK 还依赖
   `cap.venv` 和 `cap.vstim`；VCASE 还依赖 `cap.venv`、`cap.vstim` 和
   `cap.vchk`，不以 VCOV 完成为自身交付条件。交付依赖同一工作包的

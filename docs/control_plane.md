@@ -38,6 +38,11 @@ Agent 使用 `plan WORKSTREAM --desired-file proposal.json` 提交代码方案�
 [VCOV](../skills/verif-harness/vplan/vcov.md) 和
 [VREG](../skills/verif-harness/vplan/vreg.md) 使用说明。
 
+同一节点在方案、上游输入、代码、证据和检查结论均未变化时，再次登记相同验证报告
+只增加审计回执，不撤销负责人已完成的交付验收，也不生成新的交付能力版本或待办。
+回执编号和登记时间不属于验收对象；证据内容或执行轮次变化后，仍需重新验证并由负责人
+验收。已保存的旧回执编号绑定审批按原证据内容核对，不能借此沿用其他版本的审批。
+
 VCOV 按“覆盖率实现方案 → 实现交付 → 收敛方案 → 收敛交付”推进。实现交付验收后，Engine
 派生有效的 `cap.vcov:coverage-model` 和 `cap.vcov:coverage-collection` 汇总能力；收敛方案
 使用 `cap.vcov:<implementation_key>` 关联具体已验收实现范围，不能只依赖汇总状态；

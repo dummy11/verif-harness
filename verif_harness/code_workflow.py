@@ -705,6 +705,27 @@ def validation_current(store, connection, plan, node, signature):
     return value
 
 
+def validation_subject(validation):
+    """The reviewed evidence, without a receipt's storage identity or read state."""
+    return {key: value for key, value in validation.items()
+            if key not in {"id", "created_at", "current"}}
+
+
+def _legacy_completion(connection, node_id, revision, signature, subject, reviews):
+    """Recognize an existing ID-bound approval for the same reviewed evidence."""
+    by_digest = {row["definition_digest"]: row for row in reviews}
+    for row in connection.execute(
+        "SELECT id,payload_json FROM code_validations WHERE node_id=? AND revision=? AND signature=? ORDER BY rowid DESC",
+        (node_id, revision, signature),
+    ):
+        if validation_subject(json.loads(row["payload_json"])) != subject:
+            continue
+        old_digest = digest({"definition": signature, "validation": row["id"]})
+        if old_digest in by_digest:
+            return by_digest[old_digest]
+    return None
+
+
 def review_state(store, node_id, plan=None, node=None, connection=None):
     if connection is None:
         with store.read_connect() as db:
@@ -713,8 +734,8 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
         plan, node = selected(store, node_id, connection)
     signature, snapshot = identity(store, connection, plan, node)
     validation = validation_current(store, connection, plan, node, signature) if is_delivery(node) else None
-    # Owner approval binds the exact validation receipt too, not just code files.
-    approval_digest = digest({"definition": signature, "validation": validation["id"] if validation and validation["current"] else None})
+    subject = validation_subject(validation) if validation and validation["current"] else None
+    approval_digest = digest({"definition": signature, "validation": digest(subject) if subject is not None else None})
     history = [dict(r) for r in connection.execute("SELECT * FROM node_plan_reviews WHERE node_id=? ORDER BY rowid", (node_id,))]
     opinions = [dict(r) for r in connection.execute("SELECT * FROM node_plan_section_reviews WHERE node_id=? ORDER BY rowid", (node_id,))]
     feedback = feedback_state(connection, plan, node, approval_digest)
@@ -723,8 +744,12 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
         row["change_items"] = changes.get(row["id"], [])
         row["feedback_items"] = [v for v in feedback["items"] if v["review_id"] == row["id"]]
     latest_opinion = max((r["created_at"] for r in opinions), default="")
-    completion = next((r for r in reversed(history) if r["definition_digest"] == approval_digest
-                       and r["revision"] == plan["revision"] and r["created_at"] >= latest_opinion), None)
+    eligible_reviews = [r for r in history if r["revision"] == plan["revision"]
+                        and r["created_at"] >= latest_opinion]
+    completion = next((r for r in reversed(eligible_reviews) if r["definition_digest"] == approval_digest), None)
+    if completion is None and subject is not None and eligible_reviews:
+        completion = _legacy_completion(connection, node_id, plan["revision"], signature,
+                                        subject, eligible_reviews)
     reasons = blockers(connection, node_id)
     workstream = plan["workstream"]
     expected_dependencies = (set(node['inputs']) if is_plan(node)
@@ -1798,6 +1823,14 @@ def validate(store, node_id, report_path):
             latest_scope = [check["validation"]["facts"].get("required_nodes") for check in checks if check["claim"] == "fresh-evidence"]
             if previous_scope != latest_scope or any(reason not in reasons for reason in latest_reasons):
                 error("登记期间必需回归证据或负责人例外批准发生变化，请重新验证")
+            previous_state = review_state(store, node_id, latest_plan, latest_node, db)
+            previous_validation = previous_state.get("validation")
+            keep_round_accepted = bool(
+                result_round["status"] == "ACCEPTED" and receipt["ready"]
+                and previous_state["completed"] and previous_validation
+                and previous_validation["current"]
+                and validation_subject(previous_validation) == validation_subject(receipt)
+            )
         db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (identifier, node_id, plan["revision"], signature, encoded(receipt), timestamp))
         if result_round is not None:
             from .vreg_contract import execution_blockers, normalize_config
@@ -1812,7 +1845,8 @@ def validate(store, node_id, report_path):
                                           execution_binding(plan, node, result_round)))
             except (ValueError, TypeError):
                 terminal_execution = False
-            round_status = "VALIDATED" if receipt["ready"] else "FAILED" if terminal_execution else "INTERRUPTED"
+            round_status = ("ACCEPTED" if keep_round_accepted else "VALIDATED" if receipt["ready"]
+                            else "FAILED" if terminal_execution else "INTERRUPTED")
             db.execute("UPDATE regression_execution_rounds SET status=?,validated_at=?,validation_id=? WHERE id=?",
                        (round_status, timestamp, identifier, result_round["id"]))
         _sync_watched_files(store, db)
@@ -1843,11 +1877,30 @@ def refresh(store, plans=None):
         def publish(identifier, kind, title, payload, ready, published, workstream):
             current = None
             if ready:
-                signature = digest(payload)
-                row = db.execute("SELECT version FROM code_artifact_versions WHERE artifact_id=? AND signature=?", (identifier, signature)).fetchone()
-                version = row[0] if row else db.execute("SELECT COALESCE(MAX(version),0)+1 FROM code_artifact_versions WHERE artifact_id=?", (identifier,)).fetchone()[0]
+                # An art.code version describes accepted evidence. A fresh receipt
+                # with identical evidence must not create a new CAP version.
+                subject_payload = dict(payload)
+                if identifier.startswith("art.code:") and payload.get("validation"):
+                    subject_payload["validation"] = validation_subject(payload["validation"])
+                signature = digest(subject_payload)
+                row = db.execute("SELECT version,signature FROM code_artifact_versions WHERE artifact_id=? AND signature=?",
+                                 (identifier, signature)).fetchone()
+                if row is None and identifier.startswith("art.code:"):
+                    # Earlier versions used the full receipt, including its ID.
+                    # Reuse them when their reviewed content is unchanged.
+                    for old in db.execute("SELECT version,signature,payload_json FROM code_artifact_versions WHERE artifact_id=? ORDER BY version DESC",
+                                          (identifier,)):
+                        old_payload = json.loads(old["payload_json"])
+                        if old_payload.get("validation"):
+                            old_payload["validation"] = validation_subject(old_payload["validation"])
+                        if old_payload == subject_payload:
+                            row = old
+                            break
+                version = row["version"] if row else db.execute("SELECT COALESCE(MAX(version),0)+1 FROM code_artifact_versions WHERE artifact_id=?", (identifier,)).fetchone()[0]
                 if row is None:
                     db.execute("INSERT INTO code_artifact_versions VALUES(?,?,?,?,?)", (identifier, version, signature, encoded(payload), timestamp))
+                else:
+                    signature = row["signature"]
                 current = {"version": version, "signature": signature}
             data = {"derived": True, "current": current, "implementation_key": payload.get("implementation_key"),
                     "workstream": workstream}

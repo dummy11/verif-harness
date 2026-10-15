@@ -827,6 +827,21 @@ class VregWorkflowTest(unittest.TestCase):
         self.assertEqual((progress["satisfied"], progress["required"], progress["percentage"]), (3, 4, 75))
         self.assertEqual(progress["current_rounds"][0]["round_number"], 3)
 
+    def test_identical_results_validation_keeps_accepted_round(self):
+        delivery = self.finish_all()
+        before = self.store.node_plan_review_state(delivery["id"])
+        prior_receipt = before["validation"]["id"]
+        versions = code.artifacts(self.store, "VREG")["versions"]
+
+        repeated = self.validate(delivery)
+        after = self.store.node_plan_review_state(delivery["id"])
+        self.assertNotEqual(repeated["id"], prior_receipt)
+        self.assertEqual(after["definition_digest"], before["definition_digest"])
+        self.assertTrue(after["completed"])
+        self.assertEqual(after["regression_execution"]["current"]["status"], "ACCEPTED")
+        self.assertEqual(code.artifacts(self.store, "VREG")["versions"], versions)
+        self.assertTrue(self.store.evaluate_closure("VREG")["ready"])
+
     def test_rerun_cli_and_stale_or_unauthorized_requests_fail_closed(self):
         delivery = self.finish_all()
         body = self.rerun_body(delivery, "cli-rerun")
