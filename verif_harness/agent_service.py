@@ -198,7 +198,7 @@ def prompt_for(store: ProjectStore, task: dict) -> str:
             "VCOV 的公开节点只有覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付。\n"
             "proposal 只登记 coverage-implementation-plan 和 coverage-convergence-plan，批准后建立对应交付。\n"
             "收敛方案依赖已验收的覆盖率实现和 cap.vreg:executor-ready；内部能力不增加公开节点。\n"
-            "覆盖模型、采集结果和缺口分析必须绑定同一已验收 CoverageItemManifest/1，分析全部必需覆盖项。\n"
+            "负责人在覆盖率实现方案批准 CoverageScope/1 和 CoverageImplementationConfig/1；code coverage 只统计 DUT，工具展开 CoverageObjectInventory/2。覆盖率收敛方案使用 CoverageCollectionConfig/1 只读引用一个或多个已批准的 VREG regression_config，不复制 case、submit profile、seed 或 repeat；方案审批不要求执行已完成，收敛交付才绑定已结束轮次。每个 VDB 分片必须通过 CoverageDatabaseShardManifest/1 绑定 VREG 执行轮次、batch、case、seed 和 iteration，合并通过 CoverageMergeManifest/1 绑定全部输入与唯一输出。只有 DUT RTL、parameter、宏和 DUT 级 elaboration 指纹相同才可 merge；不同 testbench/profile 本身不禁止 merge。每个收敛方案/交付只允许一个批准的 DUT 指纹，多个指纹必须拆成多个收敛方案/交付，不为 VDB 或 seed 增加公开节点。收敛报告只列排除与未覆盖对象。\n"
             "所有必需实现和收敛交付均验收后才完成 VCOV；有未覆盖项就分析责任并登记下一版变更要求。\n"
             "方案只依赖已验收的上游能力；交付依赖对应方案批准的 art.code_plan。\n"
             "只有对应交付节点的批准方案与依赖仍有效，才可在约定输出范围实现、采集和分析。"

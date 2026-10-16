@@ -181,14 +181,15 @@ VCASE 实现 + VSTIM reachability + VCHK scoreboard + VENV smoke
 
 VDOC 覆盖率计划 + VENV build + VREG executor
   → VCOV coverage-collection
-VCOV 收集 + VSTIM reachability + VCASE targeted + VENV smoke
-  → VCOV coverage-collection-evidence
-  → VCOV hole-analysis-evidence
-
-VREG executor + VENV smoke + VSTIM/VCHK/VCASE/VCOV 运行证据
+VREG executor + VENV smoke + VSTIM/VCHK/VCASE + VCOV coverage-collection
   → VREG execution-evidence
   → VREG triage-evidence
   → VREG fresh-evidence
+VREG 已验证执行轮次的 VDB + VCOV 收集 + VSTIM reachability + VCASE targeted + VENV smoke
+  → VCOV coverage-collection-evidence
+  → VCOV hole-analysis-evidence
+VCOV 收敛证据有效
+  → 允许负责人最终验收 VREG 结果交付
 ```
 
 这里没有要求“先冻结 VENV，再开始 VSTIM”。VENV 的接口、结构、构建和观测节点可以分批完成；
@@ -251,7 +252,7 @@ Workstream 只是把同类目标放在一起，不是必须顺序通过的阶段
 1. **版本/摘要变化驱动的自动失效传播。** 已验收文档、代码、配置或证据摘要实际变化后，
    Engine 沿 `DEPENDS_ON` 图把消费旧版本的交付与能力标为 `REVALIDATION_REQUIRED`。
    这条路径是确定性的，但只要求重验，不替 Agent 决定怎样修改。
-2. **VCOV/VREG 发现驱动的分析反馈。** `uncovered` coverage item 或未关闭的 regression
+2. **VCOV/VREG 发现驱动的分析反馈。** `uncovered` coverage object 或未关闭的 regression
    failure 必须携带责任工作流和下一步动作。Main Agent 核对是环境、激励、检查、用例、
    覆盖实现、回归基础设施还是 DUT 问题，再向对应工作流登记下一版变更或重验证要求。
    finding 本身不会自动修改代码、创建已批准节点或推翻负责人结论。

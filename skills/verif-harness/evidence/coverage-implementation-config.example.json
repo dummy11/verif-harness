@@ -1,0 +1,18 @@
+{
+  "schema": "CoverageImplementationConfig/1",
+  "code_coverage_target": "dut",
+  "configuration_refs": [
+    {
+      "role": "collection",
+      "path": "verification/coverage/coverage.toml",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "compatible_submit_profile_digests": [
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  ],
+  "toolchain": [
+    {"role": "coverage", "name": "project-coverage-adapter", "version": "1"}
+  ]
+}

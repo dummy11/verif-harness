@@ -76,7 +76,7 @@ EVIDENCE_POLICIES: dict[str, dict[str, dict[str, Any]]] = {
             "requirements": [COVERAGE_DB, XVERIF_ANALYSIS], "basis": "database-merge-analysis",
         },
         "hole-analysis-evidence": {
-            "requirements": [COVERAGE_DB, XVERIF_ANALYSIS], "basis": "item-level-hole-analysis",
+            "requirements": [COVERAGE_DB, XVERIF_ANALYSIS], "basis": "inventory-bound-hole-analysis",
         },
     },
     "VCASE": {

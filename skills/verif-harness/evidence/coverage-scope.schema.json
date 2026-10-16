@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CoverageScope/1",
+  "description": "由负责人批准的稳定覆盖范围；具体 line、toggle、bin 和 cross 对象由工具从当前模型和覆盖数据库展开。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema"],
+  "anyOf": [{"required": ["code"]}, {"required": ["functional"]}],
+  "properties": {
+    "schema": {"const": "CoverageScope/1"},
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metrics"],
+      "anyOf": [{"required": ["hierarchy_selectors"]}, {"required": ["hierarchy_files"]}],
+      "properties": {
+        "metrics": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"enum": ["line", "condition", "branch", "toggle", "fsm"]}
+        },
+        "hierarchy_selectors": {"$ref": "#/$defs/nonEmptyStrings"},
+        "hierarchy_files": {"$ref": "#/$defs/nonEmptyStrings"},
+        "exclusion_files": {"$ref": "#/$defs/nonEmptyStrings"}
+      }
+    },
+    "functional": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["covergroup_selectors", "object_kinds"],
+      "properties": {
+        "covergroup_selectors": {"$ref": "#/$defs/nonEmptyStrings"},
+        "object_kinds": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"enum": ["coverpoint-bin", "cross-bin"]}
+        }
+      }
+    },
+    "semantic_goal_ids": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"}
+    }
+  },
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

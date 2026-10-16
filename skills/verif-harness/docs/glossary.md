@@ -281,6 +281,9 @@ coverage、cover property 和波形是旁证，不能单独证明 VSTIM closure�
 **Coverage database（覆盖率数据库）**是 VDB、UCDB 等仿真器生成的覆盖率数据库。VCOV
 使用从数据库导出的数据库标识、合并结果、覆盖项、命中次数和排除项；只有数据库文件或
 总体百分比达标，都不能直接说明 VCOV 已完成。
+当前 code coverage 只统计 DUT。VDB 是否可合并由 DUT-only 构建指纹决定：DUT RTL、参数、
+宏和 DUT 级 elaboration 必须一致；testbench、submit profile 和 DUT 实例路径不属于兼容性
+指纹。每个覆盖率收敛方案/交付只管理一个指纹分区，多个指纹使用多个节点对。
 
 **Observation boundary（观测边界）**是 probe 声称看到事件发生的位置。VSTIM 默认接受
 `dut-input-accepted` 或 `driver-monitor-boundary`，用来区分“generator 生成了事务”和
@@ -313,7 +316,7 @@ coverage、cover property 和波形是旁证，不能单独证明 VSTIM closure�
 | `clock_edges/reset_assertions/reset_deassertions` | 最小环境运行中观察到的时钟边沿数、reset 拉起和释放次数 |
 | `clean_exit/failure_propagated` | 测试能正常结束；发生仿真错误时命令会返回失败状态 |
 | `environment_digest` | 产生本次运行结果的验证环境实现 SHA-256，必须与当前 VENV 构建证据一致 |
-| `database_ids/merge_errors/stale_shards` | coverage 数据库身份、合并错误数、过期分片数 |
+| `shard_manifest_digests/merge_manifest_digest/merge_errors/stale_shards` | VDB 分片与 VREG 运行绑定、唯一合并结果、合并错误数和过期分片数；`database_ids` 仅属于历史格式 |
 | `classification/disposition` | 回归失败类别和最终处理结果 |
 | `snapshot_revision` | VREG “当前版本证据”对应的项目版本 |
 

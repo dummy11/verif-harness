@@ -67,12 +67,13 @@ SCHEMAS = {
     "VENV": "EnvironmentEvidence/1",
     "VSTIM": "StimulusCapabilityEvidence/1",
     "VCHK": "CheckingEvidence/1",
-    "VCOV": "CoverageEvidence/1",
+    "VCOV": "CoverageEvidence/3",
     "VCASE": "TestcaseEvidence/2",
     "VREG": "RegressionEvidence/3",
 }
 
 LEGACY_SCHEMAS = {
+    "VCOV": "CoverageEvidence/1",
     "VCASE": "TestcaseEvidence/1",
     "VREG": "RegressionEvidence/1",
 }
@@ -144,6 +145,8 @@ def _base(path: Path, workstream: str, expected_claim: str) -> tuple[dict[str, A
     accepted_schemas = {expected_schema, LEGACY_SCHEMAS.get(workstream)} - {None}
     if workstream == "VREG":
         accepted_schemas.add("RegressionEvidence/2")
+    if workstream == "VCOV":
+        accepted_schemas.add("CoverageEvidence/2")
     if payload.get("schema") not in accepted_schemas:
         raise EvidenceContractError(f"schema 必须是 " + " 或 ".join(sorted(accepted_schemas)))
     claim = _text(payload.get("claim"), "claim")
@@ -207,6 +210,13 @@ def _bound_digest(normalized: dict[str, Any], value: object, field: str) -> str:
 def _canonical_digest(value: object) -> str:
     return hashlib.sha256(json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+
+
+def _config_digest(value: object) -> str:
+    """Match the control-plane digest used for approved structured configs."""
+    return hashlib.sha256(json.dumps(
+        value, ensure_ascii=False, sort_keys=True,
     ).encode("utf-8")).hexdigest()
 
 
@@ -752,28 +762,318 @@ def _coverage_manifest(
     }, blockers
 
 
-def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
-    _payload, result, normalized = _base(path, "VCOV", claim)
+def _coverage_inventory(
+    path: Path, result: dict[str, Any], normalized: dict[str, Any], artifact_root: Path | None,
+) -> tuple[dict[str, Any], list[str], dict[str, dict[str, str]]]:
+    """Read the tool-expanded required object universe without persisting it in ProjectStore."""
+    if result.get("coverage_inventory_digest") is None:
+        return {}, ["覆盖率证据缺少当前工具生成的覆盖对象清单，必须重新验证"], {}
+    current = normalized["schema"] == "CoverageEvidence/3"
+    inventory, inventory_digest = _json_artifact(
+        path, normalized, artifact_root, result.get("coverage_inventory_digest"),
+        "analysis-report", "CoverageObjectInventory/2" if current else "CoverageObjectInventory/1",
+        "result.coverage_inventory_digest",
+    )
+    matches = [
+        artifact for artifact in normalized["artifacts"]
+        if artifact["sha256"] == inventory_digest and artifact["kind"] == "analysis-report"
+        and "xverif" in artifact["analyzed_by"]
+    ]
+    if len(matches) != 1:
+        raise EvidenceContractError(
+            "coverage_inventory_digest 必须唯一绑定 xverif 生成的覆盖对象清单"
+        )
+    objects = _objects(inventory.get("objects"), "inventory.objects")
+    if not objects:
+        raise EvidenceContractError("inventory.objects 不能为空")
+    required_objects: dict[str, dict[str, str]] = {}
+    category_counts = {"code": 0, "functional": 0}
+    kind_counts: dict[str, int] = {}
+    allowed_kinds = {
+        "line", "condition", "branch", "toggle", "fsm",
+        "coverpoint-bin", "cross-bin",
+    }
+    for index, item in enumerate(objects):
+        prefix = f"inventory.objects[{index}]"
+        object_key = _text(item.get("object_key"), f"{prefix}.object_key")
+        if object_key in required_objects:
+            raise EvidenceContractError(f"覆盖对象清单包含重复 object_key: {object_key}")
+        category = _text(item.get("category"), f"{prefix}.category")
+        if category not in category_counts:
+            raise EvidenceContractError(f"{prefix}.category 必须是 code/functional")
+        kind = _text(item.get("kind"), f"{prefix}.kind")
+        if kind not in allowed_kinds:
+            raise EvidenceContractError(f"{prefix}.kind 不是受支持的覆盖对象类型")
+        if (category == "code") != (kind in {"line", "condition", "branch", "toggle", "fsm"}):
+            raise EvidenceContractError(f"{prefix}.category 与 kind 不一致")
+        native_path = _text(item.get("native_path"), f"{prefix}.native_path")
+        required_objects[object_key] = {
+            "object_key": object_key, "category": category,
+            "kind": kind, "native_path": native_path,
+        }
+        category_counts[category] += 1
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+    facts = {
+        "coverage_inventory_digest": inventory_digest,
+        "scope_digest": _digest(inventory.get("scope_digest"), "inventory.scope_digest"),
+        "plan_digest": _digest(inventory.get("plan_digest"), "inventory.plan_digest"),
+        "model_digest": _digest(inventory.get("model_digest"), "inventory.model_digest"),
+        "object_count": len(required_objects),
+        "category_counts": category_counts,
+        "kind_counts": kind_counts,
+    }
+    if current:
+        facts["implementation_config_digest"] = _digest(
+            inventory.get("implementation_config_digest"),
+            "inventory.implementation_config_digest",
+        )
+    return facts, [], required_objects
+
+
+def _coverage_shard_manifests(
+    path: Path, result: dict[str, Any], normalized: dict[str, Any], artifact_root: Path | None,
+) -> tuple[dict[str, Any], list[str]]:
     blockers: list[str] = []
+    manifest_digests = _strings(
+        result.get("shard_manifest_digests"), "result.shard_manifest_digests", unique=True,
+    )
+    bindings: list[dict[str, Any]] = []
+    config_digests: set[str] = set()
+    batch_digests: set[str] = set()
+    database_digests: set[str] = set()
+    run_keys: set[tuple[str, str, int, str]] = set()
+    dut_build_fingerprints: set[str] = set()
+    batches: list[dict[str, Any]] = []
+    for index, manifest_digest in enumerate(manifest_digests):
+        field = f"result.shard_manifest_digests[{index}]"
+        manifest, _ = _json_artifact(
+            path, normalized, artifact_root, manifest_digest,
+            "regression-manifest", "CoverageDatabaseShardManifest/1", field,
+        )
+        binding = _execution_binding(manifest.get("execution_binding"), f"{field}.execution_binding")
+        config_digest = _digest(
+            manifest.get("regression_config_digest"), f"{field}.regression_config_digest",
+        )
+        batch_digest = _digest(
+            manifest.get("batch_manifest_digest"), f"{field}.batch_manifest_digest",
+        )
+        batch = _regression_batch_manifest(
+            path, normalized, artifact_root, batch_digest, f"{field}.batch_manifest_digest",
+        )
+        if batch["execution_binding"] != binding:
+            blockers.append(f"coverage shard manifest {index} 与 RegressionBatchManifest/2 执行轮次不一致")
+        batches.append(batch)
+        fingerprint = manifest.get("dut_build_fingerprint")
+        if not isinstance(fingerprint, dict) or set(fingerprint) != {
+                "schema", "coverage_target", "dut_design_id", "rtl_digest", "parameter_digest",
+                "macro_digest", "dut_elaboration_digest"}:
+            raise EvidenceContractError(f"{field}.dut_build_fingerprint 必须是完整 DutBuildFingerprint/1")
+        if fingerprint.get("schema") != "DutBuildFingerprint/1":
+            raise EvidenceContractError(f"{field}.dut_build_fingerprint.schema 必须是 DutBuildFingerprint/1")
+        if fingerprint.get("coverage_target") != "dut":
+            raise EvidenceContractError(f"{field}.dut_build_fingerprint.coverage_target 必须是 dut")
+        normalized_fingerprint = {
+            "schema": "DutBuildFingerprint/1", "coverage_target": "dut",
+            "dut_design_id": _text(
+                fingerprint.get("dut_design_id"), f"{field}.dut_build_fingerprint.dut_design_id",
+            ),
+            **{key: _digest(fingerprint.get(key), f"{field}.dut_build_fingerprint.{key}")
+               for key in ("rtl_digest", "parameter_digest", "macro_digest", "dut_elaboration_digest")},
+        }
+        dut_build_fingerprints.add(_config_digest(normalized_fingerprint))
+        planned = {
+            (run["case_id"], run["seed"], run["iteration"])
+            for run in batch["runs"]
+        }
+        observed: set[tuple[str, str, int]] = set()
+        shards = _objects(manifest.get("shards"), f"{field}.shards")
+        if not shards:
+            raise EvidenceContractError(f"{field}.shards 不能为空")
+        for shard_index, shard in enumerate(shards):
+            shard_field = f"{field}.shards[{shard_index}]"
+            shard_path = _text(shard.get("path"), f"{shard_field}.path")
+            shard_digest = _digest(shard.get("sha256"), f"{shard_field}.sha256")
+            _artifact_file(
+                path, normalized, artifact_root, shard_path, shard_digest,
+                "coverage-database", shard_field,
+            )
+            if shard_digest in database_digests:
+                blockers.append("同一 VDB 分片被多个 coverage shard manifest 重复登记")
+            database_digests.add(shard_digest)
+            runs = _objects(shard.get("runs"), f"{shard_field}.runs")
+            if not runs:
+                raise EvidenceContractError(f"{shard_field}.runs 不能为空")
+            for run_index, run in enumerate(runs):
+                run_field = f"{shard_field}.runs[{run_index}]"
+                case_id = _text(run.get("case_id"), f"{run_field}.case_id")
+                seed = _regression_seed(run.get("seed"), f"{run_field}.seed")
+                iteration = _integer(run.get("iteration"), f"{run_field}.iteration")
+                key = (case_id, seed, iteration)
+                if key in observed:
+                    blockers.append(f"VDB 分片重复映射运行：{case_id}/{seed}/{iteration}")
+                observed.add(key)
+                global_key = (case_id, seed, iteration, batch["batch_id"])
+                if global_key in run_keys:
+                    blockers.append(f"覆盖率运行被重复登记：{batch['batch_id']}/{case_id}/{seed}/{iteration}")
+                run_keys.add(global_key)
+        if observed != planned:
+            blockers.append(f"VDB 分片没有完整且精确覆盖 batch {batch['batch_id']} 的全部计划运行")
+        bindings.append(binding)
+        config_digests.add(config_digest)
+        batch_digests.add(batch_digest)
+    if len(dut_build_fingerprints) != 1:
+        blockers.append("VDB 对应的 DUT parameter、宏、RTL 或 elaboration 不一致，禁止 merge")
+    return {
+        "source_execution_bindings": sorted(bindings, key=lambda item: item["round_id"]),
+        "regression_config_digests": sorted(config_digests),
+        "batch_manifest_digests": sorted(batch_digests),
+        "regression_batches": batches,
+        "input_database_digests": sorted(database_digests),
+        "runs": len(run_keys),
+        "dut_build_fingerprint_digests": sorted(dut_build_fingerprints),
+    }, blockers
+
+
+def _coverage_merge_manifest(
+    path: Path, result: dict[str, Any], normalized: dict[str, Any], artifact_root: Path | None,
+) -> dict[str, Any]:
+    manifest, manifest_digest = _json_artifact(
+        path, normalized, artifact_root, result.get("merge_manifest_digest"),
+        "analysis-report", "CoverageMergeManifest/1", "result.merge_manifest_digest",
+    )
+    input_digests = sorted(_strings(
+        manifest.get("input_database_digests"),
+        "merge_manifest.input_database_digests", unique=True,
+    ))
+    output_digest = _bound_digest(
+        normalized, manifest.get("output_database_digest"),
+        "merge_manifest.output_database_digest",
+    )
+    profile_digest = _bound_digest(
+        normalized, manifest.get("merge_profile_digest"),
+        "merge_manifest.merge_profile_digest",
+    )
+    adapter = manifest.get("adapter")
+    merge_tool = manifest.get("merge_tool")
+    for value, field in ((adapter, "merge_manifest.adapter"), (merge_tool, "merge_manifest.merge_tool")):
+        if not isinstance(value, dict):
+            raise EvidenceContractError(f"{field} 必须是对象")
+        _text(value.get("name"), f"{field}.name")
+        _text(value.get("version"), f"{field}.version")
+    return {
+        "merge_manifest_digest": manifest_digest,
+        "coverage_collection_config_digest": _digest(
+            manifest.get("collection_config_digest"),
+            "merge_manifest.collection_config_digest",
+        ),
+        "merge_profile_digest": profile_digest,
+        "dut_build_fingerprint_digest": _digest(
+            manifest.get("dut_build_fingerprint_digest"),
+            "merge_manifest.dut_build_fingerprint_digest",
+        ),
+        "input_database_digests": input_digests,
+        "merged_database_digest": output_digest,
+    }
+
+
+def _legacy_vcov(
+    path: Path, claim: str, result: dict[str, Any], normalized: dict[str, Any],
+    artifact_root: Path | None,
+) -> dict[str, Any]:
+    """Keep CoverageEvidence/1 readable while refusing it for a current delivery."""
+    blockers = ["旧 CoverageEvidence/1 与 CoverageItemManifest/1 仅供历史审计，必须按当前覆盖范围合同重新验证"]
     if claim == "coverage-model":
         planned = _integer(result.get("planned_items"), "result.planned_items", 1)
         mapped = _integer(result.get("mapped_items"), "result.mapped_items")
         compiled = _boolean(result.get("compiled"), "result.compiled")
-        facts = {"plan_digest": _bound_digest(normalized, result.get("plan_digest"), "result.plan_digest"),
-                 "model_digest": _bound_digest(normalized, result.get("model_digest"), "result.model_digest"),
-                 "planned_items": planned, "mapped_items": mapped, "compiled": compiled}
+        facts = {
+            "plan_digest": _bound_digest(normalized, result.get("plan_digest"), "result.plan_digest"),
+            "model_digest": _bound_digest(normalized, result.get("model_digest"), "result.model_digest"),
+            "planned_items": planned, "mapped_items": mapped, "compiled": compiled,
+        }
         manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
         blockers.extend(manifest_blockers)
-        if manifest_facts:
-            if (facts["plan_digest"] != manifest_facts["plan_digest"]
-                    or facts["model_digest"] != manifest_facts["model_digest"]):
-                blockers.append("覆盖项清单与本次覆盖计划或模型版本不一致")
-            if (planned != len(manifest_facts["required_item_ids"])
-                    or mapped != len(manifest_facts["mapped_item_ids"])):
-                blockers.append("覆盖项数量与受控清单不一致")
-            facts.update(manifest_facts)
+        facts.update(manifest_facts)
         if mapped != planned:
             blockers.append(f"coverage mapping 不完整: {mapped}/{planned}")
+        if not compiled:
+            blockers.append("coverage model 未编译")
+    elif claim == "coverage-collection":
+        configured = _boolean(result.get("configured"), "result.configured")
+        exporter_digest = _bound_digest(
+            normalized, result.get("exporter_digest"), "result.exporter_digest",
+        )
+        facts = {"configured": configured, "exporter_digest": exporter_digest}
+        if not configured:
+            blockers.append("coverage collector/exporter 尚未配置")
+    elif claim == "coverage-collection-evidence":
+        facts = {
+            "database_ids": _strings(result.get("database_ids"), "result.database_ids", unique=True),
+            "runs": _integer(result.get("runs"), "result.runs", 1),
+            "merge_errors": _integer(result.get("merge_errors"), "result.merge_errors"),
+            "stale_shards": _integer(result.get("stale_shards"), "result.stale_shards"),
+        }
+        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
+        facts.update(manifest_facts)
+        blockers.extend(manifest_blockers)
+        if facts["merge_errors"]:
+            blockers.append(f"coverage merge errors={facts['merge_errors']}")
+        if facts["stale_shards"]:
+            blockers.append(f"coverage stale shards={facts['stale_shards']}")
+    else:
+        items = _objects(result.get("items"), "result.items")
+        normalized_items = []
+        for index, item in enumerate(items):
+            prefix = f"result.items[{index}]"
+            normalized_items.append({
+                "id": _text(item.get("id"), f"{prefix}.id"),
+                "status": _text(item.get("status"), f"{prefix}.status"),
+                "hits": _integer(item.get("hits"), f"{prefix}.hits"),
+                "plan_ref": _text(item.get("plan_ref"), f"{prefix}.plan_ref"),
+                "responsible_workstream": str(item.get("responsible_workstream") or "").strip().upper(),
+                "next_action": str(item.get("next_action") or "").strip(),
+                "target_implementation_key": str(item.get("target_implementation_key") or "").strip(),
+                "waiver": dict(item["waiver"]) if isinstance(item.get("waiver"), dict) else {},
+            })
+        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
+        blockers.extend(manifest_blockers)
+        facts = {"item_count": len(items), "items": normalized_items, **manifest_facts}
+    return _finish(normalized, blockers, facts)
+
+
+def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
+    _payload, result, normalized = _base(path, "VCOV", claim)
+    if normalized["schema"] == LEGACY_SCHEMAS["VCOV"]:
+        return _legacy_vcov(path, claim, result, normalized, artifact_root)
+    blockers: list[str] = []
+    current = normalized["schema"] == "CoverageEvidence/3"
+    if claim == "coverage-model":
+        compiled = _boolean(result.get("compiled"), "result.compiled")
+        reported_count = _integer(result.get("object_count"), "result.object_count", 1)
+        facts = {
+            "scope_digest": _digest(result.get("scope_digest"), "result.scope_digest"),
+            "plan_digest": _bound_digest(normalized, result.get("plan_digest"), "result.plan_digest"),
+            "model_digest": _bound_digest(normalized, result.get("model_digest"), "result.model_digest"),
+            "object_count": reported_count, "compiled": compiled,
+        }
+        if current:
+            facts["implementation_config_digest"] = _digest(
+                result.get("implementation_config_digest"),
+                "result.implementation_config_digest",
+            )
+        inventory_facts, inventory_blockers, _required = _coverage_inventory(
+            path, result, normalized, artifact_root,
+        )
+        blockers.extend(inventory_blockers)
+        if inventory_facts:
+            compared = ("scope_digest", "plan_digest", "model_digest", *(
+                ("implementation_config_digest",) if current else ()
+            ))
+            if any(facts[key] != inventory_facts[key] for key in compared):
+                blockers.append("覆盖对象清单与本次批准范围、覆盖计划或覆盖模型版本不一致")
+            if reported_count != inventory_facts["object_count"]:
+                blockers.append("覆盖对象数量与工具生成清单不一致")
+            facts.update(inventory_facts)
         if not compiled:
             blockers.append("coverage model 未编译")
     elif claim == "coverage-collection":
@@ -781,72 +1081,116 @@ def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str
         exporter_digest = _bound_digest(normalized, result.get("exporter_digest"), "result.exporter_digest")
         if not configured:
             blockers.append("coverage collector/exporter 尚未配置")
-        facts = {"configured": configured, "exporter_digest": exporter_digest}
+        facts = {
+            "configured": configured, "exporter_digest": exporter_digest,
+            "scope_digest": _digest(result.get("scope_digest"), "result.scope_digest"),
+        }
+        if current:
+            facts["implementation_config_digest"] = _digest(
+                result.get("implementation_config_digest"),
+                "result.implementation_config_digest",
+            )
     elif claim == "coverage-collection-evidence":
-        databases = _strings(result.get("database_ids"), "result.database_ids", unique=True)
+        databases = (_strings(result.get("database_ids"), "result.database_ids", unique=True)
+                     if not current else [])
         runs = _integer(result.get("runs"), "result.runs", 1)
         merge_errors = _integer(result.get("merge_errors"), "result.merge_errors")
         stale_shards = _integer(result.get("stale_shards"), "result.stale_shards")
         facts = {"database_ids": databases, "runs": runs, "merge_errors": merge_errors,
                  "stale_shards": stale_shards}
-        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
-        facts.update(manifest_facts)
-        blockers.extend(manifest_blockers)
+        inventory_facts, inventory_blockers, _required = _coverage_inventory(
+            path, result, normalized, artifact_root,
+        )
+        facts.update(inventory_facts)
+        blockers.extend(inventory_blockers)
+        if current:
+            shard_facts, shard_blockers = _coverage_shard_manifests(
+                path, result, normalized, artifact_root,
+            )
+            merge_facts = _coverage_merge_manifest(path, result, normalized, artifact_root)
+            blockers.extend(shard_blockers)
+            if runs != shard_facts["runs"]:
+                blockers.append("覆盖率采集运行数量与 VDB 分片绑定不一致")
+            if merge_facts["input_database_digests"] != shard_facts["input_database_digests"]:
+                blockers.append("coverage merge 输入没有精确覆盖全部 VDB 分片")
+            if (shard_facts["dut_build_fingerprint_digests"] !=
+                    [merge_facts["dut_build_fingerprint_digest"]]):
+                blockers.append("DUT parameter、宏、RTL 或 elaboration 指纹不同，禁止 merge VDB")
+            reported_config = _digest(
+                result.get("coverage_collection_config_digest"),
+                "result.coverage_collection_config_digest",
+            )
+            if merge_facts["coverage_collection_config_digest"] != reported_config:
+                blockers.append("coverage merge manifest 未绑定本次 CoverageCollectionConfig/1")
+            facts.update(shard_facts, **merge_facts)
         if merge_errors:
             blockers.append(f"coverage merge errors={merge_errors}")
         if stale_shards:
             blockers.append(f"coverage stale shards={stale_shards}")
     else:
-        items = _objects(result.get("items"), "result.items")
-        if not items:
-            raise EvidenceContractError("result.items 不能为空")
+        required_count = _integer(result.get("required_objects"), "result.required_objects", 1)
+        covered_count = _integer(result.get("covered_objects"), "result.covered_objects")
+        excluded_count = _integer(result.get("excluded_objects"), "result.excluded_objects")
+        uncovered_count = _integer(result.get("uncovered_objects"), "result.uncovered_objects")
+        holes = _objects(result.get("holes"), "result.holes")
         seen: set[str] = set()
-        counts = {"covered": 0, "excluded": 0, "uncovered": 0}
-        normalized_items: list[dict[str, Any]] = []
-        for index, item in enumerate(items):
-            prefix = f"result.items[{index}]"
-            item_id = _text(item.get("id"), f"{prefix}.id")
-            if not ID.fullmatch(item_id):
-                raise EvidenceContractError(f"{prefix}.id 非法")
-            if item_id in seen:
-                blockers.append(f"重复 coverage item: {item_id}")
-            seen.add(item_id)
+        normalized_holes: list[dict[str, Any]] = []
+        observed_counts = {"excluded": 0, "uncovered": 0}
+        for index, item in enumerate(holes):
+            prefix = f"result.holes[{index}]"
+            object_key = _text(item.get("object_key"), f"{prefix}.object_key")
+            if object_key in seen:
+                blockers.append(f"重复 coverage hole: {object_key}")
+            seen.add(object_key)
             status = _text(item.get("status"), f"{prefix}.status")
-            if status not in counts:
-                raise EvidenceContractError(f"{prefix}.status 必须是 covered/excluded/uncovered")
-            hits = _integer(item.get("hits"), f"{prefix}.hits")
-            plan_ref = _text(item.get("plan_ref"), f"{prefix}.plan_ref")
+            if status not in observed_counts:
+                raise EvidenceContractError(f"{prefix}.status 必须是 excluded/uncovered")
             owner = str(item.get("responsible_workstream") or "").strip().upper()
             next_action = str(item.get("next_action") or "").strip()
             target_key = str(item.get("target_implementation_key") or "").strip()
-            counts[status] += 1
-            if status == "covered" and hits == 0:
-                blockers.append(f"{item_id} 声明 covered 但 hits=0")
-            elif status == "uncovered":
-                blockers.append(f"{item_id} 尚未覆盖")
+            observed_counts[status] += 1
+            if status == "uncovered":
+                blockers.append(f"{object_key} 尚未覆盖")
                 if owner not in FEEDBACK_OWNERS:
-                    blockers.append(f"{item_id} 必须明确反馈责任工作流或 DUT")
+                    blockers.append(f"{object_key} 必须明确反馈责任工作流或 DUT")
                 if not next_action:
-                    blockers.append(f"{item_id} 必须说明下一步补洞或分析动作")
+                    blockers.append(f"{object_key} 必须说明下一步补洞或分析动作")
             elif status == "excluded" and not _valid_waiver(item.get("waiver")):
-                blockers.append(f"{item_id} 的排除项缺少完整的负责人例外评审信息")
-            normalized_items.append({
-                "id": item_id, "status": status, "hits": hits, "plan_ref": plan_ref,
+                blockers.append(f"{object_key} 的排除项缺少完整的负责人例外评审信息")
+            normalized_holes.append({
+                "object_key": object_key, "status": status,
                 "responsible_workstream": owner, "next_action": next_action,
                 "target_implementation_key": target_key,
                 "waiver": dict(item["waiver"]) if isinstance(item.get("waiver"), dict) else {},
             })
-        manifest_facts, manifest_blockers = _coverage_manifest(path, result, normalized, artifact_root)
-        blockers.extend(manifest_blockers)
-        if manifest_facts:
-            required = set(manifest_facts["required_item_ids"])
-            missing = sorted(required - seen)
-            unexpected = sorted(seen - required)
-            if missing:
-                blockers.append("缺口分析遗漏计划覆盖项：" + ", ".join(missing))
+        inventory_facts, inventory_blockers, required_objects = _coverage_inventory(
+            path, result, normalized, artifact_root,
+        )
+        blockers.extend(inventory_blockers)
+        if required_count != covered_count + excluded_count + uncovered_count:
+            blockers.append("覆盖对象统计不完整：required 必须等于 covered + excluded + uncovered")
+        if excluded_count != observed_counts["excluded"] or uncovered_count != observed_counts["uncovered"]:
+            blockers.append("缺口明细数量与 excluded/uncovered 统计不一致")
+        if required_objects:
+            if required_count != len(required_objects):
+                blockers.append("required_objects 与工具生成的覆盖对象清单数量不一致")
+            unexpected = sorted(seen - set(required_objects))
             if unexpected:
-                blockers.append("缺口分析包含未登记计划的覆盖项：" + ", ".join(unexpected))
-        facts = {**counts, "item_count": len(items), "items": normalized_items, **manifest_facts}
+                blockers.append("缺口分析包含不属于当前覆盖对象清单的对象：" + ", ".join(unexpected))
+        facts = {
+            "required_objects": required_count, "covered_objects": covered_count,
+            "excluded_objects": excluded_count, "uncovered_objects": uncovered_count,
+            "holes": normalized_holes, **inventory_facts,
+        }
+        if current:
+            merge_facts = _coverage_merge_manifest(path, result, normalized, artifact_root)
+            reported_config = _digest(
+                result.get("coverage_collection_config_digest"),
+                "result.coverage_collection_config_digest",
+            )
+            if merge_facts["coverage_collection_config_digest"] != reported_config:
+                blockers.append("缺口分析引用的 merge manifest 未绑定本次 CoverageCollectionConfig/1")
+            facts.update(merge_facts)
     return _finish(normalized, blockers, facts)
 
 
@@ -975,7 +1319,7 @@ def _regression_batch_manifest(
     evidence_path: Path, normalized: dict[str, Any], artifact_root: Path | None,
     manifest_digest: object, field: str,
 ) -> dict[str, Any]:
-    modern = normalized["schema"] == "RegressionEvidence/3"
+    modern = normalized["schema"] in {"RegressionEvidence/3", "CoverageEvidence/3"}
     manifest, digest = _json_artifact(
         evidence_path, normalized, artifact_root, manifest_digest,
         "regression-manifest", "RegressionBatchManifest/2" if modern else "RegressionBatchManifest/1", field,

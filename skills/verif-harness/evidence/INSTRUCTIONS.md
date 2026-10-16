@@ -43,8 +43,16 @@ Schemas and starting examples are in this directory:
 - `environment-evidence.schema.json` / `environment-evidence.example.json`
 - `stimulus-capability-evidence.schema.json` / `stimulus-capability-evidence.example.json`
 - `checking-evidence.schema.json` / `checking-evidence.example.json`
-- `coverage-evidence.schema.json` / `coverage-evidence.example.json`
-- `coverage-item-manifest.schema.json` / `coverage-item-manifest.example.json`
+- `coverage-evidence-v3.schema.json` / `coverage-evidence-v3.example.json`（当前 VCOV）
+- `coverage-scope.schema.json` / `coverage-scope.example.json`
+- `coverage-implementation-config.schema.json` / `coverage-implementation-config.example.json`
+- `coverage-collection-config.schema.json` / `coverage-collection-config.example.json`
+- `coverage-object-inventory-v2.schema.json` / `coverage-object-inventory-v2.example.json`
+- `coverage-database-shard-manifest.schema.json` / `coverage-database-shard-manifest.example.json`
+- `coverage-merge-manifest.schema.json` / `coverage-merge-manifest.example.json`
+- `coverage-evidence.schema.json` / `coverage-evidence.example.json`（`CoverageEvidence/2`，仅历史审计）
+- `coverage-object-inventory.schema.json` / `coverage-object-inventory.example.json`（`CoverageObjectInventory/1`，仅历史审计）
+- `coverage-item-manifest.schema.json` / `coverage-item-manifest.example.json`（仅历史审计）
 - `submit-profile-ref.schema.json` / `submit-profile-ref.example.json`
 - `case-manifest.schema.json` / `case-manifest.example.json`
 - `regression-batch-manifest.schema.json` / `regression-batch-manifest.example.json`
@@ -104,7 +112,8 @@ SHA-256. A forged free-form file carrying only `{"state":"PASS"}` is rejected.
 Compilation artifacts normally prove capability readiness only. Runtime
 closure requires observations such as accepted stimulus, non-zero checker
 engagement, assertion attempts without failures or vacuity, targeted test
-PASS, coverage item disposition, and regression execution/triage. A waveform
+PASS, complete coverage-object counts plus every excluded/uncovered hole, and
+regression execution/triage. A waveform
 or transaction trace is an analysis input, not a substitute for the typed
 counters and semantic checks in the report result.
 
@@ -150,3 +159,19 @@ item must reference that single file-level approval. Agent validation checks
 legality and consistency only; it must not create or infer the approval. A new
 file, changed digest, new VCOV revision, or changed convergence scope requires
 revalidation. Per-item `WAIVE` reviews are not required for this VCOV flow.
+
+Current VCOV reports use `CoverageEvidence/3`. The owner approves one stable
+`CoverageScope/1` plus `CoverageImplementationConfig/1` per implementation plan;
+code coverage targets only the DUT. xverif expands them against the current plan
+and model into `CoverageObjectInventory/2`. Do not copy every native code coverage
+object or functional bin into ProjectStore. A convergence plan's
+`CoverageCollectionConfig/1` references approved VREG configs and approves exactly
+one DUT-only build-fingerprint partition. Its delivery binds every VDB shard to a
+VREG round/batch/run and binds the exact shard set to one merged database. Different
+testbenches or submit profiles may merge when DUT RTL, parameters, macros, and
+DUT-level elaboration match; different DUT fingerprints require separate convergence
+plan/delivery pairs. `coverage-model`, collection, and hole-analysis reports bind the
+inventory digest. Hole analysis reports complete required/covered/excluded/uncovered
+counts and enumerate only excluded or uncovered objects. `CoverageEvidence/1`,
+`CoverageEvidence/2`, `CoverageObjectInventory/1`, and `CoverageItemManifest/1`
+remain readable historical formats but cannot satisfy current delivery acceptance.

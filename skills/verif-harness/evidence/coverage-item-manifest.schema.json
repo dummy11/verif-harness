@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "CoverageItemManifest/1",
-  "description": "由 xverif 分析产生的受控覆盖项清单；实际接收还要核对文件摘要、计划和实现版本、全集一致性及 adapter 回执。",
+  "description": "历史 CoverageEvidence/1 使用的覆盖项清单，仅供审计；当前交付使用 CoverageScope/1、CoverageImplementationConfig/1 和 CoverageObjectInventory/2。",
   "type": "object",
   "required": ["schema", "plan_digest", "model_digest", "planned_item_ids", "mapped_item_ids", "adapter_schema_version", "state", "blockers", "request_sha256", "operation", "tool_identity", "tool"],
   "properties": {

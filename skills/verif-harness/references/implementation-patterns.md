@@ -68,9 +68,11 @@ signatures must stay visible blockers.
 ## Coverage and assertion closure
 
 Tool-neutral JSON is an adapter contract, not a replacement for native
-simulator evidence. Coverage closure requires database identity, one status per
-planned item, nonzero hits for covered items, and complete approved-waiver
-metadata for exclusions. Assertion closure requires compile and bind evidence,
+simulator evidence. Coverage closure requires database identity, a tool-expanded
+inventory bound to the approved scope/current model, complete disposition counts,
+and explicit records for every excluded or uncovered object. Covered objects remain
+in the inventory/database rather than being copied into control state; exclusions
+require complete approved file-level metadata. Assertion closure requires compile and bind evidence,
 nonzero attempts, failure counts, and vacuity handling. `READY_FOR_*_REVIEW`
 never means approved.
 

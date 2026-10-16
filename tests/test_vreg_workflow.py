@@ -51,6 +51,7 @@ class VregWorkflowTest(unittest.TestCase):
             for identifier in (
                 "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence",
                 "cap.vchk:scoreboard-evidence", "cap.vcase:targeted-evidence",
+                "cap.vcov:coverage-collection", "cap.vcov:coverage-collection-evidence",
                 "cap.vcov:hole-analysis-evidence",
             ):
                 self.store.upsert_node(connection, identifier, "capability", identifier, Validity.VALID,
@@ -77,7 +78,7 @@ class VregWorkflowTest(unittest.TestCase):
              "role": "regression-results-plan", "title": "DUT 回归结果方案",
              "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
                         "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence",
-                        "cap.vcase:targeted-evidence", "cap.vcov:hole-analysis-evidence",
+                        "cap.vcase:targeted-evidence", "cap.vcov:coverage-collection",
                         "cap.vreg:dut:infrastructure"],
              "output_paths": ["verification/results/regression/run.log", "verification/results/regression/analysis.json"],
              "capabilities": ["execution-evidence", "triage-evidence", "fresh-evidence"]},
@@ -280,7 +281,19 @@ class VregWorkflowTest(unittest.TestCase):
             "input_files": ["regression-plan.md"],
             "output_paths": ["verification/coverage/fixture.sv"],
             "capabilities": ["coverage-model", "coverage-collection"],
-            "coverage_item_ids": ["C.FIXTURE.1"],
+            "coverage_scope": {
+                "schema": "CoverageScope/1",
+                "code": {"metrics": ["line"], "hierarchy_selectors": ["dut"]},
+            },
+            "coverage_implementation_config": {
+                "schema": "CoverageImplementationConfig/1", "code_coverage_target": "dut",
+                "configuration_refs": [{
+                    "role": "collection", "path": "regression-plan.md",
+                    "sha256": self.store._digest(self.root / "regression-plan.md"),
+                }],
+                "compatible_submit_profile_digests": [self.submit_profile["profile_digest"]],
+                "toolchain": [{"role": "coverage", "name": "synthetic", "version": "1"}],
+            },
         }
         self.write_json("vcov-proposal.json", {
             "schema": "DesiredStateProposal/1", "workstream": "VCOV", "nodes": [coverage],

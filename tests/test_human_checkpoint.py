@@ -118,6 +118,9 @@ class HumanCheckpointTest(unittest.TestCase):
                 node = f.implement(approve=False) if stage == 'implementation' else f.convergence(approve=False)
                 self.assertTrue(f.validate(node)['ready'])
                 self.approve_while_waiting(f, 'VCOV', node)
+                if stage == 'implementation':
+                    # 收敛方案批准绑定已批准的 VREG 结果配置，但不等待 VDB 执行完成。
+                    f.prepare_vreg_execution()
             self.assertTrue(f.store.evaluate_closure('VCOV')['ready'])
 
     def test_all_four_regression_roles_wake_without_bypassing_validation(self):

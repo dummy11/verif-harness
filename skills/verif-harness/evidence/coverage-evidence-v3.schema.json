@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CoverageEvidence/3",
+  "type": "object",
+  "required": ["schema", "claim", "revision", "tool", "artifacts", "result"],
+  "properties": {
+    "schema": {"const": "CoverageEvidence/3"},
+    "claim": {"enum": ["coverage-model", "coverage-collection", "coverage-collection-evidence", "hole-analysis-evidence"]},
+    "revision": {"type": "string", "minLength": 1},
+    "tool": {"type": "string", "minLength": 1},
+    "artifacts": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "sha256", "kind", "analyzed_by"]}},
+    "result": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"claim": {"const": "coverage-model"}}}, "then": {"properties": {"result": {"required": ["scope_digest", "implementation_config_digest", "plan_digest", "model_digest", "object_count", "compiled", "coverage_inventory_digest"]}}}},
+    {"if": {"properties": {"claim": {"const": "coverage-collection"}}}, "then": {"properties": {"result": {"required": ["scope_digest", "implementation_config_digest", "configured", "exporter_digest"]}}}},
+    {"if": {"properties": {"claim": {"const": "coverage-collection-evidence"}}}, "then": {"properties": {"result": {"required": ["coverage_inventory_digest", "coverage_collection_config_digest", "shard_manifest_digests", "merge_manifest_digest", "runs", "merge_errors", "stale_shards"]}}}},
+    {"if": {"properties": {"claim": {"const": "hole-analysis-evidence"}}}, "then": {"properties": {"result": {"required": ["coverage_inventory_digest", "coverage_collection_config_digest", "merge_manifest_digest", "required_objects", "covered_objects", "excluded_objects", "uncovered_objects", "holes"]}}}}
+  ]
+}

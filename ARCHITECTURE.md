@@ -52,9 +52,34 @@ same approval, validation and acceptance gates. Accepted implementation derives
 internal capabilities; convergence depends on an explicitly selected accepted
 implementation and the accepted regression executor. All required implementation
 scopes must be consumed by required convergence scopes; implementation alone
-cannot satisfy VCOV. Approved `coverage_item_ids` bind the item universe.
-`CoverageItemManifest/1` binds that universe to current plan inputs and model
-outputs, and every convergence report must use the selected accepted manifest.
+cannot satisfy VCOV. The owner approves a stable `CoverageScope/1`: code metrics plus hierarchy
+selection/configuration, and functional covergroup selectors plus required object
+kinds. `CoverageImplementationConfig/1` separately binds instrumentation,
+elaboration, collection/export/analysis configuration, tool versions, and compatible
+submit-profile digests. Code coverage is restricted to the DUT; testbench code is not
+part of the code-coverage target. xverif expands the scope against that approved configuration,
+the current plan and model into a `CoverageObjectInventory/2`; native line, toggle,
+bin and cross identities stay in
+that controlled file rather than becoming public nodes or ProjectStore items.
+`CoverageCollectionConfig/1` references one or more versioned VREG
+`regression_config` values and one merge profile without duplicating cases, profiles,
+seed policy, or repeat. VREG execution emits one or more VDB shards.
+`CoverageDatabaseShardManifest/1` binds every shard to the current execution round,
+`RegressionBatchManifest/2`, case, seed and iteration; `CoverageMergeManifest/1`
+binds the exact shard-digest set to one merged database. Merge compatibility is a
+DUT-only build fingerprint over DUT identity, RTL, parameters, macros, and DUT-level
+elaboration. A mismatch in any of those fields forbids merge. Testbench identity,
+submit-profile identity, and DUT instance path are deliberately excluded, so databases
+from different testbenches or profiles may merge when that DUT fingerprint matches;
+each source still remains a distinct VREG plan, round, and batch, and native merge errors
+remain blockers. The DUT-elaboration digest is normalized from the elaborated DUT design,
+not a whole-testbench hierarchy, wrapper, or absolute DUT instance path. Each convergence
+plan and its corresponding delivery own exactly one
+approved `DutBuildFingerprint/1` partition. Multiple expected fingerprints therefore
+produce multiple convergence plan/delivery pairs; VDB shards, batches, cases, and seeds
+remain internal manifests rather than public nodes. Collection and hole analysis
+bind the selected accepted inventory and that same merged database. Closure reports store complete counts and only enumerate
+excluded or uncovered objects, so covered-object volume does not expand control state.
 When convergence contains excluded items, the owner provides one exclusion file;
 that provision is the semantic approval of the file's exclusion scope. ProjectStore
 binds its digest to the current revision and convergence delivery. Agent validation
@@ -63,6 +88,9 @@ to reference that same file-level approval. It does not add per-item waiver gate
 Replacing the file or changing its content or scope invalidates prior validation;
 owner acceptance of the convergence delivery remains the final gate.
 Old validation receipts require revalidation under the current coverage contract.
+Historical `CoverageEvidence/1`, `CoverageEvidence/2`,
+`CoverageObjectInventory/1`, and `CoverageItemManifest/1` remain readable for
+audit but cannot satisfy current delivery acceptance.
 VCASE treats a runnable case as a testcase or executable virtual sequence bound
 to one testbench-owned submit profile. The testbench submit file remains the
 configuration authority; the control plane stores only project-relative
@@ -79,7 +107,9 @@ VREG exposes four direct WorkNode types: `regression-infrastructure-plan`,
 depends only on accepted documents and environment; its acceptance derives
 `cap.vreg:executor-ready` without waiting for final results. Results explicitly
 consume accepted infrastructure capabilities plus stimulus, checking, testcase
-and coverage capabilities. All required infrastructure must be consumed by
+and `cap.vcov:coverage-collection`. A validated VREG execution round can feed VCOV
+convergence before final VREG result acceptance; that final acceptance waits for
+current coverage collection and hole-analysis evidence. All required infrastructure must be consumed by
 required results, and both kinds of deliveries must be accepted before VREG
 can be satisfied. Failed execution batch/case/seed/iteration tuples must exactly match triage;
 known failures require a current VREG owner waiver. Engine derives the current
@@ -100,7 +130,7 @@ WorkNodes or workstream revision, and revokes the old result's current validatio
 acceptance and capability before dispatch. Historical files and governance records
 remain available. A saved request or dispatched Agent is not evidence of simulator
 execution; every new result still needs validation and owner acceptance.
-Uncovered coverage items and unresolved regression failures
+Uncovered coverage objects and unresolved regression failures
 carry an explicit responsible workstream and next action. Main Agent records a
 bounded upstream replan or revalidation request; findings never mutate upstream
 plans or approvals automatically.

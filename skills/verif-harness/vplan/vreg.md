@@ -13,7 +13,7 @@ VREG 直接使用四种公开工作节点类型。根据 DUT 的测试范围、�
 | --- | --- | --- | --- |
 | 回归基础设施方案 | `regression-infrastructure-plan` | 已验收文档 `cap.doc` 和可运行的环境 `cap.venv` | 明确测试集合、seed、timeout、重跑、已知失败和结果保留规则，等待负责人批准 |
 | 回归基础设施交付 | `regression-infrastructure-deliverable` | 对应已批准方案 `art.code_plan` | 实现并自检 runner/collector，等待负责人验收 |
-| 回归结果方案 | `regression-results-plan` | 当前有效的 `cap.doc`、`cap.venv`、`cap.vstim`、`cap.vchk`、`cap.vcase`、`cap.vcov`，以及明确关联的基础设施能力 | 明确本组 case、执行配置、seed 模式、repeat、结果准入和失败分析要求，等待负责人批准 |
+| 回归结果方案 | `regression-results-plan` | 当前有效的 `cap.doc`、`cap.venv`、`cap.vstim`、`cap.vchk`、`cap.vcase`、`cap.vcov:coverage-collection`，以及明确关联的基础设施能力 | 明确本组 case、执行配置、seed 模式、repeat、结果准入和失败分析要求，等待负责人批准 |
 | 回归结果交付 | `regression-results-deliverable` | 对应已批准方案 `art.code_plan` 和当前运行结果 | 交付回归测试清单、执行报告、失败处理记录与当前版本验证证据，等待负责人验收 |
 
 ```text
@@ -30,6 +30,11 @@ VREG 直接使用四种公开工作节点类型。根据 DUT 的测试范围、�
 工作节点、人工审批入口或进度。
 
 结果交付必须同时验证 `execution-evidence`、`triage-evidence` 和 `fresh-evidence`。
+结果方案的覆盖率执行前置只使用覆盖率实现交付产生的 `cap.vcov:coverage-collection`，不能等待
+覆盖率收敛结果；因此本轮执行与证据验证完成后，VDB 可以先交给 VCOV 收敛。回归结果交付的
+最终负责人验收再要求当前 `cap.vcov:coverage-collection-evidence` 和
+`cap.vcov:hole-analysis-evidence` 均有效。执行就绪、结果验证和最终验收是三个不同结论，不能
+互相代替，也不会形成 VREG 等 VCOV、VCOV 又等 VREG 的依赖环。
 testbench submit 工具按 submit profile 生成 `RegressionBatchManifest/2` 和 caselist；
 同一组 case 绑定不同 profile 时必须形成不同 batch。执行证据绑定 batch、caselist、
 submit file/profile 摘要、seed、日志和代码版本；相同 case 可出现在不同 batch，逐项

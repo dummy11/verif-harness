@@ -1,0 +1,30 @@
+{
+  "schema": "CoverageCollectionConfig/1",
+  "regression_sources": [
+    {
+      "plan_node_id": "workstream:VREG:r3:desired:nightly-results",
+      "plan_revision": 3,
+      "regression_config_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "plan_node_id": "workstream:VREG:r3:desired:protocol-results",
+      "plan_revision": 3,
+      "regression_config_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "dut_build_fingerprint": {
+    "schema": "DutBuildFingerprint/1",
+    "coverage_target": "dut",
+    "dut_design_id": "fifo",
+    "rtl_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "parameter_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "macro_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "dut_elaboration_digest": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "merge_profile": {
+    "path": "verification/coverage/merge.toml",
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "adapter": {"name": "project-coverage-merge", "version": "1"},
+    "tool": {"name": "simulator-coverage-tool", "version": "project-selected"}
+  }
+}

@@ -26,7 +26,7 @@ DELIVERY_ROLES = {"code-deliverable", *VCOV_DELIVERY_ROLES, *VREG_DELIVERY_ROLES
 ROLES = PLAN_ROLES | DELIVERY_ROLES
 VCOV_IMPLEMENTATION_CLAIMS = {"coverage-model", "coverage-collection"}
 VCOV_CONVERGENCE_CLAIMS = {"coverage-collection-evidence", "hole-analysis-evidence"}
-VCOV_VALIDATION_CONTRACT = "CoverageConvergence/3"
+VCOV_VALIDATION_CONTRACT = "CoverageConvergence/5"
 MAX_COVERAGE_EXCLUSION_BYTES = 512 * 1024
 VREG_INFRASTRUCTURE_CLAIMS = {"regression-policy", "executor-ready"}
 VREG_RESULTS_CLAIMS = {"execution-evidence", "triage-evidence", "fresh-evidence"}
@@ -186,12 +186,255 @@ def is_delivery(node):
     return node.get("role") in DELIVERY_ROLES
 
 
-def coverage_items(node):
-    from .evidence_contracts import ID
-    value = node.get("coverage_item_ids")
-    return bool(isinstance(value, list) and value and all(
-        isinstance(identifier, str) and ID.fullmatch(identifier)
-        for identifier in value) and len(value) == len(set(value)))
+def _coverage_scope_strings(value, field, *, allowed=None):
+    if not isinstance(value, list) or not value or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise ValueError(f"{field} 必须是非空字符串数组")
+    normalized = [item.strip() for item in value]
+    if len(normalized) != len(set(normalized)):
+        raise ValueError(f"{field} 不能包含重复项")
+    if allowed is not None and any(item not in allowed for item in normalized):
+        raise ValueError(f"{field} 包含不支持的值")
+    return sorted(normalized)
+
+
+def normalize_coverage_scope(value):
+    """Normalize the Human-approved scope; native object expansion stays in evidence files."""
+    if not isinstance(value, dict) or value.get("schema") != "CoverageScope/1":
+        raise ValueError("coverage_scope.schema 必须是 CoverageScope/1")
+    allowed_top = {"schema", "code", "functional", "semantic_goal_ids"}
+    if set(value) - allowed_top:
+        raise ValueError("coverage_scope 包含不支持的字段")
+    normalized = {"schema": "CoverageScope/1"}
+    code_scope = value.get("code")
+    if code_scope is not None:
+        if not isinstance(code_scope, dict) or set(code_scope) - {
+            "metrics", "hierarchy_selectors", "hierarchy_files", "exclusion_files",
+        }:
+            raise ValueError("coverage_scope.code 包含不支持的字段")
+        code = {
+            "metrics": _coverage_scope_strings(
+                code_scope.get("metrics"), "coverage_scope.code.metrics",
+                allowed={"line", "condition", "branch", "toggle", "fsm"},
+            ),
+        }
+        for field in ("hierarchy_selectors", "hierarchy_files", "exclusion_files"):
+            if field in code_scope:
+                code[field] = _coverage_scope_strings(
+                    code_scope.get(field), f"coverage_scope.code.{field}",
+                )
+        if not code.get("hierarchy_selectors") and not code.get("hierarchy_files"):
+            raise ValueError("code 覆盖范围必须提供 hierarchy_selectors 或 hierarchy_files")
+        normalized["code"] = code
+    functional_scope = value.get("functional")
+    if functional_scope is not None:
+        if not isinstance(functional_scope, dict) or set(functional_scope) - {
+            "covergroup_selectors", "object_kinds",
+        }:
+            raise ValueError("coverage_scope.functional 包含不支持的字段")
+        normalized["functional"] = {
+            "covergroup_selectors": _coverage_scope_strings(
+                functional_scope.get("covergroup_selectors"),
+                "coverage_scope.functional.covergroup_selectors",
+            ),
+            "object_kinds": _coverage_scope_strings(
+                functional_scope.get("object_kinds"),
+                "coverage_scope.functional.object_kinds",
+                allowed={"coverpoint-bin", "cross-bin"},
+            ),
+        }
+    if "code" not in normalized and "functional" not in normalized:
+        raise ValueError("coverage_scope 必须至少包含 code 或 functional 范围")
+    if "semantic_goal_ids" in value:
+        from .evidence_contracts import ID
+        goals = _coverage_scope_strings(value.get("semantic_goal_ids"), "coverage_scope.semantic_goal_ids")
+        if any(not ID.fullmatch(item) for item in goals):
+            raise ValueError("coverage_scope.semantic_goal_ids 包含非法标识")
+        normalized["semantic_goal_ids"] = goals
+    return normalized
+
+
+def coverage_scope(node):
+    try:
+        return normalize_coverage_scope(node.get("coverage_scope"))
+    except ValueError:
+        return None
+
+
+def coverage_scope_digest(node):
+    scope = coverage_scope(node)
+    if scope is None:
+        return None
+    return hashlib.sha256(json.dumps(
+        scope, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+
+
+def coverage_scope_files(node):
+    scope = coverage_scope(node) or {}
+    code = scope.get("code", {})
+    return set(code.get("hierarchy_files", [])) | set(code.get("exclusion_files", []))
+
+
+def _sha256(value, field):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise ValueError(f"{field} 必须是小写 SHA-256")
+    return value
+
+
+def _named_version(value, field, *, role=False):
+    if not isinstance(value, dict):
+        raise ValueError(f"{field} 必须是对象")
+    allowed = {"name", "version", *(('role',) if role else ())}
+    if set(value) - allowed:
+        raise ValueError(f"{field} 包含不支持的字段")
+    result = {}
+    if role:
+        if not isinstance(value.get("role"), str) or not value["role"].strip():
+            raise ValueError(f"{field}.role 必须是非空字符串")
+        result["role"] = value["role"].strip()
+    for key in ("name", "version"):
+        if not isinstance(value.get(key), str) or not value[key].strip():
+            raise ValueError(f"{field}.{key} 必须是非空字符串")
+        result[key] = value[key].strip()
+    return result
+
+
+def normalize_coverage_implementation_config(value):
+    """Normalize coverage-only implementation mechanics; VREG owns run selection."""
+    if not isinstance(value, dict) or value.get("schema") != "CoverageImplementationConfig/1":
+        raise ValueError("coverage_implementation_config.schema 必须是 CoverageImplementationConfig/1")
+    if set(value) - {"schema", "code_coverage_target", "configuration_refs", "compatible_submit_profile_digests", "toolchain"}:
+        raise ValueError("coverage_implementation_config 包含不支持的字段")
+    if value.get("code_coverage_target") != "dut":
+        raise ValueError("coverage_implementation_config.code_coverage_target 必须是 dut")
+    refs = value.get("configuration_refs")
+    if not isinstance(refs, list) or not refs:
+        raise ValueError("coverage_implementation_config.configuration_refs 必须是非空数组")
+    allowed_roles = {"instrumentation", "elaboration", "collection", "export", "analysis"}
+    normalized_refs = []
+    seen_roles = set()
+    for index, item in enumerate(refs):
+        field = f"coverage_implementation_config.configuration_refs[{index}]"
+        if not isinstance(item, dict) or set(item) != {"role", "path", "sha256"}:
+            raise ValueError(f"{field} 必须只包含 role/path/sha256")
+        role = item.get("role")
+        if role not in allowed_roles or role in seen_roles:
+            raise ValueError(f"{field}.role 必须唯一且属于批准的覆盖实现角色")
+        path = item.get("path")
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError(f"{field}.path 必须是非空字符串")
+        seen_roles.add(role)
+        normalized_refs.append({"role": role, "path": path.strip(),
+                                "sha256": _sha256(item.get("sha256"), f"{field}.sha256")})
+    profiles = value.get("compatible_submit_profile_digests")
+    if not isinstance(profiles, list) or not profiles:
+        raise ValueError("coverage_implementation_config.compatible_submit_profile_digests 必须是非空数组")
+    profiles = [_sha256(item, "compatible_submit_profile_digests[]") for item in profiles]
+    if len(profiles) != len(set(profiles)):
+        raise ValueError("compatible_submit_profile_digests 不能包含重复项")
+    toolchain = value.get("toolchain")
+    if not isinstance(toolchain, list) or not toolchain:
+        raise ValueError("coverage_implementation_config.toolchain 必须是非空数组")
+    tools = [_named_version(item, f"coverage_implementation_config.toolchain[{index}]", role=True)
+             for index, item in enumerate(toolchain)]
+    if len({item["role"] for item in tools}) != len(tools):
+        raise ValueError("coverage_implementation_config.toolchain role 不能重复")
+    return {"schema": "CoverageImplementationConfig/1", "code_coverage_target": "dut",
+            "configuration_refs": sorted(normalized_refs, key=lambda item: item["role"]),
+            "compatible_submit_profile_digests": sorted(profiles),
+            "toolchain": sorted(tools, key=lambda item: item["role"])}
+
+
+def normalize_dut_build_fingerprint(value):
+    """Normalize the DUT-only merge-compatibility partition."""
+    required = {
+        "schema", "coverage_target", "dut_design_id", "rtl_digest",
+        "parameter_digest", "macro_digest", "dut_elaboration_digest",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("dut_build_fingerprint 必须是完整 DutBuildFingerprint/1")
+    if value.get("schema") != "DutBuildFingerprint/1" or value.get("coverage_target") != "dut":
+        raise ValueError("dut_build_fingerprint 必须描述 DUT code coverage 构建")
+    design_id = value.get("dut_design_id")
+    if not isinstance(design_id, str) or not design_id.strip():
+        raise ValueError("dut_build_fingerprint.dut_design_id 必须是非空字符串")
+    return {
+        "schema": "DutBuildFingerprint/1", "coverage_target": "dut",
+        "dut_design_id": design_id.strip(),
+        **{key: _sha256(value.get(key), f"dut_build_fingerprint.{key}")
+           for key in ("rtl_digest", "parameter_digest", "macro_digest",
+                       "dut_elaboration_digest")},
+    }
+
+
+def normalize_coverage_collection_config(value):
+    """Normalize VREG source references and merge mechanics without copying run policy."""
+    if not isinstance(value, dict) or value.get("schema") != "CoverageCollectionConfig/1":
+        raise ValueError("coverage_collection_config.schema 必须是 CoverageCollectionConfig/1")
+    if set(value) != {"schema", "regression_sources", "dut_build_fingerprint", "merge_profile"}:
+        raise ValueError(
+            "coverage_collection_config 必须只包含 schema/regression_sources/"
+            "dut_build_fingerprint/merge_profile"
+        )
+    sources = value.get("regression_sources")
+    if not isinstance(sources, list) or not sources:
+        raise ValueError("coverage_collection_config.regression_sources 必须是非空数组")
+    normalized_sources = []
+    seen = set()
+    for index, source in enumerate(sources):
+        field = f"coverage_collection_config.regression_sources[{index}]"
+        if not isinstance(source, dict) or set(source) != {
+                "plan_node_id", "plan_revision", "regression_config_digest"}:
+            raise ValueError(f"{field} 必须只引用 VREG 结果方案、版本和 regression_config 摘要")
+        node_id = source.get("plan_node_id")
+        revision = source.get("plan_revision")
+        if not isinstance(node_id, str) or not node_id.startswith("workstream:VREG:"):
+            raise ValueError(f"{field}.plan_node_id 必须引用 VREG 工作节点")
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            raise ValueError(f"{field}.plan_revision 必须是正整数")
+        key = (node_id, revision)
+        if key in seen:
+            raise ValueError("coverage_collection_config 不能重复引用同一 VREG 结果方案")
+        seen.add(key)
+        normalized_sources.append({"plan_node_id": node_id, "plan_revision": revision,
+                                   "regression_config_digest": _sha256(
+                                       source.get("regression_config_digest"),
+                                       f"{field}.regression_config_digest")})
+    profile = value.get("merge_profile")
+    if not isinstance(profile, dict) or set(profile) != {"path", "sha256", "adapter", "tool"}:
+        raise ValueError("coverage_collection_config.merge_profile 必须包含 path/sha256/adapter/tool")
+    path = profile.get("path")
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("coverage_collection_config.merge_profile.path 必须是非空字符串")
+    return {"schema": "CoverageCollectionConfig/1",
+            "regression_sources": sorted(normalized_sources, key=lambda item: item["plan_node_id"]),
+            "dut_build_fingerprint": normalize_dut_build_fingerprint(
+                value.get("dut_build_fingerprint")
+            ),
+            "merge_profile": {"path": path.strip(),
+                              "sha256": _sha256(profile.get("sha256"), "merge_profile.sha256"),
+                              "adapter": _named_version(profile.get("adapter"), "merge_profile.adapter"),
+                              "tool": _named_version(profile.get("tool"), "merge_profile.tool")}}
+
+
+def coverage_implementation_config(node):
+    try:
+        return normalize_coverage_implementation_config(node.get("coverage_implementation_config"))
+    except ValueError:
+        return None
+
+
+def coverage_collection_config(node):
+    try:
+        return normalize_coverage_collection_config(node.get("coverage_collection_config"))
+    except ValueError:
+        return None
+
+
+def config_digest(value):
+    return digest(value)
 
 
 def regression_config(node):
@@ -705,6 +948,18 @@ def validation_current(store, connection, plan, node, signature):
                         and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
     if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
         value["current"] = False
+    if plan["workstream"] == "VCOV" and vcov_stage(node) == "convergence" and value["current"]:
+        sources, source_reasons = _coverage_collection_sources(
+            store, connection, coverage_collection_config(node),
+        )
+        expected_bindings = sorted(
+            (item["execution_binding"] for item in sources), key=lambda item: item["round_id"],
+        )
+        observed_bindings = sorted(
+            value.get("coverage_execution_bindings", []), key=lambda item: item.get("round_id", ""),
+        )
+        if source_reasons or observed_bindings != expected_bindings:
+            value["current"] = False
     if plan["workstream"] == "VCASE" and value.get("testcase_contract") != VCASE_VALIDATION_CONTRACT:
         value["current"] = False
     if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
@@ -724,6 +979,73 @@ def validation_subject(validation):
     """The reviewed evidence, without a receipt's storage identity or read state."""
     return {key: value for key, value in validation.items()
             if key not in {"id", "created_at", "current"}}
+
+
+def _coverage_collection_sources(store, connection, config, *, require_execution=True):
+    """Resolve approved VREG configs and, for delivery, immutable execution rounds."""
+    resolved = []
+    reasons = []
+    if config is None:
+        return resolved, ["覆盖率收敛方案缺少合法的 coverage_collection_config，请重新形成方案"]
+    from .store import HarnessError
+    try:
+        vreg = store._read_workstream(connection, "VREG")
+    except HarnessError as exc:
+        return resolved, ["当前 VREG 回归结果方案不可用：" + str(exc)]
+    plans = {item["id"]: item for item in vreg["desired_state"]
+             if is_plan(item) and vreg_stage(item) == "results"}
+    for source in config["regression_sources"]:
+        referenced = plans.get(source["plan_node_id"])
+        if referenced is None or source["plan_revision"] != vreg["revision"]:
+            reasons.append("coverage_collection_config 引用的 VREG 回归结果方案已经变化")
+            continue
+        try:
+            observed_digest = config_digest(regression_config(referenced))
+        except ValueError:
+            reasons.append("coverage_collection_config 引用的 VREG regression_config 已不合法")
+            continue
+        if observed_digest != source["regression_config_digest"]:
+            reasons.append("coverage_collection_config 引用的 regression_config 摘要已经变化")
+            continue
+        source_state = review_state(store, referenced["id"], vreg, referenced, connection)
+        if not source_state["completed"]:
+            reasons.append("引用的 VREG 回归结果方案尚未批准：" + referenced["title"])
+            continue
+        normalized_config = regression_config(referenced)
+        basic = {**source,
+                 "regression_group": normalized_config["regression_group"],
+                 "submit_profile_id": normalized_config["submit_profile"]["profile_id"],
+                 "regression_config": normalized_config}
+        if not require_execution:
+            resolved.append(basic)
+            continue
+        delivery = next((item for item in vreg["desired_state"]
+                         if item.get("parent_id") == referenced["id"]), None)
+        if delivery is None:
+            reasons.append("引用的 VREG 回归结果方案尚未建立结果交付：" + referenced["title"])
+            continue
+        value = execution_round(connection, delivery["id"])
+        if value is None:
+            reasons.append("引用的 VREG 回归结果方案尚未登记执行轮次：" + referenced["title"])
+            continue
+        if value["revision"] != vreg["revision"] or value["plan_digest"] != source_state["definition_digest"]:
+            reasons.append("引用的 VREG 执行轮次没有绑定当前批准方案：" + referenced["title"])
+            continue
+        try:
+            round_digest = config_digest(json.loads(value["config_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            reasons.append("引用的 VREG 执行轮次缺少不可变 regression_config：" + referenced["title"])
+            continue
+        if round_digest != source["regression_config_digest"]:
+            reasons.append("引用的 VREG 执行轮次与收敛方案中的 regression_config 不一致")
+            continue
+        if value["status"] not in {"VALIDATED", "FAILED", "ACCEPTED"}:
+            reasons.append("引用的 VREG 执行轮次尚未结束并形成可分析 VDB：" + referenced["title"])
+            continue
+        resolved.append({**basic, "delivery_node_id": delivery["id"],
+                         "execution_binding": execution_binding(vreg, delivery, value),
+                         "round_status": value["status"]})
+    return resolved, reasons
 
 
 def _legacy_completion(connection, node_id, revision, signature, subject, reviews):
@@ -823,6 +1145,8 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
             own_inputs = {value for value in inputs if value.startswith("cap.vreg:")}
             if not own_inputs or not own_inputs <= infrastructure:
                 reasons.append("回归结果方案必须明确关联当前回归基础设施能力，不能依赖结果能力，请重新形成方案")
+            if "cap.vcov:coverage-collection" not in inputs:
+                reasons.append("回归结果方案必须依赖已验收的覆盖率采集实现 cap.vcov:coverage-collection")
             if is_delivery(node):
                 current_round = execution_round(connection, node_id)
                 if current_round is None:
@@ -831,6 +1155,11 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
                     parent_state = review_state(store, parent["id"], plan, parent, connection)
                     if current_round["plan_digest"] != parent_state["definition_digest"] or current_round["revision"] != plan["revision"]:
                         reasons.append("当前回归轮次未绑定当前批准方案，请重新形成方案")
+                if validation and validation["current"] and validation["ready"]:
+                    for capability in ("cap.vcov:coverage-collection-evidence", "cap.vcov:hole-analysis-evidence"):
+                        current = connection.execute("SELECT status FROM nodes WHERE id=?", (capability,)).fetchone()
+                        if current is None or current["status"] != "VALID":
+                            reasons.append("回归结果最终验收仍需当前覆盖率收敛能力：" + capability)
     if workstream == "VCOV":
         if is_delivery(node):
             parent = next((n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
@@ -843,17 +1172,24 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
             reasons.append("覆盖率节点类型与验证要求不一致，请重新形成方案")
         if "cap.vreg:executor-ready" not in node.get("inputs", []):
             reasons.append("前置结果缺少已验收的回归执行能力，请重新形成方案")
-        if vcov_stage(node) == "implementation" and not coverage_items(node):
-            reasons.append("覆盖率实现方案缺少已批准的必需覆盖项清单，请重新形成方案")
+        if vcov_stage(node) == "implementation" and coverage_scope(node) is None:
+            reasons.append("覆盖率实现方案缺少合法的覆盖范围，请重新形成方案")
+        if vcov_stage(node) == "implementation" and coverage_implementation_config(node) is None:
+            reasons.append("覆盖率实现方案缺少合法的 coverage_implementation_config，请重新形成方案")
         if vcov_stage(node) == "convergence":
-            manifests, manifest_reasons = _vcov_expected_manifests(store, connection, plan, node)
-            reasons.extend(manifest_reasons)
+            collection_config = coverage_collection_config(node)
+            resolved_sources, source_reasons = _coverage_collection_sources(
+                store, connection, collection_config, require_execution=is_delivery(node),
+            )
+            reasons.extend(source_reasons)
+            inventories, inventory_reasons = _vcov_expected_inventories(store, connection, plan, node)
+            reasons.extend(inventory_reasons)
             if is_delivery(node) and validation and validation["current"]:
                 for claim in sorted(VCOV_CONVERGENCE_CLAIMS):
-                    observed = {check.get("validation", {}).get("facts", {}).get("coverage_manifest_digest")
+                    observed = {check.get("validation", {}).get("facts", {}).get("coverage_inventory_digest")
                                 for check in validation.get("checks", []) if check.get("claim") == claim}
-                    if not manifests or observed != manifests:
-                        reasons.append("覆盖率收敛证据的覆盖项清单与已验收实现不一致：" + claim)
+                    if not inventories or observed != inventories:
+                        reasons.append("覆盖率收敛证据的覆盖对象清单与已验收实现不一致：" + claim)
     complete = bool(completion and not reasons)
     exclusion = (coverage_exclusion_state(store, connection, plan, node)
                  if workstream == "VCOV" and is_delivery(node) and vcov_stage(node) == "convergence"
@@ -868,6 +1204,9 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
             "feedback": feedback, "can_approve": not reasons, "blockers": reasons,
             "validation": validation, "code_files": snapshot.get("outputs", []),
             "coverage_exclusion": exclusion,
+            "coverage_implementation_config": node.get("coverage_implementation_config"),
+            "coverage_collection_config": node.get("coverage_collection_config"),
+            "coverage_regression_sources": (resolved_sources if workstream == "VCOV" and vcov_stage(node) == "convergence" else []),
             "regression_config": node.get("regression_config"),
             "regression_execution": (regression_execution_state(store, connection, plan, node)
                                      if workstream == "VREG" and vreg_stage(node) == "results" else None),
@@ -1035,7 +1374,7 @@ def workflow_progress(plan, nodes, closure, progress):
             "stages": stages, "current_rounds": rounds}
 
 
-def _vcov_expected_manifests(store, connection, plan, node):
+def _vcov_expected_inventories(store, connection, plan, node):
     """Resolve accepted implementation reports through explicit capability inputs."""
     owner = node if is_plan(node) else next(
         (n for n in plan["desired_state"] if n["id"] == node.get("parent_id")), None)
@@ -1056,11 +1395,14 @@ def _vcov_expected_manifests(store, connection, plan, node):
         state = review_state(store, delivery["id"], plan, delivery, connection)
         validation = state.get("validation") or {}
         checks = [check for check in validation.get("checks", []) if check.get("claim") == "coverage-model"]
-        manifests = {check.get("validation", {}).get("facts", {}).get("coverage_manifest_digest") for check in checks}
-        manifests.discard(None)
-        if not state["completed"] or not manifests:
-            reasons.append(provider["title"] + " 缺少当前已验收的覆盖项清单，请重新验证实现")
-        expected.update(manifests)
+        inventories = {
+            check.get("validation", {}).get("facts", {}).get("coverage_inventory_digest")
+            for check in checks
+        }
+        inventories.discard(None)
+        if not state["completed"] or not inventories:
+            reasons.append(provider["title"] + " 缺少当前已验收的覆盖对象清单，请重新验证实现")
+        expected.update(inventories)
     return expected, reasons
 
 
@@ -1227,11 +1569,27 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 error("覆盖率节点类型与验证要求不一致")
             item["role"] = canonical
             if inferred == "implementation":
-                item["coverage_item_ids"] = raw.get("coverage_item_ids")
-                if not coverage_items(item):
-                    error("覆盖率实现方案必须列出非空、唯一且有效的 coverage_item_ids，供负责人批准覆盖范围")
-            elif "coverage_item_ids" in raw:
-                error("覆盖率收敛范围由明确关联的实现能力继承，不另行登记 coverage_item_ids")
+                try:
+                    item["coverage_scope"] = normalize_coverage_scope(raw.get("coverage_scope"))
+                except ValueError as exc:
+                    error("覆盖率实现方案必须登记负责人可审查的 coverage_scope：" + str(exc))
+                try:
+                    item["coverage_implementation_config"] = normalize_coverage_implementation_config(
+                        raw.get("coverage_implementation_config")
+                    )
+                except ValueError as exc:
+                    error("覆盖率实现方案必须登记结构化 coverage_implementation_config：" + str(exc))
+                if "coverage_item_ids" in raw:
+                    error("新覆盖率方案不再登记 coverage_item_ids；请登记覆盖范围，由工具生成覆盖对象清单")
+            else:
+                if "coverage_scope" in raw or "coverage_item_ids" in raw:
+                    error("覆盖率收敛范围由明确关联的实现能力继承，不另行登记 coverage_scope 或 coverage_item_ids")
+                try:
+                    item["coverage_collection_config"] = normalize_coverage_collection_config(
+                        raw.get("coverage_collection_config")
+                    )
+                except ValueError as exc:
+                    error("覆盖率收敛方案必须登记结构化 coverage_collection_config：" + str(exc))
         if workstream == "VREG":
             inferred = "infrastructure" if set(item["capabilities"]) == VREG_INFRASTRUCTURE_CLAIMS else "results"
             canonical = f"regression-{inferred}-plan"
@@ -1277,6 +1635,10 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             error(f"{workstream} 代码方案缺少必需上游能力：" + ", ".join(missing_inputs))
         if workstream == "VCOV" and "cap.vreg:executor-ready" not in item["inputs"]:
             error("覆盖率方案必须依赖已验收的回归执行能力 cap.vreg:executor-ready")
+        if workstream == "VREG" and vreg_stage(item) == "results":
+            coverage_inputs = {value for value in item["inputs"] if value.startswith("cap.vcov:")}
+            if coverage_inputs != {"cap.vcov:coverage-collection"}:
+                error("回归结果方案必须且只能把 cap.vcov:coverage-collection 作为覆盖率执行前置；收敛结果留到最终验收检查")
         if ids(key, workstream)[2] in item["inputs"]:
             error("方案不能依赖自己的交付能力" if workstream in {"VCOV", "VREG"} else "工作包不能依赖自己的交付能力")
         item["output_paths"] = store._normalized_write_scopes(item["output_paths"])
@@ -1285,6 +1647,32 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 error("工作节点的输出范围不能重叠" if workstream in {"VCOV", "VREG"} else "工作包的输出范围不能重叠")
             known_outputs.add(path)
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
+        if workstream == "VCOV" and vcov_stage(item) == "implementation":
+            code_scope = item["coverage_scope"].get("code", {})
+            for field in ("hierarchy_files", "exclusion_files"):
+                if field in code_scope:
+                    code_scope[field] = [store._project_or_declared_input_path(v) for v in code_scope[field]]
+            missing_scope_files = sorted(coverage_scope_files(item) - set(item["input_files"]))
+            if missing_scope_files:
+                error("coverage_scope 引用的层次或排除配置必须纳入 input_files：" + "、".join(missing_scope_files))
+            refs = item["coverage_implementation_config"]["configuration_refs"]
+            for ref in refs:
+                ref["path"] = store._project_or_declared_input_path(ref["path"])
+            missing_config_files = sorted({ref["path"] for ref in refs} - set(item["input_files"]))
+            if missing_config_files:
+                error("覆盖率实现配置文件必须纳入 input_files：" + "、".join(missing_config_files))
+            observed = {entry["path"]: entry["sha256"] for entry in file_snapshot(
+                store, [ref["path"] for ref in refs]
+            )}
+            if any(observed.get(ref["path"]) != ref["sha256"] for ref in refs):
+                error("覆盖率实现配置文件缺失或摘要已经变化")
+        if workstream == "VCOV" and vcov_stage(item) == "convergence":
+            merge = item["coverage_collection_config"]["merge_profile"]
+            merge["path"] = store._project_or_declared_input_path(merge["path"])
+            if merge["path"] not in item["input_files"]:
+                error("覆盖率 merge profile 必须纳入 input_files")
+            if file_snapshot(store, [merge["path"]])[0]["sha256"] != merge["sha256"]:
+                error("覆盖率 merge profile 文件缺失或摘要已经变化")
         if workstream == "VREG" and vreg_stage(item) == "results":
             item["input_files"] = sorted(set([*item["input_files"], item["regression_config"]["submit_profile"]["submit_file"]]))
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
@@ -1300,6 +1688,36 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         normalized.append(item)
     if len({n["key"] for n in normalized}) != len(normalized):
         error("代码方案 key 不能重复")
+    if workstream == "VCOV" and any(vcov_stage(candidate) == "convergence" for candidate in normalized):
+        from .store import HarnessError
+        try:
+            vreg = store.workstream("VREG")
+        except HarnessError:
+            error("覆盖率收敛方案引用回归配置前，必须先形成当前 VREG 回归结果方案")
+        vreg_plans = {entry["id"]: entry for entry in vreg["desired_state"]
+                      if is_plan(entry) and vreg_stage(entry) == "results"}
+        implementation_profiles = {
+            ids(item["implementation_key"], "VCOV")[2]: set(
+                item["coverage_implementation_config"]["compatible_submit_profile_digests"]
+            )
+            for item in normalized if vcov_stage(item) == "implementation"
+        }
+        for candidate in normalized:
+            if vcov_stage(candidate) != "convergence":
+                continue
+            selected_profiles = set().union(*(
+                implementation_profiles[value]
+                for value in candidate["inputs"] if value in implementation_profiles
+            )) if any(value in implementation_profiles for value in candidate["inputs"]) else set()
+            for source in candidate["coverage_collection_config"]["regression_sources"]:
+                referenced = vreg_plans.get(source["plan_node_id"])
+                if referenced is None or vreg["revision"] != source["plan_revision"]:
+                    error("coverage_collection_config 引用了非当前 VREG 回归结果方案")
+                if config_digest(regression_config(referenced)) != source["regression_config_digest"]:
+                    error("coverage_collection_config 引用的 regression_config 摘要与当前 VREG 方案不一致")
+                profile_digest = regression_config(referenced)["submit_profile"]["profile_digest"]
+                if profile_digest not in selected_profiles:
+                    error("VREG submit profile 未声明为本收敛方案所选覆盖率实现支持的采集 profile")
     by_cap = {ids(n["implementation_key"], workstream)[2]: n for n in normalized}
     def visit(cap, parents):
         if cap in parents:
@@ -1536,13 +1954,13 @@ def _feedback_routes(workstream, claim, facts):
     """Extract analysis-driven feedback; this never mutates the target workflow."""
     routes = []
     if workstream == "VCOV" and claim == "hole-analysis-evidence":
-        for item in facts.get("items", []):
+        for item in facts.get("holes", []):
             if item.get("status") != "uncovered" or not item.get("responsible_workstream"):
                 continue
             routes.append({
                 "source_workstream": workstream,
                 "source_claim": claim,
-                "finding": item.get("id"),
+                "finding": item.get("object_key"),
                 "responsible_workstream": item.get("responsible_workstream"),
                 "target_implementation_key": item.get("target_implementation_key") or "",
                 "next_action": item.get("next_action") or "",
@@ -1730,6 +2148,8 @@ def validate(store, node_id, report_path):
         evidence_path = store.root / local_path(store, check["report"])
         expected_files.update({v['path']: v['sha256'] for v in file_snapshot(store, [local_path(store, evidence_path)], required=True)})
         result = _validate_evidence(store, evidence_path, workstream, check["claim"])
+        if workstream == "VCOV" and result.get("schema") != "CoverageEvidence/3":
+            error("当前 VCOV 交付必须使用 CoverageEvidence/3 绑定覆盖实现配置、VREG 执行轮次和 VDB merge")
         if workstream == "VCASE" and result.get("schema") != "TestcaseEvidence/2":
             error("当前 VCASE 交付必须使用 TestcaseEvidence/2 绑定 submit profile")
         if workstream == "VREG" and result.get("schema") != "RegressionEvidence/3":
@@ -1807,39 +2227,116 @@ def validate(store, node_id, report_path):
     if workstream == "VCOV" and vcov_stage(node) == "implementation":
         source_digests = {source["sha256"] for source in snapshot["sources"]}
         output_digests = {output["sha256"] for output in snapshot["outputs"]}
+        expected_scope_digest = coverage_scope_digest(node)
+        expected_implementation_config_digest = config_digest(coverage_implementation_config(node))
         for facts in facts_by_claim.get("coverage-model", []):
-            if set(facts.get("required_item_ids", [])) != set(node.get("coverage_item_ids", [])):
-                reasons.append("覆盖项清单与负责人批准的必需覆盖范围不一致")
+            if facts.get("scope_digest") != expected_scope_digest:
+                reasons.append("工具生成的覆盖对象清单与负责人批准的覆盖范围不一致")
+            category_counts = facts.get("category_counts", {})
+            kind_counts = facts.get("kind_counts", {})
+            scope = coverage_scope(node) or {}
+            if "code" in scope and not category_counts.get("code"):
+                reasons.append("批准的 code 覆盖范围没有展开出任何必需覆盖对象")
+            if "functional" in scope and not category_counts.get("functional"):
+                reasons.append("批准的 functional 覆盖范围没有展开出任何必需覆盖对象")
+            expected_kinds = set(scope.get("code", {}).get("metrics", [])) | set(
+                scope.get("functional", {}).get("object_kinds", [])
+            )
+            missing_kinds = sorted(kind for kind in expected_kinds if not kind_counts.get(kind))
+            unexpected_kinds = sorted(set(kind_counts) - expected_kinds)
+            if missing_kinds:
+                reasons.append("批准的覆盖对象类型没有展开出对象：" + "、".join(missing_kinds))
+            if unexpected_kinds:
+                reasons.append("工具清单包含批准范围之外的覆盖对象类型：" + "、".join(unexpected_kinds))
             if facts.get("plan_digest") not in source_digests:
                 reasons.append("覆盖计划摘要不属于批准方案的当前输入文件")
             if facts.get("model_digest") not in output_digests:
                 reasons.append("覆盖模型摘要不属于当前交付文件")
+            if facts.get("implementation_config_digest") != expected_implementation_config_digest:
+                reasons.append("覆盖对象清单没有绑定当前批准的 CoverageImplementationConfig/1")
         for facts in facts_by_claim.get("coverage-collection", []):
+            if facts.get("scope_digest") != expected_scope_digest:
+                reasons.append("覆盖率采集配置没有绑定负责人批准的覆盖范围")
             if facts.get("exporter_digest") not in output_digests:
                 reasons.append("覆盖率采集配置摘要不属于当前交付文件")
+            if facts.get("implementation_config_digest") != expected_implementation_config_digest:
+                reasons.append("覆盖率采集实现没有绑定当前批准的 CoverageImplementationConfig/1")
     if workstream == "VCOV" and vcov_stage(node) == "convergence":
         with store.read_connect() as db:
-            expected_manifests, manifest_reasons = _vcov_expected_manifests(store, db, plan, node)
+            expected_inventories, inventory_reasons = _vcov_expected_inventories(store, db, plan, node)
             exclusion_approval = coverage_exclusion_state(store, db, plan, node)["current"]
-        reasons.extend(manifest_reasons)
+            resolved_sources, source_reasons = _coverage_collection_sources(
+                store, db, coverage_collection_config(node),
+            )
+        reasons.extend(inventory_reasons)
+        reasons.extend(source_reasons)
+        expected_collection_digest = config_digest(coverage_collection_config(node))
+        expected_bindings = sorted(
+            (item["execution_binding"] for item in resolved_sources), key=lambda item: item["round_id"],
+        )
+        expected_config_digests = sorted(
+            item["regression_config_digest"] for item in resolved_sources
+        )
+        expected_dut_fingerprint_digest = config_digest(
+            coverage_collection_config(node)["dut_build_fingerprint"]
+        )
         for claim in sorted(VCOV_CONVERGENCE_CLAIMS):
-            observed = {facts.get("coverage_manifest_digest") for facts in facts_by_claim.get(claim, [])}
-            if not expected_manifests or observed != expected_manifests:
-                reasons.append("覆盖率收敛证据的覆盖项清单与已验收实现不一致：" + claim)
+            observed = {facts.get("coverage_inventory_digest") for facts in facts_by_claim.get(claim, [])}
+            if not expected_inventories or observed != expected_inventories:
+                reasons.append("覆盖率收敛证据的覆盖对象清单与已验收实现不一致：" + claim)
+            for facts in facts_by_claim.get(claim, []):
+                if facts.get("coverage_collection_config_digest") != expected_collection_digest:
+                    reasons.append("覆盖率收敛证据没有绑定当前批准的 CoverageCollectionConfig/1：" + claim)
+        collection_facts = facts_by_claim.get("coverage-collection-evidence", [])
+        for facts in collection_facts:
+            if facts.get("source_execution_bindings") != expected_bindings:
+                reasons.append("VDB 分片没有精确绑定收敛方案引用的当前 VREG 执行轮次")
+            if facts.get("regression_config_digests") != expected_config_digests:
+                reasons.append("VDB 分片的 regression_config 与收敛方案引用不一致")
+            if facts.get("dut_build_fingerprint_digests") != [expected_dut_fingerprint_digest]:
+                reasons.append(
+                    "VDB 的 DUT 构建指纹不属于当前收敛方案；不同 DUT 指纹必须拆分为独立收敛节点"
+                )
+            from .vreg_contract import execution_blockers
+            sources_by_round = {
+                item["execution_binding"]["round_id"]: item for item in resolved_sources
+            }
+            for batch in facts.get("regression_batches", []):
+                source = sources_by_round.get(batch["execution_binding"]["round_id"])
+                if source is None:
+                    reasons.append("VDB batch 不属于收敛方案引用的 VREG 执行轮次")
+                else:
+                    reasons.extend(execution_blockers(
+                        source["regression_config"], [batch], source["execution_binding"],
+                    ))
+            merge_profile = coverage_collection_config(node)["merge_profile"]
+            if facts.get("merge_profile_digest") != merge_profile["sha256"]:
+                reasons.append("coverage merge 没有使用当前批准的 merge profile")
         databases_by_claim = {}
         for claim in VCOV_CONVERGENCE_CLAIMS:
             databases = {}
             for check in checks:
                 if check["claim"] == claim:
                     evidence = check["validation"]
-                    databases.setdefault(evidence["facts"].get("coverage_manifest_digest"), set()).update(
+                    databases.setdefault(evidence["facts"].get("coverage_inventory_digest"), set()).update(
                         artifact["sha256"] for artifact in evidence["artifacts"]
                         if artifact["kind"] == "coverage-database")
             databases_by_claim[claim] = databases
-        if databases_by_claim["coverage-collection-evidence"] != databases_by_claim["hole-analysis-evidence"]:
+        current_coverage_evidence = any(
+            check.get("validation", {}).get("schema") == "CoverageEvidence/3"
+            for check in checks if check.get("claim") in VCOV_CONVERGENCE_CLAIMS
+        )
+        if (not current_coverage_evidence
+                and databases_by_claim["coverage-collection-evidence"] != databases_by_claim["hole-analysis-evidence"]):
             reasons.append("缺口分析没有使用本轮采集和合并的同一覆盖率数据库")
+        merged_by_claim = {
+            claim: {facts.get("merged_database_digest") for facts in facts_by_claim.get(claim, [])}
+            for claim in VCOV_CONVERGENCE_CLAIMS
+        }
+        if merged_by_claim["coverage-collection-evidence"] != merged_by_claim["hole-analysis-evidence"]:
+            reasons.append("缺口分析没有使用本轮 CoverageMergeManifest/1 的同一合并数据库")
         excluded_items = [item for facts in facts_by_claim.get("hole-analysis-evidence", [])
-                          for item in facts.get("items", []) if item.get("status") == "excluded"]
+                          for item in facts.get("holes", []) if item.get("status") == "excluded"]
         if excluded_items and exclusion_approval is None:
             reasons.append("覆盖率报告包含排除项，但负责人尚未为当前收敛范围提供已审批的 exclude 文件")
         if excluded_items and exclusion_approval is not None:
@@ -1860,7 +2357,7 @@ def validate(store, node_id, report_path):
             }
             for item in excluded_items:
                 if item.get("waiver") != expected_waiver:
-                    reasons.append(item["id"] + " 没有引用负责人提供的当前 exclude 文件审批记录")
+                    reasons.append(item["object_key"] + " 没有引用负责人提供的当前 exclude 文件审批记录")
     if workstream == "VREG" and vreg_stage(node) == "results":
         with store.read_connect() as db:
             reasons.extend(_vreg_result_blockers(store, db, plan, node, checks))
@@ -1869,6 +2366,7 @@ def validate(store, node_id, report_path):
     if workstream == "VCOV":
         receipt["coverage_contract"] = VCOV_VALIDATION_CONTRACT
         if vcov_stage(node) == "convergence":
+            receipt["coverage_execution_bindings"] = expected_bindings
             receipt["coverage_exclusion_approval"] = exclusion_approval
             receipt["needs_coverage_exclusion"] = bool(excluded_items and exclusion_approval is None)
     if workstream == "VCASE":

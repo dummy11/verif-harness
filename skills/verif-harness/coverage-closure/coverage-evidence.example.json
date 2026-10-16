@@ -1,34 +1,29 @@
 {
-  "schema_version": 1,
-  "tool": "simulator-name and version",
-  "database_ids": [
-    "coverage-db-sha256-or-run-id"
-  ],
-  "plan_items": [
-    {
-      "id": "COV.DEMO.001",
-      "status": "covered",
-      "hits": 4,
-      "plan_ref": "coverage_plan.md § demo"
-    },
-    {
-      "id": "COV.DEMO.002",
-      "status": "excluded",
-      "hits": 0,
-      "plan_ref": "coverage_plan.md § reserved encoding",
-      "waiver": {
-        "id": "CW-001",
-        "status": "Approved",
-        "reviewer": "Human reviewer",
-        "decision_date": "2026-01-01",
-        "rationale": "Reserved encoding is unreachable by specification."
-      }
-    }
-  ],
+  "schema_version": 3,
+  "tool": "simulator-exporter/version",
+  "merged_database_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "coverage_inventory_digest": "49118efd1e250e0f138b7bec4f74a5f446bdd410197f4509fcfe93d66fa028a5",
   "reported": {
+    "required": 2,
     "covered": 1,
     "excluded": 1,
     "uncovered": 0,
     "closure_percent": 100.0
+  },
+  "holes": [
+    {
+      "object_key": "fcov:tb.env.fifo_cov.empty",
+      "status": "excluded",
+      "exclusion_approval_id": "coverage-exclusion-file-001"
+    }
+  ],
+  "exclusion_approval": {
+    "id": "coverage-exclusion-file-001",
+    "status": "Approved",
+    "reviewer": "Project owner",
+    "decision_date": "2026-01-01",
+    "rationale": "The owner supplied and approved the current exclusion file.",
+    "path": "coverage-exclusions.example.el",
+    "sha256": "8add90d9279e27d5c77cefee769ee2948b4b31669b68d1d22f88ab8e41b9dd49"
   }
 }

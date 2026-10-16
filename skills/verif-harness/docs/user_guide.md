@@ -491,21 +491,33 @@ VCOV 有四种直接公开节点：
 - `coverage-convergence-plan`：覆盖率收敛方案；
 - `coverage-convergence-deliverable`：覆盖率采集、缺口分析和排除结果交付。
 
-`coverage_item_ids`、manifest、数据库和 hole 明细是节点内部受控数据，不增加公开节点。
+`CoverageScope/1`、工具生成的对象清单、数据库和 hole 明细是节点内部受控数据，不增加公开节点。
 
 #### 详细工作顺序
 
-1. Agent 从当前 coverage plan 形成实现方案，列出负责人要批准的全部必需 `coverage_item_ids`。
-2. 负责人审批采样条件、bin/cross、覆盖范围和实现检查方法。
+1. Agent 从当前 coverage plan 形成 `CoverageScope/1`：code coverage 只统计 DUT，并登记 metric 与层次范围，
+   functional coverage 登记 covergroup 选择规则与必需对象类型。
+2. 负责人审批采样条件、bin/cross 和稳定覆盖范围；不逐条审批 simulator 的 line、toggle、bin/cross。
 3. Agent 实现 coverage model 和 collection/export，提交 `coverage-model`、
    `coverage-collection` 验证；负责人验收实现交付。
 4. Agent 选择当前已验收实现能力，形成覆盖率收敛方案，并明确要使用的环境、激励、检查、用例和
    回归 executor。
-5. 负责人审批收敛范围；Agent 采集/合并覆盖率数据库并生成当前 `CoverageItemManifest/1`。
-6. Agent 分析每个未覆盖项，登记命中、需要补验证、不可达候选或 excluded 结果。
+5. 负责人审批收敛范围；方案只引用已批准的 VREG `regression_config`，此时不要求回归已经跑完。
+   Agent 用 xverif 按当前范围、计划和模型生成 `CoverageObjectInventory/2`，再按交付阶段的实际
+   VREG 执行轮次采集/合并覆盖率数据库。
+6. Agent 报告必需、已覆盖、排除、未覆盖对象计数，只逐项登记 excluded/uncovered 缺口；
+   全部已覆盖对象留在受控清单和数据库，不复制进 ProjectStore。
 7. 存在 excluded 项时，由负责人提供一份 exclude 文件。提供动作本身表示批准该文件范围；Agent
    只检查文件、revision、节点、路径和摘要一致性，不再逐项建立 WAIVE 审批。
 8. `coverage-collection-evidence` 和 `hole-analysis-evidence` 全部有效后，负责人验收收敛交付。
+
+VDB 是否可合并由 DUT-only 构建指纹决定：DUT RTL、parameter、宏定义和 DUT 级 elaboration
+必须一致，其中任何一项不同都禁止 merge。不同 testbench、不同 submit profile 或不同 DUT
+实例路径不构成不兼容，因此它们在 DUT 指纹相同时可以合并；每个来源仍须独立登记 VREG
+方案、执行轮次、batch、case、seed 和 iteration，merge 工具错误仍是阻塞项。
+每个覆盖率收敛方案及其对应交付只处理一个 DUT 指纹分区。项目有多个 DUT 参数/宏/elaboration
+变体时，工作节点列表会出现多个覆盖率收敛方案，批准后分别建立多个收敛交付；不会为每个 VDB、
+case 或 seed 建立公开节点。
 
 #### 工作节点依赖
 
@@ -519,7 +531,7 @@ coverage hole 不能由 VCOV 自己改成“已覆盖”。Main Agent 分析责�
 用例返回 VCASE，检查不充分返回 VCHK，采样/bin 错误留在 VCOV，规格歧义返回 VDOC/负责人。
 上游完成修改和重验后，VCOV 使用新一轮当前证据重新采集和分析。
 
-exclude 文件被替换、内容变化或节点范围变化后，文件级批准和相关收敛结论失效。只有所有必需项都
+exclude 文件被替换、内容变化或节点范围变化后，文件级批准和相关收敛结论失效。只有工具清单中的所有必需对象都
 命中或具有当前有效的文件级排除依据，并完成收敛交付验收，VCOV 才完成。
 
 <a id="证据与完成判断"></a>

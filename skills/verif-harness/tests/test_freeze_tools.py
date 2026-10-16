@@ -105,6 +105,7 @@ class FreezeToolsTest(unittest.TestCase):
     def test_coverage_and_assertion_examples_are_ready_not_approved(self) -> None:
         result = run(
             COVERAGE, "--evidence", SKILL / "coverage-closure/coverage-evidence.example.json", "--json",
+            "--inventory", SKILL / "coverage-closure/coverage-object-inventory.example.json",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
@@ -120,10 +121,22 @@ class FreezeToolsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "coverage.json"
             evidence = json.loads((SKILL / "coverage-closure/coverage-evidence.example.json").read_text())
-            evidence["plan_items"][0]["status"] = "uncovered"
-            evidence["reported"] = {"covered": 0, "excluded": 1, "uncovered": 1, "closure_percent": 50.0}
+            evidence["holes"].append({
+                "object_key": "code:line:rtl/fifo.sv:42", "status": "uncovered",
+            })
+            evidence["reported"] = {
+                "required": 2, "covered": 0, "excluded": 1,
+                "uncovered": 1, "closure_percent": 50.0,
+            }
             path.write_text(json.dumps(evidence))
-            result = run(COVERAGE, "--evidence", path, "--json")
+            exclusion_name = evidence["exclusion_approval"]["path"]
+            (path.parent / exclusion_name).write_bytes(
+                (SKILL / "coverage-closure" / exclusion_name).read_bytes()
+            )
+            result = run(
+                COVERAGE, "--evidence", path, "--json",
+                "--inventory", SKILL / "coverage-closure/coverage-object-inventory.example.json",
+            )
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout)["summary"]["state"], "BLOCKED")
 

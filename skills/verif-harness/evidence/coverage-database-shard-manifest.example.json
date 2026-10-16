@@ -1,0 +1,27 @@
+{
+  "schema": "CoverageDatabaseShardManifest/1",
+  "execution_binding": {
+    "round_id": "regression-round:nightly:1",
+    "plan_node_id": "workstream:VREG:r3:desired:nightly-results",
+    "plan_revision": 3,
+    "plan_digest": "6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "regression_config_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "batch_manifest_digest": "7777777777777777777777777777777777777777777777777777777777777777",
+  "dut_build_fingerprint": {
+    "schema": "DutBuildFingerprint/1",
+    "coverage_target": "dut",
+    "dut_design_id": "fifo",
+    "rtl_digest": "8888888888888888888888888888888888888888888888888888888888888888",
+    "parameter_digest": "9999999999999999999999999999999999999999999999999999999999999999",
+    "macro_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dut_elaboration_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "shards": [
+    {
+      "path": "verification/results/coverage/nightly-demo.vdb",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "runs": [{"case_id": "demo_test", "seed": 17, "iteration": 0}]
+    }
+  ]
+}

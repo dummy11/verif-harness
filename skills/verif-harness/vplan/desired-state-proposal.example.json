@@ -3,54 +3,78 @@
   "workstream": "VCOV",
   "nodes": [
     {
-      "key": "feature.conv.fp16.value-coverage",
-      "title": "FP16 convolution value classes and required crosses are covered",
-      "role": "coverage-goal",
-      "parent_key": "coverage-model",
+      "key": "fifo-coverage-implementation",
+      "title": "FIFO 边界覆盖率实现方案",
+      "role": "coverage-implementation-plan",
+      "implementation_key": "fifo:coverage-implementation",
       "required": true,
-      "statement": "Every required FP16 convolution value class and mode cross identified by the reviewed coverage plan has a covered or Human-waived disposition for the current revision.",
-      "purpose": "Expose feature-level coverage gaps instead of treating one project-wide percentage as closure.",
-      "scope": [
-        "FP16 convolution input/output value classes",
-        "mode, saturation, rounding, and exception crosses marked required"
-      ],
-      "acceptance_criteria": [
-        "Each required item has non-zero hits or an approved item-specific waiver",
-        "Coverage database and analysis report identify the current design and test revision",
-        "No required item remains uncovered"
-      ],
-      "source_refs": [
-        "coverage_plan.md#fp16-convolution",
-        "feature_matrix.md#fp16-convolution"
-      ],
-      "work_content": [
-        "Implement value-class coverpoints and required crosses",
-        "Map every required coverage item to the feature matrix"
-      ],
-      "implementation_approach": [
-        "Use the reviewed coverage plan as the only source of required bins and crosses",
-        "Collect coverage in targeted and regression runs, then analyze the exported database"
-      ],
-      "deliverables": [
-        "Compiled coverage model",
-        "Coverage database and item-level hole analysis report"
-      ],
-      "progress_measures": [
-        {
-          "id": "required-items",
-          "label": "Required coverage items closed",
-          "unit": "items",
-          "target": "all required items",
-          "source": "CoverageEvidence/1 result.items"
+      "statement": "实现并验证 FIFO 边界的 code coverage 与 functional coverage 模型和采集链路。",
+      "scope": ["FIFO 读写边界及满空状态"],
+      "acceptance_criteria": ["批准范围被完整展开为当前模型的必需覆盖对象", "覆盖模型编译通过且采集配置可用"],
+      "source_refs": ["verification/coverage_plan.md#fifo-boundaries"],
+      "work_content": ["实现 covergroup、coverpoint、bin 和 cross", "配置 code coverage 层次范围"],
+      "implementation_approach": ["负责人批准稳定范围，xverif 从当前模型展开原生覆盖对象全集"],
+      "validation_methods": ["核对 CoverageObjectInventory/2 与当前范围、实现配置、计划和模型摘要"],
+      "deliverables": ["覆盖模型", "采集配置", "工具生成的覆盖对象清单"],
+      "inputs": ["cap.doc:coverage-plan", "cap.venv:fifo", "cap.vreg:executor-ready"],
+      "input_files": ["verification/coverage_plan.md", "verification/coverage/cm.hier"],
+      "output_paths": ["verification/coverage/fifo_cov.sv", "verification/coverage/collector.json"],
+      "capabilities": ["coverage-model", "coverage-collection"],
+      "coverage_scope": {
+        "schema": "CoverageScope/1",
+        "code": {"metrics": ["line", "branch", "toggle", "fsm"], "hierarchy_files": ["verification/coverage/cm.hier"]},
+        "functional": {"covergroup_selectors": ["tb_top.env.fifo_cov.*"], "object_kinds": ["coverpoint-bin", "cross-bin"]},
+        "semantic_goal_ids": ["C.FIFO.BOUNDARY"]
+      },
+      "coverage_implementation_config": {
+        "schema": "CoverageImplementationConfig/1",
+        "code_coverage_target": "dut",
+        "configuration_refs": [{"role": "collection", "path": "verification/coverage/cm.hier", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+        "compatible_submit_profile_digests": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+        "toolchain": [{"role": "coverage", "name": "project-coverage-adapter", "version": "1"}]
+      }
+    },
+    {
+      "key": "fifo-coverage-convergence",
+      "title": "FIFO 边界覆盖率收敛方案",
+      "role": "coverage-convergence-plan",
+      "implementation_key": "fifo:coverage-convergence",
+      "required": true,
+      "statement": "使用当前回归结果收敛 FIFO 边界覆盖范围。",
+      "scope": ["继承已验收 FIFO 覆盖率实现范围"],
+      "acceptance_criteria": ["全部必需覆盖对象均已命中或具有当前文件级排除依据"],
+      "source_refs": ["verification/coverage_plan.md#fifo-boundaries"],
+      "work_content": ["合并覆盖数据库", "分析并处理全部排除和未覆盖对象"],
+      "implementation_approach": ["采集与缺口分析绑定同一覆盖数据库和覆盖对象清单"],
+      "validation_methods": ["核对 CoverageEvidence/3 的 VREG 执行轮次、DUT 构建指纹、VDB merge、统计和缺口明细"],
+      "deliverables": ["覆盖数据库", "覆盖率收敛报告"],
+      "inputs": ["cap.doc:coverage-plan", "cap.venv:fifo", "cap.vstim:fifo", "cap.vchk:fifo", "cap.vcase:fifo", "cap.vreg:executor-ready", "cap.vcov:fifo:coverage-implementation"],
+      "input_files": ["verification/coverage_plan.md", "verification/coverage/merge.toml"],
+      "output_paths": ["verification/results/coverage/database.ucdb", "verification/results/coverage/closure.json"],
+      "capabilities": ["coverage-collection-evidence", "hole-analysis-evidence"],
+      "coverage_collection_config": {
+        "schema": "CoverageCollectionConfig/1",
+        "regression_sources": [{
+          "plan_node_id": "workstream:VREG:r3:desired:fifo-coverage-results",
+          "plan_revision": 3,
+          "regression_config_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }],
+        "dut_build_fingerprint": {
+          "schema": "DutBuildFingerprint/1",
+          "coverage_target": "dut",
+          "dut_design_id": "fifo",
+          "rtl_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "parameter_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+          "macro_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+          "dut_elaboration_digest": "4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "merge_profile": {
+          "path": "verification/coverage/merge.toml",
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "adapter": {"name": "project-coverage-merge", "version": "1"},
+          "tool": {"name": "coverage-tool", "version": "2026.1"}
         }
-      ],
-      "quality_checks": [
-        "No covered item has zero hits",
-        "Every exclusion carries approved Human waiver metadata",
-        "Coverage artifacts match the current revision"
-      ],
-      "suggested_mode": "evidence",
-      "evidence_claim": "hole-analysis-evidence"
+      }
     }
   ]
 }

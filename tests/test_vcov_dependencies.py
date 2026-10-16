@@ -35,10 +35,10 @@ class VcovDependencyTest(unittest.TestCase):
         self.assertEqual(progress['required'], 4)
         self.assertLess(progress['satisfied'], progress['required'])
 
-    def test_legacy_missing_item_scope_requests_replanning_not_permanent_wait(self):
+    def test_missing_coverage_scope_requests_replanning_not_permanent_wait(self):
         plan = self.store.workstream('VCOV')
         node = next(n for n in plan['desired_state'] if code.vcov_stage(n) == 'implementation')
-        node.pop('coverage_item_ids')
+        node.pop('coverage_scope')
         self.persist(plan)
         state = self.store.node_plan_review_state(node['id'])
         self.assertFalse(state['can_approve'])
@@ -56,13 +56,24 @@ class VcovDependencyTest(unittest.TestCase):
         # remain blockers, but both current VCOV deliveries are admitted here.
         self.assertFalse(any('代码交付' in blocker for blocker in blockers), blockers)
         expected = {n['id'] for n in self.store.workstream('VCOV')['desired_state'] if code.is_delivery(n)}
+        expected.update(
+            n['id'] for n in self.store.workstream('VREG')['desired_state']
+            if code.is_delivery(n) and code.vreg_stage(n) == 'infrastructure'
+        )
         self.assertEqual({n['id'] for n in summary['facts']['required_nodes']}, expected)
         self.fixture.write('verification/coverage/model.sv', 'module changed_coverage; endmodule\n')
         code.refresh(self.store)
         with self.store.read_connect() as db:
             blockers = self.store._derive_fresh_evidence(db, 'fixture:fresh', summary, self.store._current_desired_nodes(db))
         self.assertTrue(blockers)
-        self.assertEqual(summary['facts']['required_nodes'], [])
+        remaining = {node['id'] for node in summary['facts']['required_nodes']}
+        self.assertFalse(remaining & {
+            node['id'] for node in self.store.workstream('VCOV')['desired_state'] if code.is_delivery(node)
+        })
+        self.assertEqual(remaining, {
+            node['id'] for node in self.store.workstream('VREG')['desired_state']
+            if code.is_delivery(node) and code.vreg_stage(node) == 'infrastructure'
+        })
 
     def test_typed_delivery_assignment_is_bounded_and_plan_writes_are_rejected(self):
         manifest_path = self.store.state / 'project.json'

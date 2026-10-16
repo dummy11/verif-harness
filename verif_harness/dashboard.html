@@ -2804,6 +2804,46 @@
       }
       return plan ? '代码实现方案' : '代码交付及验证证据';
     }
+    function coverageScopeHtml(n) {
+      if (n?.workstream !== 'VCOV') return '';
+      const scope = n.coverage_scope;
+      if (scope?.schema === 'CoverageScope/1') {
+        const rows = [];
+        if (scope.code) {
+          rows.push(`<li><strong>Code coverage</strong>：${escapeHtml((scope.code.metrics || []).join('、'))}</li>`);
+          if ((scope.code.hierarchy_selectors || []).length) rows.push(`<li><strong>层次范围</strong>：${escapeHtml(scope.code.hierarchy_selectors.join('、'))}</li>`);
+        }
+        if (scope.functional) {
+          rows.push(`<li><strong>Functional coverage</strong>：${escapeHtml((scope.functional.covergroup_selectors || []).join('、'))}</li>`);
+          rows.push(`<li><strong>必须检查的功能覆盖对象</strong>：${escapeHtml((scope.functional.object_kinds || []).join('、'))}</li>`);
+        }
+        if ((scope.semantic_goal_ids || []).length) rows.push(`<li><strong>语义覆盖目标</strong>：${escapeHtml(scope.semantic_goal_ids.join('、'))}</li>`);
+        const files = [...(scope.code?.hierarchy_files || []), ...(scope.code?.exclusion_files || [])];
+        return `<h4>负责人批准的覆盖范围</h4><ul>${rows.join('')}</ul>${files.length
+          ? `<details class="detail-group"><summary>查看层次与排除配置</summary><div class="detail-group-body"><ul>${planListHtml(files)}</ul></div></details>` : ''}`;
+      }
+      if ((n.coverage_item_ids || []).length) {
+        return `<details class="detail-group"><summary>查看历史覆盖项清单</summary><div class="detail-group-body"><p class="row-meta">该旧清单仅供审计，当前交付必须按覆盖范围和工具生成的覆盖对象清单重新验证。</p><ul>${planListHtml(n.coverage_item_ids)}</ul></div></details>`;
+      }
+      return '';
+    }
+    function coverageConfigHtml(n, approved=false) {
+      if (n?.workstream !== 'VCOV') return '';
+      const implementation = n.coverage_implementation_config || n.plan_review?.coverage_implementation_config;
+      if (implementation?.schema === 'CoverageImplementationConfig/1') {
+        const refs = implementation.configuration_refs || [];
+        const tools = implementation.toolchain || [];
+        return `<section class="detail-card coverage-implementation-config"><h4>${approved ? '已批准的覆盖率实现配置' : '覆盖率实现配置'}</h4><p>这里固定插桩、elaboration、采集、导出和分析方式；code coverage 只统计 DUT，回归 case、submit profile、seed 与 repeat 仍由 VREG 管理。</p><dl class="kv"><dt>Code coverage 对象</dt><dd>DUT</dd><dt>配置文件</dt><dd><ul>${refs.map(item => `<li>${escapeHtml(item.role)} · ${escapeHtml(item.path)}</li>`).join('')}</ul></dd><dt>兼容的 submit profile</dt><dd>${escapeHtml((implementation.compatible_submit_profile_digests || []).length)} 个版本</dd><dt>工具链</dt><dd>${escapeHtml(tools.map(item => `${item.role}: ${item.name} ${item.version}`).join('；'))}</dd></dl><details><summary>查看配置版本绑定</summary><pre>${escapeHtml(JSON.stringify(implementation, null, 2))}</pre></details></section>`;
+      }
+      const collection = n.coverage_collection_config || n.plan_review?.coverage_collection_config;
+      if (collection?.schema !== 'CoverageCollectionConfig/1') return '';
+      const sources = n.plan_review?.coverage_regression_sources || [];
+      const labels = sources.length ? sources.map(item => `${item.regression_group} / ${item.submit_profile_id}`)
+        : (collection.regression_sources || []).map((_item, index) => `VREG 回归组 ${index + 1}`);
+      const merge = collection.merge_profile || {};
+      const fingerprint = collection.dut_build_fingerprint || {};
+      return `<section class="detail-card coverage-collection-config"><h4>${approved ? '已批准的覆盖率收敛执行绑定' : '覆盖率收敛执行绑定'}</h4><p>本节点只读引用 VREG 的 regression_config；case、submit profile、seed 与 repeat 不在 VCOV 重复登记。方案审批只核对已批准配置，交付时才绑定已结束轮次。</p><div class="notice">每个收敛节点只处理一个 DUT 构建指纹。RTL、parameter、宏和 DUT 级 elaboration 指纹相同的不同 testbench/profile 可以合并；不同指纹必须拆成不同收敛节点。</div><dl class="kv"><dt>DUT 构建分区</dt><dd>${escapeHtml(fingerprint.dut_design_id || '未登记')}</dd><dt>引用的 VREG 回归组</dt><dd><ul>${labels.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul></dd><dt>Merge profile</dt><dd>${escapeHtml(merge.path || '未登记')}</dd><dt>Merge 工具</dt><dd>${escapeHtml(merge.tool ? `${merge.tool.name} ${merge.tool.version}` : '未登记')}</dd></dl><details><summary>查看配置与执行绑定</summary><pre>${escapeHtml(JSON.stringify({dut_build_fingerprint:fingerprint, regression_sources:collection.regression_sources, resolved_sources:sources, merge_profile:merge}, null, 2))}</pre></details></section>`;
+    }
     function codeNodeHtml(n) {
       const currentRound = n.plan_review?.regression_execution?.current;
       const validation = regressionNodeStage(n) === 'results' && !isCodePlanNode(n)
@@ -2816,14 +2856,13 @@
         ['工作范围','scope'],['具体工作','work_content'],['实现方式','implementation_approach'],
         ['如何验证','validation_methods'],['输出','deliverables'],['交付条件','acceptance_criteria'],
       ].map(([label, key]) => `<h4>${label}</h4><ul>${planListHtml(n[key])}</ul>`).join('')
-        + (n.workstream === 'VCOV' && (n.coverage_item_ids || []).length
-          ? `<h4>本方案必须实现的覆盖项</h4><ul>${planListHtml(n.coverage_item_ids)}</ul>` : '') + regressionConfigHtml(n);
+        + coverageScopeHtml(n) + coverageConfigHtml(n) + regressionConfigHtml(n);
       const exclusionBody = !isCodePlanNode(n) && isCoverageConvergenceNode(n)
         ? `<section class="detail-card coverage-exclusion-card"><h4>负责人提供的 exclude 文件</h4>${exclusion
           ? `<p><button class="node-link" data-code-exclusion-file="${escapeHtml(JSON.stringify(exclusion))}">${escapeHtml(exclusion.path)}</button></p><div class="row-meta">由 ${escapeHtml(exclusion.reviewer)} 于 ${shortTime(exclusion.created_at)} 提供；文件中的排除范围已由负责人审批。</div><p>${escapeHtml(exclusion.reason)}</p>`
           : '<p>尚未提供。覆盖率结果没有排除项时可不提供；存在排除项时，Agent validation 前必须由负责人提供。</p>'}<button type="button" class="btn" id="provide-coverage-exclusions">${exclusion ? '重新提供 exclude 文件' : '提供 exclude 文件'}</button><p class="row-meta">提供文件即表示其中的排除范围已经人工审批；Agent 只检查文件合法性、版本绑定和报告引用是否一致。</p>${exclusionHistory.length ? `<details class="detail-group"><summary>查看 exclude 文件提供历史</summary><div class="detail-group-body"><ul>${exclusionHistory.slice().reverse().map(item => `<li>${escapeHtml(item.path)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}${exclusion?.id === item.id ? ' · 当前有效' : ' · 历史记录'}</li>`).join('')}</ul></div></details>` : ''}</section>`
         : '';
-      const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
+      const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${coverageConfigHtml(n, true)}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
         ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
           <h4>${isResultFileNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
           ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}

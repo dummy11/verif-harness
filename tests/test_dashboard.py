@@ -887,6 +887,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("coverage-implementation-deliverable", html)
         self.assertIn("coverage-convergence-plan", html)
         self.assertIn("coverage-convergence-deliverable", html)
+        self.assertIn("Code coverage 对象", html)
+        self.assertIn("code coverage 只统计 DUT", html)
+        self.assertIn("每个收敛节点只处理一个 DUT 构建指纹", html)
+        self.assertIn("不同指纹必须拆成不同收敛节点", html)
         self.assertIn("Testbench 目录（可选）", html)
         self.assertIn("参考模型（可选）", html)
         self.assertIn("验证脚本（可选）", html)
@@ -2599,7 +2603,7 @@ vm.runInContext(`
     deliverables:['覆盖结果'], acceptance_criteria:['当前证据完整'],
     capabilities:index < 2 ? ['coverage-model','coverage-collection']
       : ['coverage-collection-evidence','hole-analysis-evidence'],
-    coverage_item_ids:index < 2 ? ['C.DEMO.1','C.DEMO.2'] : [],
+    coverage_scope:index < 2 ? {schema:'CoverageScope/1',code:{metrics:['line','toggle'],hierarchy_selectors:['dut.u_fifo']},functional:{covergroup_selectors:['tb.env.fifo_cov'],object_kinds:['coverpoint-bin']}} : null,
     plan_review:{completed:false,can_approve:true,status:'PENDING'},
   }));
   state.snapshot = {project:{}, workstreams:[], agent_questions:[], activities:[], model:{nodes:[],edges:[]}};
@@ -2614,8 +2618,8 @@ vm.runInContext(`
     assert.ok(rendered.includes('审批' + title));
     assert.match(rendered, /id="node-plan-complete"/);
     assert.equal(rendered.includes('<h4>目标</h4>'), plan);
-    assert.equal(rendered.includes('本方案必须实现的覆盖项'), index === 0);
-    if (index === 0) assert.ok(rendered.includes('C.DEMO.2'));
+    assert.equal(rendered.includes('负责人批准的覆盖范围'), index === 0);
+    if (index === 0) assert.ok(rendered.includes('Code coverage') && rendered.includes('Functional coverage'));
     assert.equal(nodeProgressState(node).ratio, 0);
     node.plan_review.completed = true;
     assert.equal(nodeProgressState(node).ratio, 100);
@@ -2672,7 +2676,7 @@ vm.runInContext(`
   ];
   const regressionNodes = regressionTypes.map(([role,title,plan], index) => ({
     ...nodes[index], id:'regression-node-' + index, role, title, workstream:'VREG',
-    statement:'FIFO 满空边界回归', coverage_item_ids:[],
+    statement:'FIFO 满空边界回归', coverage_scope:null,
     capabilities:index < 2 ? ['regression-policy','executor-ready']
       : ['execution-evidence','triage-evidence','fresh-evidence'],
     plan_review:{completed:false,can_approve:true,status:'PENDING',definition_digest:'current-regression-' + index},

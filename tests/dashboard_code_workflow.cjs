@@ -156,6 +156,18 @@ const workstream = config.workstream || 'VENV';
     const expectedReviewStatus = config.phase === 'plan' ? '等待负责人审批方案'
       : config.phase === 'exclusions' ? '等待 Agent 验证通过' : '等待负责人验收交付';
     assert.ok((await page.locator('#drawer .drawer-head').innerText()).includes(expectedReviewStatus));
+    if (config.expectedCoverageConfig?.schema === 'CoverageImplementationConfig/1') {
+      const coverageConfig = page.locator('#drawer .coverage-implementation-config');
+      const text = await coverageConfig.innerText();
+      assert.ok(text.includes('Code coverage 对象'));
+      assert.ok(text.includes('DUT'));
+    } else if (config.expectedCoverageConfig?.schema === 'CoverageCollectionConfig/1') {
+      const coverageConfig = page.locator('#drawer .coverage-collection-config');
+      const text = await coverageConfig.innerText();
+      assert.ok(text.includes('每个收敛节点只处理一个 DUT 构建指纹'));
+      assert.ok(text.includes(config.expectedCoverageConfig.dut_build_fingerprint.dut_design_id));
+      assert.ok(text.includes('不同指纹必须拆成不同收敛节点'));
+    }
     if (config.phase === 'exclusions') assert.equal(await page.locator('#drawer #node-plan-complete').isDisabled(), true);
     assert.equal(await page.locator('#drawer .writing-plan-inputs').getAttribute('open'), null);
     assert.doesNotMatch(await page.locator('#drawer .role-node-panel').innerText(), /待确认问题|预计正文交付|方案质量检查/);
@@ -186,10 +198,12 @@ const workstream = config.workstream || 'VENV';
       const panel = page.locator('#drawer .role-node-panel');
       const headings = ['目标','工作范围','具体工作','实现方式','如何验证','输出','交付条件'];
       if (workstream === 'VCOV' && config.expectedRole === '覆盖率实现方案') {
-        assert.ok(Array.isArray(config.expectedCoverageItems) && config.expectedCoverageItems.length > 0);
-        assert.deepEqual(await panel.locator(':scope > h4').allTextContents(), [...headings,'本方案必须实现的覆盖项']);
-        const coverageHeading = panel.getByRole('heading', {name:'本方案必须实现的覆盖项',exact:true});
-        assert.deepEqual(await coverageHeading.locator('xpath=following-sibling::ul[1]/li').allTextContents(), config.expectedCoverageItems);
+        assert.equal(config.expectedCoverageScope?.schema, 'CoverageScope/1');
+        assert.deepEqual(await panel.locator(':scope > h4').allTextContents(), [...headings,'负责人批准的覆盖范围']);
+        const coverageHeading = panel.getByRole('heading', {name:'负责人批准的覆盖范围',exact:true});
+        const scopeRows = await coverageHeading.locator('xpath=following-sibling::ul[1]/li').allTextContents();
+        assert.ok(scopeRows.some(row => row.includes('Code coverage')));
+        assert.ok(scopeRows.some(row => row.includes('Functional coverage')));
       } else {
         assert.deepEqual(await panel.locator(':scope > h4').allTextContents(), headings);
       }

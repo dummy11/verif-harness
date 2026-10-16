@@ -1,0 +1,18 @@
+{
+  "schema": "CoverageObjectInventory/1",
+  "scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "plan_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "model_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "objects": [
+    {"object_key": "code:line:rtl/fifo.sv:42", "category": "code", "kind": "line", "native_path": "dut.u_fifo/rtl/fifo.sv:42"},
+    {"object_key": "fcov:tb_top.env.coverage.fifo_full:hit", "category": "functional", "kind": "coverpoint-bin", "native_path": "tb_top.env.coverage.fifo_full.hit"}
+  ],
+  "adapter_schema_version": 1,
+  "adapter_version": "1",
+  "state": "PASS",
+  "blockers": [],
+  "request_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "operation": "expand-coverage-scope",
+  "tool_identity": {"state": "PASS"},
+  "tool": "xverif"
+}

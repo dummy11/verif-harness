@@ -925,7 +925,7 @@ def project_agents_block(manifest: dict[str, Any], document_root: str | None = N
         "- VCOV 公开节点为覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付。",
         "  proposal 只包含 coverage-implementation-plan 或 coverage-convergence-plan；批准后建立对应交付。",
         "  实现验收派生内部 cap.vcov，收敛依赖该能力和已验收的回归执行能力；不增加公开能力节点。",
-        "  覆盖项清单必须绑定批准范围和实现版本，收敛分析覆盖全部必需项；缺口反馈先分析再修订对应方案。",
+        "  负责人批准稳定覆盖范围，工具清单绑定范围和实现版本；收敛统计覆盖对象全集并只登记缺口，反馈先分析再修订对应方案。",
         "  全部必需实现和收敛交付均验收后 VCOV 才能完成，具体合同见 vplan/vcov.md。",
         "- VREG 公开节点为回归基础设施方案、回归基础设施交付、回归结果方案、回归结果交付。",
         "  proposal 只包含 regression-infrastructure-plan 或 regression-results-plan；批准后建立对应交付。",
@@ -6883,7 +6883,11 @@ class ProjectStore:
             # wait for each other. Whole VREG closure checks all required results.
             if (item["id"] == subject or
                     (code_workflow.node_workstream(item["id"]) == "VREG"
-                     and code_workflow.is_delivery(item) and code_workflow.vreg_stage(item) == "results")):
+                     and code_workflow.is_delivery(item) and code_workflow.vreg_stage(item) == "results") or
+                    (code_workflow.node_workstream(subject) == "VREG"
+                     and code_workflow.node_workstream(item["id"]) == "VCOV"
+                     and code_workflow.is_delivery(item)
+                     and code_workflow.vcov_stage(item) == "convergence")):
                 continue
             if code_workflow.is_delivery(item) and item.get('required', True):
                 item_workstream = code_workflow.node_workstream(item['id'])
@@ -8159,6 +8163,9 @@ class ProjectStore:
                     "role": desired.get("role", "capability"),
                     "implementation_key": desired.get("implementation_key"),
                     "capabilities": desired.get("capabilities", []),
+                    "coverage_scope": desired.get("coverage_scope"),
+                    "coverage_implementation_config": desired.get("coverage_implementation_config"),
+                    "coverage_collection_config": desired.get("coverage_collection_config"),
                     "coverage_item_ids": desired.get("coverage_item_ids", []),
                     "validation_methods": desired.get("validation_methods", []),
                     "output_paths": desired.get("output_paths", []),

@@ -1,0 +1,12 @@
+{
+  "schema": "CoverageScope/1",
+  "code": {
+    "metrics": ["line", "condition", "branch", "toggle", "fsm"],
+    "hierarchy_files": ["verification/coverage/cm.hier"]
+  },
+  "functional": {
+    "covergroup_selectors": ["tb_top.env.coverage.*"],
+    "object_kinds": ["coverpoint-bin", "cross-bin"]
+  },
+  "semantic_goal_ids": ["C.FIFO.BOUNDARY"]
+}

@@ -1,0 +1,20 @@
+{
+  "schema": "CoverageMergeManifest/1",
+  "collection_config_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "merge_profile_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "dut_build_fingerprint_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "input_database_digests": [
+    "1111111111111111111111111111111111111111111111111111111111111111",
+    "2222222222222222222222222222222222222222222222222222222222222222"
+  ],
+  "output_database_digest": "3333333333333333333333333333333333333333333333333333333333333333",
+  "adapter": {"name": "project-coverage-merge", "version": "1"},
+  "merge_tool": {"name": "simulator-coverage-tool", "version": "project-selected"},
+  "adapter_schema_version": 1,
+  "state": "PASS",
+  "blockers": [],
+  "request_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "operation": "merge-coverage-databases",
+  "tool_identity": {"state": "PASS"},
+  "tool": "xverif"
+}

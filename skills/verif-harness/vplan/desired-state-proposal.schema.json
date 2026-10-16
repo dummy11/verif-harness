@@ -16,12 +16,12 @@
         "properties": {"role": {"enum": ["code-plan", "coverage-implementation-plan", "coverage-convergence-plan"]}},
         "allOf": [{
           "if": {"properties": {"capabilities": {"contains": {"const": "coverage-model"}}}},
-          "then": {"required": ["coverage_item_ids"], "properties": {
+          "then": {"required": ["coverage_scope", "coverage_implementation_config"], "not": {"anyOf": [{"required": ["coverage_item_ids"]}, {"required": ["coverage_collection_config"]}]}, "properties": {
             "role": {"enum": ["code-plan", "coverage-implementation-plan"]},
             "capabilities": {"minItems": 2, "maxItems": 2, "uniqueItems": true,
                              "items": {"enum": ["coverage-model", "coverage-collection"]}}
           }},
-          "else": {"not": {"required": ["coverage_item_ids"]}, "properties": {
+          "else": {"required": ["coverage_collection_config"], "not": {"anyOf": [{"required": ["coverage_item_ids"]}, {"required": ["coverage_scope"]}, {"required": ["coverage_implementation_config"]}]}, "properties": {
             "role": {"enum": ["code-plan", "coverage-convergence-plan"]},
             "capabilities": {"minItems": 2, "maxItems": 2, "uniqueItems": true,
                              "items": {"enum": ["coverage-collection-evidence", "hole-analysis-evidence"]}}
@@ -115,8 +115,9 @@
           "input_files": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "output_paths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "capabilities": {"type": "array", "minItems": 1, "items": {"enum": ["interface-ready", "clock-reset-ready", "topology-ready", "build-ready", "run-ready", "observation-ready", "environment-smoke-evidence", "stimulus-implementation", "corner-scenarios", "reachability-evidence", "determinism-evidence", "reference-model", "scoreboard", "assertions", "reference-model-evidence", "scoreboard-evidence", "assertion-evidence", "case-implementation", "targeted-evidence", "coverage-model", "coverage-collection", "coverage-collection-evidence", "hole-analysis-evidence", "regression-policy", "executor-ready", "execution-evidence", "triage-evidence", "fresh-evidence"]}},
-          "coverage_item_ids": {"type": "array", "minItems": 1, "uniqueItems": true,
-                                "items": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]+$"}},
+          "coverage_scope": {"$ref": "../evidence/coverage-scope.schema.json"},
+          "coverage_implementation_config": {"$ref": "../evidence/coverage-implementation-config.schema.json"},
+          "coverage_collection_config": {"$ref": "../evidence/coverage-collection-config.schema.json"},
           "regression_config": {"$ref": "#/$defs/regressionConfig"},
           "parent_key": {"type": "string", "minLength": 1},
           "document_key": {"type": "string", "minLength": 1},

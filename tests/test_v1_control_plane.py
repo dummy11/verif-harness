@@ -299,6 +299,58 @@ class V1ControlPlaneTest(unittest.TestCase):
         return target
 
     def attach_coverage_manifest(self, payload: dict, filename: str) -> None:
+        if payload["schema"] == "CoverageEvidence/2" and payload["claim"] in {
+            "coverage-model", "coverage-collection-evidence", "hole-analysis-evidence",
+        }:
+            result = payload["result"]
+            native_root = self.root / "results/contracts"
+            native_root.mkdir(parents=True, exist_ok=True)
+            plan = native_root / f"{filename}.coverage-plan.json"
+            model = native_root / f"{filename}.coverage-model.sv"
+            plan.write_text(json.dumps({"fixture_only": True}) + "\n", encoding="utf-8")
+            model.write_text("// Test fixture coverage model\n", encoding="utf-8")
+            plan_digest = hashlib.sha256(plan.read_bytes()).hexdigest()
+            model_digest = hashlib.sha256(model.read_bytes()).hexdigest()
+            payload["artifacts"].extend([
+                {"path": plan.relative_to(self.root).as_posix(), "sha256": plan_digest,
+                 "kind": "configuration", "analyzed_by": ["xverif"]},
+                {"path": model.relative_to(self.root).as_posix(), "sha256": model_digest,
+                 "kind": "source", "analyzed_by": ["xverif"]},
+            ])
+            object_keys = [item["object_key"] for item in result.get("holes", [])]
+            required = result.get("object_count", result.get("required_objects", len(object_keys) or 1))
+            while len(object_keys) < required:
+                object_keys.append(f"code:line:fixture.sv:{len(object_keys) + 1}")
+            inventory = {
+                **self.adapter_receipt("xverif"), "schema": "CoverageObjectInventory/1",
+                "scope_digest": "a" * 64, "plan_digest": plan_digest,
+                "model_digest": model_digest,
+                "objects": [{
+                    "object_key": key, "category": "code",
+                    "kind": "toggle" if ":toggle:" in key else "line",
+                    "native_path": f"dut/fixture.sv:{index + 1}",
+                } for index, key in enumerate(object_keys)],
+            }
+            inventory_artifact = next((item for item in payload["artifacts"]
+                if item["kind"] == "analysis-report"
+                and item["sha256"] == result.get("coverage_inventory_digest")), None)
+            inventory_path = (self.root / inventory_artifact["path"] if inventory_artifact
+                              else native_root / f"{filename}.coverage-objects.json")
+            inventory_path.write_text(json.dumps(inventory) + "\n", encoding="utf-8")
+            inventory_digest = hashlib.sha256(inventory_path.read_bytes()).hexdigest()
+            if inventory_artifact:
+                inventory_artifact["sha256"] = inventory_digest
+            else:
+                payload["artifacts"].append({
+                    "path": inventory_path.relative_to(self.root).as_posix(),
+                    "sha256": inventory_digest, "kind": "analysis-report",
+                    "analyzed_by": ["xverif"],
+                })
+            result["coverage_inventory_digest"] = inventory_digest
+            if payload["claim"] == "coverage-model":
+                result.update({"scope_digest": "a" * 64, "plan_digest": plan_digest,
+                               "model_digest": model_digest, "object_count": required})
+            return
         if payload["schema"] != "CoverageEvidence/1" or payload["claim"] not in {
             "coverage-model", "coverage-collection-evidence", "hole-analysis-evidence",
         }:
@@ -347,6 +399,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         workstream = {
             "EnvironmentEvidence/1": "VENV", "StimulusCapabilityEvidence/1": "VSTIM",
             "CheckingEvidence/1": "VCHK", "CoverageEvidence/1": "VCOV",
+            "CoverageEvidence/2": "VCOV",
             "TestcaseEvidence/1": "VCASE", "RegressionEvidence/1": "VREG",
         }[schema]
         policy = policy_for(workstream, claim)

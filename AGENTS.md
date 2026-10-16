@@ -157,11 +157,36 @@ This repository contains public, reusable verification infrastructure.
 - VCOV 直接使用覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付四种
   公开节点类型，不增加工作包层级。方案角色分别为 `coverage-implementation-plan` 和
   `coverage-convergence-plan`；批准后建立对应 `-deliverable` 交付节点。
-  实现方案的 `coverage_item_ids` 列出供负责人批准的必需覆盖范围，交付验证
-  `coverage-model` 与 `coverage-collection`；收敛交付验证 `coverage-collection-evidence`
+  实现方案用 `CoverageScope/1` 登记供负责人批准的稳定覆盖范围：code coverage 包含
+  metric、层次选择或 `cm.hier` 类配置及范围内排除配置，functional coverage 包含
+  covergroup 选择规则和必需对象类型；不得要求负责人或 ProjectStore 逐项登记 simulator
+  原生 line、toggle、bin 或 cross。交付验证 `coverage-model` 与 `coverage-collection`，
+  `CoverageImplementationConfig/1` 另行固定插桩、elaboration、采集、导出、分析配置、
+  工具版本及兼容的 submit profile 摘要，不复制回归 case/seed/repeat。code coverage 只允许
+  统计 DUT，不把 testbench 代码纳入 code coverage 目标。交付验证
+  `coverage-model` 与 `coverage-collection`，并由 xverif 按批准范围、当前计划、实现配置
+  和覆盖模型生成 `CoverageObjectInventory/2` 全集；收敛方案用
+  `CoverageCollectionConfig/1` 只读引用一条或多条当前 VREG `regression_config` 及 merge
+  profile，VREG 仍是 case、submit profile、seed 模式和值、repeat 的唯一事实源；
+  收敛交付验证 `coverage-collection-evidence`
   与 `hole-analysis-evidence`，依赖当前有效的环境、激励、检查、用例、回归执行器
   `cap.vreg:executor-ready` 和明确关联的覆盖率实现能力。清单必须对应已批准范围、
-  当前计划输入和模型输出；全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
+  当前计划输入和模型输出。VREG 执行产生一个或多个 VDB；每个分片通过
+  `CoverageDatabaseShardManifest/1` 精确绑定执行轮次、`RegressionBatchManifest/2`、
+  case、seed 和 iteration，`CoverageMergeManifest/1` 再绑定全部输入 VDB、当前 merge
+  profile 和唯一合并输出。采集与缺口分析必须绑定同一清单和同一合并数据库摘要。
+  VDB merge 兼容性由 DUT-only 构建指纹决定：DUT RTL、parameter、宏定义和 DUT 级
+  elaboration 必须完全一致；任一项不同都禁止合并。testbench、submit profile、DUT 实例路径
+  不属于该兼容性指纹，因此不同 testbench 或不同 profile 在 DUT 指纹相同时允许合并；各自仍须
+  作为独立 VREG source/batch 精确绑定，merge 工具报错或功能覆盖对象不一致仍按证据阻止验收。
+  `dut_elaboration_digest` 必须按脱离 testbench 层次和实例路径后的 DUT elaborated design 计算，
+  不得直接使用包含 tb_top、wrapper 或绝对实例路径的整机 elaboration 摘要。
+  每个覆盖率收敛方案及其唯一对应交付只允许一个 `DutBuildFingerprint/1` 分区；预期存在多个
+  指纹时必须在 proposal 中拆成多个 `coverage-convergence-plan`，批准后分别建立多个
+  `coverage-convergence-deliverable`。发现实际指纹与批准分区不同或一个交付混入多个指纹时，
+  必须阻止交付并重新分组，不增加 VDB/batch/seed 公开节点或逐项审批。
+  收敛报告保存必需、已覆盖、排除、未覆盖对象计数，只逐项保存 excluded/uncovered 缺口；
+  计数必须覆盖清单全集，全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
   收敛结果包含 excluded 项时，exclude 文件由负责人提供；提供动作本身表示负责人已经批准
   文件中的排除范围，不再逐项建立 WAIVE 审批。Agent 只检查该文件是否合法、是否绑定当前
   revision 和收敛节点、缺口分析是否引用同一路径与摘要，以及所有 excluded 项是否引用这一个
@@ -174,7 +199,10 @@ This repository contains public, reusable verification infrastructure.
   基础设施交付验证 `regression-policy` 与 `executor-ready`，只依赖文档和验证环境；
   验收派生 `cap.vreg:executor-ready`，不得反向等待激励、检查、用例、覆盖率或最终结果。
   结果交付验证 `execution-evidence`、`triage-evidence`、`fresh-evidence`，明确关联当前
-  基础设施能力并依赖当前有效的文档、环境、激励、检查、用例和覆盖率能力。
+  基础设施能力并依赖当前有效的文档、环境、激励、检查、用例以及覆盖率采集实现
+  `cap.vcov:coverage-collection`。回归证据验证完成即可供 VCOV 分析 VDB；回归结果最终
+  人工验收仍等待当前 `coverage-collection-evidence` 与 `hole-analysis-evidence`，从而避免
+  VREG 执行与 VCOV 收敛互相等待。
   回归执行失败与分类记录必须精确一致；已知失败必须有当前 VREG revision 的负责人
   例外批准。Engine 派生当前必需上游证据范围，不能由报告自行缩小，也不能等待结果
   交付自身验收。全部必需基础设施都要纳入必需结果范围；两类交付均验收才完成 VREG。

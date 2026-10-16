@@ -14,6 +14,7 @@ import urllib.error
 from tests import test_vdoc_artifacts as fixtures
 from verif_harness import code_workflow as code
 from verif_harness.dashboard import dashboard_project_id
+from verif_harness.evidence_contracts import validate_workstream_evidence
 from verif_harness.store import HarnessError, ProjectStore, Validity
 
 
@@ -35,6 +36,16 @@ class VcovWorkflowTest(unittest.TestCase):
         self.root = self.store.root
         self.http = self.fixture.fixture
         self.write("coverage-plan.md", "# 覆盖计划\n\nC.DEMO.1 满边界；C.DEMO.2 空边界。\n")
+        coverage_config = self.write("verification/config/coverage.toml", "coverage = true\n")
+        merge_profile = self.write("verification/config/coverage-merge.toml", "merge = true\n")
+        submit_file = self.write("verification/config/submit.toml", "profile = 'coverage-nightly'\n")
+        self.submit_profile = {
+            "schema": "SubmitProfileRef/1", "profile_id": "coverage-nightly",
+            "submit_file": str(submit_file.relative_to(self.root)),
+            "submit_file_digest": self.store._digest(submit_file),
+            "profile_digest": "b" * 64,
+            "adapter": {"name": "synthetic-submit", "version": "1"},
+        }
         with self.store.connect() as connection:
             for identifier in (
                 "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence",
@@ -42,6 +53,73 @@ class VcovWorkflowTest(unittest.TestCase):
             ):
                 self.store.upsert_node(connection, identifier, "capability", identifier, Validity.VALID,
                                        data={"derived": True, "current": {"fixture": identifier}})
+        vreg_common = {
+            "statement": "形成覆盖率采集所用的回归执行范围", "scope": ["coverage nightly"],
+            "work_content": ["运行当前批准的 coverage case"],
+            "implementation_approach": ["由 testbench submit profile 执行"],
+            "validation_methods": ["核对 batch 和实际 seed"],
+            "deliverables": ["回归结果"], "acceptance_criteria": ["运行范围完整"],
+            "source_refs": ["coverage-plan.md"], "input_files": ["coverage-plan.md"],
+        }
+        self.write_json("vreg-source-proposal.json", {
+            "schema": "DesiredStateProposal/1", "workstream": "VREG", "nodes": [
+                {**copy.deepcopy(vreg_common), "key": "coverage-infrastructure",
+                 "implementation_key": "coverage:infrastructure",
+                 "role": "regression-infrastructure-plan", "title": "覆盖率回归基础设施",
+                 "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+                 "output_paths": ["verification/regression/policy.json", "verification/regression/tests.json",
+                                  "verification/regression/runner.sh", "verification/regression/collector.json"],
+                 "capabilities": ["regression-policy", "executor-ready"]},
+                {**copy.deepcopy(vreg_common), "key": "coverage-results",
+                 "implementation_key": "coverage:results",
+                 "role": "regression-results-plan", "title": "覆盖率回归结果",
+                 "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                            "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence",
+                            "cap.vcase:targeted-evidence", "cap.vcov:coverage-collection",
+                            "cap.vreg:coverage:infrastructure"],
+                 "input_files": ["coverage-plan.md", self.submit_profile["submit_file"]],
+                 "output_paths": ["verification/results/regression/run.log"],
+                 "capabilities": ["execution-evidence", "triage-evidence", "fresh-evidence"],
+                 "regression_config": {
+                     "regression_group": "coverage-nightly",
+                     "cases": [{"case_id": "demo_test", "case_digest": "c" * 64}],
+                     "submit_profile": self.submit_profile, "seed_mode": "fixed", "seed": 17,
+                     "repeat": 1,
+                 }},
+            ],
+        })
+        self.store.design_workstream("VREG", None, [], [], [], desired_file="vreg-source-proposal.json")
+        self.finish_vreg_infrastructure()
+        self.vreg_plan = next(node for node in self.store.workstream("VREG")["desired_state"]
+                              if node["role"] == "regression-results-plan")
+        self.implementation_config = {
+            "schema": "CoverageImplementationConfig/1", "code_coverage_target": "dut",
+            "configuration_refs": [{
+                "role": "collection", "path": str(coverage_config.relative_to(self.root)),
+                "sha256": self.store._digest(coverage_config),
+            }],
+            "compatible_submit_profile_digests": [self.submit_profile["profile_digest"]],
+            "toolchain": [{"role": "coverage", "name": "synthetic-vcs", "version": "1"}],
+        }
+        self.dut_build_fingerprint = {
+            "schema": "DutBuildFingerprint/1", "coverage_target": "dut", "dut_design_id": "fifo",
+            "rtl_digest": "1" * 64, "parameter_digest": "2" * 64,
+            "macro_digest": "3" * 64, "dut_elaboration_digest": "4" * 64,
+        }
+        self.collection_config = {
+            "schema": "CoverageCollectionConfig/1",
+            "regression_sources": [{
+                "plan_node_id": self.vreg_plan["id"],
+                "plan_revision": self.store.workstream("VREG")["revision"],
+                "regression_config_digest": code.config_digest(code.regression_config(self.vreg_plan)),
+            }],
+            "dut_build_fingerprint": self.dut_build_fingerprint,
+            "merge_profile": {
+                "path": str(merge_profile.relative_to(self.root)), "sha256": self.store._digest(merge_profile),
+                "adapter": {"name": "synthetic-merge", "version": "1"},
+                "tool": {"name": "synthetic-verdi", "version": "1"},
+            },
+        }
         common = {
             "statement": "实现并核对当前 DUT 的满空边界覆盖范围", "scope": ["满空边界"],
             "work_content": ["按批准覆盖清单完成当前验证工作"],
@@ -57,16 +135,82 @@ class VcovWorkflowTest(unittest.TestCase):
              "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
              "output_paths": ["verification/coverage/model.sv", "verification/coverage/collector.json"],
              "capabilities": ["coverage-model", "coverage-collection"],
-             "coverage_item_ids": ["C.DEMO.1", "C.DEMO.2"]},
+             "input_files": ["coverage-plan.md", str(coverage_config.relative_to(self.root))],
+             "coverage_implementation_config": self.implementation_config,
+             "coverage_scope": {
+                 "schema": "CoverageScope/1",
+                 "code": {"metrics": ["line"], "hierarchy_selectors": ["dut.u_fifo"]},
+                 "functional": {"covergroup_selectors": ["tb.env.fifo_cov"],
+                                "object_kinds": ["coverpoint-bin"]},
+                 "semantic_goal_ids": ["C.DEMO.BOUNDARY"],
+             }},
             {**copy.deepcopy(common), "key": "fifo-convergence", "implementation_key": "fifo:convergence",
              "role": "coverage-convergence-plan", "title": "FIFO 覆盖率收敛方案",
              "inputs": ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
                         "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence",
                         "cap.vcase:targeted-evidence", "cap.vreg:executor-ready", "cap.vcov:fifo:implementation"],
              "output_paths": ["verification/results/convergence/database.json", "verification/results/convergence/analysis.json"],
-             "capabilities": ["coverage-collection-evidence", "hole-analysis-evidence"]},
+             "input_files": ["coverage-plan.md", str(merge_profile.relative_to(self.root))],
+             "capabilities": ["coverage-collection-evidence", "hole-analysis-evidence"],
+             "coverage_collection_config": self.collection_config},
         ]
         self.design()
+
+    def finish_vreg_infrastructure(self):
+        plan = self.store.workstream("VREG")
+        node = next(item for item in plan["desired_state"] if item["role"] == "regression-infrastructure-plan")
+        state = self.store.node_plan_review_state(node["id"])
+        self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+        self.write_json("verification/regression/policy.json", {"synthetic": True})
+        self.write_json("verification/regression/tests.json", {"synthetic": True})
+        self.write("verification/regression/runner.sh", "#!/bin/sh\n")
+        self.write_json("verification/regression/collector.json", {"synthetic": True})
+        self.write("verification/results/infrastructure/build.log", "synthetic build\n")
+        delivery = next(item for item in self.store.workstream("VREG")["desired_state"]
+                        if item["role"] == "regression-infrastructure-deliverable")
+        state = self.store.node_plan_review_state(delivery["id"])
+        project = json.loads((self.store.state / "project.json").read_text())
+        revision = project.get("baseline_revision") or "fixture-revision"
+        checks = []
+        evidence = {
+            "regression-policy": (
+                [self.artifact("verification/regression/policy.json", "document", "human-review"),
+                 self.artifact("verification/regression/tests.json", "regression-manifest")],
+                None,
+            ),
+            "executor-ready": (
+                [self.artifact("verification/regression/runner.sh", "source"),
+                 self.artifact("verification/regression/collector.json", "source"),
+                 self.artifact("verification/results/infrastructure/build.log", "build-log")],
+                None,
+            ),
+        }
+        for claim in delivery["capabilities"]:
+            artifacts = evidence[claim][0]
+            result = ({
+                "policy_digest": artifacts[0]["sha256"], "manifest_digest": artifacts[1]["sha256"],
+                "review_ref": "fixture-review", "seed_policy": "VREG-owned",
+                "timeout_policy": "per-case", "rerun_policy": "same-seed",
+            } if claim == "regression-policy" else {
+                "runner_digest": artifacts[0]["sha256"],
+                "collector_digest": artifacts[1]["sha256"], "selftest_passed": True,
+            })
+            path = self.write_json(f"verification/results/infrastructure/{claim}.json", {
+                "schema": "RegressionEvidence/3", "claim": claim, "revision": revision,
+                "tool": "synthetic-contract-fixture/1", "artifacts": artifacts, "result": result,
+            })
+            checks.append({"criterion": delivery["acceptance_criteria"][0], "method": "synthetic",
+                           "expected": "ready", "actual": "ready",
+                           "report": str(path.relative_to(self.root)), "claim": claim})
+        report = self.write_json("verification/results/infrastructure/validation.json", {
+            "schema": "CodeValidation/1", "node_id": delivery["id"], "revision": state["revision"],
+            "input_signature": state["input_signature"], "code_files": state["code_files"],
+            "checked_by": "Project Main Agent", "summary": "synthetic infrastructure", "checks": checks,
+        })
+        receipt = code.validate(self.store, delivery["id"], str(report.relative_to(self.root)))
+        self.assertTrue(receipt["ready"], receipt["blockers"])
+        state = self.store.node_plan_review_state(delivery["id"])
+        self.store.complete_node_plan_review(delivery["id"], state["definition_digest"], "fixture-owner")
 
     def tearDown(self):
         self.fixture.tearDown()
@@ -104,6 +248,8 @@ class VcovWorkflowTest(unittest.TestCase):
             return next(w for w in json.load(response)["workstreams"] if w["workstream"] == "VCOV")
 
     def approve(self, node, http=False):
+        if node.get("role") == "coverage-convergence-plan" and not hasattr(self, "vreg_round"):
+            self.prepare_vreg_execution()
         state = self.store.node_plan_review_state(node["id"])
         self.assertTrue(state["can_approve"], state["blockers"])
         if http:
@@ -120,25 +266,98 @@ class VcovWorkflowTest(unittest.TestCase):
         self.write("verification/results/implementation/build.log", "synthetic coverage model compile check\n")
         self.manifest = {
             **ANALYSIS_RECEIPT,
-            "schema": "CoverageItemManifest/1", "plan_digest": self.store._digest(self.root / "coverage-plan.md"),
+            "schema": "CoverageObjectInventory/2",
+            "scope_digest": code.coverage_scope_digest(self.items[0]),
+            "implementation_config_digest": code.config_digest(self.implementation_config),
+            "plan_digest": self.store._digest(self.root / "coverage-plan.md"),
             "model_digest": self.store._digest(self.root / "verification/coverage/model.sv"),
-            "planned_item_ids": self.items[0]["coverage_item_ids"],
-            "mapped_item_ids": self.items[0]["coverage_item_ids"],
+            "objects": [
+                {"object_key": "C.DEMO.1", "category": "code", "kind": "line",
+                 "native_path": "dut.u_fifo/rtl/fifo.sv:42"},
+                {"object_key": "C.DEMO.2", "category": "functional", "kind": "coverpoint-bin",
+                 "native_path": "tb.env.fifo_cov.empty"},
+            ],
         }
         return self.node("coverage-implementation-deliverable")
 
+    def prepare_vreg_execution(self):
+        from verif_harness.store import now
+        plan = self.store.workstream("VREG")
+        source = next(node for node in plan["desired_state"] if node["id"] == self.vreg_plan["id"])
+        state = self.store.node_plan_review_state(source["id"])
+        if not state["completed"]:
+            self.assertTrue(state["can_approve"], state["blockers"])
+            self.store.complete_node_plan_review(
+                source["id"], state["definition_digest"], "fixture-owner",
+            )
+        plan = self.store.workstream("VREG")
+        source = next(node for node in plan["desired_state"] if node["id"] == self.vreg_plan["id"])
+        delivery = next(node for node in plan["desired_state"] if node.get("parent_id") == source["id"])
+        with self.store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            value = code.execution_round(connection, delivery["id"])
+            connection.execute(
+                "UPDATE regression_execution_rounds SET status='VALIDATED',validated_at=? WHERE id=?",
+                (now(), value["id"]),
+            )
+        self.vreg_delivery = delivery
+        with self.store.read_connect() as connection:
+            self.vreg_round = code.execution_round(connection, delivery["id"])
+
     def convergence(self, approve=True):
+        if not hasattr(self, "vreg_round"):
+            self.prepare_vreg_execution()
         if approve:
             self.approve(self.node("coverage-convergence-plan"))
+        binding = code.execution_binding(self.store.workstream("VREG"), self.vreg_delivery, self.vreg_round)
+        caselist = self.write("verification/results/convergence/coverage.caselist", "demo_test\n")
+        batch = self.write_json("verification/results/convergence/regression-batch.json", {
+            "schema": "RegressionBatchManifest/2", "batch_id": "coverage-nightly-local",
+            "regression_group": "coverage-nightly", "submit_profile": self.submit_profile,
+            "caselist": {"path": str(caselist.relative_to(self.root)), "sha256": self.store._digest(caselist)},
+            "seed_mode": "fixed", "seed": 17, "repeat": 1,
+            "cases": [{"case_id": "demo_test", "case_digest": "c" * 64}],
+            "runs": [{"case_id": "demo_test", "seed": 17, "iteration": 0}],
+            "timeout_seconds": 60, "execution_binding": binding,
+        })
+        shard_db = self.write_json("verification/results/convergence/demo-test.vdb.json", {
+            "synthetic": True, "case": "demo_test", "seed": 17,
+        })
+        shard_manifest = self.write_json("verification/results/convergence/coverage-shards.json", {
+            "schema": "CoverageDatabaseShardManifest/1", "execution_binding": binding,
+            "regression_config_digest": self.collection_config["regression_sources"][0]["regression_config_digest"],
+            "batch_manifest_digest": self.store._digest(batch),
+            "dut_build_fingerprint": self.dut_build_fingerprint,
+            "shards": [{
+                "path": str(shard_db.relative_to(self.root)), "sha256": self.store._digest(shard_db),
+                "runs": [{"case_id": "demo_test", "seed": 17, "iteration": 0}],
+            }],
+        })
         self.write_json("verification/results/convergence/database.json", {"synthetic": True, "hits": [1, 1]})
+        merged = self.root / "verification/results/convergence/database.json"
+        merge_manifest = self.write_json("verification/results/convergence/coverage-merge.json", {
+            **ANALYSIS_RECEIPT,
+            "schema": "CoverageMergeManifest/1",
+            "collection_config_digest": code.config_digest(self.collection_config),
+            "merge_profile_digest": self.collection_config["merge_profile"]["sha256"],
+            "dut_build_fingerprint_digest": code.config_digest(self.dut_build_fingerprint),
+            "input_database_digests": [self.store._digest(shard_db)],
+            "output_database_digest": self.store._digest(merged),
+            "adapter": self.collection_config["merge_profile"]["adapter"],
+            "merge_tool": self.collection_config["merge_profile"]["tool"],
+        })
         self.write_json("verification/results/convergence/analysis.json", {
             **ANALYSIS_RECEIPT, "synthetic": True, "summary": "all items covered",
         })
+        self.convergence_artifacts = {
+            "caselist": caselist, "batch": batch, "shard_db": shard_db,
+            "shard_manifest": shard_manifest, "merge_manifest": merge_manifest,
+        }
         return self.node("coverage-convergence-deliverable")
 
-    def artifact(self, name, kind):
+    def artifact(self, name, kind, analyzer="xverif"):
         return {"path": name, "sha256": self.store._digest(self.root / name),
-                "kind": kind, "analyzed_by": ["xverif"]}
+                "kind": kind, "analyzed_by": [analyzer]}
 
     def provide_exclusions(self, node, content="exclude C.DEMO.2\n", via_cli=False):
         path = self.write("owner-exclusions.el", content)
@@ -163,7 +382,7 @@ class VcovWorkflowTest(unittest.TestCase):
                  hole_database=None, include_exclusion_artifact=True):
         stage = "implementation" if code.vcov_stage(node) == "implementation" else "convergence"
         manifest = copy.deepcopy(self.manifest if manifest is None else manifest)
-        manifest_file = self.write_json(f"verification/results/{stage}/coverage-items.json", manifest)
+        manifest_file = self.write_json(f"verification/results/{stage}/coverage-objects.json", manifest)
         manifest_artifact = self.artifact(str(manifest_file.relative_to(self.root)), "analysis-report")
         state = self.store.node_plan_review_state(node["id"])
         project = json.loads((self.store.state / "project.json").read_text())
@@ -173,32 +392,73 @@ class VcovWorkflowTest(unittest.TestCase):
                 artifacts = [self.artifact("verification/coverage/model.sv", "source"),
                              self.artifact("verification/results/implementation/build.log", "build-log"),
                              self.artifact("coverage-plan.md", "document"), manifest_artifact]
-                result = {"plan_digest": manifest["plan_digest"], "model_digest": manifest["model_digest"],
-                          "planned_items": len(manifest["planned_item_ids"]),
-                          "mapped_items": len(manifest["mapped_item_ids"]), "compiled": True,
-                          "coverage_manifest_digest": manifest_artifact["sha256"]}
+                result = {"scope_digest": manifest["scope_digest"],
+                          "implementation_config_digest": code.config_digest(self.implementation_config),
+                          "plan_digest": manifest["plan_digest"], "model_digest": manifest["model_digest"],
+                          "object_count": len(manifest["objects"]), "compiled": True,
+                          "coverage_inventory_digest": manifest_artifact["sha256"]}
             elif claim == "coverage-collection":
                 artifacts = [self.artifact("verification/coverage/collector.json", "configuration"),
                              self.artifact("verification/results/implementation/build.log", "build-log")]
-                result = {"configured": True, "exporter_digest": exporter_digest or artifacts[0]["sha256"]}
+                result = {"scope_digest": manifest["scope_digest"], "configured": True,
+                          "implementation_config_digest": code.config_digest(self.implementation_config),
+                          "exporter_digest": exporter_digest or artifacts[0]["sha256"]}
             else:
                 database = hole_database if claim == "hole-analysis-evidence" and hole_database \
                     else "verification/results/convergence/database.json"
+                merge_path = "verification/results/convergence/coverage-merge.json"
+                if claim == "hole-analysis-evidence" and hole_database:
+                    original_merge = json.loads((self.root / merge_path).read_text(encoding="utf-8"))
+                    original_merge["output_database_digest"] = self.store._digest(self.root / database)
+                    merge_path = "verification/results/convergence/coverage-merge-hole.json"
+                    self.write_json(merge_path, original_merge)
                 artifacts = [self.artifact(database, "coverage-database"),
-                             self.artifact("verification/results/convergence/analysis.json", "analysis-report"), manifest_artifact]
+                             self.artifact("verification/results/convergence/analysis.json", "analysis-report"),
+                             self.artifact(merge_path, "analysis-report"),
+                             self.artifact(self.collection_config["merge_profile"]["path"], "configuration"),
+                             manifest_artifact]
+                if claim == "coverage-collection-evidence":
+                    artifacts.extend([
+                        self.artifact("verification/results/convergence/demo-test.vdb.json", "coverage-database"),
+                        self.artifact("verification/results/convergence/coverage-shards.json", "regression-manifest"),
+                        self.artifact("verification/results/convergence/regression-batch.json", "regression-manifest"),
+                        self.artifact("verification/results/convergence/coverage.caselist", "regression-manifest"),
+                        self.artifact(self.submit_profile["submit_file"], "configuration"),
+                    ])
                 exclusion = state.get("coverage_exclusion", {}).get("current")
                 if claim == "hole-analysis-evidence" and exclusion and include_exclusion_artifact:
                     artifacts.append({"path": exclusion["path"], "sha256": exclusion["sha256"],
                                       "kind": "configuration", "analyzed_by": ["xverif"]})
-                result = {"coverage_manifest_digest": manifest_artifact["sha256"]}
+                result = {"coverage_inventory_digest": manifest_artifact["sha256"],
+                          "coverage_collection_config_digest": code.config_digest(self.collection_config),
+                          "merge_manifest_digest": self.store._digest(
+                              self.root / merge_path)}
                 if claim == "coverage-collection-evidence":
-                    result.update(database_ids=["synthetic-current-db"], runs=1, merge_errors=0, stale_shards=0)
+                    result.update(
+                        shard_manifest_digests=[self.store._digest(
+                            self.root / "verification/results/convergence/coverage-shards.json")],
+                        runs=1, merge_errors=0, stale_shards=0,
+                    )
                 else:
-                    result["items"] = items if items is not None else [
-                        {"id": identifier, "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"}
-                        for identifier in manifest["planned_item_ids"]]
+                    dispositions = items if items is not None else [
+                        {"id": item["object_key"], "status": "covered"}
+                        for item in manifest["objects"]]
+                    holes = []
+                    for item in dispositions:
+                        if item["status"] == "covered":
+                            continue
+                        holes.append({"object_key": item["id"], "status": item["status"],
+                                      **{key: value for key, value in item.items()
+                                         if key not in {"id", "status", "hits", "plan_ref"}}})
+                    result.update(
+                        required_objects=len(dispositions),
+                        covered_objects=sum(item["status"] == "covered" for item in dispositions),
+                        excluded_objects=sum(item["status"] == "excluded" for item in dispositions),
+                        uncovered_objects=sum(item["status"] == "uncovered" for item in dispositions),
+                        holes=holes,
+                    )
             evidence_file = self.write_json(f"verification/results/{stage}/{claim}.json", {
-                "schema": "CoverageEvidence/1", "claim": claim,
+                "schema": "CoverageEvidence/3", "claim": claim,
                 "revision": project.get("baseline_revision") or "fixture-revision",
                 "tool": "synthetic-contract-fixture/1", "artifacts": artifacts, "result": result,
             })
@@ -218,6 +478,7 @@ class VcovWorkflowTest(unittest.TestCase):
         delivery = self.implement()
         self.assertTrue(self.validate(delivery)["ready"])
         self.approve(delivery)
+        self.prepare_vreg_execution()
         return delivery
 
     def finish_all(self):
@@ -237,9 +498,9 @@ class VcovWorkflowTest(unittest.TestCase):
         receipt = self.validate(delivery, via_cli=True)
         self.assertTrue(receipt["ready"])
         self.assertEqual(self.cli("code", "status", delivery["id"])["validation"]["coverage_contract"],
-                         "CoverageConvergence/3")
+                         "CoverageConvergence/5")
         current = next(n for n in self.view()["nodes"] if n["id"] == delivery["id"])
-        self.assertEqual(current["coverage_item_ids"], self.items[0]["coverage_item_ids"])
+        self.assertEqual(current["coverage_scope"], self.items[0]["coverage_scope"])
         self.assertEqual(current["capabilities"], self.items[0]["capabilities"])
         self.assertTrue(current["plan_review"]["can_approve"])
         self.assertFalse(current["plan_review"]["completed"])
@@ -267,8 +528,55 @@ class VcovWorkflowTest(unittest.TestCase):
             stage = code.vcov_stage(node)
             self.assertEqual(node["capabilities"], self.items[0 if stage == "implementation" else 1]["capabilities"])
             if stage == "implementation":
-                self.assertEqual(node["coverage_item_ids"], self.items[0]["coverage_item_ids"])
+                self.assertEqual(node["coverage_scope"], self.items[0]["coverage_scope"])
         self.assertEqual(self.head("cap.vcov:hole-analysis-evidence")["status"], "VALID")
+
+    def test_convergence_plan_can_be_approved_before_vreg_execution_finishes(self):
+        delivery = self.implement()
+        self.assertTrue(self.validate(delivery)["ready"])
+        self.approve(delivery)
+        source_state = self.store.node_plan_review_state(self.vreg_plan["id"])
+        self.assertTrue(source_state["can_approve"], source_state["blockers"])
+        self.store.complete_node_plan_review(
+            self.vreg_plan["id"], source_state["definition_digest"], "fixture-owner",
+        )
+        vreg = self.store.workstream("VREG")
+        result_delivery = next(
+            node for node in vreg["desired_state"] if node.get("parent_id") == self.vreg_plan["id"]
+        )
+        with self.store.read_connect() as connection:
+            execution = code.execution_round(connection, result_delivery["id"])
+        self.assertEqual(execution["status"], "REQUESTED")
+        convergence = self.store.node_plan_review_state(self.node("coverage-convergence-plan")["id"])
+        self.assertTrue(convergence["can_approve"], convergence["blockers"])
+
+    def test_multiple_dut_fingerprint_partitions_create_multiple_convergence_deliveries(self):
+        other = copy.deepcopy(self.items[1])
+        other.update(
+            key="fifo-convergence-other-build",
+            implementation_key="fifo-other-build:convergence",
+            title="FIFO 另一 DUT 构建覆盖率收敛方案",
+            output_paths=[
+                "verification/results/convergence-other/database.json",
+                "verification/results/convergence-other/analysis.json",
+            ],
+        )
+        other["coverage_collection_config"]["dut_build_fingerprint"]["parameter_digest"] = "5" * 64
+        self.design([self.items[0], self.items[1], other])
+        self.finish_implementation()
+        plans = [node for node in self.store.workstream("VCOV")["desired_state"]
+                 if node["role"] == "coverage-convergence-plan"]
+        self.assertEqual(len(plans), 2)
+        for plan in plans:
+            self.approve(plan)
+        current = self.store.workstream("VCOV")["desired_state"]
+        deliveries = [node for node in current if node["role"] == "coverage-convergence-deliverable"]
+        self.assertEqual(len(deliveries), 2)
+        self.assertEqual({node["parent_id"] for node in deliveries}, {node["id"] for node in plans})
+        self.assertEqual(len({
+            code.config_digest(node["coverage_collection_config"]["dut_build_fingerprint"])
+            for node in plans
+        }), 2)
 
     def test_implementation_only_cannot_finish_vcov(self):
         self.design([self.items[0]])
@@ -297,26 +605,25 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertNotEqual(self.head("cap.vcov:coverage-model")["status"], "VALID")
         self.assertFalse(self.store.node_plan_review_state(self.node("coverage-convergence-plan")["id"])["can_approve"])
 
-    def test_manifest_must_match_approved_item_universe_and_current_outputs(self):
+    def test_inventory_must_match_approved_scope_and_current_outputs(self):
         delivery = self.implement()
-        missing = {**self.manifest, "planned_item_ids": ["C.DEMO.1"], "mapped_item_ids": ["C.DEMO.1"]}
+        missing = {**self.manifest, "scope_digest": "b" * 64}
         receipt = self.validate(delivery, manifest=missing)
         self.assertFalse(receipt["ready"])
-        self.assertTrue(any("批准的必需覆盖范围" in reason for reason in receipt["blockers"]))
+        self.assertTrue(any("批准的覆盖范围" in reason for reason in receipt["blockers"]))
         state = self.store.node_plan_review_state(delivery["id"])
         self.assertFalse(state["can_approve"])
         with self.assertRaises(HarnessError):
             self.store.complete_node_plan_review(delivery["id"], state["definition_digest"], "fixture-owner")
 
-    def test_convergence_requires_all_items_and_the_accepted_implementation_manifest(self):
+    def test_convergence_requires_complete_statistics_and_the_accepted_implementation_inventory(self):
         self.finish_implementation()
         delivery = self.convergence()
         incomplete = [{"id": "C.DEMO.1", "status": "covered", "hits": 1, "plan_ref": "coverage-plan.md"}]
         receipt = self.validate(delivery, items=incomplete)
         self.assertFalse(receipt["ready"])
-        self.assertTrue(any("遗漏计划覆盖项" in reason for reason in receipt["blockers"]))
-        different = {**self.manifest, "planned_item_ids": list(reversed(self.manifest["planned_item_ids"])),
-                     "mapped_item_ids": list(reversed(self.manifest["mapped_item_ids"]))}
+        self.assertTrue(any("清单数量" in reason for reason in receipt["blockers"]))
+        different = {**self.manifest, "objects": list(reversed(self.manifest["objects"]))}
         receipt = self.validate(delivery, manifest=different)
         self.assertFalse(receipt["ready"])
         self.assertTrue(any("已验收实现不一致" in reason for reason in receipt["blockers"]))
@@ -331,6 +638,149 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertFalse(receipt["ready"])
         self.assertTrue(any("数据库" in reason for reason in receipt["blockers"]), receipt["blockers"])
         self.assertFalse(self.store.node_plan_review_state(delivery["id"])["can_approve"])
+
+    def test_vdb_merge_rejects_different_dut_parameter_or_macro_fingerprint(self):
+        self.finish_implementation()
+        delivery = self.convergence()
+        merge_path = self.root / "verification/results/convergence/coverage-merge.json"
+        merge = json.loads(merge_path.read_text(encoding="utf-8"))
+        merge["dut_build_fingerprint_digest"] = "d" * 64
+        self.write_json(str(merge_path.relative_to(self.root)), merge)
+        receipt = self.validate(delivery)
+        self.assertFalse(receipt["ready"])
+        self.assertTrue(any("parameter" in reason and "禁止 merge" in reason
+                            for reason in receipt["blockers"]), receipt["blockers"])
+
+    def test_delivery_rejects_fingerprint_outside_approved_convergence_partition(self):
+        self.finish_implementation()
+        delivery = self.convergence()
+        different = {**self.dut_build_fingerprint, "parameter_digest": "5" * 64}
+        shard_path = self.root / "verification/results/convergence/coverage-shards.json"
+        shards = json.loads(shard_path.read_text(encoding="utf-8"))
+        shards["dut_build_fingerprint"] = different
+        self.write_json(str(shard_path.relative_to(self.root)), shards)
+        merge_path = self.root / "verification/results/convergence/coverage-merge.json"
+        merge = json.loads(merge_path.read_text(encoding="utf-8"))
+        merge["dut_build_fingerprint_digest"] = code.config_digest(different)
+        self.write_json(str(merge_path.relative_to(self.root)), merge)
+        receipt = self.validate(delivery)
+        self.assertFalse(receipt["ready"])
+        self.assertTrue(any("不同 DUT 指纹必须拆分为独立收敛节点" in reason
+                            for reason in receipt["blockers"]), receipt["blockers"])
+
+    def test_different_testbenches_can_merge_when_dut_build_fingerprint_matches(self):
+        self.finish_implementation()
+        self.convergence()
+        other_submit = self.write("verification/config/other-tb-submit.toml", "profile = 'other-tb'\n")
+        other_profile = {
+            "schema": "SubmitProfileRef/1", "profile_id": "other-tb",
+            "submit_file": str(other_submit.relative_to(self.root)),
+            "submit_file_digest": self.store._digest(other_submit),
+            "profile_digest": "d" * 64,
+            "adapter": {"name": "other-testbench-submit", "version": "1"},
+        }
+        other_binding = {
+            "round_id": "round-from-other-testbench",
+            "plan_node_id": "workstream:VREG:r1:desired:other-testbench-results",
+            "plan_revision": 1, "plan_digest": "e" * 64,
+        }
+        other_caselist = self.write(
+            "verification/results/convergence/other-testbench.caselist", "other_test\n",
+        )
+        other_batch = self.write_json("verification/results/convergence/other-testbench-batch.json", {
+            "schema": "RegressionBatchManifest/2", "batch_id": "other-testbench-batch",
+            "regression_group": "other-testbench", "submit_profile": other_profile,
+            "caselist": {"path": str(other_caselist.relative_to(self.root)),
+                         "sha256": self.store._digest(other_caselist)},
+            "seed_mode": "fixed", "seed": 23, "repeat": 1,
+            "cases": [{"case_id": "other_test", "case_digest": "f" * 64}],
+            "runs": [{"case_id": "other_test", "seed": 23, "iteration": 0}],
+            "timeout_seconds": 60, "execution_binding": other_binding,
+        })
+        other_vdb = self.write_json("verification/results/convergence/other-testbench.vdb.json", {
+            "synthetic": True, "testbench": "other", "case": "other_test", "seed": 23,
+        })
+        other_shards = self.write_json("verification/results/convergence/other-testbench-shards.json", {
+            "schema": "CoverageDatabaseShardManifest/1", "execution_binding": other_binding,
+            "regression_config_digest": "9" * 64,
+            "batch_manifest_digest": self.store._digest(other_batch),
+            "dut_build_fingerprint": self.dut_build_fingerprint,
+            "shards": [{
+                "path": str(other_vdb.relative_to(self.root)), "sha256": self.store._digest(other_vdb),
+                "runs": [{"case_id": "other_test", "seed": 23, "iteration": 0}],
+            }],
+        })
+        merge_path = self.root / "verification/results/convergence/coverage-merge.json"
+        merge = json.loads(merge_path.read_text(encoding="utf-8"))
+        merge["input_database_digests"] = sorted([
+            self.store._digest(self.convergence_artifacts["shard_db"]), self.store._digest(other_vdb),
+        ])
+        self.write_json(str(merge_path.relative_to(self.root)), merge)
+        inventory_path = self.write_json("verification/results/convergence/coverage-objects.json", self.manifest)
+        artifacts = [
+            self.artifact(str(inventory_path.relative_to(self.root)), "analysis-report"),
+            self.artifact("verification/results/convergence/database.json", "coverage-database"),
+            self.artifact("verification/results/convergence/analysis.json", "analysis-report"),
+            self.artifact(str(merge_path.relative_to(self.root)), "analysis-report"),
+            self.artifact(self.collection_config["merge_profile"]["path"], "configuration"),
+            self.artifact(str(self.convergence_artifacts["shard_db"].relative_to(self.root)),
+                          "coverage-database"),
+            self.artifact(str(self.convergence_artifacts["shard_manifest"].relative_to(self.root)),
+                          "regression-manifest"),
+            self.artifact(str(self.convergence_artifacts["batch"].relative_to(self.root)),
+                          "regression-manifest"),
+            self.artifact(str(self.convergence_artifacts["caselist"].relative_to(self.root)),
+                          "regression-manifest"),
+            self.artifact(self.submit_profile["submit_file"], "configuration"),
+            self.artifact(str(other_vdb.relative_to(self.root)), "coverage-database"),
+            self.artifact(str(other_shards.relative_to(self.root)), "regression-manifest"),
+            self.artifact(str(other_batch.relative_to(self.root)), "regression-manifest"),
+            self.artifact(str(other_caselist.relative_to(self.root)), "regression-manifest"),
+            self.artifact(str(other_submit.relative_to(self.root)), "configuration"),
+        ]
+        evidence_payload = {
+            "schema": "CoverageEvidence/3", "claim": "coverage-collection-evidence",
+            "revision": "fixture-revision", "tool": "synthetic-contract-fixture/1",
+            "artifacts": artifacts,
+            "result": {
+                "coverage_inventory_digest": self.store._digest(inventory_path),
+                "coverage_collection_config_digest": code.config_digest(self.collection_config),
+                "shard_manifest_digests": sorted([
+                    self.store._digest(self.convergence_artifacts["shard_manifest"]),
+                    self.store._digest(other_shards),
+                ]),
+                "merge_manifest_digest": self.store._digest(merge_path),
+                "runs": 2, "merge_errors": 0, "stale_shards": 0,
+            },
+        }
+        evidence = self.write_json(
+            "verification/results/convergence/two-testbenches.json", evidence_payload,
+        )
+        summary = validate_workstream_evidence(
+            evidence, "VCOV", "coverage-collection-evidence", artifact_root=self.root,
+        )
+        self.assertTrue(summary["ready"], summary["blockers"])
+        self.assertEqual(
+            {batch["submit_profile"]["profile_id"] for batch in summary["facts"]["regression_batches"]},
+            {"coverage-nightly", "other-tb"},
+        )
+        self.assertEqual(len(summary["facts"]["dut_build_fingerprint_digests"]), 1)
+
+        incompatible = json.loads(other_shards.read_text(encoding="utf-8"))
+        incompatible["dut_build_fingerprint"]["macro_digest"] = "6" * 64
+        self.write_json(str(other_shards.relative_to(self.root)), incompatible)
+        other_shard_digest = self.store._digest(other_shards)
+        next(item for item in evidence_payload["artifacts"]
+             if item["path"] == str(other_shards.relative_to(self.root)))["sha256"] = other_shard_digest
+        evidence_payload["result"]["shard_manifest_digests"] = sorted([
+            self.store._digest(self.convergence_artifacts["shard_manifest"]), other_shard_digest,
+        ])
+        self.write_json(str(evidence.relative_to(self.root)), evidence_payload)
+        rejected = validate_workstream_evidence(
+            evidence, "VCOV", "coverage-collection-evidence", artifact_root=self.root,
+        )
+        self.assertFalse(rejected["ready"])
+        self.assertTrue(any("禁止 merge" in reason for reason in rejected["blockers"]))
 
     def test_bound_native_digests_must_describe_approved_inputs_and_actual_outputs(self):
         delivery = self.implement()
@@ -496,6 +946,33 @@ class VcovWorkflowTest(unittest.TestCase):
                 self.assertEqual(current["revision"], before["revision"])
                 self.assertEqual(current["desired_state"], before["desired_state"])
 
+        invalid_target = copy.deepcopy(self.items)
+        invalid_target[0]["coverage_implementation_config"]["code_coverage_target"] = "testbench"
+        with self.assertRaisesRegex(HarnessError, "必须是 dut"):
+            self.design(invalid_target)
+        missing_partition = copy.deepcopy(self.items)
+        missing_partition[1]["coverage_collection_config"].pop("dut_build_fingerprint")
+        with self.assertRaisesRegex(HarnessError, "dut_build_fingerprint"):
+            self.design(missing_partition)
+
+        unselected_profile = copy.deepcopy(self.items)
+        unselected_profile[0]["coverage_implementation_config"][
+            "compatible_submit_profile_digests"
+        ] = ["a" * 64]
+        other_implementation = copy.deepcopy(self.items[0])
+        other_implementation.update(
+            key="other-implementation",
+            implementation_key="other:implementation",
+            title="另一覆盖率实现方案",
+            output_paths=[
+                "verification/coverage/other-model.sv",
+                "verification/coverage/other-collector.json",
+            ],
+        )
+        unselected_profile.append(other_implementation)
+        with self.assertRaisesRegex(HarnessError, "本收敛方案所选覆盖率实现支持"):
+            self.design(unselected_profile)
+
     def test_legacy_roles_project_capabilities_without_rewriting_history(self):
         self.finish_all()
         old = self.store.workstream("VCOV")
@@ -534,6 +1011,8 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertTrue(self.store.evaluate_closure("VCOV")["ready"])
 
     def feedback(self, node):
+        if node.get("role") == "coverage-convergence-plan" and not hasattr(self, "vreg_round"):
+            self.prepare_vreg_execution()
         state = self.store.node_plan_review_state(node["id"])
         self.http.post("/api/reviews/node-plan-section", {
             "node": node["id"], "section": "writing-plan", "definition_digest": state["definition_digest"],
@@ -576,7 +1055,10 @@ class VcovWorkflowTest(unittest.TestCase):
         config = {"url": self.http.url, "project": dashboard_project_id(self.root),
                   "token": self.http.server.write_token, "workstream": "VCOV", "node": node["id"],
                   "phase": phase, "expectedRole": expected_role,
-                  "expectedCoverageItems": node.get("coverage_item_ids", []), **extra}
+                  "expectedCoverageScope": node.get("coverage_scope"),
+                  "expectedCoverageConfig": (node.get("coverage_implementation_config")
+                                             or node.get("coverage_collection_config")),
+                  **extra}
         process = subprocess.run(["node", str(Path(__file__).with_name("dashboard_code_workflow.cjs"))],
                                  input=json.dumps(config), text=True, capture_output=True, timeout=90,
                                  env=os.environ.copy())

@@ -49,17 +49,36 @@ VCOV 按“覆盖率实现方案 → 实现交付 → 收敛方案 → 收敛交
 这些能力是内部派生状态，不增加公开节点或审批入口。当前必需的实现和收敛两部分都完成验收后，
 VCOV 才满足完成条件，只实现覆盖模型不能完成整条工作流。
 
-模型、采集与缺口分析证据通过 `coverage_manifest_digest` 绑定当前受控覆盖项清单
-`CoverageItemManifest/1`。清单包含计划和模型版本及计划必需覆盖项全集；模型映射、
-采集范围和缺口分析必须与当前清单一致。清单遗漏、重复、额外项或版本变化会阻止收敛。
-实现方案中的必需覆盖项随方案一起审批并在节点详情展示，收敛不能自行缩小批准范围。
+负责人在实现方案中审批 `CoverageScope/1`，而不是逐条审批 simulator 的 line、toggle、
+bin 和 cross。code coverage 范围由 metric、层次选择或 `cm.hier` 类文件及范围内排除配置
+组成；functional coverage 范围由 covergroup 选择规则和必需对象类型组成。
+`CoverageImplementationConfig/1` 固定覆盖率插桩、elaboration、采集、导出和分析配置、
+工具版本以及兼容 submit profile 摘要；code coverage 的目标固定为 DUT，不统计 testbench
+代码。xverif 使用当前计划、实现配置和模型展开
+`CoverageObjectInventory/2`，模型、采集与缺口分析证据通过
+`coverage_inventory_digest` 绑定同一份受控对象全集。收敛报告保存完整计数，只逐项列出
+excluded/uncovered 缺口；计数、清单、计划、模型或数据库不一致都会阻止收敛。
+收敛方案继承明确关联的已验收实现范围，不能自行缩小批准范围。
+`CoverageCollectionConfig/1` 只读引用一条或多条 VREG `regression_config` 和 merge profile；
+case、submit profile、seed 与 repeat 只在 VREG 审批。VREG 轮次产生的 VDB 由
+`CoverageDatabaseShardManifest/1` 绑定 batch/case/seed/iteration，随后由
+`CoverageMergeManifest/1` 证明全部分片进入同一个合并数据库。
+是否允许 merge 只看 DUT 构建指纹：DUT RTL、parameter、宏和 DUT 级 elaboration 必须一致；
+其中任何一项不同都禁止 merge。testbench、submit profile 和 DUT 实例路径不进入该指纹，
+所以相同 DUT 可以由不同 testbench/profile 采集后合并；各来源仍须分别绑定 VREG 方案、执行轮次
+和 batch，merge 工具错误仍会阻止交付验收。
+一个覆盖率收敛方案及其对应交付只管理一个批准的 DUT 指纹分区。预期存在多个指纹时，Agent
+在 proposal 中分别建立多个覆盖率收敛方案，批准后各自产生一个收敛交付；VDB、batch、case、
+seed 和 iteration 仍保留在节点内部清单，不转换成公开节点或额外审批。
 如果缺口结论包含 excluded 项，负责人先在收敛交付节点提供 exclude 文件；提供即表示
 文件中的排除范围已经人工审批，不再为每个排除项重复建立 WAIVE。CLI 对应命令为
 `code provide-exclusions NODE FILE --reviewer NAME --confirm`，Dashboard 提供同一受控入口。
 Agent 随后用 `code validate` 检查文件合法性、当前 revision/节点绑定，以及缺口报告是否引用
 相同路径、SHA-256 和同一个文件级审批记录。替换或修改文件会使旧 validation 和交付验收失效。
 最终覆盖率收敛结果仍由负责人单独验收。
-旧验证记录继续保留，缺少当前合同信息时必须重新验证；过期缺口报告不再触发反馈动作。
+旧 `CoverageEvidence/1`、`CoverageEvidence/2`、`CoverageObjectInventory/1` 和
+`CoverageItemManifest/1` 记录继续保留用于审计，但不能满足当前
+交付；缺少当前合同信息时必须重新验证，过期缺口报告不再触发反馈动作。
 VCASE 中的完整 case 由 testcase 或可执行 virtual sequence 与一个 submit profile
 共同确定。submit file 是 testbench 的配置事实源；verif-harness 只记录项目内路径、
 profile ID、submit file 摘要和 profile 摘要，不复制、解析或执行 VCS、LSF、license
@@ -70,7 +89,9 @@ batch/caselist。执行和分类记录以 batch、case、seed 和 iteration 联�
 VREG 按“回归基础设施方案 → 基础设施交付 → 结果方案 → 结果交付”推进。基础设施只依赖
 已验收文档和环境；验收后派生有效的 `cap.vreg:executor-ready` 汇总能力。结果方案通过
 `cap.vreg:<implementation_key>` 明确关联当前方案中的已验收基础设施范围，同时依赖当前
-文档、环境、激励、检查、用例和覆盖能力，基础设施不反向等待最终结果。必需基础设施和结果
+文档、环境、激励、检查、用例和 `cap.vcov:coverage-collection`，基础设施不反向等待最终结果。
+VREG 当前轮次验证完成后即可向 VCOV 提供 VDB；VREG 结果交付的最终人工验收再等待当前
+覆盖率采集与缺口分析能力，避免执行和收敛形成依赖环。必需基础设施和结果
 节点都完成验收后，VREG 才满足完成条件，执行器可用不等于整条 VREG 完成。
 VSTIM、VCASE 和 VCOV 如需回归执行能力，只能依赖 `cap.vreg:executor-ready`，不能把
 `fresh-evidence` 等最终回归结果反向作为上游。每次登记代码方案前，Engine 会把当前各工作流

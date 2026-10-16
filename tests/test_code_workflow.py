@@ -604,7 +604,23 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             "capabilities": capabilities,
         }
         if workstream == "VCOV" and "coverage-model" in capabilities:
-            item["coverage_item_ids"] = ["C.DEMO.1"]
+            coverage_config = self.root / "verification/config/coverage.toml"
+            coverage_config.parent.mkdir(parents=True, exist_ok=True)
+            coverage_config.write_text("coverage = true\n", encoding="utf-8")
+            item["input_files"].append(str(coverage_config.relative_to(self.root)))
+            item["coverage_scope"] = {
+                "schema": "CoverageScope/1",
+                "code": {"metrics": ["line"], "hierarchy_selectors": ["dut"]},
+            }
+            item["coverage_implementation_config"] = {
+                "schema": "CoverageImplementationConfig/1", "code_coverage_target": "dut",
+                "configuration_refs": [{
+                    "role": "collection", "path": str(coverage_config.relative_to(self.root)),
+                    "sha256": self.store._digest(coverage_config),
+                }],
+                "compatible_submit_profile_digests": ["b" * 64],
+                "toolchain": [{"role": "coverage", "name": "synthetic", "version": "1"}],
+            }
         path = self.root / (workstream.lower() + "-code-proposal.json")
         path.write_text(json.dumps({
             "schema": "DesiredStateProposal/1", "workstream": workstream, "nodes": [item],
@@ -860,7 +876,7 @@ class CodeWorkflowProfileTest(unittest.TestCase):
 
     def test_coverage_and_regression_findings_route_without_mutating_upstream(self):
         coverage = code._feedback_routes("VCOV", "hole-analysis-evidence", {
-            "items": [{"id": "C.DEMO.1", "status": "uncovered",
+            "holes": [{"object_key": "code:line:demo.sv:1", "status": "uncovered",
                        "responsible_workstream": "VCASE", "next_action": "增加定向用例"}],
         })
         regression = code._feedback_routes("VREG", "triage-evidence", {
