@@ -464,6 +464,10 @@ VCASE 负责验证点到 testcase/可执行 virtual sequence 的映射、完整 
 5. Agent 按 profile 运行定向测试，保存 case、seed、iteration、代码和证据摘要。
 6. Main Agent 提交全部批准 case 的 typed validation；负责人验收交付。
 
+增加补洞用例包时，未变化的已有用例包保留原节点版本和验收记录。新工作流范围只为
+新增或修改的工作包建立新节点；原批准仍按当前代码、证据和实际依赖版本检查，不能因
+新增其他用例而要求重复验收。显式重启或改变工作流目标、决策时重新审批。
+
 #### 工作节点依赖
 
 VCASE 依赖 `cap.doc`、`cap.venv`、`cap.vstim` 和 `cap.vchk`，不以 VCOV 完成为自身交付条件。

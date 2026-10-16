@@ -136,6 +136,10 @@ This repository contains public, reusable verification infrastructure.
   的状态变化创建新 revision 或重复审批；前置能力暂时不可用时阻止推进，恢复到
   同一有效版本后沿用本 revision 的有效审批。方案范围、输入文件、依赖的实际版本
   或负责人要求发生实质变化时，仍须重新核对受影响的节点；显式重启仍创建新版本。
+  VENV、VSTIM、VCHK、VCASE 因新增、删除或修改其他工作包形成新工作流 revision 时，
+  内容未变化的工作包保留原方案与交付节点 ID、节点版本、审批和验证记录；不得批量重建
+  无变化节点。仍按当前输入、代码、证据和实际依赖版本核对原审批，不向新节点复制批准。
+  改变工作流目标、决策或显式重启时不保留旧节点；工作流 revision 与保留节点版本分别记录。
 - VENV 方案依赖 `cap.doc`；VSTIM 还依赖 `cap.venv`；VCHK 还依赖
   `cap.venv` 和 `cap.vstim`；VCASE 还依赖 `cap.venv`、`cap.vstim` 和
   `cap.vchk`，不以 VCOV 完成为自身交付条件。交付依赖同一工作包的

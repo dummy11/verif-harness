@@ -33,6 +33,14 @@ audit metadata. Historical ID-bound approvals remain valid only while their
 original evidence content is equivalent to the current validation.
 No post-acceptance Agent check is introduced for code delivery.
 
+For VENV, VSTIM, VCHK and VCASE, a workstream scope revision may retain unchanged
+packages with their original plan/delivery node IDs and node revisions. Adding or
+changing another package does not manufacture replacement nodes or copy approvals.
+The original approval and validation must still match current source, output,
+evidence and dependency versions. Changed packages receive new node versions;
+changed workflow objectives/decisions and explicit restarts retain no old nodes.
+Workstream scope revision and retained node revision are reported separately.
+
 Plans depend on accepted `cap.doc` and explicit upstream scope capabilities.
 VSTIM requires VENV; VCHK requires VENV and VSTIM; VCASE requires VENV, VSTIM
 and VCHK. VCASE validity does not depend on VCOV; VCOV consumes accepted VCASE

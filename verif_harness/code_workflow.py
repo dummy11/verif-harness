@@ -608,6 +608,17 @@ def dependency_snapshot(connection, node):
     return result
 
 
+def node_revision(plan, node):
+    """An unchanged code package keeps its original version in a newer scope."""
+    if plan["workstream"] in {"VENV", "VSTIM", "VCHK", "VCASE"}:
+        match = re.fullmatch(
+            r"workstream:" + plan["workstream"] + r":r([0-9]+):desired:.+", node["id"],
+        )
+        if match and 0 < int(match[1]) <= plan["revision"]:
+            return int(match[1])
+    return plan["revision"]
+
+
 def coverage_exclusion_scope_digest(plan, node):
     """Bind an owner-provided exclude file to one convergence delivery scope."""
     return digest({
@@ -647,7 +658,7 @@ def identity(store, connection, plan, node):
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         cached = (stamp, {k: manifest.get(k) for k in ('project_name', 'baseline_revision', 'dut', 'rtl_roots', 'docs_roots', 'verification_inputs')})
         store._code_project_identity = cached
-    payload = {"revision": plan["revision"], "node": node, "dependencies": deps,
+    payload = {"revision": node_revision(plan, node), "node": node, "dependencies": deps,
                "sources": file_snapshot(store, node.get("input_files", [])),
                "project": str(store.root), "project_inputs": cached[1],
                "questions": [dict(r) for r in connection.execute(
@@ -690,7 +701,7 @@ def validation_current(store, connection, plan, node, signature):
         return None
     value = json.loads(row["payload_json"])
     value.update(id=row["id"], created_at=row["created_at"])
-    value["current"] = (row["signature"] == signature and row["revision"] == plan["revision"]
+    value["current"] = (row["signature"] == signature and row["revision"] == node_revision(plan, node)
                         and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
     if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
         value["current"] = False
@@ -748,11 +759,12 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
         row["change_items"] = changes.get(row["id"], [])
         row["feedback_items"] = [v for v in feedback["items"] if v["review_id"] == row["id"]]
     latest_opinion = max((r["created_at"] for r in opinions), default="")
-    eligible_reviews = [r for r in history if r["revision"] == plan["revision"]
+    revision = node_revision(plan, node)
+    eligible_reviews = [r for r in history if r["revision"] == revision
                         and r["created_at"] >= latest_opinion]
     completion = next((r for r in reversed(eligible_reviews) if r["definition_digest"] == approval_digest), None)
     if completion is None and subject is not None and eligible_reviews:
-        completion = _legacy_completion(connection, node_id, plan["revision"], signature,
+        completion = _legacy_completion(connection, node_id, revision, signature,
                                         subject, eligible_reviews)
     reasons = blockers(connection, node_id)
     workstream = plan["workstream"]
@@ -846,7 +858,8 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
     exclusion = (coverage_exclusion_state(store, connection, plan, node)
                  if workstream == "VCOV" and is_delivery(node) and vcov_stage(node) == "convergence"
                  else None)
-    return {"node_id": node_id, "workstream": workstream, "revision": plan["revision"],
+    return {"node_id": node_id, "workstream": workstream, "revision": revision,
+            "workstream_revision": plan["revision"],
             "definition_digest": approval_digest, "input_signature": signature,
             "status": "APPROVED" if complete else "PENDING", "completed": complete,
             "current_completion": completion if complete else None,
@@ -863,10 +876,11 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
 
 def feedback_state(connection, plan, node, signature):
     rows = [dict(r) for r in connection.execute("SELECT * FROM review_feedback_items WHERE node_id=? ORDER BY rowid", (node["id"],))]
-    current = [r for r in rows if r["revision"] == plan["revision"]]
+    revision = node_revision(plan, node)
+    current = [r for r in rows if r["revision"] == revision]
     drafts = [r for r in current if r["status"] == "DRAFT"]
     pending = [r for r in current if r["status"] in {"PENDING", "WAITING_FOR_HUMAN"}]
-    return {"node_id": node["id"], "revision": plan["revision"], "definition_digest": signature,
+    return {"node_id": node["id"], "revision": revision, "definition_digest": signature,
             "document_digest": "", "draft_count": len(drafts), "processing_count": len(pending),
             "waiting_for_human_count": sum(r["status"] == "WAITING_FOR_HUMAN" for r in pending),
             "unresolved_count": len(drafts) + len(pending), "can_approve": not drafts and not pending,
@@ -1321,6 +1335,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             # its public node revision cannot establish an external job's end.
             error("旧回归任务尚未核实结束，请先让 Agent 核对旧任务结束事实，再重新形成方案或重启 VREG")
         previous = json.loads(old["desired_json"]) if old else []
+        retained = {}
         if old and not restart and json.loads(old["context_json"]).get("code_model") == 2:
             existing_plans = {
                 node["implementation_key"]: {key: value for key, value in node.items() if key != "id"}
@@ -1340,6 +1355,21 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 # public proposal into a new revision and a new approval set.
                 db.execute("ROLLBACK")
                 return {**store.workstream(workstream), "auto_closure": store.evaluate_closure(workstream)}
+            if (workstream in {"VENV", "VSTIM", "VCHK", "VCASE"}
+                    and old["objective"] == (objective or settings["objective"])
+                    and json.loads(old["decisions_json"]) == (decisions or [])):
+                for previous_node in previous:
+                    key = previous_node.get("implementation_key")
+                    if (is_plan(previous_node) and key in proposed_plans
+                            and existing_plans[key] == proposed_plans[key]):
+                        retained[key] = [previous_node, *(
+                            child for child in previous
+                            if child.get("parent_id") == previous_node["id"]
+                        )]
+        retained_statuses = {
+            node["id"]: db.execute("SELECT status FROM nodes WHERE id=?", (node["id"],)).fetchone()[0]
+            for package in retained.values() for node in package
+        }
         previous_edges = [dict(row) for row in db.execute(
             "SELECT e.* FROM edges e JOIN nodes n ON n.id=e.target WHERE n.workstream=?",
             (workstream,),
@@ -1347,7 +1377,8 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
         db.execute("INSERT INTO events VALUES(?,?,?,?,?,?)", (
             "event:" + uuid.uuid4().hex, workstream.lower() + "-replan",
             f"workstream:{workstream}", str(revision),
-            encoded({"previous_nodes": previous, "restart": restart, "previous_edges": previous_edges}),
+            encoded({"previous_nodes": previous, "restart": restart, "previous_edges": previous_edges,
+                     "retained_node_ids": sorted(retained_statuses)}),
             timestamp,
         ))
         db.execute("UPDATE nodes SET workstream=NULL,status='STALE',updated_at=? WHERE workstream=? AND type='desired-state'", (timestamp, workstream))
@@ -1361,16 +1392,28 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 edge(db, row["source"], cap, timestamp)
         db.execute("UPDATE activities SET status='CANCELLED',ended_at=?,updated_at=? WHERE workstream=? AND status IN ('PENDING','RUNNING','WAITING_FOR_HUMAN','WAITING_FOR_PARENT')", (timestamp, timestamp, workstream))
         db.execute("UPDATE agent_assignments SET status='SUPERSEDED',ended_at=?,updated_at=? WHERE workstream=? AND status='ACTIVE'", (timestamp, timestamp, workstream))
-        db.execute("UPDATE review_feedback_items SET status='SUPERSEDED',updated_at=?,resolved_at=? WHERE workstream=? AND status IN ('DRAFT','PENDING','WAITING_FOR_HUMAN')", (timestamp, timestamp, workstream))
+        retained_feedback = (" AND node_id NOT IN (" + ",".join("?" for _ in retained_statuses) + ")"
+                             if retained_statuses else "")
+        db.execute("UPDATE review_feedback_items SET status='SUPERSEDED',updated_at=?,resolved_at=? WHERE workstream=? AND status IN ('DRAFT','PENDING','WAITING_FOR_HUMAN')" + retained_feedback,
+                   (timestamp, timestamp, workstream, *retained_statuses))
+        registered = []
         for item in normalized:
+            package = retained.get(item["implementation_key"])
+            if package:
+                for retained_node in package:
+                    store.upsert_node(db, retained_node["id"], "desired-state", retained_node["title"],
+                                      Validity(retained_statuses[retained_node["id"]]), workstream, retained_node)
+                registered.extend(package)
+                continue
             item["id"] = f"workstream:{workstream}:r{revision}:desired:{item['key']}"
+            registered.append(item)
             store.upsert_node(db, item["id"], "desired-state", item["title"], Validity.REVIEW_REQUIRED, workstream, item)
             for target in item["inputs"]:
                 if not db.execute("SELECT 1 FROM nodes WHERE id=?", (target,)).fetchone():
                     store.upsert_node(db, target, "capability", "前置交付尚未验收", Validity.UNKNOWN, data={"derived": True})
                 edge(db, item["id"], target, timestamp)
         db.execute("INSERT INTO workstreams VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET lifecycle=excluded.lifecycle,revision=excluded.revision,objective=excluded.objective,desired_json=excluded.desired_json,exit_json=excluded.exit_json,decisions_json=excluded.decisions_json,context_json=excluded.context_json,updated_at=excluded.updated_at",
-                   (workstream, "REVIEW", revision, objective or settings["objective"], encoded(normalized),
+                   (workstream, "REVIEW", revision, objective or settings["objective"], encoded(registered),
                     encoded(["当前必需覆盖率实现与收敛节点均已验证并由负责人验收" if workstream == "VCOV"
                              else "当前必需回归基础设施与结果节点均已验证并由负责人验收" if workstream == "VREG"
                              else "必需工作包的代码交付均通过专用验证并由负责人验收"]),
@@ -1423,7 +1466,7 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
                 error("当前不能批准：" + "；".join(state["blockers"]))
             if state["completed"]:
                 error("当前版本已批准，无需重复提交")
-            db.execute("INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], plan["revision"], expected, "APPROVE", reviewer.strip(), reason.strip(), timestamp))
+            db.execute("INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], node_revision(plan, node), expected, "APPROVE", reviewer.strip(), reason.strip(), timestamp))
             if is_plan(node):
                 create_delivery(store, db, plan, node, timestamp)
                 if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
@@ -1445,9 +1488,9 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
             if not reason.strip():
                 error("请填写审批内容")
             normalized = store._normalize_review_change_items(verdict, changes, default_target=node["title"], default_instruction=reason)
-            db.execute("INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], plan["revision"], expected, "writing-plan", verdict.upper(), reviewer.strip(), reason.strip(), timestamp))
+            db.execute("INSERT INTO node_plan_section_reviews VALUES(?,?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], node_revision(plan, node), expected, "writing-plan", verdict.upper(), reviewer.strip(), reason.strip(), timestamp))
             store._store_review_change_items(db, review_id, normalized)
-            store._store_review_feedback_items(db, review_id, node_id, plan["revision"], expected, "", reviewer, normalized, timestamp, workstream=plan["workstream"])
+            store._store_review_feedback_items(db, review_id, node_id, node_revision(plan, node), expected, "", reviewer, normalized, timestamp, workstream=plan["workstream"])
         store._record_review_submitted_event(db, review_id, node_id, verdict, reviewer, changes or [], timestamp, agent_follow_up="NONE" if verdict == "approve" else "AWAITING_FEEDBACK_SUBMISSION")
     refresh(store)
     return {"review_id": review_id, "node_id": node_id, "verdict": verdict.upper(),
@@ -1635,7 +1678,7 @@ def validate(store, node_id, report_path):
     with store.read_connect() as db:
         signature, snapshot = identity(store, db, plan, node)
         reasons = []
-    if not isinstance(report, dict) or report.get("schema") != "CodeValidation/1" or report.get("node_id") != node_id or report.get("revision") != plan["revision"] or report.get("input_signature") != signature:
+    if not isinstance(report, dict) or report.get("schema") != "CodeValidation/1" or report.get("node_id") != node_id or report.get("revision") != node_revision(plan, node) or report.get("input_signature") != signature:
         error("验证报告必须绑定当前项目节点、revision 和 input_signature")
     workstream = plan["workstream"]
     result_round = None
@@ -1854,7 +1897,7 @@ def validate(store, node_id, report_path):
                 and previous_validation["current"]
                 and validation_subject(previous_validation) == validation_subject(receipt)
             )
-        db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (identifier, node_id, plan["revision"], signature, encoded(receipt), timestamp))
+        db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (identifier, node_id, node_revision(plan, node), signature, encoded(receipt), timestamp))
         if result_round is not None:
             from .vreg_contract import execution_blockers, normalize_config
             execution_checks = [check for check in checks if check["claim"] == "execution-evidence"]
@@ -1993,7 +2036,7 @@ def refresh(store, plans=None):
                     state = review_state(store, node["id"], plan, node, db)
                     states[node['id']] = state
                     payload = {"implementation_key": key, "workstream": candidate,
-                               "definition": node, "revision": plan["revision"],
+                               "definition": node, "revision": node_revision(plan, node),
                                "review": state["current_completion"], "signature": state["definition_digest"],
                                "dependencies": state['dependencies'], "sources": state['sources']}
                     publish(p_id, "artifact", node["title"] + " · 批准方案", payload,

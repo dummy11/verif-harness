@@ -4296,7 +4296,7 @@ class ProjectStore:
                 """SELECT id FROM review_feedback_items
                    WHERE node_id=? AND revision=? AND status='DRAFT'
                    ORDER BY rowid""",
-                (node_id, plan["revision"]),
+                (node_id, state["revision"]),
             ).fetchall()
             if not rows:
                 raise HarnessError("当前节点没有待提交给 Agent 的审批意见")
@@ -4859,8 +4859,9 @@ class ProjectStore:
             with self.read_connect() as connection:
                 cursor = None
                 for table in ("reviews", "node_plan_reviews", "document_delivery_reviews"):
+                    node_column = "NULL AS node_id" if table == "reviews" else "node_id"
                     cursor = connection.execute(
-                        f"SELECT rowid,workstream,revision,verdict,created_at FROM {table} WHERE id=?",
+                        f"SELECT rowid,workstream,revision,verdict,created_at,{node_column} FROM {table} WHERE id=?",
                         (after_review_id,),
                     ).fetchone()
                     if cursor is not None:
@@ -4868,7 +4869,11 @@ class ProjectStore:
                         break
             if cursor is None:
                 raise HarnessError(f"未知 review: {after_review_id}")
-            if cursor["workstream"] != name or int(cursor["revision"]) != selected_revision:
+            cursor_node = public_nodes.get(cursor["node_id"])
+            cursor_revision = (code_workflow.node_revision(plan, cursor_node)
+                               if cursor_node and code_workflow.node_workstream(cursor_node["id"])
+                               else selected_revision)
+            if cursor["workstream"] != name or int(cursor["revision"]) != cursor_revision:
                 raise HarnessError("--after-review 必须属于同一 Workstream 和 revision")
             if cursor["verdict"] not in {"APPROVE", "REJECT", "MODIFY", "CLARIFY", "PROVISIONAL"}:
                 raise HarnessError("--after-review 必须引用正式工作流评审或节点审批")
@@ -4928,8 +4933,8 @@ class ProjectStore:
             return next((
                 item for item in self.review_feedback_batches("PENDING")
                 if item["workstream"] == name
-                and int(item["revision"]) == selected_revision
                 and item["node_id"] in bindings
+                and int(item["revision"]) == current_states[item["node_id"]]["revision"]
                 and item["batch_id"] in current_states[item["node_id"]]["feedback"]["batch_ids"]
             ), None)
 

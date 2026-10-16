@@ -117,6 +117,12 @@ Dashboard 和 CLI 写入后都重新读取同一 ProjectStore 决定，不维护
 或依赖的实际版本发生变化，受影响审批和证据仍须重新核对；负责人确认的工作流重启
 总是创建新 revision，旧审批不自动继承。
 
+VENV、VSTIM、VCHK、VCASE 增加补洞工作包，或删除、修改其他工作包时，新工作流范围
+保留内容未变化工作包的原方案和交付节点。原节点版本、批准与证据继续按当前实际输入
+核对，负责人无需重复验收同一交付。变更的工作包才建立新节点版本；工作流目标、决策
+变化或显式重启不保留旧节点。详情中的 `revision` 绑定该节点版本，
+`workstream_revision` 表示当前工作流范围版本；原始记录保留用于审计。
+
 The v1 control plane uses five cooperating subsystems: VPlan, VModel, VCheck,
 VClosure, and VReason. See the [mode catalog](skill_modes.md) for commands and
 the [architecture summary](architecture.md) for authority boundaries.

@@ -188,6 +188,69 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertNotEqual(self.head("art.code_plan:interface:main")["status"], "VALID")
         self.assertNotEqual(self.head("cap.venv:interface:main")["status"], "VALID")
 
+    def test_adding_package_preserves_unchanged_node_versions_and_acceptance(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        before = self.store.workstream("VENV")
+        accepted = self.store.node_plan_review_state(self.delivery["id"])
+        versions = code.artifacts(self.store, "VENV")["versions"]
+        extra = {**copy.deepcopy(self.item), "key": "reset-extra",
+                 "implementation_key": "reset:extra", "title": "新增复位检查方案",
+                 "output_paths": ["verification/tb/extra.sv"]}
+        current = self.design([self.item, extra])
+        self.assertEqual(current["revision"], before["revision"] + 1)
+        self.assertIn(self.delivery, current["desired_state"])
+        state = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertEqual(state["revision"], before["revision"])
+        self.assertEqual(state["workstream_revision"], current["revision"])
+        self.assertEqual(state["current_completion"], accepted["current_completion"])
+        self.assertEqual(state["definition_digest"], accepted["definition_digest"])
+        self.assertTrue(state["completed"])
+        self.assertTrue(all(version in code.artifacts(self.store, "VENV")["versions"] for version in versions))
+        snapshot = self.store.dashboard_snapshot()
+        view = next(w for w in snapshot["workstreams"] if w["workstream"] == "VENV")
+        self.assertNotIn(self.delivery["id"], [a["target"] for a in view["closure"]["actions"]])
+        self.assertEqual(view["progress"]["satisfied"], 2)
+        self.assertEqual(view["progress"]["required"], 4)
+        self.assertTrue(self.validate()["ready"])
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
+        # A changed native artifact still invalidates that retained delivery.
+        self.output.write_text("module changed_interface; endmodule\n")
+        changed = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertFalse(changed["completed"])
+        self.assertFalse(changed["can_approve"])
+
+        self.assertTrue(self.validate()["ready"])
+        current = self.store.node_plan_review_state(self.delivery["id"])
+        self.store.review_node_plan_section(self.delivery["id"], "writing-plan", current["definition_digest"],
+                                           "modify", "fixture-owner", "核对复位后接口状态")
+        current = self.store.node_plan_review_state(self.delivery["id"])
+        with mock.patch("verif_harness.store.time.sleep", side_effect=lambda _: self.store.submit_review_feedback(
+                self.delivery["id"], current["definition_digest"])):
+            checkpoint = self.store.await_human_review("VENV", timeout=1, node_ids=[self.delivery["id"]])
+        self.assertEqual(checkpoint["status"], "ACTION_REQUIRED")
+        batch = checkpoint["feedback_batch"]
+        self.assertEqual(len(batch["items"]), 1)
+        self.store.complete_review_feedback(batch["batch_id"], "Project Main Agent", "已核对当前受控证据")
+        self.approve(self.delivery)
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
+    def test_changed_package_and_explicit_restart_create_new_node_versions(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        original = self.delivery
+        changed = {**copy.deepcopy(self.item), "statement": "增加复位期间接口检查"}
+        current = self.design([changed])
+        self.assertNotIn(original["id"], {n["id"] for n in current["desired_state"]})
+        self.assertEqual(len(current["desired_state"]), 1)
+        self.assertFalse(self.store.node_plan_review_state(current["desired_state"][0]["id"])["completed"])
+        self.approve(current["desired_state"][0])
+        restarted = code.request_change(self.store, {
+            "workstream": "VENV", "kind": "restart", "revision": current["revision"],
+            "reviewer": "fixture-owner", "reason": "显式重启", "confirm": True,
+        })
+        self.assertEqual(restarted["revision"], current["revision"] + 1)
+        self.assertEqual(restarted["desired_state"], [])
+
     def test_feedback_reopens_approval_and_waits_for_agent(self):
         self.implement()
         state = self.store.node_plan_review_state(self.plan_node["id"])
@@ -769,6 +832,31 @@ class CodeWorkflowProfileTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(HarnessError, "cap.vchk"):
             self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)
+
+    def test_vcase_hole_filling_scope_keeps_existing_case_plan_version(self):
+        inputs = ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                  "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"]
+        self.seed(*inputs[1:])
+        plan, item = self.design("VCASE", ["case-implementation", "targeted-evidence"], inputs)
+        node = plan["desired_state"][0]
+        state = self.store.node_plan_review_state(node["id"])
+        self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+        delivery = next(n for n in self.store.workstream("VCASE")["desired_state"] if code.is_delivery(n))
+        extra = {**copy.deepcopy(item), "key": "case-hole-filling",
+                 "implementation_key": "case:hole-filling", "title": "新增覆盖率补洞用例",
+                 "output_paths": ["verification/vcase/hole_filling.sv"]}
+        path = self.root / "vcase-extra.json"
+        path.write_text(json.dumps({"schema": "DesiredStateProposal/1", "workstream": "VCASE",
+                                    "nodes": [item, extra]}))
+        current = self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)
+        self.assertEqual(current["revision"], plan["revision"] + 1)
+        self.assertTrue(self.store.node_plan_review_state(node["id"])["completed"])
+        self.assertIn(delivery, current["desired_state"])
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["can_approve"])
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["completed"])
+        with self.store.read_connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM node_plan_reviews WHERE node_id=?",
+                                        (delivery["id"],)).fetchone()[0], 0)
 
     def test_coverage_and_regression_findings_route_without_mutating_upstream(self):
         coverage = code._feedback_routes("VCOV", "hole-analysis-evidence", {
