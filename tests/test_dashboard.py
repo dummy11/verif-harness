@@ -180,6 +180,23 @@ class DashboardTest(unittest.TestCase):
                 and (parent_ids is None or item["id"] in parent_ids)
                 for entry in self.store.document_manifest(item["id"])["items"]]
 
+    def test_node_changes_endpoint_is_project_and_current_digest_bound(self) -> None:
+        plan = self.design_minimal_vdoc()
+        node = next(item for item in plan["desired_state"] if item["role"] == "document-writing-plan")
+        digest = self.store.node_plan_review_state(node["id"])["definition_digest"]
+        project = self.server.default_project_id
+        query = urllib.parse.urlencode({"project": project, "node": node["id"], "digest": digest})
+        with self.get("api/node-changes?" + query) as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["dashboard_project_id"], project)
+        self.assertEqual(payload["result"]["node_id"], node["id"])
+        self.assertIsNone(payload["result"]["previous_node_id"])
+        for replacement in ({"digest": "stale"}, {"project": "unknown-project"}):
+            bad = urllib.parse.urlencode({**{"project": project, "node": node["id"], "digest": digest}, **replacement})
+            with self.assertRaises(urllib.error.HTTPError) as rejected:
+                self.get("api/node-changes?" + bad)
+            self.assertEqual(rejected.exception.code, 400)
+
     def test_background_launcher_reuses_same_project_dashboard(self) -> None:
         port = self.server.server_address[1]
         result = ensure_dashboard_running(self.store, "127.0.0.1", port)
@@ -2580,6 +2597,7 @@ const context = vm.createContext({
     querySelector:selector => {
       if (!elements.has(selector)) elements.set(selector, {
         content:'test-token', innerHTML:'', dataset:{},
+        querySelectorAll:() => [],
         classList:{add:() => {}, remove:() => {}, contains:() => false},
       });
       return elements.get(selector);

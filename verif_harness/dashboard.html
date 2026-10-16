@@ -343,6 +343,16 @@
     .drawer-head .close { margin-left: auto; }
     .detail-block { margin-top: 18px; }
     .detail-block h3 { margin: 0 0 8px; font-size: 14px; }
+    .node-changes { margin: 14px 0; padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 10px; background: var(--panel-2); }
+    .node-changes h3 { margin: 0 0 6px; font-size: 14px; }
+    .node-changes p { margin: 4px 0; color: var(--muted); font-size: 12px; }
+    .node-changes ul { margin: 9px 0 0; padding-left: 20px; }
+    .node-changes li + li { margin-top: 9px; }
+    .node-changes details { margin-top: 6px; }
+    .node-changes pre { max-height: 230px; }
+    .node-changed-field { padding: 7px 10px; border-left: 3px solid var(--orange); border-radius: 5px; background: var(--yellow-bg); }
+    .node-changed-field::before { content: '本版有变化'; display: block; margin-bottom: 4px; color: var(--amber); font-size: 11px; font-weight: 700; }
+    .node-change-current { padding: 8px 10px; border-radius: 5px; background: var(--yellow-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
     .detail-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
     .role-node-panel { padding: 15px; border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; background: color-mix(in srgb, var(--brand-2) 34%, var(--panel)); }
     .role-node-panel > h3 { font-size: 16px; }
@@ -2661,6 +2671,72 @@
       return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批${objectLabel}</summary><div class="detail-group-body">${body}</div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-plan-complete" ${approval.enabled ? '' : 'disabled'} title="${escapeHtml(approval.title)}">${escapeHtml(approval.label)}</button></div></div>`;
     }
 
+    const NODE_CHANGE_LABELS = {
+      title:'节点名称', statement:'目标', purpose:'方案用途', scope:'工作范围',
+      work_content:'具体工作', implementation_approach:'实现方式',
+      validation_methods:'如何验证', deliverables:'输出', acceptance_criteria:'交付条件',
+      quality_checks:'质量检查', source_refs:'输入依据', inputs:'前置依赖',
+      input_files:'输入文件', output_paths:'输出路径', capabilities:'验证能力',
+      progress_measures:'进度检查', coverage_scope:'覆盖范围',
+      coverage_implementation_config:'覆盖率实现配置', coverage_collection_config:'覆盖率收敛配置',
+      coverage_item_ids:'覆盖对象', regression_config:'回归执行范围',
+      authoring_contract:'文档撰写要求', required:'是否必需',
+    };
+    const NODE_CHANGE_DETAIL_FIELDS = new Set([
+      'source_refs','inputs','input_files','output_paths','capabilities','progress_measures',
+      'coverage_scope','coverage_implementation_config','coverage_collection_config',
+      'coverage_item_ids','regression_config','authoring_contract',
+    ]);
+    function nodeChangesShell() {
+      return '<section class="node-changes" data-node-changes aria-live="polite"><h3>本版内容变化</h3><p>正在核对同一工作节点的上一版…</p></section>';
+    }
+    function nodeChangeValue(value) {
+      if (value == null || value === '') return '未登记';
+      if (typeof value === 'boolean') return value ? '是' : '否';
+      if (typeof value === 'string') return value;
+      return JSON.stringify(value, null, 2);
+    }
+    function nodeChangesHtml(result) {
+      if (!result.previous_node_id) return '<h3>本版内容变化</h3><p>首次提交此工作节点，没有可比的旧版。请按当前完整内容审批。</p>';
+      if (!result.changes.length) return `<h3>本版内容变化</h3><p>与上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）相比，节点定义内容没有变化。此处不对照文档正文、交付文件或验证证据；审批仍以当前版本为准。</p>`;
+      return `<h3>本版内容变化 · ${result.changes.length} 处</h3><p>与上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）相比。橙色区域为本版变化；此处只对照节点定义，不代替文档正文、交付文件和验证证据检查。</p><ul>${result.changes.map(change => {
+        const before = nodeChangeValue(change.before), after = nodeChangeValue(change.after);
+        const kind = change.before == null || change.before === '' || Array.isArray(change.before) && !change.before.length ? '新增' : change.after == null || change.after === '' || Array.isArray(change.after) && !change.after.length ? '删除' : '修改';
+        const current = NODE_CHANGE_DETAIL_FIELDS.has(change.field)
+          ? `<details><summary>查看本版详细内容</summary><pre>${escapeHtml(after)}</pre></details>`
+          : `<div class="node-change-current">本版：${escapeHtml(after)}</div>`;
+        return `<li><strong>${escapeHtml(NODE_CHANGE_LABELS[change.field] || change.field)} · ${kind}</strong>${current}<details><summary>查看上一版内容</summary><pre>${escapeHtml(before)}</pre></details></li>`;
+      }).join('')}</ul>`;
+    }
+    async function loadNodeChanges(n, root, sequence=renderSequence) {
+      const shells = [...root.querySelectorAll('[data-node-changes]')];
+      if (!shells.length) return false;
+      const project = state.project, digest = (n.delivery_review || n.plan_review)?.definition_digest;
+      const modalAtStart = modalSequence;
+      const current = () => {
+        if (state.project !== project || !state.snapshot || !root.isConnected
+          || (root.id === 'modal' ? modalSequence !== modalAtStart : renderSequence !== sequence)) return false;
+        const latest = findNode(n.id);
+        return (latest?.delivery_review || latest?.plan_review)?.definition_digest === digest;
+      };
+      try {
+        const response = await approvalRequest(`/api/node-changes?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}&digest=${encodeURIComponent(digest || '')}`, {headers:{'X-Verif-Token':token}});
+        if (!current()) return false;
+        const result = response.result;
+        if (response.dashboard_project_id !== project || result.node_id !== n.id || result.definition_digest !== digest) throw new Error('节点版本已变化，请刷新后重新核对');
+        for (const shell of shells) shell.innerHTML = nodeChangesHtml(result);
+        for (const change of result.changes) {
+          root.querySelectorAll('[data-node-change-field]').forEach(element => {
+            if (element.dataset.nodeChangeField === change.field || element.dataset.nodeChangeFieldExtra === change.field) element.classList.add('node-changed-field');
+          });
+        }
+        return true;
+      } catch (error) {
+        if (current()) for (const shell of shells) shell.innerHTML = `<h3>本版内容变化</h3><p>无法核对上一版：${escapeHtml(error.message)}。请刷新节点后重试。</p>`;
+        return false;
+      }
+    }
+
     function planApprovalState(n, available=planApprovalAvailable(n)) {
       const feedback = nodeFeedbackState(n);
       const completed = isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed;
@@ -2852,11 +2928,13 @@
       const exclusionHistory = n.plan_review?.coverage_exclusion?.history || [];
       const question = (n.agent_questions || []).find(q => q.status === 'OPEN');
       const fileButton = file => `<button class="node-link" data-code-file="${escapeHtml(JSON.stringify(file))}">${escapeHtml(file.path)}</button>`;
-      const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><h4>目标</h4><p>${escapeHtml(n.statement)}</p>` + [
+      const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><div data-node-change-field="statement"><h4>目标</h4><p>${escapeHtml(n.statement)}</p></div>` + [
         ['工作范围','scope'],['具体工作','work_content'],['实现方式','implementation_approach'],
         ['如何验证','validation_methods'],['输出','deliverables'],['交付条件','acceptance_criteria'],
-      ].map(([label, key]) => `<h4>${label}</h4><ul>${planListHtml(n[key])}</ul>`).join('')
-        + coverageScopeHtml(n) + coverageConfigHtml(n) + regressionConfigHtml(n);
+      ].map(([label, key]) => `<div data-node-change-field="${key}"><h4>${label}</h4><ul>${planListHtml(n[key])}</ul></div>`).join('')
+        + `<div data-node-change-field="coverage_scope">${coverageScopeHtml(n)}</div>`
+        + `<div data-node-change-field="coverage_implementation_config" data-node-change-field-extra="coverage_collection_config">${coverageConfigHtml(n)}</div>`
+        + `<div data-node-change-field="regression_config">${regressionConfigHtml(n)}</div>`;
       const exclusionBody = !isCodePlanNode(n) && isCoverageConvergenceNode(n)
         ? `<section class="detail-card coverage-exclusion-card"><h4>负责人提供的 exclude 文件</h4>${exclusion
           ? `<p><button class="node-link" data-code-exclusion-file="${escapeHtml(JSON.stringify(exclusion))}">${escapeHtml(exclusion.path)}</button></p><div class="row-meta">由 ${escapeHtml(exclusion.reviewer)} 于 ${shortTime(exclusion.created_at)} 提供；文件中的排除范围已由负责人审批。</div><p>${escapeHtml(exclusion.reason)}</p>`
@@ -2868,7 +2946,7 @@
           ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
         : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
-      return `${writingPlanSourcesHtml(n)}<section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
+      return `<div data-node-change-field="source_refs">${writingPlanSourcesHtml(n)}</div><section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
     }
     async function showCodeFile(n, path, digest) {
       const project = state.project;
@@ -3160,9 +3238,15 @@
     function openNodePlanCompletionModal(n) {
       const object = isCodeNode(n) ? codeNodeObjectLabel(n) : n.delivery_review ? '节点的文档正文' : '文档撰写方案';
       const boundary = n.delivery_review ? '提交后仍需 Agent 检查，检查完成前不表示已验收通过。' : '';
-      openModal(`<h2>批准当前${object}</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p><div class="notice"><strong>确认后，批准当前${object}的全部内容。</strong> ${boundary}审批入口和审批历史会继续保留；之后提交新增、删除或修改意见时，本节点需要重新审批。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>批准说明（选填）</label><textarea name="reason" placeholder="可补充说明，也可以留空直接确认"></textarea></div><div class="notice" data-submit-status role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button type="button" class="btn" data-refresh-approval hidden>刷新审批状态</button><button type="submit" class="btn primary">确认审批完成</button></div></form>`);
+      openModal(`<h2>批准当前${object}</h2><p><strong>${escapeHtml(humanText(n.title))}</strong></p>${nodeChangesShell()}<div class="notice"><strong>确认后，批准当前${object}的全部内容。</strong> ${boundary}审批入口和审批历史会继续保留；之后提交新增、删除或修改意见时，本节点需要重新审批。</div><form id="node-plan-complete-form"><div class="field"><label>审批人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div><div class="field"><label>批准说明（选填）</label><textarea name="reason" placeholder="可补充说明，也可以留空直接确认"></textarea></div><div class="notice" data-submit-status role="status" aria-live="polite" hidden></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button type="button" class="btn" data-refresh-approval hidden>刷新审批状态</button><button type="submit" class="btn primary" disabled>核对变化后确认</button></div></form>`);
       $('#modal').dataset.planNode = n.id;
       $('#modal').dataset.scope = draftScope(null, n.id);
+      const modalAtStart = modalSequence;
+      loadNodeChanges(n, $('#modal')).then(ready => {
+        if (!ready || modalSequence !== modalAtStart) return;
+        const button = $('#node-plan-complete-form [type="submit"]');
+        if (button) { button.disabled = false; button.textContent = '确认审批完成'; }
+      });
       $('#node-plan-complete-form').onsubmit = async event => {
         event.preventDefault();
         submittingForm = null;
@@ -3273,8 +3357,10 @@
       }
       $('#main').innerHTML = `<div class="page-head"><div><h1>审批文档撰写方案</h1><p>${escapeHtml(humanText(n.title))} · VDOC 方案 ${escapeHtml(revisionLabel(n.plan_review.revision))}</p></div><div class="page-actions"><button class="btn" data-return-vdoc>返回 VDOC 方案</button></div></div>
         <div class="notice"><strong>${n.plan_review.status === 'APPROVED' ? '本撰写方案已经审批通过。' : n.plan_review.status === 'CHANGES_REQUESTED' ? '本撰写方案需要按评审意见修改。' : '本撰写方案仍待审批。'}</strong> 审批对象是当前 DUT 的这一个文档撰写方案节点，不是文档正文。“没有额外工程问题”只表示没有另行登记的确认事项，不表示方案已经审批。批准后允许 Agent 按方案编写或完善相关文档内容；正文完成后仍需单独验收。</div>
+        ${nodeChangesShell()}${nodeRolePanelHtml(n)}
         <section class="section"><div class="section-head"><h2>审批对象</h2>${planReviewStatusBadge(n.plan_review.status)}</div><div class="card"><dl class="kv"><dt>验证对象节点</dt><dd>${escapeHtml(humanText(n.title))}</dd><dt>节点类型</dt><dd>${escapeHtml(nodeRoleLabel(n))}</dd><dt>节点目标</dt><dd>${escapeHtml(humanText(n.statement || '未登记'))}</dd><dt>方案版本</dt><dd>${escapeHtml(revisionLabel(n.plan_review.revision))}</dd><dt>是否为计划要求</dt><dd>${n.required ? '是' : '否'}</dd></dl></div></section>
         ${nodePlanApprovalPanelHtml(n, true)}`;
+      loadNodeChanges(n, $('#main'));
       $('[data-return-vdoc]').onclick = () => leaveNodePlanReview('VDOC');
       bindNodeLinks();
       bindPlanSectionReviewForms(n);
@@ -3451,7 +3537,7 @@
     function nodeRolePanelHtml(n) {
       const profile = nodeRoleProfile(n);
       if (n.role === 'document-writing-plan') {
-        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd>${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul>${writingPlanSourcesHtml(n)}${verificationDocAuthoringContractHtml(n)}</div></section>`;
+        return `<section class="detail-block role-node-panel" data-node-role="${escapeHtml(n.role)}"><h3>文档撰写方案</h3><div class="notice"><strong>这里定义 Agent 将怎样撰写正文，不是正文验收结果。</strong> 方案必须绑定当前 DUT、规格、接口、验证点和工程决定。</div><div class="detail-card"><dl class="kv"><dt>方案用途</dt><dd data-node-change-field="purpose">${escapeHtml(humanText(n.purpose || '未登记'))}</dd><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key || '未登记'))}</dd><dt>方案审批状态</dt><dd>${planReviewStatusBadge(n.plan_review?.status || 'PENDING')}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || '未登记')}</dd></dl><div data-node-change-field="work_content"><strong>计划写入的内容</strong><ul>${planListHtml(n.work_content)}</ul></div><div data-node-change-field="implementation_approach"><strong>撰写和修改方法</strong><ul>${planListHtml(n.implementation_approach)}</ul></div><div data-node-change-field="source_refs">${writingPlanSourcesHtml(n)}</div><div data-node-change-field="authoring_contract">${verificationDocAuthoringContractHtml(n)}</div></div></section>`;
       }
       if (n.role === 'document-catalog') {
         const document = n.document || {};
@@ -3476,9 +3562,9 @@
       const header = `<div class="drawer-head"><div><div>${isCodeNode(n) ? codeStatusBadge(n) : statusBadge(n.status)} <span class="badge UNKNOWN">${escapeHtml(nodeClass(n))}</span></div><h2>${escapeHtml(humanText(n.title))}</h2><div class="row-meta">${escapeHtml(nodeRoleLabel(n))} · ${escapeHtml(n.workstream || '未归属工作流')}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(n.id)}</pre></details></div><button class="icon-btn close" id="close-drawer">${full ? '返回工作流' : '✕'}</button></div>
         <div class="route-bar">${full ? '' : `<a class="node-link" id="expand-node" href="${escapeHtml(nodeUrl(n.id, true))}">查看完整节点</a>`}<a class="node-link open-separate" href="${escapeHtml(nodeUrl(n.id, true))}" target="_blank" rel="noopener">新标签页打开节点 ↗</a></div>`;
       if (planNode) {
-        root.innerHTML = `${header}${isCodeNode(n) ? codeNodeHtml(n) : documentWritingPlanNodeHtml(n, planReviewAvailable)}`;
+        root.innerHTML = `${header}${nodeChangesShell()}${isCodeNode(n) ? codeNodeHtml(n) : documentWritingPlanNodeHtml(n, planReviewAvailable)}`;
       } else if (n.delivery_review) {
-        root.innerHTML = `${header}${documentDeliveryNodeHtml(n)}`;
+        root.innerHTML = `${header}${nodeChangesShell()}${documentDeliveryNodeHtml(n)}`;
       } else if (n.role === 'document-deliverable') {
         root.innerHTML = `${header}<div class="notice">当前版本尚不能验收正文，请先完成文档撰写方案审批。</div>`;
       } else {
@@ -3496,6 +3582,7 @@
       }
       root.querySelector('#close-drawer').onclick = full ? () => openWorkstreamTab(n.workstream) : closeDrawer;
       if (root.querySelector('#expand-node')) bindRouteLink(root.querySelector('#expand-node'), nodeUrl(n.id, true));
+      if (planNode || n.delivery_review) loadNodeChanges(n, root, sequence);
       if (planNode) {
         bindPlanSectionReviewForms(n, root);
         root.querySelectorAll('[data-code-file]').forEach(button => button.onclick = () => { const file = JSON.parse(button.dataset.codeFile); showCodeFile(n, file.path, file.sha256); });

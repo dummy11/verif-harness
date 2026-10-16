@@ -251,6 +251,35 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(restarted["revision"], current["revision"] + 1)
         self.assertEqual(restarted["desired_state"], [])
 
+    def test_node_changes_compare_current_package_only_and_reject_stale_digest(self):
+        original = self.plan_node
+        first_digest = self.store.node_plan_review_state(original["id"])["definition_digest"]
+        first = self.store.node_definition_changes(original["id"], first_digest)
+        self.assertIsNone(first["previous_node_id"])
+        self.assertEqual(first["changes"], [])
+
+        changed = {**copy.deepcopy(self.item), "statement": "增加复位期间接口检查",
+                   "work_content": ["编写接口并连接 DUT", "检查复位期间的连接"]}
+        second = self.design([changed])
+        current = second["desired_state"][0]
+        current_digest = self.store.node_plan_review_state(current["id"])["definition_digest"]
+        comparison = self.store.node_definition_changes(current["id"], current_digest)
+        self.assertEqual(comparison["previous_node_id"], original["id"])
+        self.assertTrue({"statement", "work_content"}.issubset({item["field"] for item in comparison["changes"]}))
+        self.assertEqual(next(item["before"] for item in comparison["changes"] if item["field"] == "statement"), self.item["statement"])
+        with self.assertRaisesRegex(HarnessError, "版本已变化"):
+            self.store.node_definition_changes(current["id"], first_digest)
+        with self.assertRaisesRegex(HarnessError, "当前项目或版本"):
+            self.store.node_definition_changes(original["id"], first_digest)
+
+        unrelated = {**copy.deepcopy(self.item), "key": "reset-extra",
+                     "implementation_key": "reset:extra", "title": "新增复位检查方案",
+                     "output_paths": ["verification/tb/extra.sv"]}
+        third = self.design([changed, unrelated])
+        extra = next(item for item in third["desired_state"] if item["key"] == "reset-extra")
+        extra_digest = self.store.node_plan_review_state(extra["id"])["definition_digest"]
+        self.assertIsNone(self.store.node_definition_changes(extra["id"], extra_digest)["previous_node_id"])
+
     def test_feedback_reopens_approval_and_waits_for_agent(self):
         self.implement()
         state = self.store.node_plan_review_state(self.plan_node["id"])

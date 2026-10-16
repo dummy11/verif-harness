@@ -376,6 +376,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json({"dashboard_project_id": project_id, "result": result})
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        elif parsed.path == "/api/node-changes":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                result = self.server.project_store(project_id).node_definition_changes(
+                    query.get("node", [""])[0], query.get("digest", [""])[0],
+                )
+                self._json({"dashboard_project_id": project_id, "result": result})
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/code-file":
             try:
                 from . import code_workflow
