@@ -6,6 +6,7 @@ import unittest
 import uuid
 
 from tests import test_code_workflow as fixtures
+from tests import test_vreg_workflow as regression_fixtures
 from verif_harness import code_scope, code_workflow as code
 from verif_harness.store import HarnessError, now
 
@@ -102,6 +103,69 @@ class CodeScopeRepairTest(unittest.TestCase):
                        (json.dumps({"restart": {"reason": "owner restart"}}),))
         with self.assertRaisesRegex(HarnessError, "显式重启"):
             self.restore(apply=True)
+
+
+class RegressionInfrastructureRepairTest(unittest.TestCase):
+    def setUp(self):
+        self.fixture = regression_fixtures.VregWorkflowTest()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.tearDown)
+        self.store = self.fixture.store
+        self.original_delivery = self.fixture.finish_infrastructure()
+        self.original_plan = self.fixture.node("regression-infrastructure-plan")
+        self.original_review = self.store.node_plan_review_state(self.original_delivery["id"])["current_completion"]
+        changed = copy.deepcopy(self.fixture.items)
+        changed[1]["regression_config"]["repeat"] = 2
+        plan = self.fixture.design(changed)
+        # Reproduce the pre-fix whole-VREG replacement. Results retain their new
+        # r2 scope; only the unchanged infrastructure was needlessly replaced.
+        replacement = {**self.original_plan, "id": self.original_plan["id"].replace(":r1:", ":r2:")}
+        desired = [replacement if n["id"] == self.original_plan["id"] else n
+                   for n in plan["desired_state"] if n["id"] != self.original_delivery["id"]]
+        with self.store.connect() as db:
+            from verif_harness.store import Validity
+            for old in (self.original_plan, self.original_delivery):
+                db.execute("UPDATE nodes SET workstream=NULL,status='STALE' WHERE id=?", (old["id"],))
+            db.execute("UPDATE workstreams SET desired_json=? WHERE name='VREG'", (code.encoded(desired),))
+            self.store.upsert_node(db, replacement["id"], "desired-state", replacement["title"],
+                                   Validity.UNKNOWN, "VREG", replacement)
+            for target in replacement["inputs"]:
+                code.edge(db, replacement["id"], target, now())
+        self.current_plan = replacement
+        self.fixture.approve(replacement)
+        self.current_delivery = self.fixture.infrastructure(approve=False)
+        self.assertTrue(self.fixture.validate(self.current_delivery)["ready"])
+        self.fixture.approve(self.current_delivery)
+
+    def restore(self, apply=False):
+        state = self.store.node_plan_review_state(self.current_plan["id"])
+        return code_scope.restore_package(
+            self.store, self.current_plan["id"], self.original_plan["id"], state["definition_digest"],
+            apply=apply, replace_accepted=True,
+        )
+
+    def test_explicit_equivalent_executor_repair_preserves_all_reviews_and_results_scope(self):
+        before = self.store.workstream("VREG")
+        results = [node for node in before["desired_state"] if code.vreg_stage(node) == "results"]
+        with self.store.read_connect() as db:
+            reviews = [dict(row) for row in db.execute("SELECT * FROM node_plan_reviews ORDER BY rowid")]
+        self.assertEqual(self.restore()["status"], "VERIFIED")
+        self.assertIn(self.current_delivery, self.store.workstream("VREG")["desired_state"])
+        self.assertEqual(self.restore(apply=True)["status"], "RESTORED")
+        after = self.store.workstream("VREG")
+        self.assertEqual(after["revision"], before["revision"])
+        self.assertEqual([n for n in after["desired_state"] if code.vreg_stage(n) == "results"], results)
+        self.assertEqual(self.store.node_plan_review_state(self.original_delivery["id"])["current_completion"],
+                         self.original_review)
+        with self.store.read_connect() as db:
+            self.assertEqual([dict(row) for row in db.execute("SELECT * FROM node_plan_reviews ORDER BY rowid")], reviews)
+
+    def test_changed_native_evidence_blocks_executor_repair(self):
+        self.fixture.write("verification/results/infrastructure/build.log", "different execution\n")
+        self.fixture.validate(self.current_delivery)
+        with self.assertRaisesRegex(HarnessError, "原交付批准或原始证据已失效"):
+            self.restore(apply=True)
+        self.assertIn(self.current_delivery, self.store.workstream("VREG")["desired_state"])
 
 
 if __name__ == "__main__":

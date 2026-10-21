@@ -149,6 +149,54 @@ class CodeWorkflowTest(unittest.TestCase):
         self.validate()
         self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
 
+    def test_registration_summary_and_report_path_do_not_repeat_acceptance(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        before = self.store.node_plan_review_state(self.delivery["id"])
+        versions = code.artifacts(self.store)["versions"]
+        with self.store.read_connect() as db:
+            approvals = db.execute("SELECT COUNT(*) FROM node_plan_reviews").fetchone()[0]
+        self.report["summary"] += "；重复登记，原始代码和检查结果不变"
+        path = self.root / "registration-again.json"
+        path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], path.name)
+        after = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertTrue(after["completed"])
+        self.assertEqual(after["current_completion"], before["current_completion"])
+        self.assertEqual(after["definition_digest"], before["definition_digest"])
+        self.assertEqual(code.artifacts(self.store)["versions"], versions)
+        with self.store.read_connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM node_plan_reviews").fetchone()[0], approvals)
+        # The database receipt remains the checked conclusion. Editing its
+        # registration envelope alone cannot replace that conclusion.
+        path.write_text("unregistered envelope edit\n")
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+        self.report["checks"][0]["actual"] = "新增检查结论"
+        path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], path.name)
+        self.assertFalse(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
+    def test_legacy_content_bound_approval_survives_registration_metadata_changes(self):
+        self.implement(); self.validate()
+        state = self.store.node_plan_review_state(self.delivery["id"])
+        approval = self.approve(self.delivery)
+        validation = state["validation"]
+        legacy = {key: value for key, value in validation.items()
+                  if key not in {"id", "created_at", "current", "registration_report"}}
+        old_digest = code.digest({"definition": state["input_signature"], "validation": code.digest(legacy)})
+        with self.store.connect() as db:
+            db.execute("UPDATE node_plan_reviews SET definition_digest=? WHERE id=?",
+                       (old_digest, approval["review_id"]))
+            db.execute("UPDATE code_validations SET payload_json=? WHERE id=?",
+                       (json.dumps(legacy), validation["id"]))
+        self.report["summary"] += "；审计登记说明"
+        self.report_path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], self.report_path.name)
+        restored = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertTrue(restored["completed"])
+        self.assertEqual(restored["current_completion"]["id"], approval["review_id"])
+        (self.root / "build.log").write_text("different native execution\n")
+        self.assertFalse(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
     def test_plan_status_only_change_keeps_approval(self):
         self.approve(self.plan_node)
         before = self.store.node_plan_review_state(self.plan_node["id"])

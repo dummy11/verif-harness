@@ -148,6 +148,17 @@ VENV、VSTIM、VCHK、VCASE 增加补洞工作包，或删除、修改其他工�
 变化或显式重启不保留旧节点。详情中的 `revision` 绑定该节点版本，
 `workstream_revision` 表示当前工作流范围版本；原始记录保留用于审计。
 
+VREG 调整回归结果 group 时，也保留未变化的回归基础设施方案、交付节点及原批准。
+执行器版本不会随结果范围一起更新，因此不会使原有激励、检查和用例发生审批级联。
+基础设施的实际输入、代码或证据变化仍会使相关结论失效；结果方案及执行轮次继续按
+当前结果范围核对，不能沿用旧轮次报告。
+
+相同代码、原始证据和逐项检查结论再次登记时，登记文件改名或追加描述性摘要只增加
+审计回执，不撤销原验收。ProjectStore 中已检查的回执是事实源；未登记的原始报告编辑
+不能替换检查结论。专用证据报告、日志、代码、检查结果、依赖实际版本和执行轮次仍
+参与版本检查。历史错误重建的执行器只允许在严格核对原批准及全部当前证据后恢复，
+不创建审批，不迁移回归结果或执行轮次，有未核实结束任务时禁止恢复。
+
 The v1 control plane uses five cooperating subsystems: VPlan, VModel, VCheck,
 VClosure, and VReason. See the [mode catalog](skill_modes.md) for commands and
 the [architecture summary](architecture.md) for authority boundaries.

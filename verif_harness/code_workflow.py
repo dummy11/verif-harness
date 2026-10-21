@@ -851,9 +851,15 @@ def dependency_snapshot(connection, node):
     return result
 
 
+def retains_node_version(workstream, node):
+    """Result-scope replans do not replace an unchanged regression executor."""
+    return (workstream in {"VENV", "VSTIM", "VCHK", "VCASE"}
+            or workstream == "VREG" and vreg_stage(node) == "infrastructure")
+
+
 def node_revision(plan, node):
     """An unchanged code package keeps its original version in a newer scope."""
-    if plan["workstream"] in {"VENV", "VSTIM", "VCHK", "VCASE"}:
+    if retains_node_version(plan["workstream"], node):
         match = re.fullmatch(
             r"workstream:" + plan["workstream"] + r":r([0-9]+):desired:.+", node["id"],
         )
@@ -944,8 +950,9 @@ def validation_current(store, connection, plan, node, signature):
         return None
     value = json.loads(row["payload_json"])
     value.update(id=row["id"], created_at=row["created_at"])
+    evidence_files = validation_evidence_files(value)
     value["current"] = (row["signature"] == signature and row["revision"] == node_revision(plan, node)
-                        and value["files"] == file_snapshot(store, [v["path"] for v in value["files"]]))
+                        and evidence_files == file_snapshot(store, [v["path"] for v in evidence_files]))
     if plan["workstream"] == "VCOV" and value.get("coverage_contract") != VCOV_VALIDATION_CONTRACT:
         value["current"] = False
     if plan["workstream"] == "VCOV" and vcov_stage(node) == "convergence" and value["current"]:
@@ -975,10 +982,31 @@ def validation_current(store, connection, plan, node, signature):
     return value
 
 
+def validation_evidence_files(validation):
+    """Keep all checked evidence; the registration envelope is an audit source.
+
+    Older receipts did not name their envelope. It is the one file outside the
+    output files, dedicated evidence reports and their verified artifacts. If
+    that boundary is ambiguous, retain every file rather than dropping evidence.
+    """
+    files = validation.get("files", [])
+    referenced = {item["path"] for item in validation.get("code_files", [])}
+    for check in validation.get("checks", []):
+        referenced.add(check["report"])
+        referenced.update(item["path"] for item in check.get("validation", {}).get("artifacts", []))
+    envelopes = [item["path"] for item in files if item["path"] not in referenced]
+    explicit = validation.get("registration_report", {}).get("path")
+    if len(envelopes) != 1 or explicit is not None and envelopes != [explicit]:
+        return files
+    return [item for item in files if item["path"] != envelopes[0]]
+
+
 def validation_subject(validation):
-    """The reviewed evidence, without a receipt's storage identity or read state."""
-    return {key: value for key, value in validation.items()
-            if key not in {"id", "created_at", "current"}}
+    """The checked code/evidence/conclusions, excluding registration metadata."""
+    subject = {key: value for key, value in validation.items()
+               if key not in {"id", "created_at", "current", "summary", "registration_report"}}
+    subject["files"] = validation_evidence_files(validation)
+    return subject
 
 
 def _coverage_collection_sources(store, connection, config, *, require_execution=True):
@@ -1057,9 +1085,14 @@ def _legacy_completion(connection, node_id, revision, signature, subject, review
     ):
         if validation_subject(json.loads(row["payload_json"])) != subject:
             continue
-        old_digest = digest({"definition": signature, "validation": row["id"]})
-        if old_digest in by_digest:
-            return by_digest[old_digest]
+        legacy_subject = {key: value for key, value in json.loads(row["payload_json"]).items()
+                          if key not in {"id", "created_at", "current"}}
+        for old_digest in (
+            digest({"definition": signature, "validation": row["id"]}),
+            digest({"definition": signature, "validation": digest(legacy_subject)}),
+        ):
+            if old_digest in by_digest:
+                return by_digest[old_digest]
     return None
 
 
@@ -1773,12 +1806,12 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 # public proposal into a new revision and a new approval set.
                 db.execute("ROLLBACK")
                 return {**store.workstream(workstream), "auto_closure": store.evaluate_closure(workstream)}
-            if (workstream in {"VENV", "VSTIM", "VCHK", "VCASE"}
-                    and old["objective"] == (objective or settings["objective"])
+            if (old["objective"] == (objective or settings["objective"])
                     and json.loads(old["decisions_json"]) == (decisions or [])):
                 for previous_node in previous:
                     key = previous_node.get("implementation_key")
-                    if (is_plan(previous_node) and key in proposed_plans
+                    if (is_plan(previous_node) and retains_node_version(workstream, previous_node)
+                            and key in proposed_plans
                             and existing_plans[key] == proposed_plans[key]):
                         retained[key] = [previous_node, *(
                             child for child in previous
@@ -2361,7 +2394,9 @@ def validate(store, node_id, report_path):
     if workstream == "VREG" and vreg_stage(node) == "results":
         with store.read_connect() as db:
             reasons.extend(_vreg_result_blockers(store, db, plan, node, checks))
-    receipt = {**report, "files": file_snapshot(store, files, required=True), "ready": not reasons,
+    receipt = {**report, "registration_report": {"path": local_path(store, path),
+                                               "sha256": hashlib.sha256(raw_report).hexdigest()},
+               "files": file_snapshot(store, files, required=True), "ready": not reasons,
                "blockers": reasons, "checks": checks, "feedback_routes": feedback_routes}
     if workstream == "VCOV":
         receipt["coverage_contract"] = VCOV_VALIDATION_CONTRACT

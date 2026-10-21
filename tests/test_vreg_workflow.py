@@ -11,7 +11,7 @@ import urllib.parse
 from unittest import mock
 
 from tests import test_vdoc_artifacts as fixtures
-from verif_harness import agent_service as service, code_workflow as code, workflow_launch
+from verif_harness import agent_service as service, code_scope, code_workflow as code, workflow_launch
 from verif_harness.store import HarnessError, ProjectStore, Validity, now
 
 
@@ -687,6 +687,65 @@ class VregWorkflowTest(unittest.TestCase):
         progress = self.view()["progress"]
         self.assertEqual((progress["satisfied"], progress["required"], progress["percentage"]), (0, 4, 0))
         self.assertEqual(progress["current_rounds"], [])
+
+    def test_results_scope_changes_keep_accepted_infrastructure_and_vcase_plan(self):
+        delivery = self.finish_infrastructure()
+        infrastructure = self.node("regression-infrastructure-plan")
+        accepted = self.store.node_plan_review_state(delivery["id"])
+        executor = self.head("cap.vreg:executor-ready")["data"]["current"]
+        original_results = self.items[1]
+        case = {**copy.deepcopy(original_results), "key": "case-main", "implementation_key": "case:main",
+                "role": "code-plan", "title": "定向用例实现方案",
+                "inputs": [*original_results["inputs"][:-1], "cap.vreg:executor-ready"],
+                "capabilities": ["case-implementation", "targeted-evidence"],
+                "output_paths": ["verification/cases/main.sv"]}
+        case.pop("regression_config")
+        case["inputs"] = [value for value in case["inputs"] if not value.startswith(("cap.vcase:", "cap.vcov:"))]
+        proposal = self.write_json("case-proposal.json", {
+            "schema": "DesiredStateProposal/1", "workstream": "VCASE", "nodes": [case],
+        })
+        case_plan = self.store.design_workstream("VCASE", None, [], [], [], desired_file=proposal.name)["desired_state"][0]
+        self.approve(case_plan)
+        case_before = self.store.node_plan_review_state(case_plan["id"])
+        changed = copy.deepcopy(self.items)
+        changed[1]["regression_config"]["repeat"] = 2
+        extra = copy.deepcopy(changed[1])
+        extra.update(key="extra-results", implementation_key="dut:extra-results",
+                     output_paths=["verification/extra/run.log", "verification/extra/analysis.json"])
+        extra["regression_config"].update(regression_group="extra", seed=29)
+        extra["regression_config"]["cases"][0]["case_id"] = "extra_test"
+        for items in (changed, [*changed, extra], [self.items[0]]):
+            with self.subTest(items=len(items)):
+                current = self.design(items)
+                self.assertIn(infrastructure, current["desired_state"])
+                self.assertIn(delivery, current["desired_state"])
+                state = self.cli("code", "status", delivery["id"])
+                self.assertTrue(state["completed"])
+                self.assertEqual(state["revision"], accepted["revision"])
+                self.assertEqual(state["workstream_revision"], current["revision"])
+                self.assertEqual(state["current_completion"], accepted["current_completion"])
+                self.assertEqual(self.head("cap.vreg:executor-ready")["data"]["current"], executor)
+                self.assertEqual(self.store.node_plan_review_state(case_plan["id"])["current_completion"],
+                                 case_before["current_completion"])
+                view = self.view()
+                self.assertNotIn(delivery["id"], [action["target"] for action in view["closure"]["actions"]])
+                self.assertEqual(next(node for node in view["nodes"] if node["id"] == delivery["id"])
+                                 ["plan_review"]["current_completion"], accepted["current_completion"])
+        # A real input change still invalidates the retained infrastructure.
+        self.write("regression-plan.md", "# Changed runner requirements\n")
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["completed"])
+
+    def test_explicit_vreg_restart_does_not_retain_infrastructure(self):
+        delivery = self.finish_infrastructure()
+        current = self.store.workstream("VREG")
+        restarted = code.request_change(self.store, {
+            "workstream": "VREG", "kind": "restart", "revision": current["revision"],
+            "reviewer": "fixture-owner", "reason": "重新检查回归基础设施", "confirm": True,
+        })
+        self.assertEqual(restarted["desired_state"], [])
+        self.design()
+        self.assertNotEqual(self.node("regression-infrastructure-plan")["id"], delivery["parent_id"])
+        self.assertFalse(self.store.node_plan_review_state(self.node("regression-infrastructure-plan")["id"])["completed"])
 
     def test_new_vreg_cli_planning_does_not_create_legacy_nodes(self):
         fresh_root = self.root / "fresh-vreg"

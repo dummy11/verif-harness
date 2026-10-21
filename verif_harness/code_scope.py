@@ -6,12 +6,15 @@ import uuid
 from . import code_workflow as code
 
 
-def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=False):
+def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=False,
+                    replace_accepted=False):
     """Restore original nodes only after proving their existing approvals still apply.
 
     This never copies an approval or validation to another node/revision. A
-    replacement already accepted by its owner remains in place. Dry runs roll
-    back the temporary historical artifact-head selection used for the proof.
+    replacement already accepted by its owner remains in place by default.
+    Explicit infrastructure repair can restore an equivalent original executor;
+    result nodes and execution rounds are never migrated. Dry runs roll back the
+    temporary historical artifact-head selection used for the proof.
     """
     from .store import HarnessError, now
 
@@ -19,8 +22,16 @@ def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=
     with store.connect() as db:
         db.execute("BEGIN IMMEDIATE")
         plan, current = code.selected(store, node_id, db)
-        if plan["workstream"] not in {"VENV", "VSTIM", "VCHK", "VCASE"} or not code.is_plan(current):
+        infrastructure = (plan["workstream"] == "VREG"
+                          and code.vreg_stage(current) == "infrastructure")
+        if not code.retains_node_version(plan["workstream"], current) or not code.is_plan(current):
             raise HarnessError("只能核对代码工作包的原方案与交付节点")
+        if replace_accepted and not infrastructure:
+            raise HarnessError("只有未变化的回归基础设施允许显式恢复已批准的原节点")
+        if infrastructure and db.execute(
+                "SELECT 1 FROM regression_execution_rounds WHERE status IN ('DISPATCHED','RUNNING','INTERRUPTED') LIMIT 1"
+        ).fetchone():
+            raise HarnessError("旧回归任务尚未核实结束，不能恢复回归基础设施节点")
         current_state = code.review_state(store, node_id, plan, current, db)
         if current_state["definition_digest"] != expected_digest:
             raise HarnessError("当前方案版本已变化，请重新核对后修复")
@@ -28,7 +39,7 @@ def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=
         if delivery is None:
             raise HarnessError("当前工作包缺少对应交付节点")
         delivery_state = code.review_state(store, delivery["id"], plan, delivery, db)
-        if delivery_state["completed"]:
+        if delivery_state["completed"] and not replace_accepted:
             db.rollback()
             return {"status": "ALREADY_ACCEPTED", "node_id": node_id}
         if not current_state["completed"] or not delivery_state["can_approve"]:
@@ -58,7 +69,10 @@ def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=
         if (definition(current) != definition(original)
                 or definition(delivery) != definition(old_delivery)):
             raise HarnessError("工作包范围或方案内容已经变化，不能恢复原节点")
-        old_state = code.review_state(store, original["id"], plan, original, db)
+        replacement = {node_id: original, delivery["id"]: old_delivery}
+        desired = [replacement.get(n["id"], n) for n in plan["desired_state"]]
+        original_scope = {**plan, "desired_state": desired}
+        old_state = code.review_state(store, original["id"], original_scope, original, db)
         if not old_state["completed"]:
             raise HarnessError("原方案批准与当前实际输入或依赖版本不匹配")
         _, current_snapshot = code.identity(store, db, plan, current)
@@ -78,16 +92,15 @@ def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=
         data = json.loads(db.execute("SELECT data_json FROM nodes WHERE id=?", (artifact_id,)).fetchone()[0])
         data["current"] = {"version": artifact["version"], "signature": artifact["signature"]}
         db.execute("UPDATE nodes SET status='VALID',data_json=? WHERE id=?", (code.encoded(data), artifact_id))
-        old_delivery_state = code.review_state(store, old_delivery["id"], plan, old_delivery, db)
+        old_delivery_state = code.review_state(store, old_delivery["id"], original_scope, old_delivery, db)
         if not old_delivery_state["completed"]:
             raise HarnessError("原交付批准或原始证据已失效，不能恢复原节点")
         old_validation = old_delivery_state["validation"]
         current_validation = delivery_state["validation"]
-        for field in ("code_files", "checks", "testcase_contract", "execution_binding"):
+        for field in ("code_files", "checks", "ready", "blockers", "feedback_routes",
+                      "testcase_contract", "coverage_contract", "regression_contract", "execution_binding"):
             if old_validation.get(field) != current_validation.get(field):
                 raise HarnessError("代码、测试证据或检查结论已经变化，不能恢复原节点")
-        replacement = {node_id: original, delivery["id"]: old_delivery}
-        desired = [replacement.get(n["id"], n) for n in plan["desired_state"]]
         result = {
             "status": "RESTORED" if apply else "VERIFIED", "workstream": plan["workstream"],
             "workstream_revision": plan["revision"], "node_revision": old_revision,
@@ -95,6 +108,7 @@ def restore_package(store, node_id, previous_plan_id, expected_digest, *, apply=
             "restored_node_ids": [original["id"], old_delivery["id"]],
             "original_review_ids": [old_state["current_completion"]["id"],
                                     old_delivery_state["current_completion"]["id"]],
+            "replaced_accepted": delivery_state["completed"],
         }
         if not apply:
             db.rollback()

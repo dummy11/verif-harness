@@ -29,7 +29,11 @@ acceptance; acceptance binds the validated code, evidence content, check result,
 current execution round (when applicable), and upstream inputs. Re-registering
 identical validation content creates an audit receipt without changing the
 accepted subject or derived artifact version. Receipt IDs and timestamps are
-audit metadata. Historical ID-bound approvals remain valid only while their
+audit metadata. The registration envelope's path, bytes and descriptive summary
+are also audit metadata; checked criteria, actual results, dedicated evidence
+reports and native artifacts remain part of the accepted subject. The stored
+receipt is authoritative, and an unregistered envelope edit cannot replace it.
+Historical receipt- and content-bound approvals remain valid only while their
 original evidence content is equivalent to the current validation.
 No post-acceptance Agent check is introduced for code delivery.
 
@@ -40,6 +44,13 @@ The original approval and validation must still match current source, output,
 evidence and dependency versions. Changed packages receive new node versions;
 changed workflow objectives/decisions and explicit restarts retain no old nodes.
 Workstream scope revision and retained node revision are reported separately.
+VREG applies the same preservation to unchanged infrastructure plan/delivery
+nodes when result groups are added, removed or changed. Result plans, evidence
+and execution rounds remain bound to the new result-scope revision. An explicit
+repair may restore original infrastructure nodes only after proving equivalent
+definitions, inputs, code, evidence, questions and existing approvals, with no
+in-flight or unresolved execution. All replaced nodes and approvals stay in the
+audit history; no approval is copied or created.
 
 Plans depend on accepted `cap.doc` and explicit upstream scope capabilities.
 VSTIM requires VENV; VCHK requires VENV and VSTIM; VCASE requires VENV, VSTIM
