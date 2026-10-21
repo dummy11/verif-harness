@@ -942,6 +942,8 @@ def main(arguments: list[str] | None = None) -> int:
                     print(f"访问地址：{ready['url']}", flush=True)
                     if ready["launch_status"] == "STARTED":
                         print("Dashboard 独立后台运行，退出 Agent CLI 不会停止它。", flush=True)
+                    elif ready["launch_status"] == "RESTARTED":
+                        print("Dashboard 已在原端口更新到当前代码版本，项目注册与验证记录保留。", flush=True)
                     else:
                         print("已复用现有 Dashboard，未重启服务。", flush=True)
                     if ready.get("warning"):

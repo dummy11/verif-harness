@@ -51,6 +51,23 @@ class DashboardSnapshotChanged(HarnessError):
     """A retryable race between one snapshot read and authoritative writes."""
 
 
+def dashboard_build_identity() -> dict[str, str]:
+    """Fingerprint the installed service sources, including uncommitted edits."""
+    directory = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(directory.rglob("*")):
+        if path.is_file() and path.suffix in {".py", ".html", ".js"} and "__pycache__" not in path.parts:
+            digest.update(str(path.relative_to(directory)).encode())
+            digest.update(b"\0")
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return {"source_root": str(directory.parent), "digest": digest.hexdigest(),
+            "python": str(Path(sys.executable).resolve())}
+
+
+# Capture this at import, not when a health request arrives after files change.
+LOADED_DASHBOARD_BUILD = dashboard_build_identity()
+
+
 def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
     """Return the machine-local routing registry used by the shared Dashboard."""
     if registry_dir is not None:
@@ -203,6 +220,8 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         self.registry_dir = dashboard_registry_dir(registry_dir)
         self.owner_id = dashboard_owner_id(self.registry_dir)
         self.write_token = dashboard_access_token(self.registry_dir)
+        self.build_identity = dict(LOADED_DASHBOARD_BUILD)
+        self.started_at = now()
         registration = register_dashboard_project(store, self.registry_dir)
         self.default_project_id = registration["id"]
         # Retained for small third-party integrations; request handling never routes through it.
@@ -211,6 +230,16 @@ class DashboardHTTPServer(ThreadingHTTPServer):
         self._snapshot_cache: dict[str, tuple[str, dict[str, Any]]] = {}
         self._snapshot_cache_lock = threading.Lock()
         self._snapshot_project_locks: dict[str, threading.Lock] = {}
+        self._refresh_generations: dict[str, int] = {}
+
+    def refresh_project_state(self, project_id: str) -> dict[str, Any]:
+        store = self.project_store(project_id)
+        header = store.dashboard_state_header()
+        with self._snapshot_cache_lock:
+            self._snapshot_cache.pop(project_id, None)
+            self._refresh_generations[project_id] = self._refresh_generations.get(project_id, 0) + 1
+            store._code_checkpoint = None
+        return header
 
     def projects(self) -> list[dict[str, Any]]:
         return registered_dashboard_projects(self.registry_dir)
@@ -243,6 +272,8 @@ class DashboardHTTPServer(ThreadingHTTPServer):
                 if cached and cached[0] == token:
                     return cached[1]
             for _attempt in range(2):
+                with self._snapshot_cache_lock:
+                    generation = self._refresh_generations.get(project_id, 0)
                 token = store.dashboard_change_token()
                 snapshot = {
                     **store.dashboard_snapshot(),
@@ -251,6 +282,8 @@ class DashboardHTTPServer(ThreadingHTTPServer):
                 final_token = store.dashboard_change_token()
                 if token == final_token:
                     with self._snapshot_cache_lock:
+                        if generation != self._refresh_generations.get(project_id, 0):
+                            continue
                         self._snapshot_cache[project_id] = (final_token, snapshot)
                     return snapshot
             raise DashboardSnapshotChanged(SNAPSHOT_CHANGING_MESSAGE)
@@ -319,6 +352,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             source = Path(__file__).with_name("dashboard.html").read_text(encoding="utf-8")
             source = source.replace("__VERIF_DASHBOARD_TOKEN__", self.server.write_token)
+            source = source.replace("__VERIF_DASHBOARD_BUILD__", self.server.build_identity["digest"])
             payload = source.encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -355,6 +389,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     else (projects[0]["id"] if projects else None)
                 ),
             })
+        elif parsed.path == "/api/project-state":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                project_id = self._selected_project_id(query.get("project", [""])[0])
+                result = (self.server.refresh_project_state(project_id) if query.get("refresh") == ["1"]
+                          else self.server.project_store(project_id).dashboard_state_header())
+                self._json({"dashboard_project_id": project_id, "result": result})
+            except HarnessError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         elif parsed.path == "/api/snapshot":
             try:
                 query = urllib.parse.parse_qs(parsed.query)
@@ -432,6 +475,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._events(
                     self.server.project_store(project_id), project_id,
                     query.get("version", [""])[0],
+                    query.get("build", [""])[0],
                 )
             except HarnessError as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -441,6 +485,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "schema": DASHBOARD_HUB_SCHEMA,
                 "status": "ok",
                 "pid": os.getpid(),
+                "build": self.server.build_identity,
+                "started_at": self.server.started_at,
                 "owner_id": self.server.owner_id,
                 "project_count": len(projects),
                 "projects": [item["id"] for item in projects],
@@ -449,7 +495,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def _events(
-        self, store: ProjectStore, project_id: str, previous_version: str = "",
+        self, store: ProjectStore, project_id: str, previous_version: str = "", client_build: str = "",
     ) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -458,6 +504,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
         previous = previous_version
+        previous_refresh = self.server._refresh_generations.get(project_id, 0)
         last_ping = 0.0
         retry_message: str | None = None
 
@@ -467,9 +514,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
+            if client_build:
+                send_event("service", {"build": self.server.build_identity})
             while True:
                 if not _project_registration_path(project_id, self.server.registry_dir).is_file():
                     return
+                refresh = self.server._refresh_generations.get(project_id, 0)
                 try:
                     snapshot = self._snapshot(store, project_id)
                 except DashboardSnapshotChanged as exc:
@@ -496,9 +546,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "message": str(exc),
                     })
                     return
-                if snapshot["version"] != previous:
+                if snapshot["version"] != previous or refresh != previous_refresh:
                     send_event("snapshot", snapshot)
                     previous = snapshot["version"]
+                    previous_refresh = refresh
                     retry_message = None
                     last_ping = time.monotonic()
                 elif retry_message is not None:
@@ -929,6 +980,7 @@ def _project_dashboard_url(
 
 def _write_dashboard_runtime(
     store: ProjectStore, host: str, port: int, pid: int | None, log_path: Path,
+    health: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     project_id = dashboard_project_id(store.root)
     value = {
@@ -943,7 +995,8 @@ def _write_dashboard_runtime(
         "owner_id": dashboard_owner_id(),
         "shared_service": True,
         "log": str(log_path),
-        "started_at": now(),
+        "started_at": (health or {}).get("started_at") or now(),
+        "build": (health or {}).get("build"),
     }
     atomic_json(store.state / DASHBOARD_RUNTIME_FILE, value)
     return value
@@ -1192,7 +1245,7 @@ def ensure_dashboard_running(
             log_path = dashboard_registry_dir() / DASHBOARD_LOG_FILE
             runtime_warning = None
             try:
-                _write_dashboard_runtime(store, host, port, health.get("pid"), log_path)
+                _write_dashboard_runtime(store, host, port, health.get("pid"), log_path, health)
             except OSError as exc:
                 runtime_warning = f"无法写入当前项目的 Dashboard 运行元数据: {exc}"
             result = {
@@ -1288,7 +1341,7 @@ def ensure_dashboard_running(
             }
         runtime_warning = None
         try:
-            _write_dashboard_runtime(store, host, port, health.get("pid") or process.pid, log_path)
+            _write_dashboard_runtime(store, host, port, health.get("pid") or process.pid, log_path, health)
         except OSError as exc:
             runtime_warning = f"无法写入当前项目的 Dashboard 运行元数据: {exc}"
         reused_concurrent_service = health.get("pid") not in {None, process.pid}

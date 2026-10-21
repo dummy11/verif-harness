@@ -7797,6 +7797,32 @@ class ProjectStore:
             "nodes": nodes, "edges": edges, "findings": findings, "evidence": evidence,
         }
 
+    def dashboard_state_header(self) -> dict[str, Any]:
+        """Read persisted identity/version headers without plans or reconciliation."""
+        self.require()
+        try:
+            with self.read_connect() as connection:
+                connection.execute("PRAGMA busy_timeout = 3000")
+                connection.execute("BEGIN")
+                schema = connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+                version = connection.execute("SELECT version FROM agent_service_changes WHERE id=1").fetchone()
+                if schema is None or version is None:
+                    raise HarnessError("项目数据库缺少状态版本记录；请检查数据库，尚未进入 Agent CLI")
+                workstreams = [dict(row) for row in connection.execute(
+                    "SELECT name,lifecycle,revision,definition_version FROM workstream_read_headers ORDER BY name"
+                )]
+                stat = self.database.stat()
+                result = {
+                    "schema": "DashboardProjectState/1", "project_root": str(self.root),
+                    "database": {"path": str(self.database.resolve()), "device": stat.st_dev, "inode": stat.st_ino},
+                    "schema_version": schema[0] if schema else None,
+                    "state_version": version[0] if version else None, "workstreams": workstreams,
+                    "project_digest": self._digest(self.state / "project.json"),
+                }
+        except (sqlite3.Error, OSError) as exc:
+            raise HarnessError("无法读取当前项目的数据库状态版本；请检查项目配置、权限和数据库") from exc
+        return result
+
     def dashboard_change_token(self) -> str:
         """Build a cheap token for facts that can change a Dashboard snapshot."""
         self.require()

@@ -31,17 +31,20 @@ const html = fs.readFileSync(process.argv[2], 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(source);
 const elements = new Map();
+let contextReloads = 0;
 const context = vm.createContext({
   assert, URL, URLSearchParams,
+  reloadCount: () => contextReloads,
   clearTimeout: () => {},
   setTimeout: () => 1,
   window: {
-    location: {search: '', href: 'http://dashboard.test/'},
+    location: {search: '', href: 'http://dashboard.test/', reload: () => { contextReloads++; }},
     history: {state: {}, replaceState: () => {}},
   },
   localStorage: {getItem: () => '', setItem: () => {}},
   document: {
     querySelector: selector => {
+      if (selector.startsWith('form[data-dirty=')) return null;
       if (!elements.has(selector)) elements.set(selector, {content: 'test-token', innerHTML: ''});
       return elements.get(selector);
     },
@@ -99,6 +102,19 @@ vm.runInContext(`
   stream.listeners.snapshot({data:'{"version":"updated"}'});
   assert.equal(state.snapshot.version, 'updated');
   assert.equal(state.connectionState, 'live');
+  stream.listeners.service({data:'{"build":{"digest":"test-token"}}'});
+  assert.equal(reloadCount(), 0);
+  pendingWrites = 1;
+  stream.listeners.service({data:'{"build":{"digest":"next-version"}}'});
+  assert.equal(reloadCount(), 0, 'do not interrupt a pending approval save');
+  assert.equal(stream.closed, true);
+  pendingWrites = 0;
+  viewCache.set('draft', {forms:{approval:{notes:'unfinished'}}});
+  reloadUpdatedInterface();
+  assert.equal(reloadCount(), 0, 'do not discard an unfinished review');
+  viewCache.clear();
+  reloadUpdatedInterface();
+  assert.equal(reloadCount(), 1);
   stream.onerror();
   assert.equal(state.connectionState, 'offline');
   assert.equal(state.connected, false);

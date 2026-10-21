@@ -96,8 +96,12 @@ assignment lease 时，才表示实际正在执行。工作流为 `ACTIVE`、历
 关闭终端、退出 Codex/Kimi、SSH 断线或电脑重启后，仍使用原 `--workspace-root` 重新运行 setup。
 setup 会读取 `.verif-harness/` 中的项目事实继续，不需要重新 bootstrap，也不会删除审批和证据历史。
 
-工具升级同样复用原 workspace：先受管停止 Dashboard，更新 verif-harness，再用相同 workspace
-重新运行 setup。只有 bootstrap 管理的输入路径发生变化时，才进入 `bootstrap --refresh`。
+工具升级同样复用原 workspace：更新 verif-harness，再用相同 workspace 重新运行 setup。
+setup 核对后台实际加载的代码版本：相同时复用，旧版本则在原端口更新服务，保留全部项目注册、
+访问凭证和验证记录；已打开页面会重新读取状态，代码升级后自动加载新版界面。
+进入 Agent 前还会核对项目、数据库身份和当前状态版本；不一致时明确阻止启动。此检查只读
+轻量版本信息，不加载整份方案或重新计算审批。只有 bootstrap 管理的输入路径发生变化时，
+才进入 `bootstrap --refresh`。
 
 ## 2. bootstrap：登记当前 DUT 和项目输入
 
@@ -574,7 +578,7 @@ revision 和 digest 的状态。若 CLI 与 Dashboard 对必需节点、待办�
 | 后台 Agent 失败 | 查看 status/log，停止并确认后再 retry/start | 否 |
 | Dashboard 服务停止 | `dashboard --status` 后重新启动/注册 | 否 |
 | 浏览器关闭或 SSH 隧道断开 | 重新打开完整 URL 或重建隧道 | 否 |
-| verif-harness 工具升级 | 停止 Dashboard、更新工具、同 workspace 重跑 setup | 通常否 |
+| verif-harness 工具升级 | 更新工具、同 workspace 重跑 setup；自动核对并更新旧 Dashboard | 通常否 |
 | bootstrap 管理的输入路径变化 | 逐项执行 `bootstrap --refresh` | 是，refresh |
 | 项目从未初始化或状态确实不存在 | 首次 bootstrap | 是 |
 | 当前方案范围需要重做 | 添加/删除节点，或负责人确认“重新启动工作流” | 否 |
@@ -626,11 +630,13 @@ Dashboard 始终监听远端服务器的 loopback 地址。远端先运行 `dash
 
 工具升级的推荐顺序是：
 
-1. 在当前项目执行受管 `dashboard --stop`；
-2. 更新 verif-harness checkout；
-3. 使用原 runtime、原 `--workspace-root` 重新运行 setup；
-4. 检查 Dashboard 注册、项目选择、revision 和 pending actions；
-5. 从 Closure 当前允许的动作继续。
+1. 更新 verif-harness checkout；
+2. 使用原 runtime、原 `--workspace-root` 重新运行 setup；
+3. setup 复用版本一致的服务，或在原端口更新旧服务并保留共享服务中的项目注册；
+4. 核对数据库状态版本，通知页面重读，检查通过后从 Closure 当前允许的动作继续。
+
+服务账号、进程或数据库兼容性无法确认时，setup 会报错并阻止进入 Agent；不会抢占端口。
+访问地址和原 SSH 转发端口保持，远端检查仍不代表本机隧道已经连通。
 
 不要仅因为升级工具而执行 bootstrap、重启 VDOC 或清空 `.verif-harness/`。只有输入路径或 DUT 身份
 变化时才使用 `bootstrap --refresh`。

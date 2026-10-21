@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="verif-token" content="__VERIF_DASHBOARD_TOKEN__">
+  <meta name="verif-build" content="__VERIF_DASHBOARD_BUILD__">
   <title>verif-harness · 验证项目看板</title>
   <style>
     :root {
@@ -468,6 +469,7 @@
   <script src="/assets/dashboard-markdown.js?token=__VERIF_DASHBOARD_TOKEN__"></script>
   <script>
     const token = document.querySelector('meta[name="verif-token"]').content;
+    const pageBuild = document.querySelector('meta[name="verif-build"]')?.content || '';
     const initialParams = new URLSearchParams(window.location.search);
     const state = {
       snapshot: null,
@@ -497,6 +499,7 @@
     const nodeListFilters = new Map();
     const pendingNodeApprovalReads = new Set();
     let renderedView = null, renderSequence = 0, submittingForm = null, modalSequence = 0;
+    let pendingWrites = 0;
     let displayedUrl = window.location.href;
     const $ = (selector) => document.querySelector(selector);
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -1126,13 +1129,30 @@
       switcher.disabled = state.projects.length < 2;
       $('#project-unregister').disabled = !state.project;
     }
+    function reloadUpdatedInterface() {
+      if (pendingWrites || document.querySelector('form[data-dirty="true"], [data-pending="true"], [data-submitted="true"]')
+          || [...viewCache.values()].some(view => Object.keys(view.forms).length)) {
+        setTimeout(reloadUpdatedInterface, 500);
+        return;
+      }
+      window.location.reload();
+    }
     function connectProjectStream(projectId, waitingForSnapshot=false) {
       if (state.stream) state.stream.close();
       setConnection(waitingForSnapshot ? 'syncing' : 'connecting');
       const version = state.snapshot?.version || '';
-      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}&version=${encodeURIComponent(version)}`);
+      const stream = new EventSource(`/api/events?project=${encodeURIComponent(projectId)}&token=${encodeURIComponent(token)}&version=${encodeURIComponent(version)}&build=${encodeURIComponent(pageBuild)}`);
       state.stream = stream;
       const current = () => state.project === projectId && state.stream === stream;
+      stream.addEventListener('service', event => {
+        const build = JSON.parse(event.data).build;
+        if (current() && pageBuild && build?.digest && build.digest !== pageBuild) {
+          stream.close();
+          setConnection('offline');
+          toast('Dashboard 服务已更新；当前输入或保存结果处理完成后将自动刷新。');
+          reloadUpdatedInterface();
+        }
+      });
       stream.onopen = () => {
         if (current()) setConnection(waitingForSnapshot && !state.snapshot ? 'syncing' : 'live');
       };
@@ -3257,6 +3277,7 @@
     async function approvalRequest(url, options={}) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 30000);
+      pendingWrites++;
       try {
         const response = await fetch(url, {...options, signal:controller.signal});
         const body = await response.json();
@@ -3266,7 +3287,7 @@
           throw error;
         }
         return body;
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); pendingWrites--; }
     }
     async function submitNodePlanCompletion(form, n) {
       if (form.dataset.submitted) return;
@@ -3644,6 +3665,7 @@
       $('#project-unregister-form').onsubmit = async event => {
         event.preventDefault();
         const projectId = state.project;
+        pendingWrites++;
         try {
           const response = await fetch('/api/registrations/remove', {
             method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token},
@@ -3667,6 +3689,7 @@
             $('#main').innerHTML = '<div class="empty">最后一个项目已注销，共享 Dashboard 正在退出。项目数据没有被删除。</div>';
           }
         } catch (error) { toast(`注销失败：${error}`, true); }
+        finally { pendingWrites--; }
       };
     }
     function reviewerValue() { return localStorage.getItem('verif-reviewer') || ''; }
@@ -3712,6 +3735,7 @@
       const project = state.project, route = viewKey(), form = submittingForm, modal = modalSequence;
       submittingForm = null;
       const id = form && formId(form), values = form && JSON.stringify(fieldValues(form));
+      pendingWrites++;
       try {
         data.dashboard_project = project;
         const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)});
@@ -3743,6 +3767,7 @@
         }
       }
       catch (error) { toast(String(error), true); }
+      finally { pendingWrites--; }
     }
     $('#drawer-backdrop').onclick = event => { if (event.target === $('#drawer-backdrop')) closeDrawer(); };
     $('#modal-backdrop').onclick = event => { if (event.target === $('#modal-backdrop')) closeModal(); };

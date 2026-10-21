@@ -201,6 +201,17 @@ and may route to one another; they are not lifecycle states.
 
 ## Project state
 
+Before setup enters the interactive Agent, Dashboard readiness compares a
+process-start source fingerprint with the installed package and Python path.
+A matching service is reused; an owned older service is replaced on its existing
+port without unregistering other projects. Read-only transactional headers bind
+the authorized HTTP response to the same project root, database identity,
+semantic state counter and workstream revisions as the local ProjectStore.
+Concurrent writes cause bounded retries; a stable mismatch fails closed.
+This check never loads plan bodies or evaluates approval/closure. It invalidates
+only the selected project's display cache and notifies connected pages to reread;
+service upgrades also cause version-aware pages to reload their UI code.
+
 Project VDOC Markdown is the source for verification engineering semantics:
 scope, feature definitions, architecture, compare policy, coverage, assertions,
 and testcase contracts remain directly readable and Git-reviewable.
