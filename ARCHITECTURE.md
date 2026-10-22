@@ -44,6 +44,10 @@ The original approval and validation must still match current source, output,
 evidence and dependency versions. Changed packages receive new node versions;
 changed workflow objectives/decisions and explicit restarts retain no old nodes.
 Workstream scope revision and retained node revision are reported separately.
+VCOV retains unchanged implementation plan/delivery nodes when convergence scopes
+are added, removed or changed. Their original approvals, validation and capability
+versions remain subject to current inputs and evidence checks. Convergence nodes,
+exclusions and execution evidence stay bound to the current convergence scope.
 VREG applies the same preservation to unchanged infrastructure plan/delivery
 nodes when result groups are added, removed or changed. Result plans, evidence
 and execution rounds remain bound to the new result-scope revision. An explicit

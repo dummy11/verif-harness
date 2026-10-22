@@ -163,6 +163,10 @@ This repository contains public, reusable verification infrastructure.
 - VCOV 直接使用覆盖率实现方案、覆盖率实现交付、覆盖率收敛方案、覆盖率收敛交付四种
   公开节点类型，不增加工作包层级。方案角色分别为 `coverage-implementation-plan` 和
   `coverage-convergence-plan`；批准后建立对应 `-deliverable` 交付节点。
+  增加、删除或修改收敛范围形成新工作流 revision 时，未变化的覆盖率实现方案和实现
+  交付保留原节点 ID、节点版本、批准、验证和能力版本。实际输入、依赖版本、覆盖模型
+  或证据变化仍重新核对，不能因收敛方案换版重建未变化实现并要求重复审批。收敛节点、
+  排除文件和运行证据仍绑定当前收敛范围；工作流目标、决策变化或显式重启不保留旧节点。
   实现方案用 `CoverageScope/1` 登记供负责人批准的稳定覆盖范围：code coverage 包含
   metric、层次选择或 `cm.hier` 类配置及范围内排除配置，functional coverage 包含
   covergroup 选择规则和必需对象类型；不得要求负责人或 ProjectStore 逐项登记 simulator

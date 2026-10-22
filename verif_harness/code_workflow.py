@@ -852,8 +852,9 @@ def dependency_snapshot(connection, node):
 
 
 def retains_node_version(workstream, node):
-    """Result-scope replans do not replace an unchanged regression executor."""
+    """Result-scope replans retain unchanged coverage models and executors."""
     return (workstream in {"VENV", "VSTIM", "VCHK", "VCASE"}
+            or workstream == "VCOV" and vcov_stage(node) == "implementation"
             or workstream == "VREG" and vreg_stage(node) == "infrastructure")
 
 

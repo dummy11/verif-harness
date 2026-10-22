@@ -922,6 +922,92 @@ class VcovWorkflowTest(unittest.TestCase):
         self.assertIsNone(approval_state["current"])
         self.assertEqual(approval_state["history"][-1]["id"], exclusion["id"])
 
+    def test_convergence_replan_retains_implementation_approvals_and_capabilities(self):
+        self.finish_all()
+        original = self.node("coverage-implementation-plan")
+        delivery = self.node("coverage-implementation-deliverable")
+        states = {node["id"]: self.store.node_plan_review_state(node["id"])
+                  for node in (original, delivery)}
+        heads = {key: self.head(key)["data"]["current"] for key in (
+            "art.code_plan:vcov:fifo:implementation", "art.code:vcov:fifo:implementation",
+            "cap.vcov:fifo:implementation", "cap.vcov:coverage-collection",
+        )}
+        changed = copy.deepcopy(self.items)
+        changed[1]["statement"] += "，补充本轮缺口分析"
+        current = self.design(changed)
+        self.assertEqual(current["revision"], 2)
+        for node in (original, delivery):
+            self.assertIn(node, current["desired_state"])
+            state = self.cli("code", "status", node["id"])
+            self.assertEqual((state["revision"], state["workstream_revision"]), (1, 2))
+            self.assertEqual(state["current_completion"], states[node["id"]]["current_completion"])
+            self.assertEqual(state["definition_digest"], states[node["id"]]["definition_digest"])
+            self.assertTrue(state["completed"])
+        for key, head in heads.items():
+            self.assertEqual(self.head(key)["data"]["current"], head)
+        view = self.view()
+        self.assertEqual(view["progress"]["satisfied"], 2)
+        self.assertEqual(view["progress"]["required"], 4)
+        self.assertFalse({original["id"], delivery["id"]} & {a["target"] for a in view["closure"]["actions"]})
+        convergence = self.node("coverage-convergence-plan")
+        self.assertIn(":r2:", convergence["id"])
+        self.assertFalse(self.store.node_plan_review_state(convergence["id"])["completed"])
+        self.approve(convergence, http=True)
+        self.assertTrue(self.cli("code", "status", convergence["id"])["completed"])
+        self.assertTrue(self.validate(delivery, via_cli=True)["ready"])
+        self.assertTrue(self.store.node_plan_review_state(delivery["id"])["completed"])
+
+        with self.store.connect() as db:
+            db.execute("UPDATE nodes SET status='REVALIDATION_REQUIRED' WHERE id='cap.venv:environment-smoke-evidence'")
+        self.assertFalse(self.store.node_plan_review_state(original["id"])["completed"])
+        with self.store.connect() as db:
+            db.execute("UPDATE nodes SET status='VALID' WHERE id='cap.venv:environment-smoke-evidence'")
+        self.assertEqual(self.store.node_plan_review_state(original["id"])["current_completion"],
+                         states[original["id"]]["current_completion"])
+
+        # Retention never hides real output or upstream input changes.
+        self.write("verification/coverage/model.sv", "module changed; endmodule\n")
+        self.assertTrue(self.store.node_plan_review_state(original["id"])["completed"])
+        self.assertFalse(self.store.node_plan_review_state(delivery["id"])["completed"])
+        self.write("coverage-plan.md", "# Changed coverage requirements\n")
+        self.assertFalse(self.store.node_plan_review_state(original["id"])["completed"])
+
+    def test_implementation_approval_and_validation_after_convergence_scope_changes(self):
+        original = self.node("coverage-implementation-plan")
+        removed = self.design([self.items[0]])
+        self.assertEqual(removed["revision"], 2)
+        self.assertIn(original, removed["desired_state"])
+        self.approve(original, http=True)
+        delivery = self.implement(approve=False)
+        self.assertIn(":r1:", delivery["id"])
+        self.assertTrue(self.validate(delivery, via_cli=True)["ready"])
+        added = self.design()
+        self.assertEqual(added["revision"], 3)
+        self.assertIn(delivery, added["desired_state"])
+        self.approve(delivery, http=True)
+        state = self.cli("code", "status", delivery["id"])
+        self.assertEqual((state["revision"], state["workstream_revision"]), (1, 3))
+        self.assertTrue(state["completed"])
+        view = self.view()
+        self.assertEqual(view["closure"], self.cli("closure", "--workstream", "VCOV"))
+        with self.store.connect() as db:
+            self.store.upsert_node(db, "cap.venv:environment-smoke-evidence", "capability", "changed environment",
+                                   Validity.VALID, data={"derived": True, "current": {"version": "new"}})
+        self.assertFalse(self.store.node_plan_review_state(original["id"])["completed"])
+        self.assertNotEqual(self.head("cap.vcov:coverage-collection")["status"], "VALID")
+
+    def test_restart_replaces_even_unchanged_coverage_implementation(self):
+        delivery = self.finish_implementation()
+        before = self.store.workstream("VCOV")
+        current = code.design(self.store, "VCOV", "vcov-proposal.json", restart={
+            "revision": before["revision"], "reviewer": "fixture-owner", "reason": "explicit restart",
+        })
+        self.assertEqual(current["revision"], before["revision"] + 1)
+        self.assertNotIn(delivery, current["desired_state"])
+        self.assertTrue(all(":r2:" in node["id"] for node in current["desired_state"]))
+        self.assertTrue(all(not self.store.node_plan_review_state(node["id"])["completed"]
+                            for node in current["desired_state"]))
+
     def test_fresh_default_vcov_planning_does_not_create_legacy_nodes(self):
         fresh_root = self.root / "fresh-vcov"
         fresh_root.mkdir()
