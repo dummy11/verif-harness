@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .store_operation import StoreConnection, store_operation
-from . import vdoc_artifacts, workflow_launch
+from . import vdoc_artifacts, workflow_launch, approval_subjects
 
 from .document_authoring import (
     AUTHORING_CONTRACT_SCHEMA,
@@ -1276,7 +1276,7 @@ CREATE INDEX IF NOT EXISTS questions_target ON agent_questions(target,status);
 CREATE INDEX IF NOT EXISTS human_actions_target ON human_actions(target,status);
 """
 
-SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA + workflow_launch.SCHEMA
+SCHEMA += vdoc_artifacts.SCHEMA + code_workflow.SCHEMA + workflow_launch.SCHEMA + approval_subjects.SCHEMA
 
 # Heartbeats and runtime logs must not cause another expensive closure read.
 # Every table below changes facts rendered by dashboard_snapshot(). Keep this
@@ -4830,6 +4830,7 @@ class ProjectStore:
                 (review_id, node_id, "VDOC", plan["revision"], definition_digest,
                  "APPROVE", reviewer.strip(), reason.strip(), timestamp),
             )
+            approval_subjects.record(self, connection, live_plan, live_node, review_id, timestamp)
             self._refresh_node_plan_reviews(connection, plan, timestamp, reviewer.strip())
             event_id = self._record_review_submitted_event(
                 connection, review_id, node_id, "approve", reviewer.strip(), [], timestamp,
@@ -5956,6 +5957,8 @@ class ProjectStore:
                  document["id"], document["semantic_revision"], document["digest"],
                  selected.upper(), reviewer.strip(), notes.strip(), timestamp),
             )
+            if selected == "approve":
+                approval_subjects.record(self, connection, live_plan, live_node, review_id, timestamp)
             self._store_review_change_items(connection, review_id, normalized_changes)
             feedback_ids = self._store_review_feedback_items(
                 connection, review_id, node_id, plan["revision"],
@@ -6061,77 +6064,24 @@ class ProjectStore:
             raise HarnessError("Dashboard 只预览 UTF-8 编码的验证文档") from exc
         return {"document": document, "content": content}
 
-    def node_definition_changes(self, node_id: str, definition_digest: str) -> dict[str, Any]:
-        """Compare one current approval node with its last stored definition."""
+    def node_definition_changes(self, node_id: str, definition_digest: str,
+                                document_digest: str | None = None) -> dict[str, Any]:
+        """Compare the current subject with the most recent owner-approved subject."""
         match = re.fullmatch(r"workstream:([A-Z]+):r\d+:desired:.+", node_id)
         if match is None or not definition_digest:
             raise HarnessError("请从当前工作节点打开内容变化对照")
         workstream = match.group(1)
         if workstream not in WORKSTREAM_TEMPLATES:
             raise HarnessError("当前项目中找不到此工作节点")
-        plan = self.workstream(workstream)
-        desired = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
-        if desired is None or desired.get("role") not in {
-            "document-writing-plan", "document-deliverable", "code-plan", "code-deliverable",
-            "coverage-implementation-plan", "coverage-implementation-deliverable",
-            "coverage-convergence-plan", "coverage-convergence-deliverable",
-            "regression-infrastructure-plan", "regression-infrastructure-deliverable",
-            "regression-results-plan", "regression-results-deliverable",
-        }:
-            raise HarnessError("当前项目或版本中找不到此审批节点，请返回节点列表")
-        if code_workflow.supported(workstream):
-            current_digest = code_workflow.review_state(self, node_id, plan, desired)["definition_digest"]
-            current_revision = code_workflow.node_revision(plan, desired)
-        else:
-            current_digest = self._node_plan_digest(plan, desired)
-            current_revision = int(plan["revision"])
-        if current_digest != definition_digest:
-            raise HarnessError("节点内容或证据版本已变化，请刷新当前工作节点后重新对照")
-
-        candidates: list[tuple[int, dict[str, Any]]] = []
-        pattern = re.compile(rf"workstream:{re.escape(workstream)}:r(\d+):desired:.+")
+        self.ensure_dashboard_schema()
         with self.read_connect() as connection:
-            rows = connection.execute(
-                "SELECT id,data_json FROM nodes WHERE type='desired-state' AND id LIKE ?",
-                (f"workstream:{workstream}:r%:desired:%",),
-            )
-            for row in rows:
-                old_match = pattern.fullmatch(row["id"])
-                if old_match is None or row["id"] == node_id:
-                    continue
-                revision = int(old_match.group(1))
-                if revision >= current_revision:
-                    continue
-                old = json.loads(row["data_json"])
-                if old.get("role") == desired.get("role"):
-                    candidates.append((revision, old))
-        same_key = [(revision, item) for revision, item in candidates
-                    if item.get("key") == desired.get("key")]
-        implementation_key = desired.get("implementation_key")
-        same_package = [(revision, item) for revision, item in candidates
-                        if implementation_key and item.get("implementation_key") == implementation_key]
-        previous = max(same_key or same_package, key=lambda item: item[0], default=None)
-        fields = (
-            "title", "statement", "purpose", "scope", "work_content",
-            "implementation_approach", "validation_methods", "deliverables",
-            "acceptance_criteria", "quality_checks", "source_refs", "inputs",
-            "input_files", "output_paths", "capabilities", "progress_measures", "coverage_scope",
-            "coverage_implementation_config", "coverage_collection_config",
-            "coverage_item_ids", "regression_config", "authoring_contract", "required",
-        )
-        changes = [] if previous is None else [
-            {"field": field, "before": previous[1].get(field), "after": desired.get(field)}
-            for field in fields
-            if json_text(previous[1].get(field)) != json_text(desired.get(field))
-        ]
-        return {
-            "schema": "NodeDefinitionChanges/1", "node_id": node_id,
-            "workstream": workstream, "revision": current_revision,
-            "definition_digest": current_digest,
-            "previous_node_id": previous[1]["id"] if previous else None,
-            "previous_revision": previous[0] if previous else None,
-            "changes": changes,
-        }
+            connection.execute("BEGIN")
+            plan = self._read_workstream(connection, workstream)
+            node = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
+            if node is None or not ((code_workflow.is_plan(node) or code_workflow.is_delivery(node)) or node.get("role") in {
+                    "document-writing-plan", "document-deliverable"}):
+                raise HarnessError("当前项目或版本中找不到此审批节点，请返回节点列表")
+            return approval_subjects.compare(self, connection, plan, node, definition_digest, document_digest)
 
     @store_operation
     def approval_status(self, node_id: str) -> dict[str, Any]:

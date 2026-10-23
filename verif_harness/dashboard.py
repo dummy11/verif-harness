@@ -425,6 +425,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 project_id = self._selected_project_id(query.get("project", [""])[0])
                 result = self.server.project_store(project_id).node_definition_changes(
                     query.get("node", [""])[0], query.get("digest", [""])[0],
+                    query.get("document_digest", [None])[0],
                 )
                 self._json({"dashboard_project_id": project_id, "result": result})
             except HarnessError as exc:

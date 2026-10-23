@@ -206,7 +206,10 @@ class DashboardTest(unittest.TestCase):
         item = proposal["nodes"][0]
         item["work_content"] = ["接口保持不变", "复位后检查3个周期"]
         path.write_text(json.dumps(proposal))
-        self.store.design_workstream("VDOC", None, [], [], [], desired_file=str(path))
+        baseline = self.store.design_workstream("VDOC", None, [], [], [], desired_file=str(path))
+        original = next(n for n in baseline["desired_state"] if n["role"] == "document-writing-plan")
+        digest = self.store.node_plan_review_state(original["id"])["definition_digest"]
+        self.store.complete_node_plan_review(original["id"], digest, "fixture-owner")
         item["work_content"] = ["接口保持不变", "复位后检查5个周期", "新增边界检查"]
         path.write_text(json.dumps(proposal))
         plan = self.store.design_workstream("VDOC", None, [], [], [], desired_file=str(path))
@@ -898,7 +901,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("等待负责人审批文档撰写方案", html)
         self.assertIn("等待负责人确认验证环境方案", html)
         self.assertNotIn("本节点验收的正文内容", html)
-        self.assertIn('data-delivery-body class="document-node-body"', html)
+        self.assertIn('data-delivery-body data-node-change-field="document_body" class="document-node-body"', html)
         self.assertNotIn("等待计划评审", html)
         self.assertNotIn("Human 交互入口", html)
         self.assertNotIn("必需节点", html)

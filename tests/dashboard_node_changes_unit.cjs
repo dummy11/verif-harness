@@ -81,16 +81,16 @@ vm.runInContext(String.raw`
 
   response.result = {...response.result,previous_node_id:null,changes:[]};
   assert.equal(await loadNodeChanges(node, root), true);
-  assert.match(shell.innerHTML, /首次提交此工作节点/);
+  assert.match(shell.innerHTML, /尚无已批准版本/);
 
   response.result = {...response.result,previous_node_id:'old'};
   assert.equal(await loadNodeChanges(node, root), true);
-  assert.match(shell.innerHTML, /节点定义内容没有变化/);
+  assert.match(shell.innerHTML, /审批内容没有变化/);
   assert.doesNotMatch(shell.innerHTML, /<mark|<del/);
 
   response.result = {...response.result,definition_digest:'other-digest'};
   assert.equal(await loadNodeChanges(node, root), false);
-  assert.match(shell.innerHTML, /无法核对上一版/);
+  assert.match(shell.innerHTML, /无法核对最近一次批准内容/);
   process.stdout.write('node changes PASS\n');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `, context);

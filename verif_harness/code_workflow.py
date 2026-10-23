@@ -139,6 +139,10 @@ CREATE TABLE IF NOT EXISTS code_artifact_versions (
  PRIMARY KEY(artifact_id,version), UNIQUE(artifact_id,signature)
 );
 CREATE TABLE IF NOT EXISTS code_watched_files (path TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS code_feedback_inputs (
+ node_id TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL,
+ review_id TEXT NOT NULL, PRIMARY KEY(node_id,path)
+);
 CREATE TABLE IF NOT EXISTS coverage_exclusion_approvals (
  id TEXT PRIMARY KEY, node_id TEXT NOT NULL, workstream TEXT NOT NULL,
  revision INTEGER NOT NULL, scope_digest TEXT NOT NULL,
@@ -898,6 +902,77 @@ def coverage_exclusion_state(store, connection, plan, node):
     return {"scope_digest": scope, "current": current, "latest": latest, "history": rows}
 
 
+def feedback_report_paths(store, connection, plan, node):
+    """Only downstream VCASE planning feedback, never checked evidence/output."""
+    if plan["workstream"] != "VCASE":
+        return set()
+    evidence = set(node.get("output_paths", []))
+    family = [node["id"]] + [n["id"] for n in plan["desired_state"] if n.get("parent_id") == node["id"]]
+    for identifier in family:
+        for row in connection.execute("SELECT payload_json FROM code_validations WHERE node_id=?", (identifier,)):
+            evidence.update(item["path"] for item in validation_evidence_files(json.loads(row[0])))
+    paths = set()
+    for path in node.get("input_files", []):
+        if path in evidence or not path.endswith(".json"):
+            continue
+        source = store.root / path
+        if source.is_symlink() or store.root not in source.resolve().parents:
+            continue
+        try:
+            report = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if isinstance(report, dict) and report.get("schema") == "HoleAnalysisReport/1":
+            paths.add(path)
+    return paths
+
+
+def bind_feedback_context(store, connection, plan, node, approved=None):
+    """Anchor only bytes proven to be present in an actual approved plan.
+
+    For old projects this is a conservative metadata migration: if the live
+    report no longer matches the approved hash we cannot infer its old schema.
+    It never synthesizes, copies, or replaces an owner approval.
+    """
+    if plan["workstream"] != "VCASE" or not is_plan(node):
+        return
+    if approved is None:
+        for row in connection.execute(
+                "SELECT payload_json FROM code_artifact_versions WHERE artifact_id=? ORDER BY version DESC",
+                (ids(node["implementation_key"], "VCASE")[0],)):
+            candidate = json.loads(row[0])
+            if (candidate.get("definition", {}).get("id") == node["id"]
+                    and (candidate.get("review") or {}).get("verdict") == "APPROVE"):
+                approved = candidate
+                break
+    if approved is None:
+        return
+    anchored = {item["path"]: item["sha256"] for item in approved.get("sources", [])}
+    for source in file_snapshot(store, feedback_report_paths(store, connection, plan, node)):
+        if source["sha256"] and source["sha256"] == anchored.get(source["path"]):
+            connection.execute("INSERT OR IGNORE INTO code_feedback_inputs VALUES(?,?,?,?)",
+                               (node["id"], source["path"], source["sha256"], approved["review"]["id"]))
+
+
+def plan_input_snapshot(store, connection, plan, node):
+    """A downstream hole report motivates a fixed VCASE scope, not a live input.
+
+    New holes require explicit impact analysis/replanning. Native code, specs,
+    profiles, and all evidence consumed by validation remain live inputs.
+    """
+    sources = file_snapshot(store, node.get("input_files", []))
+    if plan["workstream"] != "VCASE":
+        return sources
+    parent_id = node.get("parent_id") if is_delivery(node) else node["id"]
+    eligible = feedback_report_paths(store, connection, plan, node)
+    anchored = {row["path"]: row["sha256"] for row in connection.execute(
+        "SELECT path,sha256 FROM code_feedback_inputs WHERE node_id=?", (parent_id,))}
+    for source in sources:
+        if source["sha256"] and source["path"] in eligible and source["path"] in anchored:
+            source["sha256"] = anchored[source["path"]]
+    return sources
+
+
 def identity(store, connection, plan, node):
     deps = dependency_snapshot(connection, node)
     manifest_path = store.state / 'project.json'
@@ -909,7 +984,7 @@ def identity(store, connection, plan, node):
         cached = (stamp, {k: manifest.get(k) for k in ('project_name', 'baseline_revision', 'dut', 'rtl_roots', 'docs_roots', 'verification_inputs')})
         store._code_project_identity = cached
     payload = {"revision": node_revision(plan, node), "node": node, "dependencies": deps,
-               "sources": file_snapshot(store, node.get("input_files", [])),
+               "sources": plan_input_snapshot(store, connection, plan, node),
                "project": str(store.root), "project_inputs": cached[1],
                "questions": [dict(r) for r in connection.execute(
                    'SELECT id,status,answer_option,answer_text,answered_at FROM agent_questions WHERE target=? ORDER BY id',
@@ -1919,7 +1994,11 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
             if state["completed"]:
                 error("当前版本已批准，无需重复提交")
             db.execute("INSERT INTO node_plan_reviews VALUES(?,?,?,?,?,?,?,?,?)", (review_id, node_id, plan["workstream"], node_revision(plan, node), expected, "APPROVE", reviewer.strip(), reason.strip(), timestamp))
+            from .approval_subjects import record
+            record(store, db, plan, node, review_id, timestamp)
             if is_plan(node):
+                bind_feedback_context(store, db, plan, node, {
+                    "sources": state["sources"], "review": {"id": review_id}})
                 create_delivery(store, db, plan, node, timestamp)
                 if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
                     delivery = next(n for n in plan["desired_state"] if n.get("parent_id") == node["id"])
@@ -2567,6 +2646,7 @@ def refresh(store, plans=None):
                 for key in eligible:
                     node = remaining.pop(key)
                     p_id, a_id, c_id = ids(key, candidate)
+                    bind_feedback_context(store, db, plan, node)
                     state = review_state(store, node["id"], plan, node, db)
                     states[node['id']] = state
                     payload = {"implementation_key": key, "workstream": candidate,

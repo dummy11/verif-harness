@@ -305,6 +305,7 @@ class CodeWorkflowTest(unittest.TestCase):
         first = self.store.node_definition_changes(original["id"], first_digest)
         self.assertIsNone(first["previous_node_id"])
         self.assertEqual(first["changes"], [])
+        self.approve(original)
 
         changed = {**copy.deepcopy(self.item), "statement": "增加复位期间接口检查",
                    "work_content": ["编写接口并连接 DUT", "检查复位期间的连接"]}
@@ -334,6 +335,7 @@ class CodeWorkflowTest(unittest.TestCase):
         from verif_harness.dashboard import dashboard_project_id
         item = {**copy.deepcopy(self.item), "work_content": ["接口保持不变", "复位后检查3个周期"]}
         self.design([item])
+        self.approve(self.plan_node)
         item["work_content"] = ["接口保持不变", "复位后检查5个周期", "新增边界检查"]
         self.design([item])
         fixture = self.fixture.fixture
@@ -344,6 +346,76 @@ class CodeWorkflowTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('node changes browser PASS', result.stdout)
         self.assertFalse(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+
+    def test_last_approval_comparison_includes_same_node_checks_and_live_files(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        state = self.store.node_plan_review_state(self.delivery["id"])
+        approved = state["current_completion"]["id"]
+        compare = lambda: self.store.node_definition_changes(self.delivery["id"],
+            self.store.node_plan_review_state(self.delivery["id"])["definition_digest"])
+        self.assertEqual(compare()["changes"], [])
+        self.validate()  # new envelope/receipt, same actual evidence
+        self.assertEqual(compare()["changes"], [])
+        self.report["checks"][0]["actual"] = "0 个错误，检查了 16 次"
+        self.report_path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], self.report_path.name)
+        diff = compare()
+        self.assertEqual(diff["previous_review"]["id"], approved)
+        self.assertEqual([c["field"] for c in diff["changes"]], ["checks"])
+        self.assertFalse(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+        self.output.write_text("module changed_interface; endmodule\n")
+        fields = {c["field"] for c in compare()["changes"]}
+        self.assertIn("code_files", fields)
+        (self.root / "build.log").write_text("new raw evidence\n")
+        self.assertIn("evidence_files", {c["field"] for c in compare()["changes"]})
+        self.assertFalse(self.store.node_plan_review_state(self.delivery["id"])["can_approve"])
+
+    def test_last_approval_ignores_unapproved_intermediate_revisions_and_legacy_fallback(self):
+        self.approve(self.plan_node)
+        original = self.plan_node
+        self.design([{**self.item, "statement": "未批准的中间方案"}])
+        self.design([{**self.item, "statement": "当前待批准方案"}])
+        state = self.store.node_plan_review_state(self.plan_node["id"])
+        result = self.store.node_definition_changes(self.plan_node["id"], state["definition_digest"])
+        self.assertEqual(result["previous_node_id"], original["id"])
+        self.assertEqual(next(c["before"] for c in result["changes"] if c["field"] == "statement"), self.item["statement"])
+        with self.store.connect() as db:
+            db.execute("DELETE FROM approval_subject_snapshots")
+        legacy = self.store.node_definition_changes(self.plan_node["id"], state["definition_digest"])
+        self.assertEqual(legacy["previous_review"], result["previous_review"])
+        self.assertEqual(legacy["changes"], result["changes"])
+        self.assertEqual(legacy["baseline_status"], "PARTIAL")
+
+    def test_legacy_accepted_delivery_compares_actual_evidence_without_reconstructing_bytes(self):
+        self.implement(); self.validate(); self.approve(self.delivery)
+        with self.store.connect() as db:
+            db.execute("DELETE FROM approval_subject_snapshots")
+        state = self.store.node_plan_review_state(self.delivery["id"])
+        result = self.store.node_definition_changes(self.delivery["id"], state["definition_digest"])
+        self.assertEqual(result["changes"], [])
+        self.assertEqual(result["baseline_status"], "PARTIAL")
+        with self.store.connect() as db:
+            db.execute("DELETE FROM code_artifact_versions WHERE artifact_id=?", (code.ids(self.item["implementation_key"], "VENV")[1],))
+        result = self.store.node_definition_changes(self.delivery["id"], state["definition_digest"])
+        self.assertEqual(result["baseline_status"], "UNAVAILABLE")
+
+    def test_browser_same_node_delivery_check_changes(self):
+        if not shutil.which('node') or subprocess.run(['node', '-e', "require('playwright')"], capture_output=True).returncode:
+            self.skipTest('Node.js and Playwright required')
+        self.implement(); self.validate()
+        self.report["checks"][0]["actual"] = "检查15次，0个错误"
+        self.report_path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], self.report_path.name)
+        self.approve(self.delivery)
+        self.report["checks"][0]["actual"] = "检查16次，0个错误"
+        self.report_path.write_text(json.dumps(self.report))
+        code.validate(self.store, self.delivery["id"], self.report_path.name)
+        fixture = self.fixture.fixture
+        config = {"url": fixture.url, "project": fixture.server.default_project_id, "token": fixture.server.write_token,
+                  "workstream": "VENV", "node": self.delivery["id"], "field": "checks", "added": "6", "unchanged": "0个错误"}
+        result = subprocess.run(['node', str(Path(__file__).with_name('dashboard_approval_subject_browser.cjs'))],
+                                input=json.dumps(config), text=True, capture_output=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_feedback_reopens_approval_and_waits_for_agent(self):
         self.implement()
@@ -772,6 +844,10 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             state = self.store.node_plan_review_state(node["id"])
             self.assertTrue(state["can_approve"], state["blockers"])
             self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+            accepted = self.store.node_plan_review_state(node["id"])
+            comparison = self.store.node_definition_changes(node["id"], accepted["definition_digest"])
+            self.assertEqual(comparison["baseline_status"], "COMPLETE")
+            self.assertEqual(comparison["changes"], [])
             current = self.store.workstream(workstream)
             self.assertEqual({node["role"] for node in current["desired_state"]}, {expected_plan_role, expected_delivery_role})
             self.assertEqual(code.ids(item["implementation_key"], workstream)[0],
@@ -780,6 +856,65 @@ class CodeWorkflowProfileTest(unittest.TestCase):
                         if value["workstream"] == workstream)
             self.assertTrue(view["code_model"])
             self.assertEqual(view["progress"]["required"], 2)
+
+    def test_vcase_feedback_report_refresh_preserves_approved_scope_but_real_inputs_do_not(self):
+        inputs = ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence",
+                  "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"]
+        self.seed(*inputs[1:])
+        path, item = self.proposal("VCASE", ["case-implementation", "targeted-evidence"], inputs)
+        report = self.root / "hole-report.json"
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "generated_at": "first", "uncovered_items": ["other-hole"]}))
+        item["input_files"].append(report.name)
+        path.write_text(json.dumps({"schema": "DesiredStateProposal/1", "workstream": "VCASE", "nodes": [item]}))
+        plan = self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)
+        node = plan["desired_state"][0]
+        state = self.store.node_plan_review_state(node["id"])
+        self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+        original = self.store.node_plan_review_state(node["id"])
+        plan = self.store.workstream("VCASE")
+        delivery = next(n for n in plan["desired_state"] if code.is_delivery(n))
+        delivery_before = self.store.node_plan_review_state(delivery["id"])["input_signature"]
+        versions = code.artifacts(self.store, "VCASE")["versions"]
+        # Metadata migration only binds verified identical approved bytes.
+        with self.store.connect() as db:
+            db.execute("DELETE FROM code_feedback_inputs")
+            code.bind_feedback_context(self.store, db, plan, node)
+            self.assertEqual(db.execute("SELECT count(*) FROM code_feedback_inputs").fetchone()[0], 1)
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "generated_at": "later", "uncovered_items": ["different-unrelated-hole"]}))
+        after = self.store.node_plan_review_state(node["id"])
+        self.assertTrue(after["completed"])
+        self.assertEqual(after["current_completion"], original["current_completion"])
+        self.assertEqual(self.store.node_plan_review_state(delivery["id"])["input_signature"], delivery_before)
+        self.assertEqual(code.artifacts(self.store, "VCASE")["versions"], versions)
+        result = self.store.node_definition_changes(node["id"], after["definition_digest"])
+        self.assertEqual(result["changes"], [])
+        self.assertEqual(result["context_updates"], [report.name])
+        rtl = self.root / "rtl/dut.sv"
+        original_rtl = rtl.read_text()
+        rtl.write_text(original_rtl + "\n// changed input\n")
+        self.assertFalse(self.store.node_plan_review_state(node["id"])["completed"])
+        rtl.write_text(original_rtl)
+        self.assertTrue(self.store.node_plan_review_state(node["id"])["completed"])
+        with self.store.connect() as db:
+            # A report used as actual validation evidence is deliberately live.
+            db.execute("INSERT INTO code_validations VALUES(?,?,?,?,?,?)", (
+                "fixture-evidence-use", delivery["id"], plan["revision"], "fixture",
+                json.dumps({"files": [{"path": report.name, "sha256": self.store._digest(report)}],
+                            "checks": [{"report": report.name}]}), "fixture-time"))
+            self.assertEqual(next(v["sha256"] for v in code.plan_input_snapshot(self.store, db, plan, node)
+                                  if v["path"] == report.name), self.store._digest(report))
+            db.execute("DELETE FROM code_validations WHERE id='fixture-evidence-use'")
+        # A true scope change creates a new node and cannot inherit the anchor.
+        changed = {**item, "statement": "增加新的定向用例范围"}
+        path.write_text(json.dumps({"schema": "DesiredStateProposal/1", "workstream": "VCASE", "nodes": [changed]}))
+        new = self.store.design_workstream("VCASE", None, [], [], [], desired_file=path.name)["desired_state"][0]
+        self.assertNotEqual(new["id"], node["id"])
+        self.assertFalse(self.store.node_plan_review_state(new["id"])["completed"])
+        # Stale legacy bytes cannot be silently assigned a historical schema.
+        with self.store.connect() as db:
+            db.execute("DELETE FROM code_feedback_inputs")
+            code.bind_feedback_context(self.store, db, plan, node)
+            self.assertEqual(db.execute("SELECT count(*) FROM code_feedback_inputs").fetchone()[0], 0)
 
     def test_dependency_status_recovery_does_not_cascade_plan_reapproval(self):
         cases = (

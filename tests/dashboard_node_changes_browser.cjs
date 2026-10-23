@@ -61,7 +61,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
       await route.fulfill({response,json:body});
     });
     await page.locator('#main #node-plan-complete').click();
-    await modal.getByText(/无法核对上一版/).waitFor();
+    await modal.getByText(/无法核对最近一次批准内容/).waitFor();
     assert.equal(await modal.locator('[type="submit"]').isDisabled(), true);
     assert.deepEqual(writes, [], 'comparison must never approve or change project state');
     assert.deepEqual(errors, []);

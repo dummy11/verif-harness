@@ -2702,14 +2702,18 @@
       coverage_implementation_config:'覆盖率实现配置', coverage_collection_config:'覆盖率收敛配置',
       coverage_item_ids:'覆盖对象', regression_config:'回归执行范围',
       authoring_contract:'文档撰写要求', required:'是否必需',
+      sources:'方案输入文件', dependencies:'实际依赖版本', code_files:'交付代码', evidence_files:'验证证据',
+      checks:'逐项验证结论', document_body:'文档正文', execution_binding:'回归执行轮次',
+      coverage_exclusion:'覆盖率排除范围', project_inputs:'项目输入配置', questions:'负责人确认结果',
+      workflow_context:'工作流目标与决策', validation_details:'验证范围与检查状态', internal_semantic_units:'文档检查清单',
     };
     const NODE_CHANGE_DETAIL_FIELDS = new Set([
       'source_refs','inputs','input_files','output_paths','capabilities','progress_measures',
       'coverage_scope','coverage_implementation_config','coverage_collection_config',
-      'coverage_item_ids','regression_config','authoring_contract',
+      'coverage_item_ids','regression_config','authoring_contract','validation_details','internal_semantic_units','dependencies','project_inputs',
     ]);
     function nodeChangesShell() {
-      return '<section class="node-changes" data-node-changes aria-live="polite"><h3>本版内容变化</h3><p>正在核对同一工作节点的上一版…</p></section>';
+      return '<section class="node-changes" data-node-changes aria-live="polite"><h3>本版内容变化</h3><p>正在与最近一次批准的内容核对…</p></section>';
     }
     function nodeChangeValue(value) {
       if (value == null || value === '') return '未登记';
@@ -2806,7 +2810,9 @@
       metrics:'Code coverage 指标', hierarchy_selectors:'层次范围', covergroup_selectors:'Covergroup 范围',
       object_kinds:'功能覆盖对象类型', semantic_goal_ids:'覆盖目标', dut_design_id:'DUT 构建分区',
       required:'是否必需', purpose:'用途', instructions:'撰写要求', section:'章节',
-      path:'文件路径', name:'名称', version:'工具版本', title:'标题',
+      path:'文件路径', name:'名称', version:'版本', title:'标题',
+      actual:'实际结果', expected:'预期结果', criterion:'检查项', method:'检查方法', claim:'验证目标',
+      objective:'工作流目标', decisions:'工程决策', ready:'检查是否通过', blockers:'阻塞原因',
     };
     function nodeChangeItemHtml(item, technical, detail=false) {
       if (item.kind === 'reordered') return '条目顺序已调整，内容未变化。' + (detail
@@ -2825,15 +2831,21 @@
       return `${prefix}${body}${diff.precise ? '' : '（文本较长，未自动高亮，请核对完整内容）'}`;
     }
     function nodeChangesHtml(result) {
-      if (!result.previous_node_id) return '<h3>本版内容变化</h3><p>首次提交此工作节点，没有可比的旧版。请按当前完整内容审批。</p>';
-      if (!result.changes.length) return `<h3>本版内容变化</h3><p>与上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）相比，节点定义内容没有变化。此处不对照文档正文、交付文件或验证证据；审批仍以当前版本为准。</p>`;
-      return `<h3>本版内容变化 · ${result.changes.length} 项内容</h3><ul>${result.changes.map(change => {
+      if (!result.previous_node_id) return '<h3>本版内容变化</h3><p>此工作节点尚无已批准版本，请按当前完整内容审批。</p>';
+      const baseline = `最近一次批准的内容（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）`;
+      const notice = result.approval_notice ? `<p>${escapeHtml(result.approval_notice)}</p>` : '';
+      const context = result.context_updates?.length ? `<p>补洞依据报告有更新，当前范围仍使用批准时的历史版本：${result.context_updates.map(escapeHtml).join('、')}。新增缺口须由 Agent 分析后调整方案。</p>` : '';
+      const missing = result.baseline_status === 'UNAVAILABLE' ? '<p>最近一次批准时的内容快照不可用，无法可靠判断实际变化。请核对完整内容。</p>'
+        : result.unavailable_fields?.length ? '<p>部分历史内容没有保存快照，以下仅列出可核实的变化；未保存的内容不能判定为未变化。</p>' : '';
+      if (result.baseline_status === 'UNAVAILABLE') return `<h3>本版内容变化</h3>${missing}`;
+      if (!result.changes.length) return `<h3>本版内容变化</h3><p>与${baseline}相比，${result.unavailable_fields?.length ? "可核实的内容" : "审批内容"}没有变化。</p>${context}${notice}${missing}${result.blockers?.length ? `<p>${escapeHtml(result.blockers.join("；"))}</p>` : ""}`;
+      return `<h3>本版内容变化 · ${result.changes.length} 项内容</h3><p>与${baseline}相比：</p>${context}${missing}<ul>${result.changes.map(change => {
         const items = nodeChangeItems(change.before, change.after);
         const technical = NODE_CHANGE_DETAIL_FIELDS.has(change.field);
         const counts = [['added','新增'],['removed','删除'],['modified','修改'],['reordered','调整顺序']]
           .map(([kind,label]) => { const count = items.filter(item => item.kind === kind).length; return count ? `${label} ${count} 项` : ''; }).filter(Boolean).join('，');
-        return `<li><strong>${escapeHtml(NODE_CHANGE_LABELS[change.field] || '节点内容')}：${counts || '内容未变化'}</strong>${items.slice(0,3).map(item => `<p class="node-change-summary node-change-value">${nodeChangeItemHtml(item, technical)}</p>`).join('')}${items.length > 3 ? `<p>另有 ${items.length-3} 项变化，展开下方对照查看。</p>` : ''}<details><summary>查看完整差异对照</summary><ul>${items.map(item => `<li class="node-change-value">${nodeChangeItemHtml(item, technical, true)}</li>`).join('')}</ul></details></li>`;
-      }).join('')}</ul><p>对照上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）。黄色下划线标记新增或修改的文字，删除线标记移除的文字；相同内容不高亮。这里只对照节点定义，正文、交付文件和验证证据仍需单独核对。</p>`;
+        return `<li><strong>${escapeHtml(NODE_CHANGE_LABELS[change.field] || '节点内容')}：${counts || '内容未变化'}</strong>${items.slice(0,3).map(item => `<p class="node-change-summary node-change-value">${["sources","code_files","evidence_files"].includes(change.field) ? `${escapeHtml(item.path[0] || "文件")}：${item.kind === "added" ? "新增文件" : item.kind === "removed" ? "移除文件" : "文件内容已更新"}` : nodeChangeItemHtml(item, technical)}</p>`).join('')}${items.length > 3 ? `<p>另有 ${items.length-3} 项变化，展开下方对照查看。</p>` : ''}<details><summary>查看完整差异对照</summary><ul>${items.map(item => `<li class="node-change-value">${nodeChangeItemHtml(item, technical, true)}</li>`).join('')}</ul></details></li>`;
+      }).join('')}</ul><p>黄色下划线标记新增或修改的文字，删除线标记移除的文字；相同内容不高亮。文件变化按保存的版本核对，完整差异中保留文件摘要供审计。</p>`;
     }
     function clearNodeChangeMarks(root) {
       root.querySelectorAll('[data-node-diff]').forEach(mark => mark.replaceWith(document.createTextNode(mark.textContent)));
@@ -2846,9 +2858,12 @@
       for (const change of changes) {
         previous[change.field] = change.before;
         if (change.field in previous.plan_review) previous.plan_review[change.field] = change.before;
+        if (change.field === 'checks') previous.plan_review.validation = {...previous.plan_review.validation, checks:change.before};
       }
       const template = document.createElement('template');
-      template.innerHTML = isCodeNode(n) ? codeNodeHtml(previous) : nodeRolePanelHtml(previous);
+      const bodyChange = changes.find(change => change.field === 'document_body');
+      template.innerHTML = bodyChange ? `<div data-node-change-field="document_body">${documentBodyHtml({document:n.document || {}, content:bodyChange.before})}</div>`
+        : isCodeNode(n) ? codeNodeHtml(previous) : nodeRolePanelHtml(previous);
       const textNodes = element => {
         const walker = document.createTreeWalker(element, 4), result = [];
         while (walker.nextNode()) {
@@ -2885,23 +2900,25 @@
       if (!shells.length) return false;
       clearNodeChangeMarks(root);
       const project = state.project, digest = (n.delivery_review || n.plan_review)?.definition_digest;
+      const documentDigest = n.delivery_review?.document_digest;
       const modalAtStart = modalSequence;
       const current = () => {
         if (state.project !== project || !state.snapshot || !root.isConnected
           || (root.id === 'modal' ? modalSequence !== modalAtStart : renderSequence !== sequence)) return false;
         const latest = findNode(n.id);
-        return (latest?.delivery_review || latest?.plan_review)?.definition_digest === digest;
+        return (latest?.delivery_review || latest?.plan_review)?.definition_digest === digest
+          && latest?.delivery_review?.document_digest === documentDigest;
       };
       try {
-        const response = await approvalRequest(`/api/node-changes?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}&digest=${encodeURIComponent(digest || '')}`, {headers:{'X-Verif-Token':token}});
+        const response = await approvalRequest(`/api/node-changes?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}&digest=${encodeURIComponent(digest || '')}${documentDigest ? `&document_digest=${encodeURIComponent(documentDigest)}` : ''}`, {headers:{'X-Verif-Token':token}});
         if (!current()) return false;
         const result = response.result;
-        if (response.dashboard_project_id !== project || result.node_id !== n.id || result.definition_digest !== digest) throw new Error('节点版本已变化，请刷新后重新核对');
+        if (response.dashboard_project_id !== project || result.node_id !== n.id || result.definition_digest !== digest || documentDigest && result.document_digest !== documentDigest) throw new Error('节点版本已变化，请刷新后重新核对');
         for (const shell of shells) shell.innerHTML = nodeChangesHtml(result);
         highlightNodeChanges(n, root, result.changes);
         return true;
       } catch (error) {
-        if (current()) for (const shell of shells) shell.innerHTML = `<h3>本版内容变化</h3><p>无法核对上一版：${escapeHtml(error.message)}。请刷新节点后重试。</p>`;
+        if (current()) for (const shell of shells) shell.innerHTML = `<h3>本版内容变化</h3><p>无法核对最近一次批准内容：${escapeHtml(error.message)}。请刷新节点后重试。</p>`;
         return false;
       }
     }
@@ -3112,7 +3129,7 @@
       const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${coverageConfigHtml(n, true)}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
         ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
           <h4>${isResultFileNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
-          ${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}
+          <div data-node-change-field="checks">${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}</div>
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
         : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
       return `<div data-node-change-field="source_refs">${writingPlanSourcesHtml(n)}</div><section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${question ? `<p><button class="node-link" data-agent-question="${escapeHtml(question.id)}">Agent 需要你确认：${escapeHtml(question.prompt)}</button></p>` : ''}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
@@ -3294,7 +3311,7 @@
     }
 
     function documentDeliveryNodeHtml(n) {
-      return `<section class="detail-block role-node-panel" data-node-role="document-deliverable"><h3>文档正文</h3><div class="detail-card"><dl class="kv"><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key))}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review.status, deliveryReviewIsRunning(n))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || n.delivery_review.document_path)}</dd></dl><div data-delivery-body class="document-node-body"><div class="empty">正在读取文档正文…</div></div>${writingPlanSourcesHtml(n)}<a class="node-link" data-view-delivery-document href="${escapeHtml(routeUrl({document:n.delivery_review.document_id}))}" target="_blank" rel="noopener">对照阅读文档 ↗</a></div></section>${deliveryApprovalPanelHtml(n)}`;
+      return `<section class="detail-block role-node-panel" data-node-role="document-deliverable"><h3>文档正文</h3><div class="detail-card"><dl class="kv"><dt>所属文档</dt><dd>${escapeHtml(humanText(n.document?.title || n.document_key))}</dd><dt>内容验收状态</dt><dd>${deliveryReviewStatusBadge(n.delivery_review.status, deliveryReviewIsRunning(n))}</dd><dt>文档路径</dt><dd class="mono">${escapeHtml(n.document?.path || n.delivery_review.document_path)}</dd></dl><div data-delivery-body data-node-change-field="document_body" class="document-node-body"><div class="empty">正在读取文档正文…</div></div>${writingPlanSourcesHtml(n)}<a class="node-link" data-view-delivery-document href="${escapeHtml(routeUrl({document:n.delivery_review.document_id}))}" target="_blank" rel="noopener">对照阅读文档 ↗</a></div></section>${deliveryApprovalPanelHtml(n)}`;
     }
 
     function bindDeliveryApproval(n, root) {
@@ -3752,7 +3769,7 @@
       }
       root.querySelector('#close-drawer').onclick = full ? () => openWorkstreamTab(n.workstream) : closeDrawer;
       if (root.querySelector('#expand-node')) bindRouteLink(root.querySelector('#expand-node'), nodeUrl(n.id, true));
-      if (planNode || n.delivery_review) loadNodeChanges(n, root, sequence);
+      if (planNode) loadNodeChanges(n, root, sequence);
       if (planNode) {
         bindPlanSectionReviewForms(n, root);
         root.querySelectorAll('[data-code-file]').forEach(button => button.onclick = () => { const file = JSON.parse(button.dataset.codeFile); showCodeFile(n, file.path, file.sha256); });
@@ -3770,6 +3787,7 @@
       if (n.delivery_review) {
         bindDeliveryApproval(n, root);
         await loadDeliveryBody(n, root, sequence);
+        await loadNodeChanges(n, root, sequence);
         return;
       }
       if (n.role === 'document-deliverable') return;

@@ -1,6 +1,9 @@
 """Unchanged VDOC operations must not reopen accepted downstream code nodes."""
 
 import json
+from pathlib import Path
+import shutil
+import subprocess
 import unittest
 import urllib.error
 
@@ -145,6 +148,35 @@ class ApprovalStabilityTest(unittest.TestCase):
         self.assertEqual(result["revision"], previous + 1)
         node = next(n for n in result["desired_state"] if n["role"] == "document-writing-plan")
         self.assertFalse(self.store.node_plan_review_state(node["id"])["completed"])
+
+    def test_document_body_comparison_uses_last_approval_and_rejects_stale_body(self):
+        node = self.doc.delivery
+        before = self.store.document_delivery_review_state(node["id"])
+        old_body = self.doc.path.read_text()
+        self.doc.path.write_text(old_body.replace("当前接口", "当前接口和复位"))
+        with self.assertRaisesRegex(HarnessError, "正文版本已变化"):
+            self.store.node_definition_changes(node["id"], before["definition_digest"])
+        self.store.sync_documents(["document:vdoc:verification-plan"])
+        self.http.register_minimal_vdoc_delivery()
+        current = self.store.document_delivery_review_state(node["id"])
+        result = self.store.node_definition_changes(node["id"], current["definition_digest"], current["document_digest"])
+        self.assertEqual(result["previous_review"]["id"], before["current_review"]["id"])
+        self.assertEqual(result["baseline_status"], "COMPLETE")
+        self.assertEqual(result["changes"], [{"field": "document_body", "before": old_body, "after": self.doc.path.read_text()}])
+        with self.assertRaisesRegex(HarnessError, "正文版本已变化"):
+            self.store.node_definition_changes(node["id"], current["definition_digest"], before["document_digest"])
+
+    def test_browser_same_node_document_body_changes(self):
+        if not shutil.which('node') or subprocess.run(['node', '-e', "require('playwright')"], capture_output=True).returncode:
+            self.skipTest('Node.js and Playwright required')
+        self.doc.path.write_text(self.doc.path.read_text().replace("当前接口", "当前接口和复位"))
+        self.store.sync_documents(["document:vdoc:verification-plan"])
+        self.http.register_minimal_vdoc_delivery()
+        config = {"url": self.http.url, "project": self.http.server.default_project_id, "token": self.http.server.write_token,
+                  "workstream": "VDOC", "node": self.doc.delivery["id"], "field": "document_body", "added": "和复位", "unchanged": "当前接口"}
+        result = subprocess.run(['node', str(Path(__file__).with_name('dashboard_approval_subject_browser.cjs'))],
+                                input=json.dumps(config), text=True, capture_output=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_restart_and_owner_change_request_are_not_noops(self):
         previous = self.store.workstream("VDOC")["revision"]
