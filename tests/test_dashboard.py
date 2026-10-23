@@ -197,6 +197,28 @@ class DashboardTest(unittest.TestCase):
                 self.get("api/node-changes?" + bad)
             self.assertEqual(rejected.exception.code, 400)
 
+    def test_browser_node_changes_summary_and_precise_highlights(self) -> None:
+        if not shutil.which('node') or subprocess.run(['node', '-e', "require('playwright')"], capture_output=True).returncode:
+            self.skipTest('Node.js and Playwright are required for real browser testing')
+        self.design_minimal_vdoc()
+        path = self.root / "minimal-vdoc-plan.json"
+        proposal = json.loads(path.read_text())
+        item = proposal["nodes"][0]
+        item["work_content"] = ["接口保持不变", "复位后检查3个周期"]
+        path.write_text(json.dumps(proposal))
+        self.store.design_workstream("VDOC", None, [], [], [], desired_file=str(path))
+        item["work_content"] = ["接口保持不变", "复位后检查5个周期", "新增边界检查"]
+        path.write_text(json.dumps(proposal))
+        plan = self.store.design_workstream("VDOC", None, [], [], [], desired_file=str(path))
+        node = next(item for item in plan["desired_state"] if item["role"] == "document-writing-plan")
+        config = {"url": self.url, "project": self.server.default_project_id, "token": self.server.write_token,
+                  "workstream": "VDOC", "node": node["id"]}
+        result = subprocess.run(['node', str(ROOT / 'tests/dashboard_node_changes_browser.cjs')],
+                                input=json.dumps(config), text=True, capture_output=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('node changes browser PASS', result.stdout)
+        self.assertFalse(self.store.node_plan_review_state(node["id"])["completed"])
+
     def test_background_launcher_reuses_same_project_dashboard(self) -> None:
         port = self.server.server_address[1]
         result = ensure_dashboard_running(self.store, "127.0.0.1", port)

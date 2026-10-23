@@ -328,6 +328,23 @@ class CodeWorkflowTest(unittest.TestCase):
         extra_digest = self.store.node_plan_review_state(extra["id"])["definition_digest"]
         self.assertIsNone(self.store.node_definition_changes(extra["id"], extra_digest)["previous_node_id"])
 
+    def test_browser_code_node_changes_summary_and_precise_highlights(self):
+        if not shutil.which('node') or subprocess.run(['node', '-e', "require('playwright')"], capture_output=True).returncode:
+            self.skipTest('Node.js and Playwright are required for real browser testing')
+        from verif_harness.dashboard import dashboard_project_id
+        item = {**copy.deepcopy(self.item), "work_content": ["接口保持不变", "复位后检查3个周期"]}
+        self.design([item])
+        item["work_content"] = ["接口保持不变", "复位后检查5个周期", "新增边界检查"]
+        self.design([item])
+        fixture = self.fixture.fixture
+        config = {"url": fixture.url, "project": dashboard_project_id(self.root), "token": fixture.server.write_token,
+                  "workstream": "VENV", "node": self.plan_node["id"]}
+        result = subprocess.run(['node', str(Path(__file__).with_name('dashboard_node_changes_browser.cjs'))],
+                                input=json.dumps(config), text=True, capture_output=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('node changes browser PASS', result.stdout)
+        self.assertFalse(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+
     def test_feedback_reopens_approval_and_waits_for_agent(self):
         self.implement()
         state = self.store.node_plan_review_state(self.plan_node["id"])

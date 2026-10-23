@@ -351,9 +351,10 @@
     .node-changes li + li { margin-top: 9px; }
     .node-changes details { margin-top: 6px; }
     .node-changes pre { max-height: 230px; }
-    .node-changed-field { padding: 7px 10px; border-left: 3px solid var(--orange); border-radius: 5px; background: var(--yellow-bg); }
-    .node-changed-field::before { content: '本版有变化'; display: block; margin-bottom: 4px; color: var(--amber); font-size: 11px; font-weight: 700; }
-    .node-change-current { padding: 8px 10px; border-radius: 5px; background: var(--yellow-bg); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .node-changes .node-change-summary { color: var(--text); }
+    .node-change-added { color: var(--text); background: var(--yellow-bg); text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 3px; }
+    .node-change-removed { color: var(--text); background: var(--red-bg); text-decoration: line-through; }
+    .node-change-value { white-space: pre-wrap; overflow-wrap: anywhere; }
     .detail-card { padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
     .role-node-panel { padding: 15px; border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 12px; background: color-mix(in srgb, var(--brand-2) 34%, var(--panel)); }
     .role-node-panel > h3 { font-size: 16px; }
@@ -2716,21 +2717,173 @@
       if (typeof value === 'string') return value;
       return JSON.stringify(value, null, 2);
     }
+    // Match unchanged list entries before pairing edits, including moves and duplicates.
+    function nodeChangePairs(before, after) {
+      const available = new Map();
+      before.forEach((value, index) => {
+        const key = JSON.stringify(value);
+        if (!available.has(key)) available.set(key, []);
+        available.get(key).push(index);
+      });
+      const used = new Set();
+      const pairs = after.map((value, afterIndex) => {
+        const beforeIndex = available.get(JSON.stringify(value))?.shift();
+        if (beforeIndex !== undefined) used.add(beforeIndex);
+        return {beforeIndex, afterIndex};
+      });
+      const remaining = before.map((_value, index) => index).filter(index => !used.has(index));
+      for (const pair of pairs) if (pair.beforeIndex === undefined) pair.beforeIndex = remaining.shift();
+      return pairs.concat(remaining.map(beforeIndex => ({beforeIndex})));
+    }
+    function nodeTextDiff(before, after) {
+      // Code points keep Chinese and supplementary Unicode characters intact.
+      const left = Array.from(before), right = Array.from(after), parts = [];
+      const add = (kind, text) => {
+        if (!text) return;
+        if (parts.at(-1)?.kind === kind) parts.at(-1).text += text;
+        else parts.push({kind, text});
+      };
+      let start = 0, end = 0;
+      while (start < left.length && start < right.length && left[start] === right[start]) start++;
+      while (end < left.length - start && end < right.length - start && left.at(-1-end) === right.at(-1-end)) end++;
+      const a = left.slice(start, left.length-end), b = right.slice(start, right.length-end);
+      // Never guess which text changed when a very large comparison exceeds the budget.
+      if (a.length * b.length > 1000000) return {precise:false, before, after, parts:[]};
+      add('same', left.slice(0, start).join(''));
+      const width = b.length + 1, table = new Uint32Array((a.length+1) * width);
+      for (let i=a.length-1; i>=0; i--) for (let j=b.length-1; j>=0; j--) {
+        table[i*width+j] = a[i] === b[j] ? 1+table[(i+1)*width+j+1] : Math.max(table[(i+1)*width+j], table[i*width+j+1]);
+      }
+      let i=0, j=0;
+      while (i<a.length || j<b.length) {
+        if (i<a.length && j<b.length && a[i] === b[j]) { add('same', a[i++]); j++; }
+        else if (i<a.length && (j === b.length || table[(i+1)*width+j] >= table[i*width+j+1])) add('removed', a[i++]);
+        else add('added', b[j++]);
+      }
+      add('same', end ? left.slice(-end).join('') : '');
+      return {precise:true, before, after, parts};
+    }
+    function nodeDiffHtml(diff, side, excerpt=false) {
+      const kind = side === 'before' ? 'removed' : 'added';
+      const parts = diff.precise ? diff.parts.filter(part => part.kind === 'same' || part.kind === kind)
+        : [{kind:'same', text:diff[side]}];
+      const length = parts.reduce((sum, part) => sum + Array.from(part.text).length, 0);
+      let start = 0;
+      if (excerpt && length > 100) {
+        for (const part of parts) { if (part.kind !== 'same') break; start += Array.from(part.text).length; }
+        start = Math.max(0, Math.min(length-100, start-24));
+      }
+      const end = excerpt ? start+100 : length;
+      let offset = 0;
+      const body = parts.map(part => {
+        const characters = Array.from(part.text), from = Math.max(0, start-offset), to = Math.min(characters.length, end-offset);
+        offset += characters.length;
+        if (to <= from) return '';
+        const text = escapeHtml(characters.slice(from, to).join(''));
+        return part.kind === 'same' ? text : part.kind === 'removed'
+          ? `<del class="node-change-removed">${text}</del>` : `<mark class="node-change-added">${text}</mark>`;
+      }).join('');
+      return `${start ? '…' : ''}${body}${end < length ? '…' : ''}`;
+    }
+    function nodeChangeItems(before, after, path=[]) {
+      if (JSON.stringify(before) === JSON.stringify(after)) return [];
+      if (Array.isArray(before) && Array.isArray(after)) {
+        const pairs = nodeChangePairs(before, after);
+        const items = pairs.flatMap(pair => nodeChangeItems(before[pair.beforeIndex], after[pair.afterIndex], [...path, pair.afterIndex ?? pair.beforeIndex]));
+        return items.length ? items : [{kind:'reordered', before, after, path}];
+      }
+      if (before && after && typeof before === 'object' && typeof after === 'object'
+        && !Array.isArray(before) && !Array.isArray(after)) {
+        return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+          .flatMap(key => nodeChangeItems(before[key], after[key], [...path, key]));
+      }
+      const empty = value => value == null || value === '' || Array.isArray(value) && !value.length;
+      return [{kind:empty(before) ? 'added' : empty(after) ? 'removed' : 'modified', before, after, path}];
+    }
+    const NODE_CHANGE_VALUE_LABELS = {
+      repeat:'每个 case 的重复次数', seed:'指定 seed', seed_mode:'Seed 模式',
+      regression_group:'回归组', case_id:'Case', profile_id:'Submit profile', submit_file:'提交配置文件',
+      metrics:'Code coverage 指标', hierarchy_selectors:'层次范围', covergroup_selectors:'Covergroup 范围',
+      object_kinds:'功能覆盖对象类型', semantic_goal_ids:'覆盖目标', dut_design_id:'DUT 构建分区',
+      required:'是否必需', purpose:'用途', instructions:'撰写要求', section:'章节',
+      path:'文件路径', name:'名称', version:'工具版本', title:'标题',
+    };
+    function nodeChangeItemHtml(item, technical, detail=false) {
+      if (item.kind === 'reordered') return '条目顺序已调整，内容未变化。' + (detail
+        ? `<p>上一版：${escapeHtml(nodeChangeValue(item.before))}</p><p>本版：${escapeHtml(nodeChangeValue(item.after))}</p>` : '');
+      const label = item.path.filter(key => typeof key === 'string').at(-1);
+      const known = NODE_CHANGE_VALUE_LABELS[label];
+      const kind = {added:'新增',removed:'删除',modified:'修改'}[item.kind];
+      if (!detail && technical && !known) {
+        return /digest|sha256/.test(label || '') ? '输入或配置的版本已更新。' : `${kind}配置内容；具体差异见下方对照。`;
+      }
+      const value = value => value == null ? '' : nodeChangeValue(value);
+      const diff = nodeTextDiff(value(item.before), value(item.after));
+      const before = nodeDiffHtml(diff, 'before', !detail), after = nodeDiffHtml(diff, 'after', !detail);
+      const prefix = detail && item.path.length ? `<span class="mono">${escapeHtml(item.path.join(' / '))}</span>：` : known ? `${escapeHtml(known)}：` : '';
+      const body = item.kind === 'added' ? `新增“${after}”` : item.kind === 'removed' ? `删除“${before}”` : `从“${before}”改为“${after}”`;
+      return `${prefix}${body}${diff.precise ? '' : '（文本较长，未自动高亮，请核对完整内容）'}`;
+    }
     function nodeChangesHtml(result) {
       if (!result.previous_node_id) return '<h3>本版内容变化</h3><p>首次提交此工作节点，没有可比的旧版。请按当前完整内容审批。</p>';
       if (!result.changes.length) return `<h3>本版内容变化</h3><p>与上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）相比，节点定义内容没有变化。此处不对照文档正文、交付文件或验证证据；审批仍以当前版本为准。</p>`;
-      return `<h3>本版内容变化 · ${result.changes.length} 处</h3><p>与上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）相比。橙色区域为本版变化；此处只对照节点定义，不代替文档正文、交付文件和验证证据检查。</p><ul>${result.changes.map(change => {
-        const before = nodeChangeValue(change.before), after = nodeChangeValue(change.after);
-        const kind = change.before == null || change.before === '' || Array.isArray(change.before) && !change.before.length ? '新增' : change.after == null || change.after === '' || Array.isArray(change.after) && !change.after.length ? '删除' : '修改';
-        const current = NODE_CHANGE_DETAIL_FIELDS.has(change.field)
-          ? `<details><summary>查看本版详细内容</summary><pre>${escapeHtml(after)}</pre></details>`
-          : `<div class="node-change-current">本版：${escapeHtml(after)}</div>`;
-        return `<li><strong>${escapeHtml(NODE_CHANGE_LABELS[change.field] || change.field)} · ${kind}</strong>${current}<details><summary>查看上一版内容</summary><pre>${escapeHtml(before)}</pre></details></li>`;
-      }).join('')}</ul>`;
+      return `<h3>本版内容变化 · ${result.changes.length} 项内容</h3><ul>${result.changes.map(change => {
+        const items = nodeChangeItems(change.before, change.after);
+        const technical = NODE_CHANGE_DETAIL_FIELDS.has(change.field);
+        const counts = [['added','新增'],['removed','删除'],['modified','修改'],['reordered','调整顺序']]
+          .map(([kind,label]) => { const count = items.filter(item => item.kind === kind).length; return count ? `${label} ${count} 项` : ''; }).filter(Boolean).join('，');
+        return `<li><strong>${escapeHtml(NODE_CHANGE_LABELS[change.field] || '节点内容')}：${counts || '内容未变化'}</strong>${items.slice(0,3).map(item => `<p class="node-change-summary node-change-value">${nodeChangeItemHtml(item, technical)}</p>`).join('')}${items.length > 3 ? `<p>另有 ${items.length-3} 项变化，展开下方对照查看。</p>` : ''}<details><summary>查看完整差异对照</summary><ul>${items.map(item => `<li class="node-change-value">${nodeChangeItemHtml(item, technical, true)}</li>`).join('')}</ul></details></li>`;
+      }).join('')}</ul><p>对照上一版同一工作节点（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）。黄色下划线标记新增或修改的文字，删除线标记移除的文字；相同内容不高亮。这里只对照节点定义，正文、交付文件和验证证据仍需单独核对。</p>`;
+    }
+    function clearNodeChangeMarks(root) {
+      root.querySelectorAll('[data-node-diff]').forEach(mark => mark.replaceWith(document.createTextNode(mark.textContent)));
+      root.querySelectorAll('[data-node-change-field]').forEach(field => field.normalize());
+    }
+    function highlightNodeChanges(n, root, changes) {
+      const fields = [...root.querySelectorAll('[data-node-change-field]')];
+      if (!fields.length || !changes.length) return;
+      const previous = {...n, plan_review:{...n.plan_review}};
+      for (const change of changes) {
+        previous[change.field] = change.before;
+        if (change.field in previous.plan_review) previous.plan_review[change.field] = change.before;
+      }
+      const template = document.createElement('template');
+      template.innerHTML = isCodeNode(n) ? codeNodeHtml(previous) : nodeRolePanelHtml(previous);
+      const textNodes = element => {
+        const walker = document.createTreeWalker(element, 4), result = [];
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (node.textContent.trim() && !node.parentElement.closest('button,textarea,select,script,style')) result.push(node);
+        }
+        return result;
+      };
+      for (const field of fields) {
+        if (!changes.some(change => [field.dataset.nodeChangeField, field.dataset.nodeChangeFieldExtra].includes(change.field))) continue;
+        const old = [...template.content.querySelectorAll('[data-node-change-field]')].find(item => item.dataset.nodeChangeField === field.dataset.nodeChangeField);
+        if (!old) continue;
+        const before = textNodes(old), after = textNodes(field);
+        for (const pair of nodeChangePairs(before.map(node => node.textContent), after.map(node => node.textContent))) {
+          if (pair.afterIndex === undefined) continue;
+          const node = after[pair.afterIndex], diff = nodeTextDiff(before[pair.beforeIndex]?.textContent || '', node.textContent);
+          if (!diff.precise || !diff.parts.some(part => part.kind === 'added')) continue;
+          const fragment = document.createDocumentFragment();
+          for (const part of diff.parts) {
+            if (part.kind === 'removed') continue;
+            const text = document.createTextNode(part.text);
+            if (part.kind === 'same') fragment.append(text);
+            else {
+              const mark = document.createElement('mark');
+              mark.className = 'node-change-added'; mark.dataset.nodeDiff = ''; mark.append(text); fragment.append(mark);
+            }
+          }
+          node.replaceWith(fragment);
+        }
+      }
     }
     async function loadNodeChanges(n, root, sequence=renderSequence) {
       const shells = [...root.querySelectorAll('[data-node-changes]')];
       if (!shells.length) return false;
+      clearNodeChangeMarks(root);
       const project = state.project, digest = (n.delivery_review || n.plan_review)?.definition_digest;
       const modalAtStart = modalSequence;
       const current = () => {
@@ -2745,11 +2898,7 @@
         const result = response.result;
         if (response.dashboard_project_id !== project || result.node_id !== n.id || result.definition_digest !== digest) throw new Error('节点版本已变化，请刷新后重新核对');
         for (const shell of shells) shell.innerHTML = nodeChangesHtml(result);
-        for (const change of result.changes) {
-          root.querySelectorAll('[data-node-change-field]').forEach(element => {
-            if (element.dataset.nodeChangeField === change.field || element.dataset.nodeChangeFieldExtra === change.field) element.classList.add('node-changed-field');
-          });
-        }
+        highlightNodeChanges(n, root, result.changes);
         return true;
       } catch (error) {
         if (current()) for (const shell of shells) shell.innerHTML = `<h3>本版内容变化</h3><p>无法核对上一版：${escapeHtml(error.message)}。请刷新节点后重试。</p>`;
