@@ -1460,7 +1460,14 @@ class V1ControlPlaneTest(unittest.TestCase):
         )
         self.assertTrue(resumed["resume"])
         self.assertEqual(resumed["next"], "apply_review_feedback")
-        replacement = self.design_minimal_vdoc()
+        unchanged = self.design_minimal_vdoc()
+        self.assertEqual(unchanged["revision"], plan["revision"])
+        self.assertEqual(store.review_feedback_state(node["id"])["processing_count"], 1)
+        path = self.root / "minimal-vdoc-plan.json"
+        proposal = json.loads(path.read_text(encoding="utf-8"))
+        proposal["nodes"][0]["work_content"].append("补充复位释放后的检查方法")
+        path.write_text(json.dumps(proposal), encoding="utf-8")
+        replacement = self.design("VDOC", "--desired-file", str(path))
         self.assertGreater(replacement["revision"], plan["revision"])
         superseded = self.run_cli(
             "agent-review-feedback", "list", "--status", "SUPERSEDED",

@@ -769,9 +769,18 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             ("VSTIM", ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
              ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
              "cap.venv:environment-smoke-evidence"),
+            ("VCHK", ["scoreboard", "scoreboard-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence"],
+             "cap.vstim:reachability-evidence"),
+            ("VCASE", ["case-implementation", "targeted-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"],
+             "cap.vchk:scoreboard-evidence"),
             ("VCOV", ["coverage-model", "coverage-collection"],
              ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"],
              "cap.vreg:executor-ready"),
+            ("VREG", ["regression-policy", "executor-ready"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"],
+             "cap.venv:environment-smoke-evidence"),
         )
         for index, (workstream, claims, inputs, dependency) in enumerate(cases):
             if index:

@@ -26,7 +26,8 @@ class VdocArtifactsTest(unittest.TestCase):
 
     def prepare(self):
         state = self.store.node_plan_review_state(self.plan["id"])
-        self.store.complete_node_plan_review(self.plan["id"], state["definition_digest"], "fixture-owner")
+        if not state["completed"]:
+            self.store.complete_node_plan_review(self.plan["id"], state["definition_digest"], "fixture-owner")
         document = self.store.documents("verification_plan.md")[0]
         self.path = self.fixture.root / document["path"]
         self.path.write_text("# 验证计划\n\n## DUT 范围\n检查当前接口。\n", encoding="utf-8")
@@ -365,7 +366,7 @@ class VdocArtifactsTest(unittest.TestCase):
         self.prepare()
         self.finish()
         old = self.store.document_artifacts("art.doc:verification-plan", 1)
-        self.fixture.design_minimal_vdoc()
+        self.store.restart_vdoc_workflow("fixture-owner", "明确重新启动文档方案", True)
         self.assertNotEqual(self.head("art.doc_plan:verification-plan")["status"], "VALID")
         self.assertNotEqual(self.head("cap.doc:verification-plan")["status"], "VALID")
         self.assertEqual(self.store.document_artifacts("art.doc:verification-plan", 1), old)

@@ -41,6 +41,19 @@ def digest(value: Any) -> str:
     return hashlib.sha256(encoded(value).encode("utf-8")).hexdigest()
 
 
+def artifact_subject(payload: dict[str, Any]) -> dict[str, Any]:
+    """Repeated inspection metadata does not version an unchanged accepted body."""
+    if "deliveries" not in payload:
+        return payload
+    return {**payload, "deliveries": [
+        {**delivery, "agent_check": {
+            key: value for key, value in delivery["agent_check"].items()
+            if key not in {"summary", "created_at", "updated_at", "checked_at"}
+        } if delivery.get("agent_check") else None}
+        for delivery in payload["deliveries"]
+    ]}
+
+
 def protected(node_id: str) -> bool:
     return node_id.startswith(("art.doc_plan:", "art.doc:", "cap.doc:"))
 
@@ -285,16 +298,24 @@ def reconcile(store, plans: list[dict[str, Any]]) -> None:
         def publish(artifact_id: str, payload: dict[str, Any], valid: bool) -> None:
             current = None
             if valid:
-                signature = digest(payload)
-                current = connection.execute("SELECT version FROM vdoc_artifact_versions WHERE artifact_id=? AND signature=?",
+                subject = artifact_subject(payload)
+                signature = digest(subject)
+                current = connection.execute("SELECT version,signature FROM vdoc_artifact_versions WHERE artifact_id=? AND signature=?",
                                              (artifact_id, signature)).fetchone()
+                if current is None and artifact_id.startswith("art.doc:"):
+                    # Preserve existing versions/digests; never rebind downstream
+                    # approvals merely because older artifacts included audit data.
+                    current = next((row for row in connection.execute(
+                        "SELECT version,signature,payload_json FROM vdoc_artifact_versions "
+                        "WHERE artifact_id=? ORDER BY version DESC", (artifact_id,),
+                    ) if artifact_subject(json.loads(row["payload_json"])) == subject), None)
                 if current is None:
                     version = connection.execute("SELECT COALESCE(MAX(version),0)+1 FROM vdoc_artifact_versions WHERE artifact_id=?",
                                                  (artifact_id,)).fetchone()[0]
                     connection.execute("INSERT INTO vdoc_artifact_versions VALUES(?,?,?,?,?)",
                                        (artifact_id, version, signature, encoded(payload), timestamp))
                 else:
-                    version = current[0]
+                    version, signature = current["version"], current["signature"]
                 current = {"version": version, "signature": signature}
             heads[artifact_id] = ("VALID" if valid else "REVIEW_REQUIRED", {
                 "document_key": payload["document_key"], "workstream_revision": plan["revision"],

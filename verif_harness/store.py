@@ -2258,7 +2258,22 @@ class ProjectStore:
         next_desired = [*retained, *delivery_rows]
         timestamp = now()
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            observed = self._read_workstream(connection, "VDOC")
+            if (observed["revision"] != revision
+                    or observed["desired_state"] != current_plan["desired_state"]):
+                raise HarnessError("VDOC 版本已变化，请重新读取后登记正文验收范围")
+            unchanged = {item["id"] for item in previous_deliveries
+                         if item in delivery_rows}
+            if (len(unchanged) == len(previous_deliveries) == len(delivery_rows)
+                    and not previous_internal):
+                connection.rollback()
+                return {**current_plan, "desired_state_proposal": proposal_source,
+                        "project_goal_count": len(delivery_rows), "vdoc_phase": "CONTENT_REVIEW",
+                        "questions_for_human": [], "auto_closure": self.evaluate_closure("VDOC")}
             for item in [*previous_deliveries, *previous_internal]:
+                if item["id"] in unchanged:
+                    continue
                 connection.execute(
                     "UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE id=?",
                     (Validity.STALE.value, timestamp, item["id"]),
@@ -2272,6 +2287,8 @@ class ProjectStore:
                     (item["id"],),
                 )
             for row in delivery_rows:
+                if row["id"] in unchanged:
+                    continue
                 self.upsert_node(
                     connection, row["id"], "desired-state", row["title"],
                     Validity.REVIEW_REQUIRED, "VDOC", row,
@@ -2306,7 +2323,10 @@ class ProjectStore:
                 "UPDATE workstreams SET desired_json=?,lifecycle=?,updated_at=? WHERE name='VDOC'",
                 (json_text(next_desired), lifecycle, timestamp),
             )
-            for document_key in sorted({str(item["document_key"]) for item in deliveries}):
+            changed_documents = {str(item["document_key"])
+                                 for item in [*previous_deliveries, *delivery_rows]
+                                 if item["id"] not in unchanged}
+            for document_key in sorted(changed_documents):
                 document = documents[document_key]
                 connection.execute(
                     "UPDATE documents SET status=?,updated_at=? WHERE id=?",
@@ -2367,6 +2387,7 @@ class ProjectStore:
         self, name: str, objective: str | None, desired: list[str],
         exit_criteria: list[str], decisions: list[str], document_root: str | None = None,
         evidence_claims: list[str] | None = None, desired_file: str | None = None,
+        *, restart: bool = False,
     ) -> dict[str, Any]:
         """Shared original planner; retained to interpret and test pre-v2 histories."""
         current_vdoc_plan: dict[str, Any] | None = None
@@ -2464,10 +2485,9 @@ class ProjectStore:
                     raise HarnessError(f"VDOC document root 与只读输入冲突: {document_root_value}")
             context["document_root"] = document_root_value
         with self.connect() as connection:
-            observed = connection.execute("SELECT revision FROM workstreams WHERE name=?", (name,)).fetchone()
+            connection.execute("BEGIN IMMEDIATE")
+            observed = connection.execute("SELECT * FROM workstreams WHERE name=?", (name,)).fetchone()
             revision = int(observed["revision"]) + 1 if observed else 1
-            connection.execute("UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE workstream=? AND type='desired-state'",
-                               (Validity.STALE.value, now(), name))
             desired_rows = []
             key_to_id = {
                 item["key"]: f"workstream:{name}:r{revision}:desired:{item['key']}"
@@ -2526,7 +2546,32 @@ class ProjectStore:
                         "custom-title" if desired else "template",
                     ))
                 desired_rows.append(row)
-                self.upsert_node(connection, node_id, "desired-state", title, Validity.UNKNOWN, name, row)
+            if name == "VDOC" and observed and not restart:
+                def definitions(rows):
+                    return {item["key"]: {key: value for key, value in item.items()
+                                          if key not in {"id", "parent_id"}}
+                            for item in rows if item.get("role") != "document-deliverable"}
+
+                previous_context = json.loads(observed["context_json"])
+                if (definitions(json.loads(observed["desired_json"])) == definitions(desired_rows)
+                        and observed["objective"] == objective_value
+                        and json.loads(observed["exit_json"]) == exit_values
+                        and json.loads(observed["decisions_json"]) == decisions
+                        and all(previous_context.get(key) == context.get(key) for key in (
+                            "project", "revision", "dut", "rtl_roots", "docs_roots", "document_root"))):
+                    if connection.execute(
+                        "SELECT 1 FROM human_actions WHERE status='OPEN' AND action='REQUEST_CHANGE' "
+                        "AND (target='VDOC' OR target LIKE 'workstream:VDOC:%') LIMIT 1",
+                    ).fetchone():
+                        raise HarnessError("负责人已登记文档工作节点变更要求；方案仍与当前版本相同，请先落实变更要求")
+                    connection.rollback()
+                    return {**self.workstream(name), "desired_state_proposal": proposal_source,
+                            "project_goal_count": len(proposal_nodes), "questions_for_human": [],
+                            "auto_closure": self.evaluate_closure(name)}
+            connection.execute("UPDATE nodes SET workstream=NULL,status=?,updated_at=? WHERE workstream=? AND type='desired-state'",
+                               (Validity.STALE.value, now(), name))
+            for row in desired_rows:
+                self.upsert_node(connection, row["id"], "desired-state", row["title"], Validity.UNKNOWN, name, row)
             for row in desired_rows:
                 if row.get("parent_id"):
                     connection.execute(
@@ -2628,9 +2673,9 @@ class ProjectStore:
             for item in self.documents()
         ]
 
-        restarted = self.design_workstream(
+        restarted = self._design_workstream(
             "VDOC", previous["objective"], [], previous["exit_criteria"],
-            previous["decisions"],
+            previous["decisions"], restart=True,
         )
         current_revision = int(restarted["revision"])
         timestamp = now()
@@ -4752,6 +4797,8 @@ class ProjectStore:
         state = self.node_plan_review_state(node_id, plan, desired)
         if state["definition_digest"] != definition_digest:
             raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新操作")
+        if state["completed"]:
+            raise HarnessError("当前版本已批准，无需重复提交")
         if state["feedback"]["unresolved_count"]:
             raise HarnessError(
                 "当前仍有未处理的审批意见；请先提交给 Agent，并等待修改完成后再批准全部内容"
@@ -4762,6 +4809,16 @@ class ProjectStore:
         timestamp = now()
         review_id = f"plan-review:{uuid.uuid4().hex[:12]}"
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            live_plan = self._read_workstream(connection, "VDOC")
+            live_node = next((item for item in live_plan["desired_state"] if item["id"] == node_id), None)
+            if live_node is None or self._node_plan_digest(live_plan, live_node) != definition_digest:
+                raise HarnessError("文档撰写方案已变化；请刷新 Dashboard 后重新操作")
+            live_state = self.node_plan_review_state(node_id, live_plan, live_node)
+            if live_state["completed"]:
+                raise HarnessError("当前版本已批准，无需重复提交")
+            if live_state["feedback"]["unresolved_count"]:
+                raise HarnessError("当前仍有未处理的审批意见，请先等待 Agent 处理")
             if connection.execute(
                 "SELECT 1 FROM human_actions WHERE target=? AND status='OPEN'", (node_id,),
             ).fetchone() or connection.execute(
@@ -5826,6 +5883,9 @@ class ProjectStore:
             raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
         if not state["document_available"]:
             raise HarnessError("文档正文缺失或尚未同步，请先由 Agent 准备当前版本正文")
+        if (selected == "approve" and state["current_review"] is not None
+                and state["current_review"]["verdict"] == "APPROVE"):
+            raise HarnessError("当前正文版本已批准，无需重复提交；如有新意见，请通过修改意见登记")
         if selected == "modify" and state["feedback"]["processing_count"]:
             raise HarnessError(
                 "上一批审批意见仍在等待 Agent 处理；请先查看修改结果，再提交新的审批意见"
@@ -5880,6 +5940,16 @@ class ProjectStore:
             else Validity.REVIEW_REQUIRED.value
         )
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            live_plan = self._read_workstream(connection, "VDOC")
+            live_node = next((item for item in live_plan["desired_state"] if item["id"] == node_id), None)
+            if live_node is None or self._node_plan_digest(live_plan, live_node) != definition_digest:
+                raise HarnessError("文档交付节点定义已变化；请刷新 Dashboard 后重新审批")
+            live_state = self.document_delivery_review_state(node_id, live_plan, live_node)
+            if not live_state["document_available"] or live_state["document_digest"] != document_digest:
+                raise HarnessError("文档正文已变化；请刷新 Dashboard 后重新审批")
+            if live_state["current_review"] != state["current_review"] or live_state["feedback"] != state["feedback"]:
+                raise HarnessError("当前正文审批或意见已变化，请重新读取；已批准版本无需重复提交")
             connection.execute(
                 "INSERT INTO document_delivery_reviews VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (review_id, node_id, "VDOC", plan["revision"], definition_digest,
