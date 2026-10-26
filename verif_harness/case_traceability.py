@@ -99,7 +99,7 @@ def validate_traceability(value, case_id, check_file=None):
         raise CaseTraceabilityError("预期结果引用了未登记的来源")
     kinds = {sources[item]["kind"] for item in basis}
     if not kinds & (AUTHORITATIVE_KINDS | {"rtl", "engineering-decision"}):
-        raise CaseTraceabilityError("覆盖缺口和缺陷记录不能单独作为预期结果依据")
+        raise CaseTraceabilityError("未覆盖项和缺陷记录不能单独作为预期结果依据")
     status = _text(expected["status"], "预期结果确认状态")
     if status not in STATUSES:
         raise CaseTraceabilityError("未知预期结果确认状态")

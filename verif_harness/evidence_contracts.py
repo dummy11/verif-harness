@@ -1177,13 +1177,13 @@ def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str
         if required_count != covered_count + excluded_count + uncovered_count:
             blockers.append("覆盖对象统计不完整：required 必须等于 covered + excluded + uncovered")
         if excluded_count != observed_counts["excluded"] or uncovered_count != observed_counts["uncovered"]:
-            blockers.append("缺口明细数量与 excluded/uncovered 统计不一致")
+            blockers.append("排除项和未覆盖项的明细数量与统计不一致")
         if required_objects:
             if required_count != len(required_objects):
                 blockers.append("required_objects 与工具生成的覆盖对象清单数量不一致")
             unexpected = sorted(seen - set(required_objects))
             if unexpected:
-                blockers.append("缺口分析包含不属于当前覆盖对象清单的对象：" + ", ".join(unexpected))
+                blockers.append("未覆盖项分析包含不属于当前覆盖对象清单的对象：" + ", ".join(unexpected))
         facts = {
             "required_objects": required_count, "covered_objects": covered_count,
             "excluded_objects": excluded_count, "uncovered_objects": uncovered_count,
@@ -1196,7 +1196,7 @@ def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str
                 "result.coverage_collection_config_digest",
             )
             if merge_facts["coverage_collection_config_digest"] != reported_config:
-                blockers.append("缺口分析引用的 merge manifest 未绑定本次 CoverageCollectionConfig/1")
+                blockers.append("未覆盖项分析引用的 merge manifest 没有对应本次 CoverageCollectionConfig/1")
             facts.update(merge_facts)
     return _finish(normalized, blockers, facts)
 

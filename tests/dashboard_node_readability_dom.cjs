@@ -41,6 +41,8 @@ vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclic
             {criterion:longText,method:longText,actual:longText,expected:longText,validation:{ready:true}},
           ]}},
       });
+      nodes.find(node => node.role === 'coverage-convergence-deliverable').title =
+        '全量覆盖项合并采集、缺口分析与排除管理';
       for (const node of nodes.filter(n => n.workstream === 'VCOV')) {
         if (node.role.includes('implementation')) {
           node.coverage_scope = {schema:'CoverageScope/1',code:{metrics:['line'],hierarchy_selectors:['dut']}};
@@ -88,6 +90,10 @@ vm.runInContext(source.slice(0, source.indexOf("    $('#drawer-backdrop').onclic
           else Object.assign(plan.plan_review, {status:'PENDING',completed:false});
           await renderDrawer(node.id, full);
           const panel = document.querySelector(full ? '#main' : '#drawer');
+          if (node.role === 'coverage-convergence-deliverable') {
+            assert.doesNotMatch(panel.querySelector('.drawer-head h2').textContent, /全量|缺口/);
+            assert.equal(node.title, '全量覆盖项合并采集、缺口分析与排除管理');
+          }
           const details = [...panel.querySelectorAll('.node-content-details,.coverage-delivery-part,.delivery-summary')];
           assert.ok(details.length > 0, node.role);
           assert.ok(details.every(el => !el.open), node.role + ' must start collapsed');

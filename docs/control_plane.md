@@ -22,7 +22,7 @@
 尚无批准记录时按首次审批处理。对照不授予批准；读取失败或当前版本已变化时，确认弹窗禁止提交。
 
 VCASE 的 `HoleAnalysisReport/1` 是提出补洞工作范围的历史反馈：当前已批准方案使用批准时的报告版本，
-后续报告生成时间、其他缺口或覆盖进展变化不自动重写该用例方案。新缺口通过 Main Agent 分析并显式调整
+后续报告生成时间、其他未覆盖项或覆盖进展变化不自动重写该用例方案。新未覆盖项通过 Main Agent 分析并显式调整
 工作范围；真实范围、规格、代码、原始证据、检查结论或实际依赖版本变化仍重新核对和审批。
 报告路径、批准时摘要和审批回执保存在 `code_feedback_inputs`，同一工作包的交付使用这一历史依据。
 VCASE 保留这一专用反馈报告的默认识别。其他代码方案可以通过 `planning_feedback_files` 显式列出
@@ -41,14 +41,14 @@ VCASE 保留这一专用反馈报告的默认识别。其他代码方案可以�
 
 方案输入不得包含本节点交付输出（包括输出目录中的文件），避免生成报告后反过来使方案审批失效。
 登记时拒绝这类方案；已有冲突节点阻止批准并要求修订输入与输出范围，不自动删除登记或继承批准。
-缺口分析报告作为覆盖率收敛交付证据时应登记在输出和验证证据中，而不是该节点的方案输入。
+未覆盖项分析报告作为覆盖率收敛交付证据时应登记在输出和验证证据中，而不是该节点的方案输入。
 
 方案正文固定为目标、工作范围、具体工作、实现方式、如何验证、输出、交付条件。
 输入依据默认折叠，代码只列目录，文档逐一列出。待确认事项由 Agent 关联节点
 单独提问，不作为方案正文栏目。方案批准后才能在对应交付节点实现和验证。
 
 交付节点以验证报告和证据替换文档正文，展示检查方法、预期、实际结果和结论，
-并提供当前交付文件和证据的受控查看入口；覆盖率收敛交付展示数据库、采集报告和缺口结论，
+并提供当前交付文件和证据的受控查看入口；覆盖率收敛交付展示数据库、采集报告和未覆盖项处理结论，
 回归结果交付展示测试清单、执行报告和失败处理记录。
 Agent 完成验证后才允许负责人批准；验证
 失败、证据缺失或内容变化时不能批准。批准说明选填，审批意见按批提交给 Agent，
@@ -87,9 +87,9 @@ bin 和 cross。code coverage 范围由 metric、层次选择或 `cm.hier` 类�
 `CoverageImplementationConfig/1` 固定覆盖率插桩、elaboration、采集、导出和分析配置、
 工具版本以及兼容 submit profile 摘要；code coverage 的目标固定为 DUT，不统计 testbench
 代码。xverif 使用当前计划、实现配置和模型展开
-`CoverageObjectInventory/2`，模型、采集与缺口分析证据通过
+`CoverageObjectInventory/2`，模型、采集与未覆盖项分析证据通过
 `coverage_inventory_digest` 绑定同一份受控对象全集。收敛报告保存完整计数，只逐项列出
-excluded/uncovered 缺口；计数、清单、计划、模型或数据库不一致都会阻止收敛。
+excluded/uncovered 未覆盖项；计数、清单、计划、模型或数据库不一致都会阻止收敛。
 收敛方案继承明确关联的已验收实现范围，不能自行缩小批准范围。
 `CoverageCollectionConfig/1` 只读引用一条或多条 VREG `regression_config` 和 merge profile；
 case、submit profile、seed 与 repeat 只在 VREG 审批。VREG 轮次产生的 VDB 由
@@ -102,10 +102,10 @@ case、submit profile、seed 与 repeat 只在 VREG 审批。VREG 轮次产生�
 一个覆盖率收敛方案及其对应交付只管理一个批准的 DUT 指纹分区。预期存在多个指纹时，Agent
 在 proposal 中分别建立多个覆盖率收敛方案，批准后各自产生一个收敛交付；VDB、batch、case、
 seed 和 iteration 仍保留在节点内部清单，不转换成公开节点或额外审批。
-如果缺口结论包含 excluded 项，负责人先在收敛交付节点提供 exclude 文件；提供即表示
+如果未覆盖项处理结论包含 excluded 项，负责人先在收敛交付节点提供 exclude 文件；提供即表示
 文件中的排除范围已经人工审批，不再为每个排除项重复建立 WAIVE。CLI 对应命令为
 `code provide-exclusions NODE FILE --reviewer NAME --confirm`，Dashboard 提供同一受控入口。
-Agent 随后用 `code validate` 检查文件合法性、当前 revision/节点绑定，以及缺口报告是否引用
+Agent 随后用 `code validate` 检查文件合法性、当前 revision/节点绑定，以及未覆盖项分析报告是否引用
 相同路径、SHA-256 和同一个文件级审批记录。替换或修改文件会使旧 validation 和交付验收失效。
 最终覆盖率收敛结果仍由负责人单独验收。
 Dashboard 的覆盖率收敛交付节点依次展示检查范围、结果报告、未覆盖项说明、
@@ -121,7 +121,7 @@ Dashboard 的覆盖率收敛交付节点依次展示检查范围、结果报告�
 绕过审批检查；读取失败及版本变化提示保持可见。
 旧 `CoverageEvidence/1`、`CoverageEvidence/2`、`CoverageObjectInventory/1` 和
 `CoverageItemManifest/1` 记录继续保留用于审计，但不能满足当前
-交付；缺少当前合同信息时必须重新验证，过期缺口报告不再触发反馈动作。
+交付；缺少当前合同信息时必须重新验证，过期未覆盖项分析报告不再触发反馈动作。
 VCASE 中的完整 case 由 testcase 或可执行 virtual sequence 与一个 submit profile
 共同确定。submit file 是 testbench 的配置事实源；verif-harness 只记录项目内路径、
 profile ID、submit file 摘要和 profile 摘要，不复制、解析或执行 VCS、LSF、license
@@ -129,10 +129,10 @@ profile ID、submit file 摘要和 profile 摘要，不复制、解析或执行 
 profile。testbench 的 submit 工具再生成 `RegressionBatchManifest/2` 和 caselist；每个
 batch 只绑定一个 profile，因此同一组 case 使用不同 profile 时必须成为不同
 batch/caselist。执行和分类记录以 batch、case、seed 和 iteration 联合标识。
-每个 `CaseManifest/2` 还通过 `traceability` 关联已有用例清单、验证点以及规格、RTL、覆盖缺口、
+每个 `CaseManifest/2` 还通过 `traceability` 关联已有用例清单、验证点以及规格、RTL、未覆盖项、
 缺陷、参考模型或工程决定的文件、SHA-256、版本和位置，单独记录预期结果及检查依据。
 仅由 RTL 推导的行为标记“RTL 推导，尚未确认”，确认前不得通过 VCASE 交付验证；需要确认时复用
-本节点既有提问，回答必须匹配同一 case 的具体来源和预期版本。缺口反馈使用受控历史快照。
+本节点既有提问，回答必须匹配同一 case 的具体来源和预期版本。未覆盖项反馈使用受控历史快照。
 来源、预期依据或确认记录变化会使相关证据需要重新核对。原 CaseManifest/1 仅保留历史，
 升级后需补齐真实来源重新验证；不为每个 case 增加公开节点或审批入口。
 VREG 按“回归基础设施方案 → 基础设施交付 → 结果方案 → 结果交付”推进。基础设施只依赖
@@ -140,7 +140,7 @@ VREG 按“回归基础设施方案 → 基础设施交付 → 结果方案 → 
 `cap.vreg:<implementation_key>` 明确关联当前方案中的已验收基础设施范围，同时依赖当前
 文档、环境、激励、检查、用例和 `cap.vcov:coverage-collection`，基础设施不反向等待最终结果。
 VREG 当前轮次验证完成后即可向 VCOV 提供 VDB；VREG 结果交付的最终人工验收再等待当前
-覆盖率采集与缺口分析能力，避免执行和收敛形成依赖环。必需基础设施和结果
+覆盖率采集与未覆盖项分析能力，避免执行和收敛形成依赖环。必需基础设施和结果
 节点都完成验收后，VREG 才满足完成条件，执行器可用不等于整条 VREG 完成。
 VSTIM、VCASE 和 VCOV 如需回归执行能力，只能依赖 `cap.vreg:executor-ready`，不能把
 `fresh-evidence` 等最终回归结果反向作为上游。每次登记代码方案前，Engine 会把当前各工作流
@@ -296,7 +296,7 @@ revision 改变时停止旧任务。重启后仍有旧子进程存活时拒绝�
 不会把整段文字作为按钮。问题背景与证据默认折叠，问题正文、背景和选项说明支持
 Markdown 段落、列表、表格和代码块，路径与命令按文本展示。折叠和排版不修改问题、
 选项或审批记录；查看完整问题后仍通过同一问题记录提交回答。
-Main Agent 提问时，先用一句话说明需要你决定什么，将当前结论、依据和缺口分段写入
+Main Agent 提问时，先用一句话说明需要你决定什么，将当前结论、依据和还缺什么分段写入
 背景，命令单独放进代码块。彼此独立的决定分别提问，不把多个决定、指标和长命令
 混进同一段问题标题。
 面向负责人的说明使用具体对象和动作，例如“这份报告对应第几次测试”“合并各次测试

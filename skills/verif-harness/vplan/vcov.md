@@ -1,4 +1,4 @@
-# VCOV：覆盖率实现、采集与缺口收敛
+# VCOV：覆盖率实现、采集与未覆盖项收敛
 
 VCOV 直接使用四种公开工作节点类型。根据 DUT 的接口、功能和覆盖范围可以建立多个同类型
 节点；界面不增加“工作包”层级。
@@ -7,14 +7,14 @@ VCOV 直接使用四种公开工作节点类型。根据 DUT 的接口、功能�
 | --- | --- | --- | --- |
 | 覆盖率实现方案 | `coverage-implementation-plan` | 已验收文档 `cap.doc`、环境 `cap.venv`、回归执行器 `cap.vreg` | 明确覆盖目标、模型、采样和采集方式、验证方法，等待负责人批准 |
 | 覆盖率实现交付 | `coverage-implementation-deliverable` | 对应已批准方案 `art.code_plan` | 实现并验证覆盖模型和采集链路，等待负责人验收 |
-| 覆盖率收敛方案 | `coverage-convergence-plan` | 当前有效的覆盖实现能力，以及 `cap.doc`、`cap.venv`、`cap.vstim`、`cap.vchk`、`cap.vcase` 和 `cap.vreg` | 明确本轮采集范围、覆盖目标、合并和缺口处理方法，等待负责人批准 |
-| 覆盖率收敛交付 | `coverage-convergence-deliverable` | 对应已批准方案 `art.code_plan` 和当前运行结果 | 交付覆盖数据库、采集报告、完整缺口分析及补洞结果，等待负责人验收 |
+| 覆盖率收敛方案 | `coverage-convergence-plan` | 当前有效的覆盖实现能力，以及 `cap.doc`、`cap.venv`、`cap.vstim`、`cap.vchk`、`cap.vcase` 和 `cap.vreg` | 明确本轮采集范围、覆盖目标、合并和未覆盖项的处理方法，等待负责人批准 |
+| 覆盖率收敛交付 | `coverage-convergence-deliverable` | 对应已批准方案 `art.code_plan` 和当前运行结果 | 交付覆盖数据库、采集报告、完整的未覆盖项分析及处理结果，等待负责人验收 |
 
 ```text
 覆盖率实现方案 → 负责人批准 → 覆盖率实现交付
     → Agent 验证通过 → 负责人验收 → 覆盖实现能力有效
     → 覆盖率收敛方案 → 负责人批准 → 覆盖率收敛交付
-    → 完整覆盖范围已检查、缺口已处理 → 负责人验收 → 覆盖收敛能力有效
+    → 完整覆盖范围已检查、未覆盖项已处理 → 负责人验收 → 覆盖收敛能力有效
 ```
 
 实现交付必须同时验证 `coverage-model` 和 `coverage-collection`：完成 covergroup、
@@ -38,7 +38,7 @@ coverpoint、bin、cross、采样时机、收集和导出链路。它不以达�
 两类方案都必须依赖具体的 `cap.vreg:executor-ready`，不能用最终回归结果代替执行能力。
 
 收敛交付必须同时验证 `coverage-collection-evidence` 和 `hole-analysis-evidence`。
-采集证据绑定当前版本、数据库分片和合并结果；数据库不得有合并错误或过期分片。缺口分析
+采集证据绑定当前版本、数据库分片和合并结果；数据库不得有合并错误或过期分片。未覆盖项分析
 给出必需、已命中、已排除和未覆盖对象的完整计数，只逐项列出 excluded（已批准排除）和
 uncovered（未覆盖）对象；已命中对象保留在工具生成的全集与数据库中，不复制进控制状态。excluded
 由负责人提供当前 exclude 文件；提供动作本身表示负责人已经批准文件中的排除范围，不再逐项
@@ -55,7 +55,7 @@ verif-harness code provide-exclusions NODE path/to/exclusions.el \
   --reviewer NAME --reason "已核对不可达范围" --confirm
 ```
 
-Agent 随后重新生成缺口报告并执行 `code validate NODE report.json`。这一步只检查合法性和一致性，
+Agent 随后重新生成未覆盖项分析报告并执行 `code validate NODE report.json`。这一步只检查合法性和一致性，
 不会再次批准排除范围，也不会代替最终交付验收。
 
 实现方案同时登记 `CoverageImplementationConfig/1`，固定覆盖率插桩、elaboration、采集、
@@ -64,8 +64,8 @@ Agent 随后重新生成缺口报告并执行 `code validate NODE report.json`�
 `CoverageObjectInventory/2`。xverif 按批准的 `CoverageScope/1`、当前实现配置、覆盖计划和
 覆盖模型展开必需原生对象全集；清单记录 `scope_digest`、`implementation_config_digest`、
 `plan_digest`、`model_digest`，以及每个对象的工具身份、类别、类型和原生路径。对象身份只存在于
-受控清单和缺口报告，不成为人工审批 item。计划摘要必须对应方案 `input_files` 的当前文件，模型
-及采集配置摘要必须对应当前交付文件。模型证据、采集证据和缺口分析通过
+受控清单和未覆盖项分析报告，不成为人工审批 item。计划摘要必须对应方案 `input_files` 的当前文件，模型
+及采集配置摘要必须对应当前交付文件。模型证据、采集证据和未覆盖项分析通过
 `coverage_inventory_digest` 绑定同一份当前清单。
 
 收敛方案登记 `CoverageCollectionConfig/1`，其中只读引用一个或多个当前 VREG
@@ -76,7 +76,7 @@ profile、seed 模式和值或 repeat。负责人审批收敛方案时，只要�
 `CoverageDatabaseShardManifest/1` 必须把分片完整绑定到当前执行轮次、
 `RegressionBatchManifest/2` 及其 case/seed/iteration，不能漏跑、重复或混入其他轮次。
 `CoverageMergeManifest/1` 必须精确列出全部输入 VDB 摘要、当前 merge profile 和唯一输出
-数据库摘要；采集与缺口分析必须引用该同一合并输出。每份 shard manifest 还必须携带
+数据库摘要；采集与未覆盖项分析必须引用该同一合并输出。每份 shard manifest 还必须携带
 `DutBuildFingerprint/1`：只由 DUT 标识、RTL 摘要、parameter 摘要、宏摘要和 DUT 级
 elaboration 摘要构成。上述任一项不同都禁止 merge。testbench 身份、submit profile 和 DUT
 实例路径不进入该指纹，所以不同 testbench/profile 的 VDB 在 DUT 指纹相同时允许合并；每个
@@ -89,7 +89,7 @@ design 计算，不能直接对整个仿真顶层 elaboration 取摘要。
 VDB、batch、case、seed 和 iteration 仍只是各交付内部的受控清单，不增加公开节点或逐项审批。
 `scope_digest` 使用规范化 `CoverageScope/1`（字符串数组排序、JSON key 排序、UTF-8、无额外空白）
 计算 SHA-256，工具不得对同一范围使用自定义摘要算法。
-缺口报告的 `required_objects` 必须等于 `covered_objects + excluded_objects + uncovered_objects`，
+未覆盖项分析报告的 `required_objects` 必须等于 `covered_objects + excluded_objects + uncovered_objects`，
 且 `holes` 必须完整列出 excluded/uncovered 对象并属于清单全集。作为 `analysis-report` 的清单还须
 保留标准 adapter 回执信息，不能只自行标记工具名称。范围、清单、计划、模型或数据库版本变化后，
 旧证据必须重新验证。

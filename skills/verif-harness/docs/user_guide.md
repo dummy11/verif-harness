@@ -475,7 +475,7 @@ VCASE 负责验证点到 testcase/可执行 virtual sequence 的映射、完整 
 1. Agent 从当前文档、激励和检查能力形成 case matrix、优先级、组合场景和预期检查方案。
 2. 负责人确认 testcase 范围、submit profile 和每个验证点的检查方式。
 3. 方案批准后，Agent 实现 testcase 或可执行 virtual sequence。
-4. testbench 生成 `CaseManifest/2`，复用用例清单登记每个 case 的验证点、规格/RTL/覆盖缺口等来源文件、
+4. testbench 生成 `CaseManifest/2`，复用用例清单登记每个 case 的验证点、规格/RTL/未覆盖项等来源文件、
    内容摘要、版本和具体位置，并单独说明预期结果依据。仅从 RTL 推导且未经确认的行为标记
    “RTL 推导，尚未确认”，通过原节点提问确认后才能作为交付依据，不新增公开节点或审批入口。
    完整 case 由可执行入口和 testbench 自己维护的 submit profile
@@ -508,7 +508,7 @@ VCOV 有四种直接公开节点：
 - `coverage-implementation-plan`：覆盖率实现方案；
 - `coverage-implementation-deliverable`：coverage model/collection 交付；
 - `coverage-convergence-plan`：覆盖率收敛方案；
-- `coverage-convergence-deliverable`：覆盖率采集、缺口分析和排除结果交付。
+- `coverage-convergence-deliverable`：覆盖率采集、未覆盖项分析和排除结果交付。
 
 `CoverageScope/1`、工具生成的对象清单、数据库和 hole 明细是节点内部受控数据，不增加公开节点。
 
@@ -528,7 +528,7 @@ VCOV 有四种直接公开节点：
 5. 负责人审批收敛范围；方案只引用已批准的 VREG `regression_config`，此时不要求回归已经跑完。
    Agent 用 xverif 按当前范围、计划和模型生成 `CoverageObjectInventory/2`，再按交付阶段的实际
    VREG 执行轮次采集/合并覆盖率数据库。
-6. Agent 报告必需、已覆盖、排除、未覆盖对象计数，只逐项登记 excluded/uncovered 缺口；
+6. Agent 报告必需、已覆盖、排除、未覆盖对象计数，只逐项登记 excluded/uncovered 未覆盖项；
    全部已覆盖对象留在受控清单和数据库，不复制进 ProjectStore。
 7. 存在 excluded 项时，由负责人提供一份 exclude 文件。提供动作本身表示批准该文件范围；Agent
    只检查文件、revision、节点、路径和摘要一致性，不再逐项建立 WAIVE 审批。

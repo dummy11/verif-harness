@@ -102,7 +102,7 @@ PROFILES: dict[str, dict[str, Any]] = {
             "cap.vcase:", "cap.vcov:", "cap.vreg:",
         ),
         "required_input_prefixes": ("cap.doc:", "cap.venv:"),
-        "objective": "实现当前 DUT 的覆盖率模型、采集链路，并用当前结果关闭覆盖缺口",
+        "objective": "实现当前 DUT 的覆盖率模型、采集链路，并用当前结果检查和处理未覆盖项",
         "label": "覆盖率",
         "delivery_label": "覆盖率实现与证据验收",
         "plan_term": "覆盖率实现与收敛方案",
@@ -1421,7 +1421,7 @@ def vcov_structure_blockers(plan):
     if not implementations:
         reasons.append("尚未登记必需的覆盖率实现方案")
     if not convergence:
-        reasons.append("尚未登记必需的覆盖率收敛方案，覆盖率实现完成后仍需采集和分析缺口")
+        reasons.append("尚未登记必需的覆盖率收敛方案，覆盖率实现完成后仍需采集数据并分析未覆盖项")
     consumed = set()
     for node in convergence:
         inputs = set(node.get("inputs", [])) & implementations.keys()
@@ -1787,7 +1787,7 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 eligible = feedback_report_paths(store, feedback_db, {"workstream": workstream, "desired_state": []},
                                                  {**item, "id": "unregistered"})
             if set(item["planning_feedback_files"]) != eligible:
-                error("规划反馈只允许独立的 HoleAnalysisReport/1 缺口报告，不能作为本节点输出或验证证据")
+                error("规划反馈只允许独立的 HoleAnalysisReport/1 未覆盖项分析报告，不能作为本节点输出或验证证据")
         if workstream == "VCOV" and vcov_stage(item) == "implementation":
             code_scope = item["coverage_scope"].get("code", {})
             for field in ("hierarchy_files", "exclusion_files"):
@@ -2506,13 +2506,13 @@ def validate(store, node_id, report_path):
         )
         if (not current_coverage_evidence
                 and databases_by_claim["coverage-collection-evidence"] != databases_by_claim["hole-analysis-evidence"]):
-            reasons.append("缺口分析没有使用本轮采集和合并的同一覆盖率数据库")
+            reasons.append("未覆盖项分析没有使用本轮采集和合并的同一覆盖率数据库")
         merged_by_claim = {
             claim: {facts.get("merged_database_digest") for facts in facts_by_claim.get(claim, [])}
             for claim in VCOV_CONVERGENCE_CLAIMS
         }
         if merged_by_claim["coverage-collection-evidence"] != merged_by_claim["hole-analysis-evidence"]:
-            reasons.append("缺口分析没有使用本轮 CoverageMergeManifest/1 的同一合并数据库")
+            reasons.append("未覆盖项分析没有使用本轮 CoverageMergeManifest/1 的同一合并数据库")
         excluded_items = [item for facts in facts_by_claim.get("hole-analysis-evidence", [])
                           for item in facts.get("holes", []) if item.get("status") == "excluded"]
         if excluded_items and exclusion_approval is None:
@@ -2525,7 +2525,7 @@ def validate(store, node_id, report_path):
                         and artifact["kind"] == "configuration"
                         and "xverif" in artifact.get("analyzed_by", [])]
             if not analyzed:
-                reasons.append("缺口分析没有引用并检查负责人提供的当前 exclude 文件")
+                reasons.append("未覆盖项分析没有引用并检查负责人提供的当前 exclude 文件")
             expected_waiver = {
                 "id": exclusion_approval["id"],
                 "reviewer": exclusion_approval["reviewer"],

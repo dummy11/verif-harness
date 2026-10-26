@@ -38,7 +38,7 @@ This repository contains public, reusable verification infrastructure.
   必须按实际情况写清具体对象和动作，例如“这份报告对应哪次测试”“合并各次测试
   生成的数据”“新增测试的结果”“按当前设计不会发生的情况”“报告没有满足哪条要求”。
   区分报告缺少内容和系统要求与已批准方案不一致，不能把二者笼统写成同一种错误。
-  每个问题先用一句话说明需要负责人决定什么，结果、依据、缺口分段说明，命令单独
+  每个问题先用一句话说明需要负责人决定什么，结果、依据、还缺什么分段说明，命令单独
   放代码块，彼此独立的决定分别提问。原始文件、正式字段和审计记录仍保持原样。
 - 上述用词规则同样适用于 Dashboard、CLI 的帮助/标准输出/错误信息，以及
   Agent 面向用户的提问、选项、状态摘要和结果说明。面向用户时使用“你”或
@@ -196,7 +196,7 @@ This repository contains public, reusable verification infrastructure.
   当前计划输入和模型输出。VREG 执行产生一个或多个 VDB；每个分片通过
   `CoverageDatabaseShardManifest/1` 精确绑定执行轮次、`RegressionBatchManifest/2`、
   case、seed 和 iteration，`CoverageMergeManifest/1` 再绑定全部输入 VDB、当前 merge
-  profile 和唯一合并输出。采集与缺口分析必须绑定同一清单和同一合并数据库摘要。
+  profile 和唯一合并输出。采集与未覆盖项分析必须绑定同一清单和同一合并数据库摘要。
   VDB merge 兼容性由 DUT-only 构建指纹决定：DUT RTL、parameter、宏定义和 DUT 级
   elaboration 必须完全一致；任一项不同都禁止合并。testbench、submit profile、DUT 实例路径
   不属于该兼容性指纹，因此不同 testbench 或不同 profile 在 DUT 指纹相同时允许合并；各自仍须
@@ -207,11 +207,11 @@ This repository contains public, reusable verification infrastructure.
   指纹时必须在 proposal 中拆成多个 `coverage-convergence-plan`，批准后分别建立多个
   `coverage-convergence-deliverable`。发现实际指纹与批准分区不同或一个交付混入多个指纹时，
   必须阻止交付并重新分组，不增加 VDB/batch/seed 公开节点或逐项审批。
-  收敛报告保存必需、已覆盖、排除、未覆盖对象计数，只逐项保存 excluded/uncovered 缺口；
+  收敛报告保存必需、已覆盖、排除、未覆盖对象计数，只逐项保存 excluded/uncovered 未覆盖项；
   计数必须覆盖清单全集，全部必需实现范围都要纳入必需收敛并验收通过，VCOV 才能完成。
   收敛结果包含 excluded 项时，exclude 文件由负责人提供；提供动作本身表示负责人已经批准
   文件中的排除范围，不再逐项建立 WAIVE 审批。Agent 只检查该文件是否合法、是否绑定当前
-  revision 和收敛节点、缺口分析是否引用同一路径与摘要，以及所有 excluded 项是否引用这一个
+  revision 和收敛节点、未覆盖项分析是否引用同一路径与摘要，以及所有 excluded 项是否引用这一个
   文件级审批记录。文件被替换、内容变化或节点范围变化后必须重新验证，最后仍由负责人验收
   覆盖率收敛交付结果。
   `implementation_key` 仅为内部关联；派生的产物和能力不增加公开节点或审批。
@@ -386,7 +386,7 @@ This repository contains public, reusable verification infrastructure.
 - `bootstrap` 必须把 testbench、golden/reference model 和验证脚本作为三个
   独立的可选输入，集中提出仍需负责人回答的问题；在结构化问答尚未端到端执行
   前，不得宣称输入收集体验已经实现或完成。
-- Dashboard 主要信息必须是当前验证对象、结论、依据、缺口和负责人下一步；
+- Dashboard 主要信息必须是当前验证对象、结论、依据、还缺什么和负责人下一步；
   “负责人需要处理”优先于 Agent 状态、历史和审计信息。关系码、内部 ID、路径、
   digest 和 raw log 默认隐藏或折叠；`CHILD_OF`、`DEPENDS_ON` 等关系必须转成
   可理解的验证语义。深色为首次打开默认主题，但必须尊重已保存的浅色设置。

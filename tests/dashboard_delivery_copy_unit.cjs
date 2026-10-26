@@ -25,6 +25,12 @@ vm.runInContext(String.raw`
     assert.match(output, /<pre>本轮报告与测试绑定；/);
     assert.equal(raw.includes('绑定'), true);
 
+    const recordedTitle = '全量覆盖项合并采集、缺口分析与排除管理';
+    assert.equal(humanText(recordedTitle),
+      '当前批准范围内的全部覆盖对象合并采集、未覆盖项分析与排除管理');
+    assert.equal(recordedTitle, '全量覆盖项合并采集、缺口分析与排除管理');
+    assert.doesNotMatch(ownerFacingProse('覆盖缺口、缺口报告、缺口分析和新增缺口'), /全量|缺口/);
+
     const criterion = '文件路径与 SHA-256 绑定当前 VCOV revision 与本节点范围';
     assert.equal(ownerFacingProse(criterion), '排除文件的路径和文件摘要与当前覆盖率方案版本及本节点检查范围一致');
     assert.equal(ownerFacingProse('两类证据均绑定当前收敛清单'), '两项检查结果使用同一份当前覆盖对象清单');

@@ -41,7 +41,7 @@ Main Agent 实时 bootstrap 时显式使用 `--dashboard`。`--no-dashboard` 只
 | 命令 | 用途 |
 | --- | --- |
 | `status [WORKSTREAM]` | 查看项目或单条工作流的当前权威状态投影 |
-| `closure` | 查看当前缺口、依赖、负责人待办和允许的下一项动作 |
+| `closure` | 查看尚未满足的条件、依赖、负责人待办和允许的下一项动作 |
 | `inspect [NODE]` | 查看节点或项目知识详情 |
 | `trace NODE` | 查看节点的依赖、finding 和 evidence |
 | `impact NODE` | 查看节点变化会影响的下游范围 |

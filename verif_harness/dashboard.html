@@ -634,7 +634,7 @@
       VENV:{REVIEW:'等待负责人确认验证环境方案',REVISE:'验证环境方案需要修改',ACTIVE:'验证环境方案已批准，搭建与检查待完成',SATISFIED:'验证环境完成条件已满足',BASELINED:'验证环境基线已保存',PARTIALLY_STALE:'部分验证环境结论需要重新检查'},
       VSTIM:{REVIEW:'等待负责人确认激励方案',REVISE:'激励方案需要修改',ACTIVE:'激励方案已批准，实现与检查待完成',SATISFIED:'计划要求的激励场景已具备',BASELINED:'验证激励基线已保存',PARTIALLY_STALE:'部分激励结论需要重新检查'},
       VCHK:{REVIEW:'等待负责人确认结果检查方案',REVISE:'结果检查方案需要修改',ACTIVE:'检查方案已批准，实现与验证待完成',SATISFIED:'计划要求的检查机制已具备',BASELINED:'结果检查基线已保存',PARTIALLY_STALE:'部分检查结论需要重新验证'},
-      VCOV:{REVIEW:'等待负责人确认覆盖率方案',REVISE:'覆盖率方案需要修改',ACTIVE:'覆盖率方案已批准，采集与缺口处理待完成',SATISFIED:'覆盖目标已按计划处理',BASELINED:'覆盖率基线已保存',PARTIALLY_STALE:'部分覆盖率结论需要重新检查'},
+      VCOV:{REVIEW:'等待负责人确认覆盖率方案',REVISE:'覆盖率方案需要修改',ACTIVE:'覆盖率方案已批准，等待采集数据并处理未覆盖项',SATISFIED:'覆盖目标已按计划处理',BASELINED:'覆盖率基线已保存',PARTIALLY_STALE:'部分覆盖率结论需要重新检查'},
       VCASE:{REVIEW:'等待负责人确认测试用例方案',REVISE:'测试用例方案需要修改',ACTIVE:'用例方案已批准，实现与运行待完成',SATISFIED:'计划要求的测试用例已有结论',BASELINED:'测试用例基线已保存',PARTIALLY_STALE:'部分测试用例结论需要重新检查'},
       VREG:{REVIEW:'等待负责人确认回归方案',REVISE:'回归方案需要修改',ACTIVE:'回归方案已批准，执行与分析待完成',SATISFIED:'计划要求的回归结果已完成处理',BASELINED:'回归验证基线已保存',PARTIALLY_STALE:'部分回归结论需要重新检查'}
     };
@@ -862,6 +862,17 @@
     // the readable Dashboard projection; code and quoted commands stay exact.
     function ownerFacingProse(value) {
       const replacements = [
+        ['全量覆盖项', '当前批准范围内的全部覆盖对象'],
+        ['全量编译', '完整编译'],
+        ['全量', '全部'],
+        ['覆盖率缺口报告', '未覆盖项分析报告'],
+        ['覆盖率缺口', '未覆盖项'],
+        ['覆盖缺口', '未覆盖项'],
+        ['缺口分析', '未覆盖项分析'],
+        ['缺口报告', '未覆盖项分析报告'],
+        ['缺口结论', '未覆盖项处理结论'],
+        ['新增缺口', '新增的未覆盖项'],
+        ['缺口', '待处理事项'],
         ['文件路径与 SHA-256 绑定当前 VCOV revision 与本节点范围', '排除文件的路径和文件摘要与当前覆盖率方案版本及本节点检查范围一致'],
         ['coverage-collection-evidence 与 hole-analysis-evidence 均绑定当前清单摘要', '覆盖率数据检查与未覆盖项分析使用同一份当前覆盖对象清单'],
         ['两类证据均绑定当前收敛清单', '两项检查结果使用同一份当前覆盖对象清单'],
@@ -1735,7 +1746,7 @@
       const items = riskItems(state.snapshot);
       const rows = items.length ? items.map(item => {
         const contents = item.contents.map(content => `<li>${escapeHtml(content)}</li>`).join('');
-        return `<tr><td><button class="node-link" data-open-node="${escapeHtml(item.target)}">${escapeHtml(item.title)}</button></td><td>${statusBadge(item.status)}</td><td><ul class="risk-content-list">${contents}</ul></td></tr>`;
+        return `<tr><td><button class="node-link" data-open-node="${escapeHtml(item.target)}">${escapeHtml(humanText(item.title))}</button></td><td>${statusBadge(item.status)}</td><td><ul class="risk-content-list">${contents}</ul></td></tr>`;
       }).join('') : '<tr><td colspan="3" class="empty">当前没有影响验证结论的重要风险或变更</td></tr>';
       $('#main').innerHTML = `<div class="page-head"><div><h1>风险与变更</h1><p>按相关工作节点汇总，只显示节点、当前状态以及需要了解的风险或变更内容。</p></div></div><section class="section"><div class="section-head"><h2>相关工作节点</h2><span class="count">${items.length} 个节点</span></div><div class="card" style="overflow:auto"><table class="node-table risk-table"><thead><tr><th>相关节点</th><th>节点状态</th><th>风险或变更内容</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
       bindNodeLinks();
@@ -2145,7 +2156,7 @@
       const results = assessment.acceptance_results || [];
       const rows = results.map(item => `<tr><td>${escapeHtml(humanText(item.criterion))}</td><td>${statusBadge(item.status)}</td><td>${escapeHtml(humanText(item.basis || '未说明依据'))}</td></tr>`).join('');
       const quality = (n.quality_checks || []).map(item => `<li>${escapeHtml(humanText(item))}</li>`).join('') || '<li>未登记质量检查</li>';
-      return `<div class="card" style="overflow:auto"><table class="criteria-table"><thead><tr><th>完成条件</th><th>当前判断</th><th>依据或缺口</th></tr></thead><tbody>${rows || '<tr><td colspan="3" class="empty">尚未登记完成条件</td></tr>'}</tbody></table></div><div class="detail-card" style="margin-top:10px"><strong>还要检查的质量问题</strong><ul>${quality}</ul></div>`;
+      return `<div class="card" style="overflow:auto"><table class="criteria-table"><thead><tr><th>完成条件</th><th>当前判断</th><th>依据与未完成事项</th></tr></thead><tbody>${rows || '<tr><td colspan="3" class="empty">尚未登记完成条件</td></tr>'}</tbody></table></div><div class="detail-card" style="margin-top:10px"><strong>还要检查的质量问题</strong><ul>${quality}</ul></div>`;
     }
     function workstreamStatusCardHtml(w) {
       const waiting = humanPendingItems({waiting_for_human:w.waiting_for_human || []});
@@ -2922,7 +2933,7 @@
       if (!result.previous_node_id) return '<h3>本版内容变化</h3><p>此工作节点尚无已批准版本，请按当前完整内容审批。</p>';
       const baseline = `最近一次批准的内容（方案 ${escapeHtml(revisionLabel(result.previous_revision))}）`;
       const notice = result.approval_notice ? `<p>${escapeHtml(result.approval_notice)}</p>` : '';
-      const context = result.context_updates?.length ? `<p>补洞依据报告有更新，当前范围仍使用批准时的历史版本：${result.context_updates.map(escapeHtml).join('、')}。新增缺口须由 Agent 分析后调整方案。</p>` : '';
+      const context = result.context_updates?.length ? `<p>用于分析未覆盖项的报告有更新，当前范围仍使用批准时的历史版本：${result.context_updates.map(escapeHtml).join('、')}。新增的未覆盖项须由 Agent 分析后调整方案。</p>` : '';
       const missing = result.baseline_status === 'UNAVAILABLE' ? '<p>最近一次批准时的内容快照不可用，无法可靠判断实际变化。请核对完整内容。</p>'
         : result.unavailable_fields?.length ? '<p>部分历史内容没有保存快照，以下仅列出可核实的变化；未保存的内容不能判定为未变化。</p>' : '';
       if (result.baseline_status === 'UNAVAILABLE') return `<h3>本版内容变化</h3>${missing}`;
@@ -3220,7 +3231,7 @@
           ${nodeContentDetailsHtml(isResultFileNode(n) ? '交付文件' : '交付代码', `<ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>`)}
           ${nodeContentDetailsHtml('验证检查结果', (validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(ownerFacingProse(c.criterion))}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(ownerFacingProse(c.method))}</dd><dt>预期结果</dt><dd>${escapeHtml(ownerFacingProse(c.expected))}</dd><dt>实际结果</dt><dd>${escapeHtml(ownerFacingProse(c.actual))}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join(''), 'checks')}
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
-        : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
+        : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和未覆盖项处理结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
       return `<div data-node-change-field="source_refs">${writingPlanSourcesHtml(n)}</div><section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${agentQuestionNoticesHtml(n.agent_questions)}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
     }
     function deliverySummaryHtml(summary) {
@@ -3410,7 +3421,7 @@
     function openCodeWorkflowChange(w, kind) {
       const title = {add:'添加节点',remove:'删除节点',restart:'重新启动工作流'}[kind];
       const nodes = w.nodes.filter(isCodePlanNode);
-      openModal(`<h2>${title}</h2><p>${kind === 'restart' ? '确认后创建新的方案版本，旧交付文件、证据和审批历史保留，新版本需要重新审批。不会重启 Dashboard 或 Agent。' : '这里只登记下一版方案的变更要求；当前节点和历史不会被直接修改或删除。'}</p><form id="code-workflow-change"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div>${kind === 'remove' ? `<div class="field"><label>工作节点</label><select name="node" required>${nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(n.title)}</option>`).join('')}</select></div>` : ''}<div class="field"><label>${kind === 'restart' ? '重新启动原因' : '变更要求'}</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认${title}</button></div></form>`);
+      openModal(`<h2>${title}</h2><p>${kind === 'restart' ? '确认后创建新的方案版本，旧交付文件、证据和审批历史保留，新版本需要重新审批。不会重启 Dashboard 或 Agent。' : '这里只登记下一版方案的变更要求；当前节点和历史不会被直接修改或删除。'}</p><form id="code-workflow-change"><div class="field"><label>操作人</label><input name="reviewer" value="${escapeHtml(reviewerValue())}" required></div>${kind === 'remove' ? `<div class="field"><label>工作节点</label><select name="node" required>${nodes.map(n => `<option value="${escapeHtml(n.id)}">${escapeHtml(humanText(n.title))}</option>`).join('')}</select></div>` : ''}<div class="field"><label>${kind === 'restart' ? '重新启动原因' : '变更要求'}</label><textarea name="reason" required></textarea></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>取消</button><button class="btn primary">确认${title}</button></div></form>`);
       $('#code-workflow-change').onsubmit = async event => {
         event.preventDefault();
         const data = {...Object.fromEntries(new FormData(event.target)), workstream:w.workstream, kind, revision:w.revision, confirm:true};
@@ -3805,7 +3816,7 @@
     function documentNodeHtml(document) {
       if (!document) return '';
       const pending = (document.governance_items || []).filter(item => ['PENDING','ACTIVE'].includes(item.status));
-      const items = (document.governance_items || []).map(item => `<div class="list-row"><div><strong>${escapeHtml(item.title)}</strong><div class="row-meta">${escapeHtml(documentItemLabel(item.kind))}${item.anchor ? ` · ${escapeHtml(item.anchor)}` : ''}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(item.id)}</pre></details></div>${statusBadge(item.status === 'PENDING' ? 'OPEN' : item.status)}</div>`).join('') || '<div class="empty">没有登记文档内事项</div>';
+      const items = (document.governance_items || []).map(item => `<div class="list-row"><div><strong>${escapeHtml(humanText(item.title))}</strong><div class="row-meta">${escapeHtml(documentItemLabel(item.kind))}${item.anchor ? ` · ${escapeHtml(item.anchor)}` : ''}</div><details><summary>查看内部编号</summary><pre>${escapeHtml(item.id)}</pre></details></div>${statusBadge(item.status === 'PENDING' ? 'OPEN' : item.status)}</div>`).join('') || '<div class="empty">没有登记文档内事项</div>';
       const reviews = (document.reviews || []).slice().reverse().map(item => `<div class="list-row"><div><strong>${escapeHtml(item.verdict === 'APPROVE' ? '认可当前正文' : item.verdict === 'MODIFY' ? '要求修改' : item.verdict === 'CLARIFY' ? '要求说明' : '拒绝')}</strong><div class="row-meta">${escapeHtml(item.reviewer)} · ${escapeHtml(item.notes)} · ${shortTime(item.created_at)}</div></div></div>`).join('') || '<div class="empty">当前正文版本尚未评审</div>';
       const deliveries = (document.delivery_nodes || []).map(item => {
         const node = findNode(item.id);

@@ -17,7 +17,7 @@ xverif、WavePeek、仿真器、回归系统和验证代码之上，负责持续
 这里“可复用”的是 ASIC 验证控制能力，不是通用项目管理模板。工作流、工作节点、进度、
 依赖和完成条件必须由当前被验证设计（DUT）、接口、功能、验证点、场景和证据决定，因此
 不同验证对象可以有不同的节点类型和数量。面向用户的主要页面先用清楚的中文说明验证对象、
-当前结论、依据、缺口和下一步；行业已有术语保留标准写法并解释含义，不机械翻译，也不另造词。
+当前结论、依据、还缺什么和下一步；行业已有术语保留标准写法并解释含义，不机械翻译，也不另造词。
 即使使用者不是 ASIC 验证工程师，也应能理解当前状态和需要采取的动作；专业细节仍保留在详情中。
 
 ## 给谁使用
@@ -81,7 +81,7 @@ verif-harness 将验证工程划分为七个可以同时推进、发现问题后
 ## 运行逻辑
 
 用户表达目标，当前 Agent 根据 Skill 与用户对话，并调用 CLI 更新 Verification
-Knowledge Model。CLI 返回待处理的缺口，Agent 再调用工程工具、检查结果和登记证据。
+Knowledge Model。CLI 返回待处理的问题，Agent 再调用工程工具、检查结果和登记证据。
 这个闭环由当前会话推进，五个子系统不是五个独立进程。
 
 ```text
@@ -107,7 +107,7 @@ SQLite 状态库 <--- 验证证据 --- 工程工具 / 仿真器
 1. Planner 将目标组织为 VCHK 的 [desired state](skills/verif-harness/docs/glossary.md#desired-current)，由用户评审。
 2. 当前目标还没有证据，Closure Engine 返回待实现/证明的 [action](skills/verif-harness/docs/glossary.md#gap-action)。
 3. Agent 实现验证代码并运行测试，检查报告，再将结果登记为目标的 [evidence](skills/verif-harness/docs/glossary.md#evidence)。
-4. 控制面更新状态、重新计算缺口。所有 required 目标满足后，用户可冻结该工作域。
+4. 控制面更新状态、重新检查未完成事项。所有 required 目标满足后，用户可冻结该工作域。
 5. 用户以后修改 RTL，Agent 调用 `changed PATH` 登记具体文件；系统再沿已登记依赖标出需要
    重新验证的目标。
 
