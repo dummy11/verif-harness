@@ -235,6 +235,24 @@
     .agent-message { max-width: 76ch; min-width: 0; margin-top: 10px; color: var(--text); font-size: 14px; font-weight: 400; line-height: 1.75; overflow-wrap: anywhere; }
     .agent-message-plain { white-space: pre-wrap; }
     .agent-message.markdown-body h4 { font-size: 14px; }
+    .delivery-summary { max-width: 76ch; margin: 14px 0; padding: 15px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .delivery-summary h4 { margin: 0 0 10px; }
+    .delivery-summary ul { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+    .delivery-summary li { font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
+    .delivery-summary details { margin-top: 12px; }
+    .delivery-summary details pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .coverage-delivery-part { max-width: 86ch; margin: 14px 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow-wrap: anywhere; }
+    .coverage-delivery-part > h4 { margin: 0 0 12px; font-size: 15px; }
+    .coverage-delivery-part .detail-card { margin: 10px 0; }
+    .coverage-delivery-part ul { display: grid; gap: 7px; padding-left: 20px; }
+    .coverage-delivery-part li, .coverage-delivery-part p, .coverage-delivery-part dd { line-height: 1.65; }
+    .coverage-result-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 8px; margin: 12px 0; }
+    .coverage-result-counts > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+    .coverage-result-counts strong { display: block; font-size: 20px; }
+    .coverage-result-counts span { color: var(--muted); font-size: 12px; }
+    .coverage-check { padding: 11px 13px; border-top: 1px solid var(--line); }
+    .coverage-check:first-child { border-top: 0; }
+    .coverage-check details { margin-top: 8px; }
     .agent-options { display: grid; gap: 7px; margin: 13px 0 0; padding: 0; border: 0; }
     .agent-options legend { margin-bottom: 7px; color: var(--muted); font-size: 12px; font-weight: 750; }
     .agent-option { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); cursor: pointer; }
@@ -594,7 +612,7 @@
       SUBMIT_REVIEW_FEEDBACK:'提交当前审批意见给 Agent',
       APPLY_REVIEW_FEEDBACK:'Agent 处理审批意见并修改内容',
       IMPLEMENT_AND_VALIDATE:'Agent 实现代码并验证',
-      PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的 exclude 文件',
+      PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的排除文件',
       ANALYZE_VERIFICATION_FEEDBACK:'Agent 分析覆盖率或回归反馈并登记上游动作',
       APPLY_WORKFLOW_CHANGE:'Agent 分析工作节点变更并形成下一版方案',
       HUMAN_REVIEW:'等待负责人评审当前计划'
@@ -806,7 +824,7 @@
       for (const [source, replacement] of Object.entries(TEXT_REPLACEMENTS)) {
         if (text.includes(source)) text = text.replaceAll(source, replacement);
       }
-      return text
+      return ownerFacingProse(text
         .replaceAll('Workstream revision', '工作流计划版本')
         .replaceAll('Workstream', '工作流')
         .replaceAll('Human Review', '负责人评审')
@@ -830,7 +848,33 @@
         .replaceAll('必需的', '计划要求的')
         .replaceAll('必需', '计划要求')
         .replaceAll('必须', '需要')
-        .replaceAll('证' + '据', '支持材料');
+        .replaceAll('证' + '据', '支持材料'));
+    }
+    // ProjectStore keeps the exact Agent report and question text. This is only
+    // the readable Dashboard projection; code and quoted commands stay exact.
+    function ownerFacingProse(value) {
+      const replacements = [
+        ['文件路径与 SHA-256 绑定当前 VCOV revision 与本节点范围', '排除文件的路径和文件摘要与当前覆盖率方案版本及本节点检查范围一致'],
+        ['coverage-collection-evidence 与 hole-analysis-evidence 均绑定当前清单摘要', '覆盖率数据检查与未覆盖项分析使用同一份当前覆盖对象清单'],
+        ['两类证据均绑定当前收敛清单', '两项检查结果使用同一份当前覆盖对象清单'],
+        ['VDB 分片没有精确绑定收敛方案引用的当前 VREG 执行轮次', '每份覆盖率数据都需要对应本方案引用的当前回归测试轮次'],
+        ['VDB 分片的 regression_config 与收敛方案引用不一致', '覆盖率数据使用的回归配置与本方案引用的配置不一致'],
+        ['同一 VDB 分片被多个 coverage shard manifest 重复登记', '同一份覆盖率数据在多个数据清单中重复出现'],
+        ['coverage merge 输入没有精确覆盖全部 VDB 分片', '合并结果没有包含全部测试生成的覆盖率数据'],
+        ['补洞闭环结果', '未覆盖项处理结果'],
+        ['结构性不可达', '按当前设计不会发生'],
+        ['绑定', '对应'],
+        ['分片', '分批生成的数据'],
+      ];
+      return String(value ?? '').split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g).map(part => {
+        if (/^(```|~~~|`)/.test(part)) return part;
+        let readable = part;
+        const mismatchLabel = /控制面要求|系统要求/.test(part) && /已批准|已批复/.test(part)
+          ? '系统检查要求与已批准方案不一致' : '报告与当前检查要求不一致';
+        readable = readable.replaceAll('证据结构合同冲突', mismatchLabel);
+        for (const [source, replacement] of replacements) readable = readable.replaceAll(source, replacement);
+        return readable;
+      }).join('');
     }
     const claimLabel = value => CLAIM_LABELS[value] || humanText(value) || '未说明';
     const artifactLabel = value => ARTIFACT_LABELS[value] || CLAIM_LABELS[value] || humanText(value) || '未说明';
@@ -1596,18 +1640,23 @@
       return {label:'整个验证项目', html:'整个验证项目'};
     }
     function agentQuestionSummary(prompt) {
-      const firstLine = String(prompt || '').trim().split(/\r?\n/)[0].replace(/^#{1,6}\s+/, '');
+      const firstLine = ownerFacingProse(prompt).trim().split(/\r?\n/)[0].replace(/^#{1,6}\s+/, '');
       const title = firstLine.match(/^【([^】]+)】/)?.[1] || firstLine;
       const chars = Array.from(title);
       return chars.length > 80 ? chars.slice(0, 80).join('') + '…' : title;
     }
     function agentMessageHtml(content) {
+      const readable = ownerFacingProse(content).split(/\n\s*\n/).map(paragraph => {
+        if (paragraph.length < 160 || /^(?:#{1,6}\s|[-*]\s|\d+[.)]\s|```|~~~)/.test(paragraph) || paragraph.includes('\n')) return paragraph;
+        const sentences = paragraph.split(/(?<=[；。])\s*/).filter(Boolean);
+        return sentences.length > 1 ? sentences.join('\n\n') : paragraph;
+      }).join('\n\n');
       return globalThis.VerifMarkdown?.renderMessage
-        ? VerifMarkdown.renderMessage(content)
-        : `<div class="agent-message agent-message-plain">${escapeHtml(content)}</div>`;
+        ? VerifMarkdown.renderMessage(readable)
+        : `<div class="agent-message agent-message-plain">${escapeHtml(readable)}</div>`;
     }
     function agentQuestionDetailsHtml(q) {
-      if (agentQuestionSummary(q.prompt) === String(q.prompt || '').trim()) return '';
+      if (agentQuestionSummary(q.prompt) === ownerFacingProse(q.prompt).trim()) return '';
       return `<details class="agent-question-details"><summary>展开完整问题与依据</summary>${agentMessageHtml(q.prompt)}</details>`;
     }
     function agentQuestionNoticesHtml(questions) {
@@ -1834,7 +1883,7 @@
       if (round && ['REQUESTED','DISPATCHED','RUNNING','INTERRUPTED','FAILED'].includes(round.status)) return regressionRoundStatusLabel(round.status);
       if (isCodeNode(n)) return codeApprovalCompleted(n) ? '' : planApprovalAvailable(n)
         ? (isCodePlanNode(n) ? `等待负责人审批${codeNodeObjectLabel(n)}` : `等待负责人验收${codeNodeObjectLabel(n)}`)
-        : (n.plan_review?.blockers || ['等待 Agent 实现并验证'])[0];
+        : ownerFacingProse((n.plan_review?.blockers || ['等待 Agent 实现并验证'])[0]);
       if (n.plan_review && n.plan_review.status !== 'APPROVED') {
         const parentWorkstream = workstream(n.workstream);
         if (parentWorkstream?.workstream === 'VDOC' && vdocPlanReviewState(parentWorkstream).needsRefinement) {
@@ -2714,7 +2763,7 @@
       const objectLabel = isCodeNode(n) ? codeNodeObjectLabel(n) : '文档撰写方案';
       const body = available
         ? `${planReviewFormHtml(n)}<section class="section"><div class="section-head"><h2>审批历史记录</h2></div><div class="card list-card">${planReviewHistoryHtml(n)}</div></section>`
-        : `<div class="notice"><strong>当前还不能批准。</strong> ${escapeHtml((n.plan_review.blockers || ['Agent 需要先补齐当前 DUT 的文档工作分解']).join('；'))}</div>${isCodeNode(n) ? `${planReviewFormHtml(n)}<section><h2>审批历史记录</h2>${planReviewHistoryHtml(n)}</section>` : ''}`;
+        : `<div class="notice"><strong>当前还不能批准。</strong> ${escapeHtml(ownerFacingProse((n.plan_review.blockers || ['Agent 需要先补齐当前设计的文档工作范围']).join('；')))}</div>${isCodeNode(n) ? `${planReviewFormHtml(n)}<section><h2>审批历史记录</h2>${planReviewHistoryHtml(n)}</section>` : ''}`;
       const approval = planApprovalState(n, available);
       return `<div class="plan-approval-controls"><details class="detail-group node-plan-approval"><summary>审批${objectLabel}</summary><div class="detail-group-body">${body}</div></details><div class="modal-actions">${reviewFeedbackSubmitButtonHtml(n)}<button type="button" class="btn primary" id="node-plan-complete" ${approval.enabled ? '' : 'disabled'} title="${escapeHtml(approval.title)}">${escapeHtml(approval.label)}</button></div></div>`;
     }
@@ -2865,7 +2914,7 @@
       const missing = result.baseline_status === 'UNAVAILABLE' ? '<p>最近一次批准时的内容快照不可用，无法可靠判断实际变化。请核对完整内容。</p>'
         : result.unavailable_fields?.length ? '<p>部分历史内容没有保存快照，以下仅列出可核实的变化；未保存的内容不能判定为未变化。</p>' : '';
       if (result.baseline_status === 'UNAVAILABLE') return `<h3>本版内容变化</h3>${missing}`;
-      if (!result.changes.length) return `<h3>本版内容变化</h3><p>与${baseline}相比，${result.unavailable_fields?.length ? "可核实的内容" : "审批内容"}没有变化。</p>${context}${notice}${missing}${result.blockers?.length ? `<p>${escapeHtml(result.blockers.join("；"))}</p>` : ""}`;
+      if (!result.changes.length) return `<h3>本版内容变化</h3><p>与${baseline}相比，${result.unavailable_fields?.length ? "可核实的内容" : "审批内容"}没有变化。</p>${context}${notice}${missing}${result.blockers?.length ? `<p>${escapeHtml(ownerFacingProse(result.blockers.join("；")))}</p>` : ""}`;
       return `<h3>本版内容变化 · ${result.changes.length} 项内容</h3><p>与${baseline}相比：</p>${context}${missing}<ul>${result.changes.map(change => {
         const items = nodeChangeItems(change.before, change.after);
         const technical = NODE_CHANGE_DETAIL_FIELDS.has(change.field);
@@ -2956,7 +3005,7 @@
       const title = completed
         ? `当前${isCodeNode(n) ? codeNodeObjectLabel(n) : '文档撰写方案'}的全部内容已批准；提交新的审批意见后需要重新审批`
         : feedback.unresolved_count ? '当前审批意见尚未由 Agent 处理完成，不能批准未修改的内容'
-        : isCodeNode(n) ? (available ? `批准当前${codeNodeObjectLabel(n)}的全部内容` : (n.plan_review.blockers || ['请先完成前置事项和必需验证']).join('；'))
+        : isCodeNode(n) ? (available ? `批准当前${codeNodeObjectLabel(n)}的全部内容` : ownerFacingProse((n.plan_review.blockers || ['请先完成前置事项和验证']).join('；')))
         : available ? '批准当前文档撰写方案的全部内容，无需先提交新增、删除或修改意见'
         : 'Agent 需要先补齐当前 DUT 的文档撰写方案';
       return {
@@ -3075,7 +3124,7 @@
       const history = (execution.history || []).filter(item => item.round_id !== round?.round_id);
       return `<section class="detail-card regression-execution"><h4>当前回归轮次</h4>${round
         ? `<p>第 ${escapeHtml(round.round_number)} 轮 · ${escapeHtml(regressionRoundStatusLabel(round.status))}</p><div class="row-meta">${escapeHtml(round.requested_by || '负责人')} · ${shortTime(round.requested_at)}</div>`
-        : '<p>尚未登记当前轮次；等待当前方案批准并由 Agent 接续。</p>'}<p class="row-meta">执行请求和运行记录不等于验证证据；新一轮结果必须重新验证和验收，不继承历史验收。</p>${typed ? `<button type="button" class="btn" id="regression-rerun" ${execution.can_rerun && bound && !inFlight ? '' : 'disabled'}>按已批准方案重新回归</button>${!execution.can_rerun || !bound || inFlight ? `<p class="row-meta">${escapeHtml((execution.blockers || []).join('；') || (inFlight ? '当前轮次尚在处理中，不能重复发起。' : '当前执行条件尚未满足，请先核对方案和前置交付。'))}</p>` : ''}` : ''}${history.length ? `<details class="detail-group regression-history"><summary>查看历史回归轮次与报告</summary><div class="detail-group-body">${history.slice().reverse().map(item => `<section class="detail-card"><strong>第 ${escapeHtml(item.round_number)} 轮 · ${escapeHtml(regressionRoundStatusLabel(item.status).replace('当前轮次', '本轮'))}</strong><div class="row-meta">${escapeHtml(item.requested_by || '负责人')} · ${shortTime(item.requested_at)}${item.accepted_at ? ' · 此历史结果曾由负责人验收' : ''}</div><ul>${(item.files || []).map(file => `<li>${file.available === false ? `${escapeHtml(file.path)} · 归档报告不可读取` : `<button class="node-link" data-regression-history-file="${escapeHtml(JSON.stringify({round_id:item.round_id,path:file.path,sha256:file.sha256}))}">${escapeHtml(file.path)}</button>`}</li>`).join('') || '<li>本轮尚无归档报告</li>'}</ul></section>`).join('')}</div></details>` : ''}</section>`;
+        : '<p>尚未登记当前轮次；等待当前方案批准并由 Agent 接续。</p>'}<p class="row-meta">执行请求和运行记录不等于验证证据；新一轮结果必须重新验证和验收，不继承历史验收。</p>${typed ? `<button type="button" class="btn" id="regression-rerun" ${execution.can_rerun && bound && !inFlight ? '' : 'disabled'}>按已批准方案重新回归</button>${!execution.can_rerun || !bound || inFlight ? `<p class="row-meta">${escapeHtml(ownerFacingProse((execution.blockers || []).join('；') || (inFlight ? '当前轮次尚在处理中，不能重复发起。' : '当前执行条件尚未满足，请先核对方案和前置交付。')))}</p>` : ''}` : ''}${history.length ? `<details class="detail-group regression-history"><summary>查看历史回归轮次与报告</summary><div class="detail-group-body">${history.slice().reverse().map(item => `<section class="detail-card"><strong>第 ${escapeHtml(item.round_number)} 轮 · ${escapeHtml(regressionRoundStatusLabel(item.status).replace('当前轮次', '本轮'))}</strong><div class="row-meta">${escapeHtml(item.requested_by || '负责人')} · ${shortTime(item.requested_at)}${item.accepted_at ? ' · 此历史结果曾由负责人验收' : ''}</div><ul>${(item.files || []).map(file => `<li>${file.available === false ? `${escapeHtml(file.path)} · 归档报告不可读取` : `<button class="node-link" data-regression-history-file="${escapeHtml(JSON.stringify({round_id:item.round_id,path:file.path,sha256:file.sha256}))}">${escapeHtml(file.path)}</button>`}</li>`).join('') || '<li>本轮尚无归档报告</li>'}</ul></section>`).join('')}</div></details>` : ''}</section>`;
     }
     function codeNodeObjectLabel(n) {
       const plan = isCodePlanNode(n);
@@ -3131,7 +3180,7 @@
         : (collection.regression_sources || []).map((_item, index) => `VREG 回归组 ${index + 1}`);
       const merge = collection.merge_profile || {};
       const fingerprint = collection.dut_build_fingerprint || {};
-      return `<section class="detail-card coverage-collection-config"><h4>${approved ? '已批准的覆盖率检查范围与数据来源' : '覆盖率检查范围与数据来源'}</h4><p>这里说明使用哪些回归测试的数据检查覆盖率。测试用例、运行配置、随机种子和重复次数沿用回归方案；提交结果时，需说明数据来自哪次已完成的测试。</p><div class="notice">只有设计代码、参数、编译条件及展开后的设计完全一致，各次测试的数据才可合并。测试环境或运行配置不同不一定妨碍合并；设计不同的结果必须分别检查。</div><dl class="kv"><dt>被检查的设计</dt><dd>${escapeHtml(fingerprint.dut_design_id || '未登记')}</dd><dt>引用的 VREG 回归组</dt><dd><ul>${labels.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul></dd><dt>Merge profile</dt><dd>${escapeHtml(merge.path || '未登记')}</dd><dt>Merge 工具</dt><dd>${escapeHtml(merge.tool ? `${merge.tool.name} ${merge.tool.version}` : '未登记')}</dd></dl><details><summary>查看配置与测试来源</summary><pre>${escapeHtml(JSON.stringify({dut_build_fingerprint:fingerprint, regression_sources:collection.regression_sources, resolved_sources:sources, merge_profile:merge}, null, 2))}</pre></details></section>`;
+      return `<section class="detail-card coverage-collection-config"><h4>${approved ? '已批准的检查范围和测试来源' : '检查范围和测试来源'}</h4><p>这里列出用于检查覆盖率的回归测试。测试用例、运行配置、随机种子和重复次数沿用已批准的回归方案。</p><p>Agent 提交结果时，还需说明数据来自哪次已完成的测试。</p><details><summary>查看各次测试数据能否合并的条件</summary><p>设计代码、参数、编译条件和展开后的设计需要一致。设计不同的测试结果需要分别检查。</p></details><dl class="kv"><dt>被检查的设计</dt><dd>${escapeHtml(fingerprint.dut_design_id || '未登记')}</dd><dt>使用的回归测试组</dt><dd><ul>${labels.map(label => `<li>${escapeHtml(label)}</li>`).join('')}</ul></dd><dt>合并数据使用的配置文件</dt><dd>${escapeHtml(merge.path || '未登记')}</dd><dt>合并工具</dt><dd>${escapeHtml(merge.tool ? `${merge.tool.name} ${merge.tool.version}` : '未登记')}</dd></dl><details><summary>查看配置与测试来源</summary><pre>${escapeHtml(JSON.stringify({dut_build_fingerprint:fingerprint, regression_sources:collection.regression_sources, resolved_sources:sources, merge_profile:merge}, null, 2))}</pre></details></section>`;
     }
     function codeNodeHtml(n) {
       const currentRound = n.plan_review?.regression_execution?.current;
@@ -3140,7 +3189,7 @@
       const exclusion = n.plan_review?.coverage_exclusion?.current;
       const exclusionHistory = n.plan_review?.coverage_exclusion?.history || [];
       const fileButton = file => `<button class="node-link" data-code-file="${escapeHtml(JSON.stringify(file))}">${escapeHtml(file.path)}</button>`;
-      const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><div data-node-change-field="statement"><h4>目标</h4><p>${escapeHtml(n.statement)}</p></div>` + [
+      const planBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3><div data-node-change-field="statement"><h4>目标</h4><p>${escapeHtml(ownerFacingProse(n.statement))}</p></div>` + [
         ['工作范围','scope'],['具体工作','work_content'],['实现方式','implementation_approach'],
         ['如何验证','validation_methods'],['输出','deliverables'],['交付条件','acceptance_criteria'],
       ].map(([label, key]) => `<div data-node-change-field="${key}"><h4>${label}</h4><ul>${planListHtml(n[key])}</ul></div>`).join('')
@@ -3148,17 +3197,72 @@
         + `<div data-node-change-field="coverage_implementation_config" data-node-change-field-extra="coverage_collection_config">${coverageConfigHtml(n)}</div>`
         + `<div data-node-change-field="regression_config">${regressionConfigHtml(n)}</div>`;
       const exclusionBody = !isCodePlanNode(n) && isCoverageConvergenceNode(n)
-        ? `<section class="detail-card coverage-exclusion-card"><h4>负责人提供的 exclude 文件</h4>${exclusion
-          ? `<p><button class="node-link" data-code-exclusion-file="${escapeHtml(JSON.stringify(exclusion))}">${escapeHtml(exclusion.path)}</button></p><div class="row-meta">由 ${escapeHtml(exclusion.reviewer)} 于 ${shortTime(exclusion.created_at)} 提供；文件中的排除范围已由负责人审批。</div><p>${escapeHtml(exclusion.reason)}</p>`
-          : '<p>尚未提供。覆盖率结果没有排除项时可不提供；存在排除项时，Agent validation 前必须由负责人提供。</p>'}<button type="button" class="btn" id="provide-coverage-exclusions">${exclusion ? '重新提供 exclude 文件' : '提供 exclude 文件'}</button><p class="row-meta">提供文件即表示其中的排除范围已经人工审批；Agent 会检查文件格式、适用的方案版本，以及报告是否使用了这份文件。</p>${exclusionHistory.length ? `<details class="detail-group"><summary>查看 exclude 文件提供历史</summary><div class="detail-group-body"><ul>${exclusionHistory.slice().reverse().map(item => `<li>${escapeHtml(item.path)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}${exclusion?.id === item.id ? ' · 当前有效' : ' · 历史记录'}</li>`).join('')}</ul></div></details>` : ''}</section>`
+        ? `<section class="detail-card coverage-exclusion-card"><h4>负责人提供的排除文件</h4>${exclusion
+          ? `<p><button class="node-link" data-code-exclusion-file="${escapeHtml(JSON.stringify(exclusion))}">${escapeHtml(exclusion.path)}</button></p><div class="row-meta">由 ${escapeHtml(exclusion.reviewer)} 于 ${shortTime(exclusion.created_at)} 提供；文件中的排除范围已由负责人审批。</div><p>${escapeHtml(ownerFacingProse(exclusion.reason))}</p>`
+          : '<p>尚未提供。结果没有排除项时无需提供；存在排除项时，负责人需要先提供文件，再由 Agent 检查。</p>'}<button type="button" class="btn" id="provide-coverage-exclusions">${exclusion ? '重新提供排除文件' : '提供排除文件'}</button><p class="row-meta">提供文件表示负责人同意其中的排除范围。Agent 会检查文件格式、适用的方案版本，以及报告是否使用了这份文件。</p>${exclusionHistory.length ? `<details class="detail-group"><summary>查看排除文件提供历史</summary><div class="detail-group-body"><ul>${exclusionHistory.slice().reverse().map(item => `<li>${escapeHtml(item.path)} · ${escapeHtml(item.reviewer)} · ${shortTime(item.created_at)}${exclusion?.id === item.id ? ' · 当前有效' : ' · 历史记录'}</li>`).join('')}</ul></div></details>` : ''}</section>`
         : '';
-      const deliveryBody = `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${coverageConfigHtml(n, true)}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
-        ? `<p>${escapeHtml(validation.summary)}</p><p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
+      const convergenceBody = !isCodePlanNode(n) && isCoverageConvergenceNode(n)
+        ? coverageConvergenceDeliveryHtml(n, validation, exclusionBody, fileButton) : '';
+      const deliveryBody = convergenceBody || `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>${exclusionBody}${coverageConfigHtml(n, true)}${regressionConfigHtml(n, true)}${regressionExecutionHtml(n)}${validation
+        ? `${deliverySummaryHtml(validation.summary)}<p>${validation.current && validation.ready ? 'Agent 已完成当前版本验证，等待负责人验收或查看批准记录。' : '当前验证未通过或证据已失效，不能批准。'}</p>
           <h4>${isResultFileNode(n) ? '交付文件' : '交付代码'}</h4><ul>${(validation.code_files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul>
-          <div data-node-change-field="checks">${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(c.criterion)}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(c.method)}</dd><dt>预期结果</dt><dd>${escapeHtml(c.expected)}</dd><dt>实际结果</dt><dd>${escapeHtml(c.actual)}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}</div>
+          <div data-node-change-field="checks">${(validation.checks || []).map(c => `<section class="detail-card"><h4>${escapeHtml(ownerFacingProse(c.criterion))}</h4><dl class="kv"><dt>检查方法</dt><dd>${escapeHtml(ownerFacingProse(c.method))}</dd><dt>预期结果</dt><dd>${escapeHtml(ownerFacingProse(c.expected))}</dd><dt>实际结果</dt><dd>${escapeHtml(ownerFacingProse(c.actual))}</dd><dt>检查结论</dt><dd>${c.validation?.ready ? '通过' : '未通过'}</dd></dl></section>`).join('')}</div>
           <details class="detail-group"><summary>查看验证证据</summary><div class="detail-group-body"><ul>${(validation.files || []).map(f => `<li>${fileButton(f)}</li>`).join('')}</ul></div></details>`
         : `<div class="notice">Agent 尚未提交${isCoverageConvergenceNode(n) ? '当前覆盖数据和缺口结论的检查报告' : regressionNodeStage(n) === 'results' ? '当前回归执行结果和失败处理的检查报告' : '当前代码版本的验证报告'}，暂不能验收。</div>`}`;
       return `<div data-node-change-field="source_refs">${writingPlanSourcesHtml(n)}</div><section class="detail-block role-node-panel" data-node-role="${n.role}">${isCodePlanNode(n) ? planBody : deliveryBody}</section>${agentQuestionNoticesHtml(n.agent_questions)}${nodePlanApprovalPanelHtml(n, planApprovalAvailable(n))}`;
+    }
+    function deliverySummaryHtml(summary) {
+      const original = String(summary || '').trim();
+      if (!original) return '';
+      const parts = ownerFacingProse(original).split(/[；。]\s*/).map(part => part.trim()).filter(Boolean);
+      return `<section class="delivery-summary"><h4>Agent 提交的本轮摘要</h4><ul>${parts.map(part => `<li>${escapeHtml(part)}</li>`).join('')}</ul><details><summary>查看报告原文</summary><pre>${escapeHtml(original)}</pre></details></section>`;
+    }
+    function coverageConvergenceDeliveryHtml(n, validation, exclusionBody, fileButton) {
+      const checks = validation?.checks || [];
+      const analysis = checks.find(check => check.claim === 'hole-analysis-evidence')?.validation?.facts;
+      const counts = analysis && ['required_objects', 'covered_objects', 'uncovered_objects', 'excluded_objects']
+        .every(key => Number.isInteger(analysis[key]) && analysis[key] >= 0) ? analysis : null;
+      const holes = counts && Array.isArray(counts.holes) ? counts.holes : [];
+      const uncovered = holes.filter(item => item.status === 'uncovered');
+      const excluded = holes.filter(item => item.status === 'excluded');
+      const current = Boolean(validation?.current);
+      const countLabels = [
+        ['required_objects', '要求检查'], ['covered_objects', '已覆盖'],
+        ['uncovered_objects', '未覆盖'], ['excluded_objects', '排除'],
+      ];
+      const inventoryFile = (validation?.files || []).find(file => file.sha256 === analysis?.coverage_inventory_digest);
+      const kinds = analysis?.kind_counts && typeof analysis.kind_counts === 'object' ? Object.entries(analysis.kind_counts) : [];
+      const kindLabels = {line:'代码行',condition:'条件',branch:'分支',toggle:'信号翻转',fsm:'状态机','coverpoint-bin':'功能覆盖点','cross-bin':'组合覆盖点'};
+      const featureHtml = kinds.length
+        ? `<p>检查的覆盖对象类型：${kinds.map(([kind, amount]) => `${escapeHtml(kindLabels[kind] || kind)} ${escapeHtml(amount)} 项`).join('、')}。</p>`
+        : '<p>具体功能和覆盖对象以本轮覆盖对象清单为准。</p>';
+      const resultHtml = counts
+        ? `<div class="coverage-result-counts">${countLabels.map(([key, label]) => `<div><strong>${escapeHtml(counts[key])}</strong><span>${label}</span></div>`).join('')}</div><p class="row-meta">以上数量来自 Agent 检查的未覆盖项分析报告${current ? '。' : '；报告已过期，不能据此验收。'}</p>`
+        : '<p>尚无可展示的逐项统计。Agent 需要提交并检查本轮覆盖率报告。</p>';
+      const uncoveredHtml = !counts ? '<p>尚无本轮未覆盖项明细。</p>' : counts.uncovered_objects === 0
+        ? '<p>报告显示没有未覆盖项。</p>'
+        : uncovered.length ? `<ul>${uncovered.map(item => `<li><strong>${escapeHtml(item.object_key)}</strong><br>原因：${escapeHtml(ownerFacingProse(item.reason || '报告未单独记录，请查看未覆盖项分析报告。'))}<br>负责处理：${escapeHtml(item.responsible_workstream ? workstreamLabel(item.responsible_workstream) : '尚未明确')}<br>下一步：${escapeHtml(ownerFacingProse(item.next_action || '尚未说明'))}</li>`).join('')}</ul>`
+          : '<p>报告中的未覆盖项数量与逐项明细不一致，等待 Agent 核对。</p>';
+      const excludedHtml = !counts ? '<p>尚无本轮排除项明细。</p>' : counts.excluded_objects === 0
+        ? '<p>报告显示没有排除项，无需提供排除文件。</p>'
+        : excluded.length ? `<ul>${excluded.map(item => `<li><strong>${escapeHtml(item.object_key)}</strong><br>理由：${escapeHtml(ownerFacingProse(item.waiver?.rationale || '报告未说明'))}</li>`).join('')}</ul>`
+          : '<p>报告中的排除项数量与逐项明细不一致，等待 Agent 核对。</p>';
+      const checkHtml = checks.length ? checks.map((check, index) => {
+        const label = check.claim === 'coverage-collection-evidence' ? '覆盖率数据检查'
+          : check.claim === 'hole-analysis-evidence' ? '未覆盖项分析检查' : `检查项 ${index + 1}`;
+        return `<div class="coverage-check"><strong>${escapeHtml(label)}：${check.validation?.ready ? '通过' : '未通过'}</strong><details><summary>查看检查方法和实际结果</summary><dl class="kv"><dt>检查内容</dt><dd>${escapeHtml(ownerFacingProse(check.criterion))}</dd><dt>检查方法</dt><dd>${escapeHtml(ownerFacingProse(check.method))}</dd><dt>预期结果</dt><dd>${escapeHtml(ownerFacingProse(check.expected))}</dd><dt>实际结果</dt><dd>${escapeHtml(ownerFacingProse(check.actual))}</dd></dl></details></div>`;
+      }).join('') : '<p>Agent 尚未登记本轮检查结果。</p>';
+      const reportFiles = validation?.files || [];
+      return `<h3>${escapeHtml(codeNodeObjectLabel(n))}</h3>
+        <section class="coverage-delivery-part"><h4>1. 检查范围</h4>${coverageConfigHtml(n, true)}${featureHtml}${inventoryFile ? `<p>本轮覆盖对象清单：${fileButton(inventoryFile)}</p>` : ''}</section>
+        <section class="coverage-delivery-part"><h4>2. 结果报告</h4>${resultHtml}${validation?.summary ? `<details><summary>查看 Agent 的本轮摘要</summary>${deliverySummaryHtml(validation.summary)}</details>` : ''}</section>
+        <section class="coverage-delivery-part"><h4>3. 未覆盖项说明</h4>${uncoveredHtml}</section>
+        <section class="coverage-delivery-part"><h4>4. 排除项说明</h4>${excludedHtml}${exclusionBody}</section>
+        <section class="coverage-delivery-part"><h4>5. 检查与验收</h4><p>${validation
+          ? current && validation.ready ? 'Agent 已完成当前版本检查，等待负责人验收。' : '本轮检查未通过或报告已失效，当前不能验收。'
+          : 'Agent 尚未提交本轮覆盖率报告，当前不能验收。'}</p><div data-node-change-field="checks">${checkHtml}</div>
+          <h5>交付文件</h5><ul>${(validation?.code_files || []).map(file => `<li>${fileButton(file)}</li>`).join('') || '<li>尚未登记</li>'}</ul>
+          <details class="detail-group"><summary>查看报告和检查依据</summary><div class="detail-group-body"><ul>${reportFiles.map(file => `<li>${fileButton(file)}</li>`).join('') || '<li>尚未登记</li>'}</ul></div></details></section>`;
     }
     async function showCodeFile(n, path, digest) {
       const project = state.project;

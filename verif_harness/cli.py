@@ -614,7 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     await_human.add_argument(
         "--revision", type=int,
-        help="省略时在调用开始时绑定当前 revision；旧 revision 会被拒绝",
+        help="省略时使用调用开始时的当前方案版本；旧版本会被拒绝",
     )
     await_human.add_argument(
         "--after-review",
@@ -1049,7 +1049,7 @@ def main(arguments: list[str] | None = None) -> int:
                     try:
                         binding = json.loads(args.binding)
                     except ValueError as exc:
-                        raise HarnessError("回归执行轮次绑定必须是 code status 返回的 JSON") from exc
+                        raise HarnessError("回归执行轮次信息必须是 code status 返回的 JSON") from exc
                     emit(code_workflow.start_regression_execution(store, args.node, binding, args.actor))
                 elif args.code_command == "provide-exclusions":
                     emit(code_workflow.provide_coverage_exclusions(

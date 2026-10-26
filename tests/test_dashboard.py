@@ -845,8 +845,8 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('id="provide-coverage-exclusions"', html)
         self.assertIn("/api/code/coverage-exclusions", html)
         self.assertIn("/api/code-exclusion-file", html)
-        self.assertIn("提供文件即表示其中的排除范围已经人工审批", html)
-        self.assertIn("PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的 exclude 文件'", html)
+        self.assertIn("提供文件表示负责人同意其中的排除范围", html)
+        self.assertIn("PROVIDE_COVERAGE_EXCLUSIONS:'负责人提供已审批的排除文件'", html)
         completion_modal = html[html.index("function openNodePlanCompletionModal"):
                                 html.index("async function approvalRequest")]
         self.assertIn("批准说明（选填）", completion_modal)
@@ -931,8 +931,8 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("coverage-convergence-deliverable", html)
         self.assertIn("Code coverage 对象", html)
         self.assertIn("code coverage 只统计 DUT", html)
-        self.assertIn("只有设计代码、参数、编译条件及展开后的设计完全一致，各次测试的数据才可合并", html)
-        self.assertIn("设计不同的结果必须分别检查", html)
+        self.assertIn("设计代码、参数、编译条件和展开后的设计需要一致", html)
+        self.assertIn("设计不同的测试结果需要分别检查", html)
         self.assertNotIn("每个收敛节点只处理一个 DUT 构建指纹", html)
         self.assertNotIn("不同指纹必须拆成不同收敛节点", html)
         self.assertIn("Testbench 目录（可选）", html)
@@ -2686,11 +2686,14 @@ vm.runInContext(`
     files:[],checks:[],
   };
   const deliveryBody = codeNodeHtml(delivery);
-  assert.ok(deliveryBody.includes('<h4>交付文件</h4>'));
+  for (const heading of ['1. 检查范围','2. 结果报告','3. 未覆盖项说明','4. 排除项说明','5. 检查与验收']) {
+    assert.ok(deliveryBody.includes(heading));
+  }
+  assert.ok(deliveryBody.includes('<h5>交付文件</h5>'));
   assert.ok(!deliveryBody.includes('<h4>交付代码</h4>'));
-  assert.ok(deliveryBody.includes('负责人提供的 exclude 文件'));
+  assert.ok(deliveryBody.includes('负责人提供的排除文件'));
   assert.match(deliveryBody, /id="provide-coverage-exclusions"/);
-  assert.ok(deliveryBody.includes('提供文件即表示其中的排除范围已经人工审批'));
+  assert.ok(deliveryBody.includes('提供文件表示负责人同意其中的排除范围'));
   assert.doesNotMatch(deliveryBody, /工作包/);
   assert.match(deliveryBody, /data-code-file=/);
   assert.equal(nodeRoleLabel({role:'code-plan',workstream:'VENV'}), '代码实现方案');

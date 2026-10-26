@@ -17,9 +17,16 @@ ROOT = Path(__file__).resolve().parents[1]
 class DashboardQuestionsTest(unittest.TestCase):
     def test_question_copy_uses_plain_language(self):
         html = (ROOT / 'verif_harness/dashboard.html').read_text()
-        for phrase in ('绑定', '分片', '补洞闭环结果', '结构性不可达', '证据结构合同冲突'):
-            self.assertNotIn(phrase, html)
         self.assertNotIn('Agent 需要你确认：${escapeHtml(question.prompt)}', html)
+        self.assertIn('ownerFacingProse(c.criterion)', html)
+        self.assertIn('ownerFacingProse(c.actual)', html)
+        self.assertIn('deliverySummaryHtml(validation.summary)', html)
+        self.assertIn('max-width: 76ch', html)
+        result = subprocess.run(
+            ['node', str(ROOT / 'tests/dashboard_delivery_copy_unit.cjs')],
+            text=True, capture_output=True, timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_browser_long_questions_and_answer_persistence(self):
         self.run_question_script('dashboard_questions.cjs', 'playwright')
@@ -40,10 +47,10 @@ class DashboardQuestionsTest(unittest.TestCase):
                  'description': '检查已列出的输入和输出。\n\n- 保留现有范围\n- 继续检查测试结果'},
                 {'id': 'extend', 'label': '增加检查内容', 'description': '先更新方案，再继续检查。'},
             ]
-            prompt = '【请确认接口检查范围】' + '当前测试结果已记录，需要确认是否增加检查内容。' * 20
+            prompt = '【请确认接口检查范围】' + '当前测试结果已记录，需要确认是否增加检查内容。' * 20 + '报告绑定本次测试。'
             context = (
-                '## 当前结果\n\n- 公开样例测试已完成\n- 还需确认检查范围\n\n'
-                '## 示例命令\n\n```sh\necho "<fixture>"\n```\n\n'
+                '## 当前结果\n\n- 公开样例测试已完成\n- 两份报告绑定同一测试\n\n'
+                '## 示例命令\n\n```sh\necho "绑定"\n```\n\n'
                 '<img src=x onerror="window.questionInjected=true">'
             )
             question = fixture.store.ask_agent_question(
@@ -57,7 +64,8 @@ class DashboardQuestionsTest(unittest.TestCase):
                 'url': f.url, 'project': dashboard_project_id(fixture.root),
                 'token': f.server.write_token, 'node': fixture.plan_node['id'],
                 'question': question['id'], 'second': second['id'],
-                'prompt': prompt, 'context': context,
+                'prompt': prompt, 'displayPrompt': prompt.replace('绑定', '对应'),
+                'context': context,
             }
             result = subprocess.run(
                 ['node', str(ROOT / 'tests' / script)],
