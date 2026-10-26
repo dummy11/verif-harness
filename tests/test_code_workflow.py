@@ -82,6 +82,30 @@ class CodeWorkflowTest(unittest.TestCase):
     def head(self, identifier):
         return next(n for n in code.artifacts(self.store)["heads"] if n["id"] == identifier)
 
+    def test_plan_rejects_own_report_as_input_without_changing_current_revision(self):
+        report = self.root / "verification/convergence/hole_analysis_report.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1"}))
+        before = self.store.workstream("VENV")
+        for output in (str(report.relative_to(self.root)), "verification/convergence"):
+            with self.subTest(output=output):
+                item = {**self.item, "input_files": [str(report.relative_to(self.root))],
+                        "output_paths": [output]}
+                with self.assertRaisesRegex(HarnessError, "方案输入不能包含本节点交付输出"):
+                    self.design([item])
+                self.assertEqual(self.store.workstream("VENV"), before)
+
+    def test_existing_self_input_is_blocked_instead_of_requesting_repeated_approval(self):
+        report = self.root / "hole_analysis_report.json"
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1"}))
+        # Reproduce a persisted proposal accepted before the registration guard.
+        node = {**self.plan_node, "input_files": [report.name], "output_paths": [report.name]}
+        plan = self.store.workstream("VENV")
+        with self.store.read_connect() as db:
+            state = code.review_state(self.store, node["id"], plan, node, db)
+        self.assertFalse(state["can_approve"])
+        self.assertTrue(any("请修订方案" in reason for reason in state["blockers"]))
+
     def test_two_roles_three_gates_and_read_only_queries(self):
         self.assertEqual([n["role"] for n in self.store.workstream("VENV")["desired_state"]], ["code-plan"])
         self.assertFalse((self.root / self.item["output_paths"][0]).exists())

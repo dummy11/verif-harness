@@ -902,6 +902,14 @@ def coverage_exclusion_state(store, connection, plan, node):
     return {"scope_digest": scope, "current": current, "latest": latest, "history": rows}
 
 
+def self_output_inputs(store, node):
+    """A plan cannot consume files produced by its own delivery."""
+    return sorted(path for path in node.get("input_files", []) if any(
+        store._scopes_overlap(str((store.root / path).resolve()),
+                              str((store.root / output).resolve()))
+        for output in node.get("output_paths", [])))
+
+
 def feedback_report_paths(store, connection, plan, node):
     """Only downstream VCASE planning feedback, never checked evidence/output."""
     if plan["workstream"] != "VCASE":
@@ -1198,6 +1206,9 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
         completion = _legacy_completion(connection, node_id, revision, signature,
                                         subject, eligible_reviews)
     reasons = blockers(connection, node_id)
+    conflicts = self_output_inputs(store, node)
+    if conflicts:
+        reasons.append("方案输入包含本节点交付输出，请修订方案以避免生成报告后反复审批：" + "、".join(conflicts))
     workstream = plan["workstream"]
     expected_dependencies = (set(node['inputs']) if is_plan(node)
                              else {ids(node['implementation_key'], workstream)[0]})
@@ -1786,6 +1797,9 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
             item["input_files"] = sorted(set([*item["input_files"], item["regression_config"]["submit_profile"]["submit_file"]]))
         if any(not (Path(v) if Path(v).is_absolute() else store.root / v).is_file() for v in item["input_files"]):
             error("input_files 必须逐项引用实际输入文件，目录仅用于界面展示")
+        conflicts = self_output_inputs(store, item)
+        if conflicts:
+            error("方案输入不能包含本节点交付输出，否则生成文件会使方案审批失效：" + "、".join(conflicts))
         item.update(required=raw.get("required", True), purpose=item["statement"],
                     suggested_mode="plan", definition_origin="project-proposal",
                     definition_status="REVIEW_CANDIDATE", quality_checks=item["validation_methods"],
