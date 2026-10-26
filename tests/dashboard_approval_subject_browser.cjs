@@ -17,6 +17,9 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const main = page.locator('#main');
     await main.locator('[data-node-changes]').getByText(/最近一次批准/).first().waitFor();
     const field = main.locator(`[data-node-change-field="${config.field}"]`);
+    for (const disclosure of await main.locator('.node-content-details').all()) {
+      if (await disclosure.getAttribute('open') === null) await disclosure.locator(':scope > summary').click();
+    }
     assert.deepEqual(await field.locator('mark:visible').allTextContents(), [config.added]);
     assert.ok((await field.innerText()).includes(config.unchanged));
     const button = main.locator(config.field === 'document_body' ? '#node-delivery-complete' : '#node-plan-complete');
@@ -29,6 +32,9 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await modal.getByRole('button', {name:'取消',exact:true}).click();
     await page.reload();
     await main.locator('[data-node-changes]').getByText(/最近一次批准/).first().waitFor();
+    for (const disclosure of await main.locator('.node-content-details').all()) {
+      if (await disclosure.getAttribute('open') === null) await disclosure.locator(':scope > summary').click();
+    }
     assert.deepEqual(await field.locator('mark:visible').allTextContents(), [config.added]);
     assert.deepEqual(errors, []);
     assert.deepEqual(writes, []);

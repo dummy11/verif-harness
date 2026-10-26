@@ -1124,6 +1124,7 @@ class VcovWorkflowTest(unittest.TestCase):
         self.browser(implementation, "delivery", "覆盖率实现交付",
                      expectedFileHeading="交付代码", previewText="fixture_coverage")
 
+        self.prepare_vreg_execution()
         convergence_plan = self.node("coverage-convergence-plan")
         self.browser(convergence_plan, "plan", "覆盖率收敛方案")
         convergence = self.convergence(approve=False)

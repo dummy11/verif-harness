@@ -96,6 +96,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const bodyRequest = page.waitForResponse(r => r.url().includes('/api/document?'));
     await bodyRow.locator('[data-open-node]').click();
     assert.equal((await bodyRequest).ok(), true);
+    await page.locator('#drawer .node-content-details > summary').filter({hasText:'查看文档正文'}).click();
     await page.locator('#drawer .markdown-body').waitFor();
     assert.equal(new URL(page.url()).searchParams.get('node'), delivery.id);
     assert.equal(new URL(page.url()).searchParams.get('project'), config.otherProject);

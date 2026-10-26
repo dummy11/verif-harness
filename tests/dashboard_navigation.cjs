@@ -192,6 +192,7 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     const otherSnapshot = await otherSnapshotResponse.json();
     const delivery = otherSnapshot.workstreams.find(w => w.workstream === 'VDOC').nodes.find(n => n.delivery_review);
     await page.locator(`[data-open-node="${delivery.id}"]`).click();
+    await page.locator('#drawer .node-content-details > summary').filter({hasText:'查看文档正文'}).click();
     await page.locator('#drawer [data-delivery-body] .document-preview').waitFor();
     assert.equal(await page.locator('#drawer .node-status-card, #drawer #node-waive, #document-delivery-review-tab').count(), 0);
     await page.locator('#expand-node').click();
