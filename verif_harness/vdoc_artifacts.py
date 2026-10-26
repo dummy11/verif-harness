@@ -12,6 +12,8 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from .approval_policy import retain_head
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vdoc_artifact_versions (
@@ -404,8 +406,9 @@ def reconcile(store, plans: list[dict[str, Any]]) -> None:
                 heads[node_id] = ("STALE", data)
         changed_caps = []
         for node_id, (status, data) in heads.items():
-            data_json = encoded(data)
             old = old_heads.get(node_id)
+            data = retain_head(data, json.loads(old["data_json"]) if old else None)
+            data_json = encoded(data)
             if old and old["status"] == status and old["data_json"] == data_json:
                 continue
             if node_id.startswith("cap.doc:") and old and old["status"] == "VALID":

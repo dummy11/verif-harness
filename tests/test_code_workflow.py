@@ -82,6 +82,66 @@ class CodeWorkflowTest(unittest.TestCase):
     def head(self, identifier):
         return next(n for n in code.artifacts(self.store)["heads"] if n["id"] == identifier)
 
+    def test_explicit_planning_feedback_is_versioned_separately_from_live_inputs(self):
+        report = self.root / "planning-holes.json"
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "uncovered_items": ["A"]}))
+        item = {**self.item, "input_files": [*self.item["input_files"], report.name],
+                "planning_feedback_files": [report.name]}
+        self.design([item])
+        self.approve(self.plan_node)
+        before = self.store.node_plan_review_state(self.plan_node["id"])
+        report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "uncovered_items": ["B"]}))
+        after = self.store.node_plan_review_state(self.plan_node["id"])
+        self.assertTrue(after["completed"])
+        self.assertEqual(before["definition_digest"], after["definition_digest"])
+        changes = self.store.node_definition_changes(self.plan_node["id"], after["definition_digest"])
+        self.assertEqual(changes["context_updates"], [report.name])
+        self.assertEqual(changes["changes"], [])
+        # Missing files and a changed report type cannot borrow the old binding.
+        report.unlink()
+        self.assertFalse(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+        report.write_text(json.dumps({"schema": "BuildEvidence/1"}))
+        self.assertFalse(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+
+    def test_feedback_role_cannot_hide_rtl_or_outputs(self):
+        for path in ("rtl/dut.sv", "unknown.json"):
+            if path.endswith("json"):
+                (self.root / path).write_text(json.dumps({"schema": "Unknown/1"}))
+            with self.subTest(path=path), self.assertRaisesRegex(HarnessError, "规划反馈"):
+                self.design([{**self.item, "input_files": [path], "planning_feedback_files": [path]}])
+        with self.assertRaisesRegex(HarnessError, "规划反馈文件必须"):
+            self.design([{**self.item, "planning_feedback_files": ["not-an-input.json"]}])
+
+    def test_real_dependency_outage_preserves_approval_identity_and_blocks_use(self):
+        self.implement()
+        self.validate()
+        self.approve(self.delivery)
+        before_plan = self.store.node_plan_review_state(self.plan_node["id"])
+        before_delivery = self.store.node_plan_review_state(self.delivery["id"])
+        document = self.fixture.path
+        original = document.read_text()
+        document.write_text(original + "\n未同步正文变化。\n")
+        unavailable = self.store.node_plan_review_state(self.plan_node["id"])
+        self.assertFalse(unavailable["completed"])
+        self.assertFalse(unavailable["can_approve"])
+        self.assertTrue(unavailable["validity"]["approval_valid"])
+        self.assertFalse(unavailable["validity"]["available"])
+        self.assertFalse(unavailable["validity"]["reapproval_required"])
+        self.assertEqual(unavailable["definition_digest"], before_plan["definition_digest"])
+        self.assertEqual(self.cli("code", "status", self.plan_node["id"])["validity"], unavailable["validity"])
+        with self.fixture.fixture.get("/api/approval-status?node=" + self.plan_node["id"]) as response:
+            self.assertEqual(json.load(response)["result"]["validity"], unavailable["validity"])
+        child = self.store.node_plan_review_state(self.delivery["id"])
+        self.assertFalse(child["completed"])
+        self.assertTrue(child["validity"]["approval_valid"])
+        self.assertEqual(child["definition_digest"], before_delivery["definition_digest"])
+        document.write_text(original)
+        # Recheck the restored VDOC acceptance before making its capability usable.
+        self.store._refresh_vdoc_delivery_acceptance(self.fixture.delivery["id"])
+        self.store.reconcile()
+        self.assertTrue(self.store.node_plan_review_state(self.plan_node["id"])["completed"])
+        self.assertTrue(self.store.node_plan_review_state(self.delivery["id"])["completed"])
+
     def test_plan_rejects_own_report_as_input_without_changing_current_revision(self):
         report = self.root / "verification/convergence/hole_analysis_report.json"
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -532,6 +592,8 @@ class CodeWorkflowTest(unittest.TestCase):
                          'definition_digest': state['definition_digest'], 'reviewer': 'http-owner'}, token=f.server.write_token)
         self.assertTrue(response['result']['plan_review']['completed'])
         self.assertTrue(self.cli('code', 'status', self.plan_node['id'])['completed'])
+        self.assertEqual(response['result']['plan_review']['validity'],
+                         self.cli('code', 'status', self.plan_node['id'])['validity'])
         self.implement(); self.validate()
         state = self.cli('code', 'status', self.delivery['id'])
         response = f.post('/api/reviews/node-plan-complete', {'node': self.delivery['id'],
@@ -939,6 +1001,45 @@ class CodeWorkflowProfileTest(unittest.TestCase):
             db.execute("DELETE FROM code_feedback_inputs")
             code.bind_feedback_context(self.store, db, plan, node)
             self.assertEqual(db.execute("SELECT count(*) FROM code_feedback_inputs").fetchone()[0], 0)
+
+    def test_explicit_feedback_roles_apply_to_each_code_workstream(self):
+        cases = (
+            ("VSTIM", ["stimulus-implementation", "reachability-evidence", "determinism-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"]),
+            ("VCHK", ["scoreboard", "scoreboard-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence"]),
+            ("VCASE", ["case-implementation", "targeted-evidence"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vstim:reachability-evidence", "cap.vchk:scoreboard-evidence"]),
+            ("VCOV", ["coverage-model", "coverage-collection"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence", "cap.vreg:executor-ready"]),
+            ("VREG", ["regression-policy", "executor-ready"],
+             ["cap.doc:verification-plan", "cap.venv:environment-smoke-evidence"]),
+        )
+        for index, (workstream, claims, inputs) in enumerate(cases):
+            if index:
+                self.tearDown()
+                self.setUp()
+            with self.subTest(workstream=workstream):
+                self.seed(*inputs[1:])
+                path, item = self.proposal(workstream, claims, inputs)
+                report = self.root / "planning-feedback.json"
+                report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "uncovered_items": ["A"]}))
+                item["input_files"].append(report.name)
+                item["planning_feedback_files"] = [report.name]
+                path.write_text(json.dumps({"schema": "DesiredStateProposal/1", "workstream": workstream, "nodes": [item]}))
+                plan = self.store.design_workstream(workstream, None, [], [], [], desired_file=path.name)
+                node = plan["desired_state"][0]
+                state = self.store.node_plan_review_state(node["id"])
+                self.store.complete_node_plan_review(node["id"], state["definition_digest"], "fixture-owner")
+                before = self.store.node_plan_review_state(node["id"])
+                report.write_text(json.dumps({"schema": "HoleAnalysisReport/1", "uncovered_items": ["B"]}))
+                self.assertEqual(self.store.node_plan_review_state(node["id"])["definition_digest"], before["definition_digest"])
+                self.assertTrue(self.store.node_plan_review_state(node["id"])["completed"])
+                item["scope"] = ["增加验证范围"]
+                path.write_text(json.dumps({"schema": "DesiredStateProposal/1", "workstream": workstream, "nodes": [item]}))
+                changed = self.store.design_workstream(workstream, None, [], [], [], desired_file=path.name)["desired_state"][0]
+                self.assertNotEqual(changed["id"], node["id"])
+                self.assertFalse(self.store.node_plan_review_state(changed["id"])["completed"])
 
     def test_dependency_status_recovery_does_not_cascade_plan_reapproval(self):
         cases = (

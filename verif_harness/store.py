@@ -34,6 +34,7 @@ from .document_authoring import (
 from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
 from .evidence_policy import policy_for
 from . import code_workflow
+from .approval_policy import assessment
 from .reachability import ReachabilityError, validate_reachability
 
 
@@ -4621,6 +4622,8 @@ class ProjectStore:
             "definition_digest": digest,
             "status": status,
             "completed": status == "APPROVED" and current_completion is not None,
+            "validity": assessment(current_completion, blockers=[] if status == "APPROVED" else [status],
+                                   has_history=bool(completion_reviews)),
             "current_completion": current_completion,
             "completion_reviews": completion_reviews,
             "sections": section_states,
@@ -5622,6 +5625,10 @@ class ProjectStore:
             "current_review": current,
             "reviews": rows,
             "agent_check": current.get("agent_check") if current is not None else None,
+            "validity": assessment(current if current and current["verdict"] == "APPROVE" else None,
+                                   blockers=[] if status == "APPROVED" else [status],
+                                   evidence_current=document["exists"] and not document["content_changed"],
+                                   has_history=any(row["verdict"] == "APPROVE" for row in rows)),
             "feedback": feedback,
             "open_agent_questions": open_agent_questions,
             "internal_work": {
@@ -6090,7 +6097,7 @@ class ProjectStore:
             code_workflow.refresh(self)
             review = code_workflow.review_state(self, node_id)
             return {"node_id": node_id, "revision": review["revision"], "definition_digest": review["definition_digest"],
-                    "status": review["status"], "current_review": review["current_completion"]}
+                    "status": review["status"], "validity": review["validity"], "current_review": review["current_completion"]}
         plan = self.workstream("VDOC")
         desired = next((item for item in plan["desired_state"] if item["id"] == node_id), None)
         if desired is None:
@@ -6106,7 +6113,7 @@ class ProjectStore:
         return {"node_id": node_id, "revision": plan["revision"],
                 "definition_digest": review["definition_digest"],
                 "document_digest": review.get("document_digest"),
-                "status": review["status"], "current_review": current}
+                "status": review["status"], "validity": review["validity"], "current_review": current}
 
     @store_operation
     def sync_documents(

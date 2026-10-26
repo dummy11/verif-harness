@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .vdoc_artifacts import digest, encoded
+from .approval_policy import assessment, dependency_subject, retain_head
 
 VCOV_PLAN_ROLES = {"coverage-implementation-plan", "coverage-convergence-plan"}
 VCOV_DELIVERY_ROLES = {"coverage-implementation-deliverable", "coverage-convergence-deliverable"}
@@ -851,7 +852,8 @@ def dependency_snapshot(connection, node):
         "WHERE e.source=? AND e.relation='DEPENDS_ON' ORDER BY e.target", (node["id"],),
     ):
         data = json.loads(row["data_json"] or "{}")
-        result.append({"id": row["id"], "title": row['title'], "status": row["status"], "current": data.get("current")})
+        result.append({"id": row["id"], "title": row['title'], "status": row["status"], "current": data.get("current"),
+                       **({"last_current": data["last_current"]} if not data.get("current") and data.get("last_current") else {})})
     return result
 
 
@@ -911,8 +913,8 @@ def self_output_inputs(store, node):
 
 
 def feedback_report_paths(store, connection, plan, node):
-    """Only downstream VCASE planning feedback, never checked evidence/output."""
-    if plan["workstream"] != "VCASE":
+    """Approved planning feedback, never checked evidence or delivery output."""
+    if plan["workstream"] != "VCASE" and not node.get("planning_feedback_files"):
         return set()
     evidence = set(node.get("output_paths", []))
     family = [node["id"]] + [n["id"] for n in plan["desired_state"] if n.get("parent_id") == node["id"]]
@@ -920,8 +922,9 @@ def feedback_report_paths(store, connection, plan, node):
         for row in connection.execute("SELECT payload_json FROM code_validations WHERE node_id=?", (identifier,)):
             evidence.update(item["path"] for item in validation_evidence_files(json.loads(row[0])))
     paths = set()
-    for path in node.get("input_files", []):
-        if path in evidence or not path.endswith(".json"):
+    for path in node.get("planning_feedback_files", node.get("input_files", []) if plan["workstream"] == "VCASE" else []):
+        if (any(store._scopes_overlap(path, output) for output in evidence)
+                or not path.endswith(".json")):
             continue
         source = store.root / path
         if source.is_symlink() or store.root not in source.resolve().parents:
@@ -942,12 +945,12 @@ def bind_feedback_context(store, connection, plan, node, approved=None):
     report no longer matches the approved hash we cannot infer its old schema.
     It never synthesizes, copies, or replaces an owner approval.
     """
-    if plan["workstream"] != "VCASE" or not is_plan(node):
+    if not is_plan(node) or (plan["workstream"] != "VCASE" and not node.get("planning_feedback_files")):
         return
     if approved is None:
         for row in connection.execute(
                 "SELECT payload_json FROM code_artifact_versions WHERE artifact_id=? ORDER BY version DESC",
-                (ids(node["implementation_key"], "VCASE")[0],)):
+                (ids(node["implementation_key"], plan["workstream"])[0],)):
             candidate = json.loads(row[0])
             if (candidate.get("definition", {}).get("id") == node["id"]
                     and (candidate.get("review") or {}).get("verdict") == "APPROVE"):
@@ -969,7 +972,7 @@ def plan_input_snapshot(store, connection, plan, node):
     profiles, and all evidence consumed by validation remain live inputs.
     """
     sources = file_snapshot(store, node.get("input_files", []))
-    if plan["workstream"] != "VCASE":
+    if plan["workstream"] != "VCASE" and not node.get("planning_feedback_files"):
         return sources
     parent_id = node.get("parent_id") if is_delivery(node) else node["id"]
     eligible = feedback_report_paths(store, connection, plan, node)
@@ -1011,7 +1014,7 @@ def identity(store, connection, plan, node):
     # Status is an availability gate, not a different version of an input.
     # Keep the historical digest for VALID dependencies while making a
     # status-only outage/recovery leave the approved subject unchanged.
-    subject = {**payload, "dependencies": [{**dependency, "status": "VALID"} for dependency in deps]}
+    subject = {**payload, "dependencies": dependency_subject(deps)}
     return digest(subject), payload
 
 
@@ -1318,6 +1321,9 @@ def review_state(store, node_id, plan=None, node=None, connection=None):
             "workstream_revision": plan["revision"],
             "definition_digest": approval_digest, "input_signature": signature,
             "status": "APPROVED" if complete else "PENDING", "completed": complete,
+            "validity": assessment(
+                completion, blockers=reasons, evidence_current=not is_delivery(node) or bool(validation and validation["current"]),
+                has_history=bool(history)),
             "current_completion": completion if complete else None,
             "completion_reviews": history, "reviews": opinions,
             "sections": [{"section": "writing-plan", "status": "APPROVED" if complete else "PENDING"}],
@@ -1767,6 +1773,16 @@ def design(store, workstream, source, objective=None, decisions=None, restart=No
                 error("工作节点的输出范围不能重叠" if workstream in {"VCOV", "VREG"} else "工作包的输出范围不能重叠")
             known_outputs.add(path)
         item["input_files"] = [store._project_or_declared_input_path(v) for v in strings(raw, "input_files")]
+        if "planning_feedback_files" in raw:
+            item["planning_feedback_files"] = [store._project_or_declared_input_path(v)
+                                                for v in strings(raw, "planning_feedback_files")]
+            if not set(item["planning_feedback_files"]) <= set(item["input_files"]):
+                error("规划反馈文件必须同时登记在方案输入中")
+            with store.read_connect() as feedback_db:
+                eligible = feedback_report_paths(store, feedback_db, {"workstream": workstream, "desired_state": []},
+                                                 {**item, "id": "unregistered"})
+            if set(item["planning_feedback_files"]) != eligible:
+                error("规划反馈只允许独立的 HoleAnalysisReport/1 缺口报告，不能作为本节点输出或验证证据")
         if workstream == "VCOV" and vcov_stage(item) == "implementation":
             code_scope = item["coverage_scope"].get("code", {})
             for field in ("hierarchy_files", "exclusion_files"):
@@ -2599,6 +2615,7 @@ def refresh(store, plans=None):
                     "workstream": workstream}
             status = "VALID" if ready else "REVALIDATION_REQUIRED"
             previous = db.execute("SELECT status,data_json FROM nodes WHERE id=?", (identifier,)).fetchone()
+            data = retain_head(data, json.loads(previous["data_json"]) if previous else None)
             if previous is None or previous["status"] != status or json.loads(previous["data_json"]) != data:
                 store.upsert_node(db, identifier, kind, title, Validity(status), data=data)
             published.add(identifier)

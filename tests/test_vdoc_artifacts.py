@@ -138,11 +138,17 @@ class VdocArtifactsTest(unittest.TestCase):
         self.prepare()
         self.finish()
         original = self.path.read_text()
+        self.assertTrue(self.store.node_plan_review_state(self.plan["id"])["validity"]["approval_valid"])
+        self.assertTrue(self.store.document_delivery_review_state(self.delivery["id"])["validity"]["available"])
         plan_version = self.head("art.doc_plan:verification-plan")["data"]["current"]
         self.path.write_text(original + "\n修改正文\n", encoding="utf-8")
         self.assertNotEqual(self.head("cap.doc:verification-plan")["status"], "VALID")
         self.assertEqual(self.head("art.doc_plan:verification-plan")["data"]["current"], plan_version)
-        self.assertFalse(self.store.document_delivery_review_state(self.delivery["id"])["document_available"])
+        state = self.store.document_delivery_review_state(self.delivery["id"])
+        self.assertFalse(state["document_available"])
+        self.assertTrue(state["validity"]["reapproval_required"])
+        self.assertFalse(state["validity"]["available"])
+        self.assertTrue(self.store.node_plan_review_state(self.plan["id"])["validity"]["approval_valid"])
         self.assertNotEqual(self.store.model(self.delivery["id"])["nodes"][0]["status"], "VALID")
         self.assertNotEqual(self.store.node_closure_assessment(self.delivery["id"])["conclusion"], "CLOSED")
         with self.store.read_connect() as connection:

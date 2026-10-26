@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import hashlib
 from . import code_workflow as code
+from .approval_policy import dependency_subject
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS approval_subject_snapshots (
@@ -39,7 +40,7 @@ def files(items):
 
 def dependencies(items):
     # Availability and display titles are not dependency versions.
-    return {item["id"]: item.get("current") for item in items}
+    return {item["id"]: item.get("current") for item in dependency_subject(items)}
 
 
 def validation_fields(validation):
@@ -190,7 +191,7 @@ def compare(store, db, plan, node, expected, document_digest=None):
     elif review and state and not state["completed"] and state["reviews"]:
         result["approval_notice"] = "请同时核对审批意见和当前阻塞；后续审批意见处理完成后仍需重新批准。"
     result["context_updates"] = []
-    if plan["workstream"] == "VCASE":
+    if code.supported(plan["workstream"]):
         live = files(code.file_snapshot(store, node.get("input_files", [])))
         result["context_updates"] = sorted(path for path, value in subject.get("sources", {}).items()
                                            if value != live.get(path))

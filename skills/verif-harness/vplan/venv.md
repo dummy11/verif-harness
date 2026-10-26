@@ -36,6 +36,13 @@ code-plan → 负责人批准 → art.code_plan
 `input_files` 是内部逐文件来源，必须实际存在；`output_paths` 是验证输出目录内
 的明确文件清单，不允许只读 DUT、控制面目录、整个项目或相互重叠的工作包范围。
 输入依据默认折叠，代码只展示去重后的目录，文档逐一列出。
+六类代码工作流都可以用可选的 `planning_feedback_files` 指定仅用于提出方案范围的
+`HoleAnalysisReport/1`。这些路径必须属于 `input_files`，不得与本节点输出或实际验证
+证据重叠，也不能用于 RTL、规格、submit profile 或未知格式。负责人批准后固定当时
+的反馈摘要；后续缺口变化通过 Main Agent 分析并显式修订受影响范围。没有声明的输入
+继续实时核对。VCASE 保留对这类专用规划反馈的默认识别。
+`code status` 和审批状态接口的 `validity` 分别报告批准、证据和当前可用性；依赖暂时
+不可用不授予推进权限，恢复为原版本也无需重复批准未变化内容。
 
 `inputs` 至少引用一项 `cap.doc:<document_key>`，也可引用其他工作包的
 `cap.venv:<implementation_key>`，不得直接引用旧工作节点或未验收文档产物。
