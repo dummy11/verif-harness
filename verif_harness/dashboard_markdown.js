@@ -93,5 +93,20 @@
       return `<div class="notice">文档排版暂不可用，请展开 Markdown 源码阅读。</div>${source.replace('<details ', '<details open ')}`;
     }
   }
-  root.VerifMarkdown = {render};
+  function renderMessage(content) {
+    try {
+      // Questions are prose, not document/file navigation. Keep paths and URLs
+      // as text; raw HTML and images must never become active page content.
+      const md = new root.markdownit({html:false, linkify:false, typographer:false, breaks:true});
+      md.disable(['link', 'image', 'autolink']);
+      md.renderer.rules.table_open = () => '<div class="document-table"><table>\n';
+      md.renderer.rules.table_close = () => '</table></div>\n';
+      md.renderer.rules.heading_open = () => '<h4>';
+      md.renderer.rules.heading_close = () => '</h4>\n';
+      return `<div class="agent-message markdown-body">${md.render(String(content ?? ''))}</div>`;
+    } catch {
+      return `<div class="agent-message agent-message-plain">${escape(content)}</div>`;
+    }
+  }
+  root.VerifMarkdown = {render, renderMessage};
 })(globalThis);

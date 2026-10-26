@@ -38,6 +38,20 @@ Workstream. Project lifecycle is separate.
   `空闲`, or `未登记活动` without the concrete object and next action.
 - Keep standard ASIC verification terms when they are clearer, explain them on
   first use, and do not mechanically translate or invent terminology.
+- Keep each question prompt to one short sentence identifying the decision.
+  Put the current conclusion, evidence, gaps, and impact in separate paragraphs
+  or lists in `context`; put commands in fenced code blocks. Keep option labels
+  short and describe each option's consequence separately. Ask independent
+  decisions as separate questions. Do not concatenate results, metrics, paths,
+  commands, and multiple decisions into a single prompt or heading.
+- Do not use `绑定`, `分片`, `补洞闭环结果`, `结构性不可达`, or
+  `证据结构合同冲突` in owner-facing explanations, questions, choices, or status
+  summaries, including parenthetical jargon after a plain explanation. Describe
+  the actual objects and actions: which test run a report describes, combining
+  data from several runs, results of added tests, conditions the current design
+  cannot produce, or the specific report requirement that is unmet. Distinguish
+  missing report contents from system requirements that disagree with the
+  approved plan. Preserve original source files, protocol fields, and audit data.
 
 ## Core dispatch
 

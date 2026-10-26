@@ -44,12 +44,27 @@ assert.match(context.VerifMarkdown.render('[link](assertion_plan.md)', other), /
 assert.doesNotMatch(context.VerifMarkdown.render('[link](assertion_plan.md)', {...options, documents:[]}), /<a /);
 const collisions = context.VerifMarkdown.render('# A\n\n# A\n\n# A-1', options);
 assert.equal(new Set([...collisions.matchAll(/ id="([^"]+)"/g)].map(m => m[1])).size, 3);
+const messageSource = '# 当前结论\n\n- 公开样例检查完成\n- 仍需选择范围\n\n```sh\necho "<fixture>"\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 测试 | 完成 |';
+const message = context.VerifMarkdown.renderMessage(messageSource);
+assert.match(message, /<h4>当前结论<\/h4>/);
+assert.match(message, /<ul>/);
+assert.match(message, /<table>/);
+assert.match(message, /<code class="language-sh">echo &quot;&lt;fixture&gt;&quot;\n<\/code>/);
+assert.match(context.VerifMarkdown.renderMessage('第一行\n第二行'), /第一行<br>\n第二行/);
+for (const untrusted of ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>',
+  '[link](javascript:alert(1))', '[file](../../outside.md)', '[remote](https://example.invalid)',
+  '![image](https://example.invalid/image.png)', '<https://example.invalid>']) {
+  assert.doesNotMatch(context.VerifMarkdown.renderMessage(untrusted), /<(script|img|a|iframe)\b/i);
+}
 // A global `var` from the bundled parser is non-configurable in newer Node VM
 // contexts, so deleting the proxy property can be a no-op. Explicitly clear it
 // to exercise the renderer-unavailable fallback consistently across Node versions.
 context.markdownit = undefined;
 assert.match(context.VerifMarkdown.render(source, options), /<details open /);
 assert.doesNotMatch(context.VerifMarkdown.render(source, options), /<script>/);
+const plainMessage = context.VerifMarkdown.renderMessage('<script>attack</script>\n保留第二行');
+assert.match(plainMessage, /agent-message-plain/);
+assert.match(plainMessage, /&lt;script&gt;attack&lt;\/script&gt;\n保留第二行/);
 const dashboard = fs.readFileSync(path.join(root, 'verif_harness/dashboard.html'), 'utf8');
 new vm.Script(dashboard.match(/<script>([\s\S]*?)<\/script>/)[1]);
 assert.doesNotMatch(dashboard, /<pre class="document-preview">\$\{escapeHtml\(body.content\)\}<\/pre><\/section>/);
