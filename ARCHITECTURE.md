@@ -16,6 +16,17 @@ head and downstream capability without automatically reopening an unchanged plan
 Plan/input changes revoke the affected plan, delivery and capabilities. Old results
 remain auditable; no approval or Agent check is silently copied to a new version.
 
+Document authoring sources distinguish explicit upstream documents from general
+reference material. The generic verification-artifact requirement does not make
+every existing document a live input, and a document's own body is never an input
+to its writing plan. Legacy snapshots remain immutable audit context; causal edges
+use their named document dependencies and specific document requirements.
+An explicit dependency repair can discharge only edit findings reachable through
+the erroneous edges and no remaining causal path. Restoring a VDOC node requires
+the original accepted artifact, unchanged definition and actual inputs, current
+owner approval and complete Agent checks, with no unresolved blockers. The repair
+does not create approvals, edit bodies or migrate evidence to new versions.
+
 ## Versioned delivery for VENV, VSTIM, VCHK, VCASE, VCOV and VREG
 
 VENV, VSTIM, VCHK and VCASE use DUT-specific `code-plan` packages with stable

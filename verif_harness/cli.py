@@ -371,6 +371,11 @@ def build_parser() -> argparse.ArgumentParser:
     docs_artifacts.add_argument("--version", type=int, help="与 --artifact 一起指定版本号")
     docs_manifest = docs_commands.add_parser("manifest", help="查看当前文档节点的内容检查清单")
     project_argument(docs_manifest); docs_manifest.add_argument("node_id")
+    docs_repair = docs_commands.add_parser(
+        "repair-dependencies", help="检查旧文档依赖错误；只恢复原批准与当前内容仍一致的节点",
+    )
+    project_argument(docs_repair)
+    docs_repair.add_argument("--apply", action="store_true", help="保存依赖修正及核验结果；省略时只预览")
     docs_sync = docs_commands.add_parser("sync", help="重新计算正文摘要；变化会触发失效和重新评审")
     project_argument(docs_sync); docs_sync.add_argument("documents", nargs="*")
     docs_render = docs_commands.add_parser("render", help="按需生成状态、决策、评审和修订投影")
@@ -1070,6 +1075,8 @@ def main(arguments: list[str] | None = None) -> int:
                 emit(store.document_artifacts(args.artifact, args.version))
             elif args.docs_command == "manifest":
                 emit(store.document_manifest(args.node_id))
+            elif args.docs_command == "repair-dependencies":
+                emit(store.repair_document_dependencies(apply=args.apply))
             elif args.docs_command == "sync":
                 emit(store.sync_documents(args.documents, require_active=True))
             elif args.docs_command == "render":

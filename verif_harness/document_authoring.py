@@ -541,12 +541,34 @@ def _source_matches(requirement: str, source: dict[str, Any]) -> bool:
         }
     if requirement == "verification-artifact":
         return kind in {
-            "verification-document", "verification-testbench",
+            "verification-testbench",
             "reference-model-implementation", "verification-script",
         }
     if requirement.startswith("verification-document:"):
         return kind == "verification-document" and source.get("document_key") == requirement.split(":", 1)[1]
     return kind == requirement
+
+
+def authoring_source_is_dependency(contract: dict[str, Any], source: dict[str, Any]) -> bool:
+    """Legacy snapshots retain context; only named upstream documents are inputs.
+
+    Older generators included every existing body through verification-artifact,
+    including their own output. Do not edit those approved snapshots or their
+    digests. The explicit document requirements/dependencies define causality.
+    """
+    if source.get("kind") != "verification-document":
+        return True
+    key = source.get("document_key")
+    if not key:
+        # Unknown provenance must not silently lose an existing dependency.
+        return True
+    if key == contract.get("profile", {}).get("document_key"):
+        return False
+    return key in contract.get("document_dependencies", []) or any(
+        item.get("source_kind") in {"verification-document", "verification-document:" + key}
+        for item in contract.get("source_requirements", [])
+    ) or any("verification-document:" + key in section.get("required_source_kinds", [])
+             for section in contract.get("section_authoring_instructions", []))
 
 
 def _merge_source_requirements(common: dict[str, Any], profile: dict[str, Any]) -> list[dict[str, Any]]:
@@ -737,6 +759,7 @@ def build_authoring_proposal(
         relevant_sources = [
             source for source in sources
             if any(_source_matches(str(requirement["source_kind"]), source) for requirement in requirements)
+            and not (source.get("kind") == "verification-document" and source.get("document_key") == key)
         ]
         gaps = [dict(item) for item in dut_gaps]
         for requirement in requirements:

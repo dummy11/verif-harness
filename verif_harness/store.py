@@ -30,6 +30,7 @@ from .document_authoring import (
     build_authoring_proposal,
     load_authoring_profiles,
     normalize_authoring_contract,
+    authoring_source_is_dependency,
 )
 from .evidence_contracts import CLAIMS, EvidenceContractError, validate_workstream_evidence
 from .evidence_policy import policy_for
@@ -1715,6 +1716,8 @@ class ProjectStore:
         for document_key, item in authoring_by_document.items():
             contract = item["authoring_contract"]
             for source in contract["source_snapshot"]:
+                if not authoring_source_is_dependency(contract, source):
+                    continue
                 source_id = f"file:{source['path']}"
                 observed = connection.execute(
                     "SELECT 1 FROM nodes WHERE id=?", (source_id,),
@@ -5478,6 +5481,19 @@ class ProjectStore:
             head.pop("data_json")
         return {"heads": heads, "versions": versions}
 
+    @store_operation
+    def repair_document_dependencies(self, *, apply: bool = False) -> dict[str, Any]:
+        """Preview or repair legacy over-broad document dependencies, with audit."""
+        from .document_dependencies import repair
+        self.require()
+        result = repair(self, apply=apply)
+        if apply and result["changed"]:
+            self._vdoc_graph_checkpoint = None
+            self._code_checkpoint = None
+            result["closure"] = self.reconcile()
+            self.write_model_projection()
+        return result
+
     def _require_current_vdoc_plans(self, plan: dict[str, Any]) -> None:
         vdoc_artifacts.reconcile(self, [plan])
         keys = {item["document_key"] for item in self._vdoc_writing_plan_desired(plan) if item.get("required", True)}
@@ -7159,19 +7175,18 @@ class ProjectStore:
     @staticmethod
     def _impact_targets(connection: sqlite3.Connection, node_id: str) -> list[str]:
         """Return causal dependents; DEPENDS_ON is stored dependent -> prerequisite."""
-        direct = [row["target"] for row in connection.execute(
-            "SELECT target FROM edges WHERE source=? AND relation!='DEPENDS_ON' ORDER BY target", (node_id,)
-        )]
-        reverse_dependencies = [row["source"] for row in connection.execute(
-            "SELECT source FROM edges WHERE target=? AND relation='DEPENDS_ON' ORDER BY source", (node_id,)
-        )]
-        return direct + reverse_dependencies
+        return ProjectStore._impact_graph(connection).get(node_id, [])
 
     @staticmethod
     def _impact_graph(connection: sqlite3.Connection) -> dict[str, list[str]]:
+        from .document_dependencies import obsolete_edges
+        ignored = {(edge["source"], edge["target"], edge["relation"])
+                   for edge in obsolete_edges(connection)}
         direct: dict[str, list[str]] = {}
         reverse: dict[str, list[str]] = {}
         for row in connection.execute("SELECT source,target,relation FROM edges ORDER BY source,target"):
+            if (row["source"], row["target"], row["relation"]) in ignored:
+                continue
             if row["relation"] == "DEPENDS_ON":
                 reverse.setdefault(row["target"], []).append(row["source"])
             else:

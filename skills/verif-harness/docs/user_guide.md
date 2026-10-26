@@ -735,5 +735,10 @@ Dashboard 事件流以数据库事务版本识别审批、Agent 问题、节点�
 入口登记，结构化报告按节点合同进入 evidence/code validation。旧记录保留供审计，但只有当前
 project、revision、definition/document digest 和依赖一致的证据才能支持当前结论。
 
+如果旧项目在修改一份文档后，其他未修改文档及工作流也全部失效，Main Agent 应先核对是否把
+所有正文误登记成了各方案的输入。`docs repair-dependencies` 可预览这类依赖错误的修正，
+`docs repair-dependencies --apply` 保存修正并核验原批准。它保留审批历史，不修改正文；真实
+变化、未处理意见或不匹配的证据仍需处理，不能用此命令把未完成工作改成通过。
+
 `ACTIVE`、`PROVISIONAL`、dry-run、clean audit、Activity 完成、子 Agent 完成或
 `READY_FOR_HUMAN_REVIEW` 都不等于验证闭环、freeze、签核、仿真器支持或公开发布授权。
