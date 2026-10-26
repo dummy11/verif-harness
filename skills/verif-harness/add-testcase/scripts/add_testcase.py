@@ -7,8 +7,17 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 
+
+ROOT = Path(__file__).resolve().parents[4]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from verif_harness.case_traceability import (  # noqa: E402
+    CaseTraceabilityError, confirmation_context, validate_traceability,
+)
 
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -147,6 +156,7 @@ def main() -> int:
     parser.add_argument("--base-test", required=True)
     parser.add_argument("--base-vseq", required=True)
     parser.add_argument("--submit-profile-ref", type=Path, required=True)
+    parser.add_argument("--traceability", type=Path, required=True, help="用例来源、文件版本和预期结果依据 JSON")
     parser.add_argument("--entry-kind", choices=("testcase", "sequence"), default="testcase")
     parser.add_argument("--case-manifest-out", type=Path)
     parser.add_argument("--dry-run", action="store_true")
@@ -172,6 +182,22 @@ def main() -> int:
     test_path = test_dir / f"{test_name}.svh"
     vseq_path = vseq_dir / f"{vseq_name}.svh"
     submit_profile = load_submit_profile_ref(root, args.submit_profile_ref)
+    traceability_path = args.traceability if args.traceability.is_absolute() else root / args.traceability
+    def check_source(ref, kind):
+        target = project_path(root, ref["path"], "用例来源")
+        if not target.is_file() or file_digest(target) != ref["sha256"]:
+            raise CaseTraceabilityError("用例来源文件缺失或版本已经变化：" + ref["path"])
+    try:
+        traceability = validate_traceability(json.loads(traceability_path.read_text(encoding="utf-8")),
+                                             test_name, check_source)
+    except (OSError, ValueError) as exc:
+        raise SystemExit("ERROR: 用例来源或预期结果依据无效：" + str(exc)) from exc
+    traceability_status = traceability["expected_result"]["status"]
+    traceability_info = {"traceability_status": traceability_status,
+                         "confirmation_context": confirmation_context(test_name, traceability),
+                         "traceability_notice": ("RTL 推导，尚未确认；完成负责人确认前不能作为交付通过依据"
+                                                 if traceability_status == "rtl-derived-unconfirmed" else
+                                                 "负责人确认记录须由控制面核对" if traceability_status == "confirmed" else "")}
     safe_profile = re.sub(r"[^A-Za-z0-9_.-]+", "-", submit_profile["profile_id"])
     manifest_path = args.case_manifest_out
     if manifest_path is None:
@@ -190,7 +216,7 @@ def main() -> int:
     new_env_pkg = insert_include(env_pkg.read_text(encoding="utf-8"), f"vseq/{vseq_path.name}")
     actions = [str(test_path), str(vseq_path), str(test_pkg), str(env_pkg), str(manifest_path)]
     if args.dry_run:
-        print(json.dumps({"dry_run": True, "would_update": actions}, indent=2))
+        print(json.dumps({"dry_run": True, "would_update": actions, **traceability_info}, indent=2))
         return 0
 
     test_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +227,7 @@ def main() -> int:
     env_pkg.write_text(new_env_pkg, encoding="utf-8")
     source_paths = (test_path, vseq_path, test_pkg, env_pkg)
     manifest = {
-        "schema": "CaseManifest/1",
+        "schema": "CaseManifest/2",
         "case_id": test_name,
         "entry": ({"kind": "testcase", "name": test_name}
                   if args.entry_kind == "testcase" else
@@ -210,14 +236,14 @@ def main() -> int:
             {"path": str(path.relative_to(root)), "sha256": file_digest(path)}
             for path in source_paths
         ],
-        "submit_profile": submit_profile,
+        "submit_profile": submit_profile, "traceability": traceability,
     }
     manifest["case_digest"] = canonical_digest(manifest)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"created": [str(test_path), str(vseq_path), str(manifest_path)],
                       "registered": [str(test_pkg), str(env_pkg)],
-                      "submit_profile_id": submit_profile["profile_id"]}, indent=2))
+                      "submit_profile_id": submit_profile["profile_id"], **traceability_info}, indent=2))
     return 0
 
 

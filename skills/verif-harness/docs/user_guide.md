@@ -475,7 +475,10 @@ VCASE 负责验证点到 testcase/可执行 virtual sequence 的映射、完整 
 1. Agent 从当前文档、激励和检查能力形成 case matrix、优先级、组合场景和预期检查方案。
 2. 负责人确认 testcase 范围、submit profile 和每个验证点的检查方式。
 3. 方案批准后，Agent 实现 testcase 或可执行 virtual sequence。
-4. testbench 生成 `CaseManifest/1`；完整 case 由可执行入口和 testbench 自己维护的 submit profile
+4. testbench 生成 `CaseManifest/2`，复用用例清单登记每个 case 的验证点、规格/RTL/覆盖缺口等来源文件、
+   内容摘要、版本和具体位置，并单独说明预期结果依据。仅从 RTL 推导且未经确认的行为标记
+   “RTL 推导，尚未确认”，通过原节点提问确认后才能作为交付依据，不新增公开节点或审批入口。
+   完整 case 由可执行入口和 testbench 自己维护的 submit profile
    共同确定。
 5. Agent 按 profile 运行定向测试，保存 case、seed、iteration、代码和证据摘要。
 6. Main Agent 提交全部批准 case 的 typed validation；负责人验收交付。

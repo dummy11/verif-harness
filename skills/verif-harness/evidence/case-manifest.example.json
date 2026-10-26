@@ -1,7 +1,10 @@
 {
-  "schema": "CaseManifest/1",
+  "schema": "CaseManifest/2",
   "case_id": "backpressure_test",
-  "entry": {"kind": "testcase", "name": "backpressure_test"},
+  "entry": {
+    "kind": "testcase",
+    "name": "backpressure_test"
+  },
   "source_files": [
     {
       "path": "verification/testbench/test/backpressure_test.svh",
@@ -14,7 +17,56 @@
     "submit_file": "verification/regression/submit.demo.json",
     "submit_file_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "profile_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "adapter": {"name": "project-submit-export", "version": "1"}
+    "adapter": {
+      "name": "project-submit-export",
+      "version": "1"
+    }
   },
-  "case_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  "case_digest": "f2cbb2dfd6bd69f3e8ae022587890b159602971c3e386fa53163521566fb92be",
+  "traceability": {
+    "schema": "CaseTraceability/1",
+    "verification_points": [
+      "VP-BACKPRESSURE"
+    ],
+    "testcase_list": {
+      "path": "verification/docs/testcase_list.md",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "version": "testcase-list-r1",
+      "locator": "用例定义 / backpressure_test"
+    },
+    "sources": [
+      {
+        "id": "ready-valid-spec",
+        "kind": "specification",
+        "path": "verification/inputs/ready-valid-spec.md",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "version": "spec-r1",
+        "locator": "§3.2 反压期间保持有效数据"
+      },
+      {
+        "id": "rtl-handshake",
+        "kind": "rtl",
+        "path": "rtl/demo.sv",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "version": "rtl-r1",
+        "locator": "module demo / ready-valid handshake"
+      },
+      {
+        "id": "hole-backpressure",
+        "kind": "coverage-hole",
+        "path": "verification/inputs/history/holes-r1.json",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "version": "coverage-round-1",
+        "locator": "uncovered / VP-BACKPRESSURE"
+      }
+    ],
+    "expected_result": {
+      "description": "反压期间保持 valid 和数据不变，ready 恢复后只接受一次传输。",
+      "check_method": "接口 assertion 检查数据保持，scoreboard 核对接受次数。",
+      "basis_source_ids": [
+        "ready-valid-spec"
+      ],
+      "status": "specified"
+    }
+  }
 }

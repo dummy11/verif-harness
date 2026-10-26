@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .evidence_policy import ARTIFACT_KINDS, validate_artifact_policy
+from .case_traceability import CaseTraceabilityError, validate_traceability
 
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -304,7 +305,7 @@ def _case_manifest(
 ) -> dict[str, Any]:
     manifest, digest = _json_artifact(
         evidence_path, normalized, artifact_root, manifest_digest,
-        "case-manifest", "CaseManifest/1", field,
+        "case-manifest", "CaseManifest/2", field,
     )
     case_id = _text(manifest.get("case_id"), "case_manifest.case_id")
     if not re.fullmatch(r"[A-Za-z_]\w*", case_id):
@@ -339,6 +340,12 @@ def _case_manifest(
         evidence_path, normalized, artifact_root, manifest.get("submit_profile"),
         "case_manifest.submit_profile",
     )
+    try:
+        traceability = validate_traceability(manifest.get("traceability"), case_id,
+            lambda ref, kind: _artifact_file(evidence_path, normalized, artifact_root,
+                ref["path"], ref["sha256"], kind, "用例来源 " + ref["path"]))
+    except CaseTraceabilityError as exc:
+        raise EvidenceContractError(str(exc)) from exc
     case_digest = _digest(manifest.get("case_digest"), "case_manifest.case_digest")
     expected = _canonical_digest({key: value for key, value in manifest.items() if key != "case_digest"})
     if case_digest != expected:
@@ -347,7 +354,7 @@ def _case_manifest(
         "id": case_id, "case_digest": case_digest, "manifest_digest": digest,
         "entry_kind": entry_kind, "entry_name": entry_name,
         "launcher_test": launcher_test, "source_files": normalized_sources,
-        "submit_profile": profile,
+        "submit_profile": profile, "traceability": traceability,
     }
 
 
@@ -1194,7 +1201,8 @@ def _vcov(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str
     return _finish(normalized, blockers, facts)
 
 
-def _vcase(path: Path, claim: str, artifact_root: Path | None = None) -> dict[str, Any]:
+def _vcase(path: Path, claim: str, artifact_root: Path | None = None,
+           confirmation_validator=None) -> dict[str, Any]:
     _payload, result, normalized = _base(path, "VCASE", claim)
     blockers: list[str] = []
     legacy = normalized["schema"] == LEGACY_SCHEMAS["VCASE"]
@@ -1234,6 +1242,8 @@ def _vcase(path: Path, claim: str, artifact_root: Path | None = None) -> dict[st
                 )
                 case_id = manifest["id"]
                 case_records.append(manifest)
+                if manifest["traceability"]["expected_result"]["status"] == "rtl-derived-unconfirmed":
+                    blockers.append(f"{case_id} 的预期行为仅从 RTL 推导，尚未由负责人确认")
             if legacy and case_id in seen:
                 blockers.append(f"重复 testcase: {case_id}")
             if not legacy:
@@ -1251,6 +1261,10 @@ def _vcase(path: Path, claim: str, artifact_root: Path | None = None) -> dict[st
         facts = {"cases": sorted(seen), "case_count": len(cases)}
         if not legacy:
             facts["case_records"] = sorted(case_records, key=lambda item: item["id"])
+            if confirmation_validator:
+                blockers.extend(confirmation_validator(case_records))
+            elif any(item["traceability"]["expected_result"]["status"] == "confirmed" for item in case_records):
+                blockers.append("负责人确认记录须由当前项目的控制面核对，报告声明不能代替确认")
     else:
         runs = _objects(result.get("runs"), "result.runs")
         if not runs:
@@ -1674,6 +1688,7 @@ VALIDATORS: dict[str, Callable[[Path, str], dict[str, Any]]] = {
 
 def validate_workstream_evidence(
     path: Path, workstream: str, claim: str, *, artifact_root: Path | None = None,
+    case_confirmation_validator=None,
 ) -> dict[str, Any]:
     if workstream not in VALIDATORS:
         raise EvidenceContractError(f"{workstream} 没有专用 evidence validator")
@@ -1682,7 +1697,7 @@ def validate_workstream_evidence(
     if workstream == "VCOV":
         return _vcov(path, claim, artifact_root)
     if workstream == "VCASE":
-        return _vcase(path, claim, artifact_root)
+        return _vcase(path, claim, artifact_root, case_confirmation_validator)
     if workstream == "VREG":
         return _vreg(path, claim, artifact_root)
     return VALIDATORS[workstream](path, claim)

@@ -110,7 +110,17 @@ VCASE treats a runnable case as a testcase or executable virtual sequence bound
 to one testbench-owned submit profile. The testbench submit file remains the
 configuration authority; the control plane stores only project-relative
 references and content digests. A logical testcase may therefore have multiple
-`CaseManifest/1` variants, one per submit profile. VREG consumes testbench-emitted
+`CaseManifest/2` variants, one per submit profile. Each manifest also binds the
+existing testcase-list entry, verification points, versioned requirement/RTL/
+coverage-feedback/defect/model/decision sources and an explicit expected-result
+basis. Source paths and SHA-256 values are checked against native artifacts.
+RTL-only expectations remain visibly unconfirmed and block acceptance until an
+existing current-node engineering question has an owner answer matching that
+case and exact expectation/basis digest. This is an engineering input, not a new
+approval gate. Coverage feedback uses controlled historical snapshots. Changes
+to source bytes or the expected-result basis invalidate the affected evidence;
+old manifests and receipts are never silently upgraded with inferred origins.
+VREG consumes testbench-emitted
 `RegressionBatchManifest/2` files. Each batch owns one submit profile and one
 caselist, so the same case set under different profiles is represented by
 different batches. Execution and triage identities are

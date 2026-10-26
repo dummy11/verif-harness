@@ -114,10 +114,16 @@ Agent 随后用 `code validate` 检查文件合法性、当前 revision/节点�
 VCASE 中的完整 case 由 testcase 或可执行 virtual sequence 与一个 submit profile
 共同确定。submit file 是 testbench 的配置事实源；verif-harness 只记录项目内路径、
 profile ID、submit file 摘要和 profile 摘要，不复制、解析或执行 VCS、LSF、license
-与站点 wrapper 配置。同一 testcase 可以用多个 `CaseManifest/1` 分别绑定不同
+与站点 wrapper 配置。同一 testcase 可以用多个 `CaseManifest/2` 分别绑定不同
 profile。testbench 的 submit 工具再生成 `RegressionBatchManifest/2` 和 caselist；每个
 batch 只绑定一个 profile，因此同一组 case 使用不同 profile 时必须成为不同
 batch/caselist。执行和分类记录以 batch、case、seed 和 iteration 联合标识。
+每个 `CaseManifest/2` 还通过 `traceability` 关联已有用例清单、验证点以及规格、RTL、覆盖缺口、
+缺陷、参考模型或工程决定的文件、SHA-256、版本和位置，单独记录预期结果及检查依据。
+仅由 RTL 推导的行为标记“RTL 推导，尚未确认”，确认前不得通过 VCASE 交付验证；需要确认时复用
+本节点既有提问，回答必须匹配同一 case 的具体来源和预期版本。缺口反馈使用受控历史快照。
+来源、预期依据或确认记录变化会使相关证据需要重新核对。原 CaseManifest/1 仅保留历史，
+升级后需补齐真实来源重新验证；不为每个 case 增加公开节点或审批入口。
 VREG 按“回归基础设施方案 → 基础设施交付 → 结果方案 → 结果交付”推进。基础设施只依赖
 已验收文档和环境；验收后派生有效的 `cap.vreg:executor-ready` 汇总能力。结果方案通过
 `cap.vreg:<implementation_key>` 明确关联当前方案中的已验收基础设施范围，同时依赖当前

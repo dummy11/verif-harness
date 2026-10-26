@@ -31,7 +31,7 @@ VCOV_VALIDATION_CONTRACT = "CoverageConvergence/5"
 MAX_COVERAGE_EXCLUSION_BYTES = 512 * 1024
 VREG_INFRASTRUCTURE_CLAIMS = {"regression-policy", "executor-ready"}
 VREG_RESULTS_CLAIMS = {"execution-evidence", "triage-evidence", "fresh-evidence"}
-VCASE_VALIDATION_CONTRACT = "TestcaseExecution/2"
+VCASE_VALIDATION_CONTRACT = "TestcaseExecution/3"
 VREG_VALIDATION_CONTRACT = "RegressionResults/4"
 VCOV_ROLE_LABELS = {
     "coverage-implementation-plan": "覆盖率实现方案",
@@ -1054,8 +1054,13 @@ def validation_current(store, connection, plan, node, signature):
         )
         if source_reasons or observed_bindings != expected_bindings:
             value["current"] = False
-    if plan["workstream"] == "VCASE" and value.get("testcase_contract") != VCASE_VALIDATION_CONTRACT:
-        value["current"] = False
+    if plan["workstream"] == "VCASE":
+        if value.get("testcase_contract") != VCASE_VALIDATION_CONTRACT:
+            value["current"] = False
+        elif case_confirmation_blockers(connection, node, [
+                item for check in value.get("checks", []) if check.get("claim") == "case-implementation"
+                for item in check.get("validation", {}).get("facts", {}).get("case_records", [])]):
+            value["current"] = False
     if plan["workstream"] == "VREG" and vreg_stage(node) == "results":
         current_round = execution_round(connection, node["id"])
         if (value.get("regression_contract") != VREG_VALIDATION_CONTRACT or not current_round
@@ -2058,7 +2063,7 @@ def review(store, node_id, expected, reviewer, reason="", verdict="approve", cha
             "plan_review": review_state(store, node_id), "auto_closure": store.evaluate_closure(plan["workstream"])}
 
 
-def _validate_evidence(store, path, workstream, claim):
+def _validate_evidence(store, path, workstream, claim, plan=None, node=None):
     from .evidence_contracts import validate_workstream_evidence, EvidenceContractError
     if workstream == "VSTIM" and claim in {"reachability-evidence", "determinism-evidence"}:
         from .reachability import validate_reachability, ReachabilityError
@@ -2088,9 +2093,39 @@ def _validate_evidence(store, path, workstream, claim):
                 )
         return result
     try:
+        if workstream == "VCASE" and plan is not None and node is not None:
+            with store.read_connect() as db:
+                return validate_workstream_evidence(path, workstream, claim, artifact_root=store.root,
+                    case_confirmation_validator=lambda records: case_confirmation_blockers(db, node, records))
         return validate_workstream_evidence(path, workstream, claim, artifact_root=store.root)
     except EvidenceContractError as exc:
         error(str(exc))
+
+
+def case_confirmation_blockers(connection, node, records):
+    """Reuse existing node questions; manifest text alone cannot claim approval."""
+    from .case_traceability import confirmation_context
+    reasons = []
+    family = {node["id"], node.get("parent_id")}
+    for item in records:
+        trace = item.get("traceability")
+        if not trace:
+            reasons.append(item["id"] + " 缺少当前用例来源和预期结果依据，请重新验证")
+            continue
+        expected = trace["expected_result"]
+        if expected["status"] != "confirmed":
+            continue
+        row = connection.execute("SELECT * FROM agent_questions WHERE id=?",
+                                 (expected["confirmation_question_id"],)).fetchone()
+        try:
+            context = json.loads(row["context"]) if row else None
+        except ValueError:
+            context = None
+        if (not row or row["target"] not in family or row["workstream"] != "VCASE"
+                or row["status"] != "ANSWERED" or row["answer_option"] != "confirm"
+                or not row["answered_by"] or context != confirmation_context(item["id"], trace)):
+            reasons.append(item["id"] + " 的 RTL 推导或工程决定缺少本节点当前行为版本的负责人确认")
+    return reasons
 
 
 def _feedback_routes(workstream, claim, facts):
@@ -2290,7 +2325,7 @@ def validate(store, node_id, report_path):
         claims.add(check["claim"])
         evidence_path = store.root / local_path(store, check["report"])
         expected_files.update({v['path']: v['sha256'] for v in file_snapshot(store, [local_path(store, evidence_path)], required=True)})
-        result = _validate_evidence(store, evidence_path, workstream, check["claim"])
+        result = _validate_evidence(store, evidence_path, workstream, check["claim"], plan, node)
         if workstream == "VCOV" and result.get("schema") != "CoverageEvidence/3":
             error("当前 VCOV 交付必须使用 CoverageEvidence/3 绑定覆盖实现配置、VREG 执行轮次和 VDB merge")
         if workstream == "VCASE" and result.get("schema") != "TestcaseEvidence/2":

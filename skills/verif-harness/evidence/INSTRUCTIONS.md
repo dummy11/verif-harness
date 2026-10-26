@@ -128,9 +128,16 @@ failure must reference a Human `WAIVE` review stored in the project database.
 `SubmitProfileRef/1` is emitted by the testbench submit adapter. Its source
 submit file remains the project authority for compile, simulation, scheduler,
 license, and site wrapper settings; the control plane validates only the
-project-relative file reference and digests. `CaseManifest/1` binds one
+project-relative file reference and digests. `CaseManifest/2` binds one
 testcase or executable virtual sequence to one submit profile. The same logical
-case may have multiple manifests for different profiles.
+case may have multiple manifests for different profiles. `traceability` binds its
+existing testcase-list entry, verification points, versioned specification/RTL/
+coverage-hole/defect/model/decision sources, and the expected result/checking basis.
+Every source reference must match a native artifact's path, SHA-256 and kind.
+RTL-only unconfirmed expectations are recorded but block delivery. A claimed owner
+confirmation must be verified against the existing current-node question and exact
+behavior digest by ProjectStore; report text is not approval. Old CaseManifest/1
+and TestcaseExecution/2 receipts are audit history, not current traceability evidence.
 
 The testbench submit flow also emits one `RegressionBatchManifest/2` and one
 caselist for each regression group/profile binding. A batch cannot mix submit

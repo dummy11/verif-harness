@@ -10,6 +10,7 @@ from verif_harness.evidence_contracts import (
     EvidenceContractError, SCHEMAS, validate_workstream_evidence,
 )
 from verif_harness.evidence_policy import policy_for
+from tests.case_traceability_fixtures import traceability_fixture
 
 
 DIGEST = "a" * 64
@@ -63,10 +64,11 @@ class EvidenceContractsTest(unittest.TestCase):
                 bind("configuration", submit_relative, submit_digest)
                 requested = result["cases"][0]
                 manifest = {
-                    "schema": "CaseManifest/1", "case_id": requested.get("id", "demo_test"),
+                    "schema": "CaseManifest/2", "case_id": requested.get("id", "demo_test"),
                     "entry": {"kind": "testcase", "name": requested.get("id", "demo_test")},
                     "source_files": [{"path": source_relative, "sha256": source_digest}],
                     "submit_profile": profile,
+                    "traceability": traceability_fixture(root, requested.get("id", "demo_test"), artifacts),
                 }
                 manifest["case_digest"] = hashlib.sha256(json.dumps(
                     manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -548,12 +550,14 @@ class EvidenceContractsTest(unittest.TestCase):
                 {"path": submit_path, "sha256": submit_digest,
                  "kind": "configuration", "analyzed_by": ["xverif"]},
             ]
+            traceability = traceability_fixture(root, "demo_test", artifacts)
             manifest_digests = []
             for profile_id, profile_digest in (("fast", "b" * 64), ("debug", "d" * 64)):
                 manifest = {
-                    "schema": "CaseManifest/1", "case_id": "demo_test",
+                    "schema": "CaseManifest/2", "case_id": "demo_test",
                     "entry": {"kind": "testcase", "name": "demo_test"},
                     "source_files": [{"path": source_path, "sha256": source_digest}],
+                    "traceability": traceability,
                     "submit_profile": {
                         "schema": "SubmitProfileRef/1", "profile_id": profile_id,
                         "submit_file": submit_path, "submit_file_digest": submit_digest,

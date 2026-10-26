@@ -12,6 +12,11 @@ import unittest
 from pathlib import Path
 
 
+REPO = Path(__file__).resolve().parents[3]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from tests.case_traceability_fixtures import traceability_fixture
+
 SKILL = Path(__file__).resolve().parents[1]
 ADD_TEST = SKILL / "add-testcase" / "scripts" / "add_testcase.py"
 COVERAGE = SKILL / "add-coverage-skeleton" / "scripts" / "generate_coverage.py"
@@ -67,10 +72,24 @@ class Stage2PlusToolsTest(unittest.TestCase):
                 "profile_digest": "a" * 64,
                 "adapter": {"name": "demo-submit-export", "version": "1"},
             }), encoding="utf-8")
+            trace_path = root / "case-traceability.json"
+            design_trace = traceability_fixture(root, "feature_test")
+            trace_path.write_text(json.dumps(design_trace), encoding="utf-8")
+            invalid_trace = json.loads(json.dumps(design_trace))
+            invalid_trace["sources"][0]["sha256"] = "f" * 64
+            trace_path.write_text(json.dumps(invalid_trace), encoding="utf-8")
+            refused = run(ADD_TEST, "--project-root", root, "--test-name", "feature_test",
+                          "--base-test", "demo_base_test", "--base-vseq", "demo_base_vseq",
+                          "--submit-profile-ref", submit_ref, "--traceability", trace_path)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("来源文件缺失或版本已经变化", refused.stderr)
+            self.assertFalse((test_dir / "feature_test.svh").exists())
+            self.assertNotIn("feature_test.svh", (test_dir / "demo_test_pkg.sv").read_text())
+            trace_path.write_text(json.dumps(design_trace), encoding="utf-8")
             result = run(
                 ADD_TEST, "--project-root", root, "--test-name", "feature_test",
                 "--base-test", "demo_base_test", "--base-vseq", "demo_base_vseq",
-                "--submit-profile-ref", submit_ref,
+                "--submit-profile-ref", submit_ref, "--traceability", trace_path,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((test_dir / "feature_test.svh").is_file())
@@ -78,12 +97,23 @@ class Stage2PlusToolsTest(unittest.TestCase):
             self.assertEqual(default.read_text(encoding="utf-8"), "smoke_test\n")
             manifest_path = root / "sim/regress/cases/feature_test--local.case.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(manifest["schema"], "CaseManifest/1")
+            self.assertEqual(manifest["schema"], "CaseManifest/2")
             self.assertEqual(manifest["submit_profile"]["profile_id"], "local")
             self.assertEqual(manifest["entry"], {"kind": "testcase", "name": "feature_test"})
             self.assertEqual(len(manifest["case_digest"]), 64)
+            self.assertEqual(manifest["traceability"]["expected_result"]["status"], "specified")
             self.assertIn('`include "feature_test.svh"', (test_dir / "demo_test_pkg.sv").read_text())
             self.assertIn('`include "vseq/feature_vseq.svh"', (env_dir / "demo_env_pkg.sv").read_text())
+            rtl_trace = traceability_fixture(root, "rtl_only_test")
+            rtl_trace["expected_result"].update(status="rtl-derived-unconfirmed", basis_source_ids=["rtl-handshake"])
+            trace_path.write_text(json.dumps(rtl_trace), encoding="utf-8")
+            draft = run(ADD_TEST, "--project-root", root, "--test-name", "rtl_only_test",
+                        "--base-test", "demo_base_test", "--base-vseq", "demo_base_vseq",
+                        "--submit-profile-ref", submit_ref, "--traceability", trace_path)
+            self.assertEqual(draft.returncode, 0, draft.stderr)
+            self.assertIn("尚未确认", json.loads(draft.stdout)["traceability_notice"])
+            draft_manifest = json.loads((root / "sim/regress/cases/rtl_only_test--local.case.json").read_text())
+            self.assertEqual(draft_manifest["traceability"]["expected_result"]["status"], "rtl-derived-unconfirmed")
 
     def test_coverage_assertion_and_ci_examples_render(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
