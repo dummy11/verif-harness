@@ -75,7 +75,16 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     let releaseWrite, writes = 0;
     const writeGate = new Promise(resolve => releaseWrite = resolve);
     await page.route(endpoint, async route => { writes++; await writeGate; await route.continue(); });
-    await page.route('**/api/snapshot?*', route => route.fulfill({status:503, json:{error:'测试：页面刷新暂不可用'}}));
+    // Keep the pre-write snapshot visible until the delayed HTTP read finishes;
+    // otherwise SSE can hide a blocking-refresh regression.
+    await page.evaluate(() => state.stream.close());
+    let releaseRefresh, refreshStarted;
+    const refreshGate = new Promise(resolve => releaseRefresh = resolve);
+    const refreshing = new Promise(resolve => refreshStarted = resolve);
+    await page.route('**/api/snapshot?*', async route => {
+      if (new URL(route.request().url()).searchParams.get('project') !== config.project) { await route.continue(); return; }
+      refreshStarted(); await refreshGate; await route.continue();
+    });
     const submitted = page.waitForResponse(r => r.url().includes('/api/reviews/node-plan-complete') && r.request().method() === 'POST');
     await confirm.click();
     await approval.getByRole('button', {name:'正在提交…', exact:true}).waitFor();
@@ -84,20 +93,31 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await approval.locator('[data-submit-status]').filter({hasText:'正在保存审批'}).waitFor();
     releaseWrite();
     assert.equal((await submitted).ok(), true);
-    await approval.locator('[data-submit-status]').filter({hasText:'审批已保存，但页面状态暂未刷新'}).waitFor();
-    assert.equal(writes, 1);
-    assert.equal(await approval.locator('[type="submit"]').isDisabled(), true);
-    // Retrying a refresh is read-only and must not create another review.
-    await page.unroute('**/api/snapshot?*');
-    let releaseRefresh;
-    const refreshGate = new Promise(resolve => releaseRefresh = resolve);
-    await page.route('**/api/snapshot?*', async route => { await refreshGate; await route.continue(); });
-    await approval.getByRole('button', {name:'刷新审批状态', exact:true}).click();
-    await approval.locator('[data-submit-status]').filter({hasText:'审批已保存，正在刷新页面状态'}).waitFor();
-    releaseRefresh();
+    await refreshing;
     await page.locator('#modal-backdrop').waitFor({state:'hidden'});
+    await page.locator('.node-table').waitFor();
+    assert.equal(new URL(page.url()).searchParams.has('node'), false);
+    assert.equal(await page.locator('#drawer-backdrop.open').count(), 0);
+    const savedRow = page.locator(`[data-approve-plan-node="${initial.id}"]`);
+    assert.equal(await savedRow.innerText(), '审批已保存，状态待更新');
+    assert.equal(await savedRow.isDisabled(), true);
+    assert.equal(await page.locator('#node-plan-complete-form').count(), 0);
+    // The saved receipt disables only repeat approval; it does not invent node
+    // progress or close the workflow while the authoritative snapshot is stale.
+    assert.equal(await page.evaluate(id => findNode(id).plan_review.completed, initial.id), false);
+    assert.equal(writes, 1);
+    // Browsing remains usable and the eventual response must not navigate back.
+    await page.evaluate(() => navigatePrimary('overview'));
+    assert.equal(new URL(page.url()).searchParams.has('workstream'), false);
+    await page.evaluate(project => navigateUrl(routeUrl({project, workstream:'VDOC'})), config.otherProject);
+    const refreshed = page.waitForResponse(r => r.url().includes('/api/snapshot?') && new URL(r.url()).searchParams.get('project') === config.project);
+    releaseRefresh();
+    await (await refreshed).finished();
+    assert.equal(await page.evaluate(() => state.snapshot.dashboard_project_id), config.otherProject);
+    assert.equal(new URL(page.url()).searchParams.get('project'), config.otherProject);
     await page.unroute('**/api/snapshot?*');
     await page.unroute(endpoint);
+    await page.evaluate(project => navigateUrl(routeUrl({project, workstream:'VDOC'})), config.project);
     await page.locator('.node-table').getByRole('button', {name:'已批准全部内容', exact:true}).waitFor();
     assert.equal(new URL(page.url()).searchParams.has('node'), false);
     assert.equal(await page.locator('#drawer-backdrop.open').count(), 0);
@@ -192,18 +212,32 @@ const config = JSON.parse(fs.readFileSync(0, 'utf8'));
     await page.locator('#modal-backdrop').waitFor({state:'hidden'});
     assert.equal(planNode(await snapshot()).plan_review.completion_reviews.length, 1);
     await page.unroute(endpoint);
-    // The list-row action performs exactly the same node-bound approval, then
-    // stays on the list; the browser tab remains open.
+    // A write can commit while its response is lost. Once the read-only receipt
+    // confirms it, return to the list even when the full snapshot read fails.
     await page.locator('#main #close-drawer').click();
+    await page.evaluate(() => state.stream.close());
+    await page.route(endpoint, async route => { writes++; await route.fetch(); await route.abort('failed'); });
+    await page.route('**/api/snapshot?*', route => route.fulfill({status:503, json:{error:'测试：页面刷新暂不可用'}}));
     await page.locator(`[data-approve-plan-node="${initial.id}"]`).click();
     await page.locator('#node-plan-complete-form [type="submit"]').click();
+    await page.locator('[data-submit-status]').filter({hasText:'可能已保存，请勿重复提交'}).waitFor();
+    assert.equal(await page.locator('#node-plan-complete-form [type="submit"]').isDisabled(), true);
+    await page.getByRole('button', {name:'刷新审批状态', exact:true}).click();
     await page.locator('#modal-backdrop').waitFor({state:'hidden'});
+    await page.locator('#toast').filter({hasText:'审批已保存；页面状态暂未更新'}).waitFor();
+    assert.equal(await savedRow.innerText(), '审批已保存，状态待更新');
+    assert.equal(await savedRow.isDisabled(), true);
+    assert.equal(await page.locator('.node-table').isVisible(), true);
+    assert.equal(writes, 2);
+    await page.unroute(endpoint);
+    await page.unroute('**/api/snapshot?*');
+    await page.evaluate(snapshot => setSnapshot(snapshot), await snapshot());
     await page.locator('.node-table').getByRole('button', {name:'已批准全部内容', exact:true}).waitFor();
     assert.equal(context.pages().length, 1);
     assert.equal(new URL(page.url()).searchParams.has('node'), false);
     assert.equal(planNode(await snapshot()).plan_review.completion_reviews.length, 2);
     assert.deepEqual(errors, []);
-    console.log('Whole-plan approval: optional reason, slow save/refresh, rejection, network failure, timeout, no duplicate writes PASS');
+    console.log('Whole-plan approval: immediate list return, background refresh/failure, optional reason, rejection, lost receipt, timeout, no duplicate writes PASS');
   } finally {
     await context.close();
     await browser.close();

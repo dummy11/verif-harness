@@ -532,6 +532,9 @@
     const viewCache = new Map();
     const nodeListFilters = new Map();
     const pendingNodeApprovalReads = new Set();
+    // Saved receipts only suppress duplicate clicks until an authoritative read
+    // includes the review. They never change node status, progress or closure.
+    const savedApprovalReceipts = new Map();
     let renderedView = null, renderSequence = 0, submittingForm = null, modalSequence = 0;
     let pendingWrites = 0;
     let displayedUrl = window.location.href;
@@ -3023,6 +3026,8 @@
     }
 
     function planApprovalState(n, available=planApprovalAvailable(n)) {
+      const saved = savedApprovalState(n);
+      if (saved) return saved;
       const feedback = nodeFeedbackState(n);
       const completed = isCodeNode(n) ? codeApprovalCompleted(n) : n.plan_review.completed;
       const title = completed
@@ -3430,6 +3435,8 @@
     }
 
     function deliveryApprovalState(n) {
+      const saved = savedApprovalState(n);
+      if (saved) return saved;
       const review = n.delivery_review || {};
       const feedback = nodeFeedbackState(n);
       const approved = review.current_review?.verdict === 'APPROVE';
@@ -3613,8 +3620,37 @@
         return body;
       } finally { clearTimeout(timer); pendingWrites--; }
     }
+    function approvalReceiptKey(n, project=state.project) {
+      const review = n.delivery_review || n.plan_review || {};
+      return JSON.stringify([project, n.id, review.revision, review.definition_digest, review.document_digest]);
+    }
+    function savedApprovalState(n) {
+      const key = approvalReceiptKey(n), receipt = savedApprovalReceipts.get(key);
+      if (!receipt) return null;
+      const review = n.delivery_review || n.plan_review || {};
+      const history = [...(review.reviews || []), ...(review.completion_reviews || []), review.current_review];
+      if (history.some(item => item?.id === receipt.reviewId)) {
+        savedApprovalReceipts.delete(key);
+        return null;
+      }
+      return {enabled:false, label:'审批已保存，状态待更新', title:'审批已经保存；正在后台读取当前节点状态，请勿重复提交'};
+    }
+    async function refreshSavedApproval(project, retry=true) {
+      const snapshotAtStart = state.snapshot;
+      try {
+        const snapshot = await approvalRequest(`/api/snapshot?project=${encodeURIComponent(project)}`, {headers:{'X-Verif-Token':token}});
+        if (state.project !== project) return;
+        if (snapshot.dashboard_project_id !== project) throw new Error('返回的项目与当前项目不一致');
+        // A newer SSE read or project selection must win over this delayed read.
+        if (state.snapshot === snapshotAtStart) setSnapshot(snapshot);
+        else if (retry && snapshot.version !== state.snapshot?.version) void refreshSavedApproval(project, false);
+      } catch (error) {
+        if (state.project === project) toast('审批已保存；页面状态暂未更新，后台连接恢复后会自动同步。', true);
+      }
+    }
     async function submitNodePlanCompletion(form, n) {
       if (form.dataset.submitted) return;
+      if (savedApprovalState(n)) return;
       const project = state.project, sequence = modalSequence;
       const current = () => state.project === project && modalSequence === sequence;
       const button = form.querySelector('[type="submit"]');
@@ -3635,31 +3671,38 @@
       form.setAttribute('aria-busy', 'true');
       form.querySelectorAll('input,textarea').forEach(field => field.readOnly = true);
       show('正在保存审批，请勿重复点击。');
-      let saved = false;
+      const returnToList = async reviewId => {
+        savedApprovalReceipts.set(approvalReceiptKey(n, project), {reviewId});
+        delete form.dataset.dirty;
+        delete form.dataset.pending;
+        closeModal(true);
+        await navigateUrl(routeUrl({workstream:n.workstream}), {replace:true});
+        toast('审批已保存，状态正在后台刷新');
+        void refreshSavedApproval(project);
+      };
       const refreshState = async () => {
         if (!current()) return;
         refresh.hidden = true; form.dataset.pending = 'true';
-        show(saved ? '审批已保存，正在刷新页面状态…' : '正在核对审批记录，不会重复提交…');
+        show('正在核对审批记录，不会重复提交…');
         try {
-          if (!saved) {
-            const receipt = await approvalRequest(`/api/approval-status?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}`, {headers:{'X-Verif-Token':token}});
-            if (!current()) return;
-            if (receipt.dashboard_project_id !== project || receipt.result?.node_id !== n.id) throw new Error('返回的审批对象与当前节点不一致');
-            if (receipt.result.definition_digest !== data.definition_digest || (data.document_digest && receipt.result.document_digest !== data.document_digest)) throw new Error('节点或正文版本已变化，请返回节点列表核对当前版本');
-            saved = receipt.result.current_review?.verdict === 'APPROVE';
-            if (saved) button.textContent = '批准记录已保存';
-            show(saved ? '已确认当前版本的批准记录已保存，正在刷新页面状态…' : '暂未查到当前版本的批准记录；不会自动重试提交，正在刷新页面状态…');
+          const receipt = await approvalRequest(`/api/approval-status?project=${encodeURIComponent(project)}&node=${encodeURIComponent(n.id)}`, {headers:{'X-Verif-Token':token}});
+          if (!current()) return;
+          if (receipt.dashboard_project_id !== project || receipt.result?.node_id !== n.id) throw new Error('返回的审批对象与当前节点不一致');
+          if (receipt.result.definition_digest !== data.definition_digest || (data.document_digest && receipt.result.document_digest !== data.document_digest)) throw new Error('节点或正文版本已变化，请返回节点列表核对当前版本');
+          if (receipt.result.current_review?.verdict === 'APPROVE') {
+            await returnToList(receipt.result.current_review.id);
+            return;
           }
+          show('暂未查到当前版本的批准记录；不会自动重试提交，正在刷新页面状态…');
           const snapshot = await approvalRequest(`/api/snapshot?project=${encodeURIComponent(project)}`, {headers:{'X-Verif-Token':token}});
           if (!current()) return;
           if (snapshot.dashboard_project_id !== project) throw new Error('返回的项目与当前项目不一致');
           setSnapshot(snapshot);
           closeModal(true);
-          if (saved) await navigateUrl(routeUrl({workstream:n.workstream}), {replace:true});
-          toast(saved ? '审批已保存，页面状态已刷新' : '已刷新，请查看当前节点的审批历史，确认上次提交结果');
+          toast('已刷新，请查看当前节点的审批历史，确认上次提交结果');
         } catch (error) {
           if (current()) {
-            show((saved ? '审批已保存，但页面状态暂未刷新。' : '尚未确认审批结果，请勿重复提交。') + '可以点击“刷新审批状态”重新读取。' + (error.name === 'AbortError' ? '读取超时。' : String(error)));
+            show('尚未确认审批结果，请勿重复提交。可以点击“刷新审批状态”重新读取。' + (error.name === 'AbortError' ? '读取超时。' : String(error)));
             refresh.hidden = false;
           }
         } finally { delete form.dataset.pending; form.removeAttribute('aria-busy'); }
@@ -3670,9 +3713,7 @@
         const body = await approvalRequest(endpoint, {method:'POST', headers:{'Content-Type':'application/json','X-Verif-Token':token}, body:JSON.stringify(data)});
         if (!current()) return;
         if (body.dashboard_project_id !== project || body.result?.node_id !== n.id || !body.result?.review_id) throw new Error('未收到当前节点的审批保存结果');
-        saved = true; delete form.dataset.dirty;
-        button.textContent = '审批已保存';
-        await refreshState();
+        await returnToList(body.result.review_id);
       } catch (error) {
         if (!current()) return;
         if (error.rejected) {
