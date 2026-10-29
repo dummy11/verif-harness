@@ -65,12 +65,24 @@ Kimi. Apply the same policy table above through Kimi's documented native
 settings, keeping the workspace root as the only writable workspace whenever
 possible.
 
-For Kimi projects, setup creates the project-local Kimi file and Skill entry at:
+For Kimi projects, setup keeps Skills, Agent profiles, and workspace settings
+in the explicitly selected verification workspace:
 
 ```text
-.kimi-code/local.toml
-.kimi-code/skills/verif-harness
+<workspace>/.kimi-code/local.toml
+<workspace>/.kimi-code/agents/
+<workspace>/.kimi-code/skills/verif-harness
+<workspace>/.kimi-code/skills/verification-doc-authoring
 ```
+
+Kimi 2.4 may select an enclosing Git repository as its automatic project root.
+The managed interactive and one-action launch paths therefore pass the selected
+workspace's Skill directory with `--skills-dir`, along with existing user Skill
+directories, and select its main Agent profile with `--agent-file`. A direct
+`kimi` invocation must also pass `--skills-dir` for a
+nested verification workspace; setup prints that command. The flag replaces
+automatic user/project Skill discovery, so include any other desired Skill
+directories explicitly when starting Kimi directly.
 
 `local.toml` contains only Kimi Code's currently supported project-local
 workspace schema (`[workspace] additional_dir = []`). Setup never writes
@@ -101,12 +113,16 @@ VPlan then establishes reviewed verification semantics.
 
 The selected runtime determines both the project configuration and launch
 arguments: Codex requires `.codex/config.toml` and starts without extra flags;
-Kimi creates/uses `.kimi-code/local.toml` and starts as `kimi --yolo`. These
-files are written below the selected workspace, while managed dependencies
-remain below the verif-harness package checkout. Neither path changes a
-user-level configuration file. Setup also installs the project xverif MCP
-registration in `.codex/config.toml` or `.kimi-code/mcp.json`, backed by a
-generated `.harness/mcp/xverif-mcp` launcher that contains no credentials.
+Kimi creates/uses `.kimi-code/local.toml` in the selected workspace and starts
+with that workspace's Skill directory and Agent profile plus `--yolo`.
+Managed dependencies remain below the verif-harness package
+checkout; user-level configuration is untouched. Setup writes the xverif MCP
+registration and generated `.harness/mcp/xverif-mcp` launcher in the selected
+verification workspace. When Kimi's Git root differs from that workspace,
+other workspace-local Agent profiles and MCP registration may not be automatically
+discovered by Kimi. A shared Git root can contain multiple verification
+workspaces, so setup does not copy those workspace-specific files to that
+shared root.
 
 Use `--no-agent` for dependency-only CI setup. Runtime selection is recorded in
 the v1 project manifest; changing it does not copy private host configuration

@@ -207,6 +207,9 @@ class SetupScriptTest(unittest.TestCase):
                             capture_output=True, text=True, timeout=20,
                         )
                         self.assertEqual(result.returncode, 1 if failed else 0, result.stdout + result.stderr)
+                        if runtime == 'kimi':
+                            for skill in ('verif-harness', 'verification-doc-authoring'):
+                                self.assertTrue((workspace / '.kimi-code/skills' / skill / 'SKILL.md').is_file())
                         recorded = [json.loads(line) for line in calls.read_text().splitlines()]
                         launches = [call for call in recorded if 'agent-service' in call['args']]
                         probes = [call for call in recorded if '--ensure-ready' in call['args']]
@@ -228,6 +231,43 @@ class SetupScriptTest(unittest.TestCase):
                                 'agent-service', 'interactive', '--project-root', str(workspace), '--runtime', runtime,
                             ])
                             self.assertEqual(launches[0]['cwd'], str(workspace.resolve()))
+
+            repository = Path(directory) / 'dut-repository'
+            workspace = repository / 'lzax_verif_v5'
+            workspace.mkdir(parents=True)
+            (repository / '.git').mkdir()
+            environment = {**os.environ, 'PATH': str(binary) + os.pathsep + os.environ['PATH']}
+            for workspace_argument in (str(workspace), '../dut-repository/lzax_verif_v5'):
+                command = [
+                    'bash', str(scripts / 'setup.sh'), '--workspace-root', workspace_argument,
+                    '--runtime', 'kimi', '--no-agent',
+                ]
+                result = subprocess.run(command, cwd=package, env=environment,
+                                        capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for skill in ('verif-harness', 'verification-doc-authoring'):
+                link = workspace / '.kimi-code/skills' / skill
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(link.resolve(), (package / 'skills' / skill).resolve())
+                self.assertTrue((link / 'SKILL.md').is_file())
+                self.assertFalse((repository / '.kimi-code/skills' / skill).exists())
+            self.assertIn(str((workspace / '.kimi-code/skills').resolve()), result.stdout)
+            self.assertIn('--skills-dir', result.stdout)
+            self.assertTrue((workspace / '.kimi-code/agents/agent.md').is_file())
+            self.assertTrue((workspace / '.kimi-code/local.toml').is_file())
+            self.assertFalse((repository / '.kimi-code/agents/agent.md').exists())
+
+            sibling = repository / 'lzax_verif_v6'
+            sibling.mkdir()
+            command[command.index('--workspace-root') + 1] = str(sibling)
+            result = subprocess.run(command, cwd=package, env=environment,
+                                    capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                (sibling / '.kimi-code/skills/verif-harness').resolve(),
+                (package / 'skills/verif-harness').resolve(),
+            )
+            self.assertFalse((repository / '.kimi-code/skills').exists())
 
     def test_runtime_subagent_profiles_keep_human_interaction_on_main_agent(self) -> None:
         codex_profiles = sorted((ROOT / ".codex/agents").glob("verification-*.toml"))

@@ -49,7 +49,27 @@ def project_lock(store: ProjectStore):
         yield handle.fileno()
 
 
-def runtime_command(runtime: str, prompt: str | None = None) -> list[str]:
+def kimi_skill_args(workspace_root: Path) -> list[str]:
+    """Load the selected workspace Skills without dropping the user's Skills."""
+    project_skills = workspace_root / ".kimi-code/skills"
+    if not all((project_skills / name / "SKILL.md").is_file()
+               for name in ("verif-harness", "verification-doc-authoring")):
+        raise HarnessError("当前验证项目的 Kimi Skill 未安装完整；请重新运行 setup --runtime kimi")
+    data_root = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code").expanduser()
+    directories = [project_skills, workspace_root / ".agents/skills",
+                   data_root / "skills", Path.home() / ".agents/skills"]
+    result: list[str] = []
+    seen: set[Path] = set()
+    for path in directories:
+        resolved = path.resolve()
+        if path.is_dir() and resolved not in seen:
+            result += ["--skills-dir", str(path)]
+            seen.add(resolved)
+    return result
+
+
+def runtime_command(runtime: str, prompt: str | None = None,
+                    workspace_root: Path | None = None) -> list[str]:
     if runtime not in {"codex", "kimi"}:
         raise HarnessError("自动接续只支持项目已选择的 codex 或 kimi")
     executable = shutil.which(runtime) or (shutil.which("kimi-cli") if runtime == "kimi" else None)
@@ -69,12 +89,18 @@ def runtime_command(runtime: str, prompt: str | None = None) -> list[str]:
         _KIMI_PRINT[executable] = "--print" in help_text
         _KIMI_AGENT_FILE[executable] = "--agent-file" in help_text
     args = [executable]
+    if workspace_root is not None:
+        args += kimi_skill_args(workspace_root)
     if _KIMI_PRINT[executable]:
         args += ["--print"]
     elif _KIMI_AGENT_FILE.get(executable):
-        # Use the matching bundled managed profile for one-shot invocations.
-        # setup deliberately preserves customized/older interactive profiles.
-        args += ["--agent-file", str(CLI.parent.parent / ".kimi-code/agents/agent.md")]
+        # Use the selected workspace profile when setup supplied a workspace.
+        # Keep the bundled profile for callers without a workspace argument.
+        profile = (workspace_root / ".kimi-code/agents/agent.md" if workspace_root is not None
+                   else CLI.parent.parent / ".kimi-code/agents/agent.md")
+        if not profile.is_file():
+            raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请重新运行 setup --runtime kimi")
+        args += ["--agent-file", str(profile)]
     return [*args, "--prompt", prompt]
 
 
@@ -95,7 +121,7 @@ def validate_runtime(store: ProjectStore, runtime: str) -> None:
         raise HarnessError("自动接续 runtime 与项目登记不一致；请先核对项目配置，不会自动切换 runtime")
     command = runtime_command(runtime)
     help_text = cli_help(command + (["exec"] if runtime == "codex" else []))
-    required = ("--sandbox",) if runtime == "codex" else ("--prompt",)
+    required = ("--sandbox",) if runtime == "codex" else ("--prompt", "--skills-dir", "--agent-file")
     if any(flag not in help_text for flag in required):
         raise HarnessError(f"{runtime} CLI 未通过非交互执行能力检查；请检查版本与登录状态")
     if runtime == "kimi":
@@ -327,7 +353,7 @@ def execute_task(store: ProjectStore, runtime: str, task: dict, lock_fd: int) ->
         work_label = work_labels.get(task.get('workstream'), '验证文档')
         heartbeat(store, "RUNNING", f"Agent 正在处理当前版本的{work_label}待办")
         with log.open("w", encoding="utf-8") as output:
-            process = subprocess.Popen(runtime_command(runtime, prompt_for(store, task)),
+            process = subprocess.Popen(runtime_command(runtime, prompt_for(store, task), store.root),
                                        cwd=store.root, stdin=subprocess.DEVNULL, stdout=output,
                                        stderr=subprocess.STDOUT, start_new_session=True,
                                        pass_fds=(lock_fd,))
@@ -494,6 +520,9 @@ def interactive(store: ProjectStore, runtime: str, startup_prompt: str | None) -
             command.append(startup_prompt)
         else:
             from .interactive_cli import run_kimi
-            command += ["--yolo"]
+            profile = store.root / ".kimi-code/agents/agent.md"
+            if not profile.is_file():
+                raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请重新运行 setup --runtime kimi")
+            command += [*kimi_skill_args(store.root), "--agent-file", str(profile), "--yolo"]
             return run_kimi(command, store.root, startup_prompt, lock_fd)
         return subprocess.call(command, cwd=store.root, pass_fds=(lock_fd,))

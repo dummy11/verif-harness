@@ -134,11 +134,23 @@ print('fake runtime: no verification change')
         self.assertTrue(launch.call_args.kwargs['pass_fds'])
 
     def test_interactive_kimi_keeps_tui_and_submits_startup_turn(self):
+        skill_dir = self.store.root / '.kimi-code/skills'
+        skill_dir.mkdir(parents=True)
+        profile = self.store.root / '.kimi-code/agents/agent.md'
+        profile.parent.mkdir(parents=True)
+        profile.write_text('---\nname: agent\ndescription: test\n---\n')
+        for name in ('verif-harness', 'verification-doc-authoring'):
+            target = skill_dir / name
+            target.mkdir()
+            (target / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: test\n---\n')
         with mock.patch.object(service, "runtime_command", return_value=['kimi']), \
              mock.patch('verif_harness.interactive_cli.run_kimi', return_value=0) as launch:
             self.assertEqual(service.interactive(self.store, 'kimi', None), 0)
         command, root, prompt, fd = launch.call_args.args
-        self.assertEqual(command, ['kimi', '--yolo'])
+        self.assertEqual(command[0], 'kimi')
+        self.assertEqual(command[1:3], ['--skills-dir', str(skill_dir)])
+        self.assertIn(['--agent-file', str(profile)], [command[i:i+2] for i in range(len(command)-1)])
+        self.assertEqual(command[-1], '--yolo')
         self.assertEqual(root, self.store.root)
         self.assertIn('若尚未 bootstrap', prompt)
         self.assertIn('await/checkpoint', prompt)
@@ -241,6 +253,23 @@ print('fake runtime: no verification change')
             service.validate_runtime(self.store, "codex")
         with mock.patch.object(service.shutil, "which", return_value="/fake/kimi"), mock.patch.dict(service._KIMI_PRINT, {"/fake/kimi": False}):
             self.assertEqual(service.runtime_command("kimi", "task"), ["/fake/kimi", "--prompt", "task"])
+            skill_dir = self.store.root / '.kimi-code/skills'
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            for name in ('verif-harness', 'verification-doc-authoring'):
+                target = skill_dir / name
+                target.mkdir(exist_ok=True)
+                (target / 'SKILL.md').write_text(f'---\nname: {name}\ndescription: test\n---\n')
+            command = service.runtime_command("kimi", "task", self.store.root)
+            self.assertEqual(command[1:3], ['--skills-dir', str(skill_dir)])
+            profile = self.store.root / '.kimi-code/agents/agent.md'
+            profile.parent.mkdir(parents=True, exist_ok=True)
+            profile.write_text('---\nname: agent\ndescription: test\n---\n')
+            with mock.patch.dict(os.environ, {'KIMI_CODE_HOME': str(self.store.root / 'kimi-user')}):
+                user_skills = self.store.root / 'kimi-user/skills'
+                user_skills.mkdir(parents=True)
+                command = service.runtime_command("kimi", "task", self.store.root)
+            self.assertIn(['--skills-dir', str(user_skills)],
+                          [command[i:i+2] for i in range(len(command)-1)])
         with mock.patch.object(service.shutil, "which", return_value="/fake/legacy"), mock.patch.object(service, "cli_help", return_value="--print --prompt"):
             self.assertEqual(service.runtime_command("kimi", "task"), ["/fake/legacy", "--print", "--prompt", "task"])
         with mock.patch.object(service.shutil, "which", return_value="/fake/modern"), mock.patch.object(service, "cli_help", return_value="--prompt --agent-file"):

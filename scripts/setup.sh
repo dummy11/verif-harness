@@ -235,6 +235,10 @@ if [[ "$runtime" == "codex" ]]; then
     "$package_root/.codex/agents" "$workspace_root/.codex/agents" "Codex"
 else
   agent_cli="$kimi_cli"
+  if [[ -L "$workspace_root/.kimi-code" ]]; then
+    echo "ERROR: refusing to follow a symlink at Kimi workspace config directory: $workspace_root/.kimi-code" >&2
+    exit 2
+  fi
   # Kimi Code's project-local file currently supports workspace settings only;
   # permission rules remain a host-level Kimi configuration concern.  Do not
   # create or modify ~/.kimi-code/config.toml here.
@@ -266,6 +270,10 @@ if [[ "$runtime" == "kimi" ]]; then
   skill_parent="$workspace_root/.kimi-code/skills"
   invocation='/skill:verif-harness'
 fi
+if [[ -L "$skill_parent" ]]; then
+  echo "ERROR: refusing to follow a symlink at runtime Skill directory: $skill_parent" >&2
+  exit 2
+fi
 mkdir -p "$skill_parent"
 
 install_skill_link() {
@@ -296,6 +304,7 @@ install_skill_link() {
 
 install_skill_link "verif-harness"
 install_skill_link "verification-doc-authoring"
+echo "Installed $runtime Skills at: $skill_parent"
 
 echo "Configuring project-local xverif MCP registration for $runtime."
 "$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp configure \
@@ -303,12 +312,17 @@ echo "Configuring project-local xverif MCP registration for $runtime."
 "$python_cmd" "$package_root/scripts/verif_harness.py" xverif mcp status \
   --project-root "$workspace_root" --python "$python_cmd"
 
-echo "Setup PASS: verif-harness v1, xverif CLI/MCP, and WavePeek are installed; xverif MCP is registered for $runtime."
+echo "Setup PASS: verif-harness v1, xverif CLI/MCP, and WavePeek are installed; the xverif MCP registration file was written for $runtime."
 if [[ "$launch_agent" != true ]]; then
   echo "Agent launch skipped (--no-agent)."
   echo "Workspace configured at: $workspace_root"
   echo "Start later through managed setup so the Agent inherits its runtime:"
   echo "  $package_root/scripts/setup --runtime $runtime --workspace-root $workspace_root"
+  if [[ "$runtime" == "kimi" ]]; then
+    echo "Or start Kimi directly with this workspace Skill directory:"
+    printf '  %q --skills-dir %q --agent-file %q\n' "${kimi_cli:-kimi}" \
+      "$skill_parent" "$workspace_root/.kimi-code/agents/agent.md"
+  fi
   exit 0
 fi
 if [[ ! -d "$workspace_root" ]]; then
