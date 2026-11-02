@@ -73,9 +73,14 @@ def dashboard_registry_dir(registry_dir: Path | None = None) -> Path:
     if registry_dir is not None:
         return registry_dir.resolve()
     configured = os.environ.get(DASHBOARD_REGISTRY_ENV, "").strip()
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return (Path.home() / ".verif-harness" / "dashboard").resolve()
+    directory = Path(configured).expanduser() if configured else Path.home() / ".verif-harness" / "dashboard"
+    selected = os.environ.get("VERIF_HARNESS_RELEASE")
+    if selected:
+        from .package import release
+        if selected != release()["version"]:
+            raise HarnessError("Dashboard 程序版本与所选发布版本不一致")
+        directory = directory / selected / LOADED_DASHBOARD_BUILD["digest"][:16]
+    return directory.resolve()
 
 
 def dashboard_owner_id(registry_dir: Path | None = None) -> str:

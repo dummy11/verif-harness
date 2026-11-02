@@ -77,12 +77,12 @@ Agent 使用 `plan WORKSTREAM --desired-file proposal.json` 提交代码方案�
 `code status NODE` 读取当前验证对象，使用 `code validate NODE report.json` 登记
 实际验证报告，使用 `code artifacts` 查询历史与当前可用状态。该命令不会运行
 仿真或自动批准。完整字段与证据要求见
-[VENV](../skills/verif-harness/vplan/venv.md)、
-[VSTIM](../skills/verif-harness/vplan/vstim.md)、
-[VCHK](../skills/verif-harness/vplan/vchk.md)、
-[VCASE](../skills/verif-harness/vplan/vcase.md)、
-[VCOV](../skills/verif-harness/vplan/vcov.md) 和
-[VREG](../skills/verif-harness/vplan/vreg.md) 使用说明。
+[VENV](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/venv.md)、
+[VSTIM](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/vstim.md)、
+[VCHK](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/vchk.md)、
+[VCASE](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/vcase.md)、
+[VCOV](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/vcov.md) 和
+[VREG](https://github.com/dummy11/verif-harness/blob/v3/skills/verif-harness/vplan/vreg.md) 使用说明。
 
 同一节点在方案、上游输入、代码、证据和检查结论均未变化时，再次登记相同验证报告
 只增加审计回执，不撤销负责人已完成的交付验收，也不生成新的交付能力版本或待办。

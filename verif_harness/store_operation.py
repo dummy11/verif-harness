@@ -13,6 +13,15 @@ class StoreConnection(sqlite3.Connection):
         finally:
             self.close()
 
+    def close(self):
+        try:
+            super().close()
+        finally:
+            lease = getattr(self, '_tool_lease', None)
+            if lease is not None:
+                lease.close()
+                self._tool_lease = None
+
 
 def store_operation(method):
     @wraps(method)

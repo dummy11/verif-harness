@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "version": "3.0.0",
+  "project_schema": 2,
+  "python": ">=3.11",
+  "nsim": {
+    "version": "0.1.0",
+    "wheel": "nsim-0.1.0-py3-none-any.whl",
+    "wheel_url": "https://github.com/dummy11/NSIM/releases/download/v0.1.0/nsim-0.1.0-py3-none-any.whl",
+    "wheel_sha256": "26cd086270f0ae1ab77f295de235e6310fd5fe79ebd17ac9a765b9a89c08f62b",
+    "installer_url": "https://github.com/dummy11/NSIM/releases/download/v0.1.0/nsim-install.py",
+    "installer_sha256": "a109eabb2ed833f14384451e318ed4426963b058e19054ef1fd2062d537e78a7",
+    "commit": "19131312ec7ee608d2862930c5cf613ddf8f6246"
+  },
+  "dependencies": {
+    "runtime.lock.json": "306ae8eb5edff5cc641dad86279bb71a8c2323a3b6bfd6cd48661be309456e85",
+    "xverif.lock.json": "a06e07b56f9b723ba925ef0798c9350af6b07b7b9fb8e4737b5a37fc2c090642",
+    "wavepeek.lock.json": "c982fc5cefbd2c5842140f47d9834a986901542dbd54551bdcd6c0184454c26e"
+  }
+}

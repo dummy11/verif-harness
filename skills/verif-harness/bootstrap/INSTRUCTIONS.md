@@ -7,15 +7,15 @@ The low-level CLI also fails closed: bare `bootstrap --refresh` returns a
 `BootstrapReconfiguration/1` `ACTION_REQUIRED` payload containing current values
 and questions, and does not write project state.
 
-1. Use the workspace selected by setup and read its repository instructions.
+1. Use the explicitly selected project workspace and read its repository instructions.
 2. Require the user to explicitly provide DUT identity in the live conversation:
-   `rtl root`, `dut top`, and `dut top file` are mandatory. The following inputs
+   `rtl root`, `rtl filelist`, `dut top`, and `dut top file` are mandatory. The following inputs
    are independent and optional: `spec` (RTL specification file or directory),
    one existing `testbench` directory, one reference/golden model file or directory,
    and one or more compile/simulation/regression scripts. Run the conversation in
-   this fixed order: (1) `rtl root`, (2) `dut top`, (3) `dut top file`,
-   (4) verification output root, (5) optional `spec`, (6) optional `testbench`,
-   (7) optional reference/golden model, and (8) optional verification scripts.
+   this fixed order: (1) `rtl root`, (2) `rtl filelist`, (3) `dut top`, (4) `dut top file`,
+   (5) verification output root, (6) optional `spec`, (7) optional `testbench`,
+   (8) optional reference/golden model, and (9) optional verification scripts.
    Ask exactly one unanswered field per Agent turn. Wait for the Human's answer,
    validate that field read-only, and remain on the same field if correction is
    required; only then ask the next field. Never batch several unanswered fields
@@ -27,11 +27,11 @@ and questions, and does not write project state.
    existing configuration as the user's answer. For refresh, read current values
    only so each one can be shown as the default when its turn arrives; ask the
    Human to keep, replace, or remove that one value before advancing. Reconfirm
-   all eight fields in the same order. After the last answer, show one consolidated
+   all nine fields in the same order. After the last answer, show one consolidated
    summary of all resolved values and ask for final confirmation. Invoke the
    low-level CLI only after that confirmation. Do not run bootstrap until all
-   three mandatory fields have been provided. Explicitly skipping optional inputs
-   must not block setup.
+   five mandatory fields, including the verification output root, have been provided. Explicitly skipping optional inputs
+   must not block bootstrap.
 3. Validate only the supplied paths read-only. If a path is missing, ambiguous,
    or unsupported by the CLI, explain the issue and ask the user to correct it;
    do not search for substitutes or copy inputs into the public repository.
@@ -42,7 +42,7 @@ and questions, and does not write project state.
    project when explicitly supplied. Bootstrap may inventory them read-only but
    must not execute, edit, copy, or treat them as integrated verification evidence.
    All generated verification output and control state remain inside the project.
-   Run the Skill launcher with `bootstrap --refresh --rtl-root PATH --dut-top NAME
+   Run the Skill launcher with `bootstrap --refresh --rtl-root PATH --rtl-filelist FILE --dut-top NAME
    --dut-top-file PATH --verif-root PATH` for refresh. If spec was supplied, pass
    its exact path through `--docs-root PATH`; if the Human explicitly removes the
    previous optional spec, pass `--clear-docs-root`. Use `--testbench-root PATH`,

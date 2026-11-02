@@ -69,7 +69,8 @@ def authoring_source_refs(
             refs.append(str(source["path"]))
     return list(dict.fromkeys(refs))
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+from .package import root as package_root
+REPOSITORY_ROOT = package_root()
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "verification-doc-authoring"
 PROFILE_ROOT = SKILL_ROOT / "profiles"
 COMMON_RULES_PATH = SKILL_ROOT / "core" / "common-rules.json"

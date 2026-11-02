@@ -757,6 +757,7 @@ def capability_config_projection(
             "root": manifest["rtl_roots"][0],
             "top_module": manifest["dut"]["top_module"],
             "top_file": manifest["dut"]["top_file"],
+            "filelist": manifest.get("rtl_filelist"),
         },
         "verif": {
             **existing_verif,
@@ -1388,6 +1389,8 @@ class ProjectStore:
             return
         state = {"plans": {}, "projections": set(), "closures": {}, "flushing": False,
                  "observer": None}
+        from .toolchain import acquire_lease
+        lease = acquire_lease(self)
         token = self._operation_state.set(state)
         try:
             yield
@@ -1403,6 +1406,8 @@ class ProjectStore:
                 if state["observer"] is not None:
                     state["observer"].close()
                 self._operation_state.reset(token)
+                if lease is not None:
+                    lease.close()
 
     def _operation_version(self) -> tuple[int, str]:
         state = self._operation_state.get()
@@ -1427,6 +1432,7 @@ class ProjectStore:
         current = {
             "project_name": manifest.get("project_name"),
             "rtl_roots": manifest.get("rtl_roots", []),
+            "rtl_filelist": manifest.get("rtl_filelist"),
             "dut_top": dut.get("top_module"),
             "dut_top_file": dut.get("top_file"),
             "docs_roots": manifest.get("docs_roots", []),
@@ -1449,22 +1455,24 @@ class ProjectStore:
             "questions_for_human": [
                 {"sequence": 1, "id": "rtl_roots", "required": True, "current": current["rtl_roots"],
                  "question": "只读 RTL root 是哪些目录？"},
-                {"sequence": 2, "id": "dut_top", "required": True, "current": current["dut_top"],
+                {"sequence": 2, "id": "rtl_filelist", "required": True,
+                 "current": current["rtl_filelist"], "question": "只读 RTL filelist 是哪个文件？"},
+                {"sequence": 3, "id": "dut_top", "required": True, "current": current["dut_top"],
                  "question": "DUT top 模块名是什么？"},
-                {"sequence": 3, "id": "dut_top_file", "required": True, "current": current["dut_top_file"],
+                {"sequence": 4, "id": "dut_top_file", "required": True, "current": current["dut_top_file"],
                  "question": "DUT top file 是哪个文件？"},
-                {"sequence": 4, "id": "verif_root", "required": True, "current": current["verif_root"],
+                {"sequence": 5, "id": "verif_root", "required": True, "current": current["verif_root"],
                  "question": "项目内 verification 输出目录是什么？"},
-                {"sequence": 5, "id": "docs_roots", "required": False, "skip_allowed": True,
+                {"sequence": 6, "id": "docs_roots", "required": False, "skip_allowed": True,
                  "current": current["docs_roots"],
                  "question": "可选 RTL spec 路径是哪些；保留、替换还是移除？"},
-                {"sequence": 6, "id": "testbench_root", "required": False, "skip_allowed": True,
+                {"sequence": 7, "id": "testbench_root", "required": False, "skip_allowed": True,
                  "current": current["testbench_root"],
                  "question": "是否已有 testbench 目录；保留、替换还是移除？"},
-                {"sequence": 7, "id": "reference_model", "required": False, "skip_allowed": True,
+                {"sequence": 8, "id": "reference_model", "required": False, "skip_allowed": True,
                  "current": current["reference_model"],
                  "question": "是否已有 reference/golden model；保留、替换还是移除？"},
-                {"sequence": 8, "id": "verification_scripts", "required": False,
+                {"sequence": 9, "id": "verification_scripts", "required": False,
                  "skip_allowed": True,
                  "current": current["verification_scripts"],
                  "question": "是否已有编译、仿真或回归脚本；保留、替换还是移除？"},
@@ -1474,10 +1482,20 @@ class ProjectStore:
     def require(self) -> None:
         if not self.initialized:
             raise HarnessError(f"项目尚未 bootstrap: {self.root}")
+        from .toolchain import verify
+        verify(self)
 
     def connect(self) -> sqlite3.Connection:
         self.state.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database, timeout=30, factory=StoreConnection)
+        from .toolchain import acquire_lease
+        lease = acquire_lease(self)
+        try:
+            connection = sqlite3.connect(self.database, timeout=30, factory=StoreConnection)
+        except BaseException:
+            if lease is not None:
+                lease.close()
+            raise
+        connection._tool_lease = lease
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
@@ -1506,9 +1524,17 @@ class ProjectStore:
 
     def read_connect(self) -> sqlite3.Connection:
         self.require()
-        connection = sqlite3.connect(
-            f"{self.database.as_uri()}?mode=ro", uri=True, timeout=30, factory=StoreConnection,
-        )
+        from .toolchain import acquire_lease
+        lease = acquire_lease(self)
+        try:
+            connection = sqlite3.connect(
+                f"{self.database.as_uri()}?mode=ro", uri=True, timeout=30, factory=StoreConnection,
+            )
+        except BaseException:
+            if lease is not None:
+                lease.close()
+            raise
+        connection._tool_lease = lease
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
@@ -1526,6 +1552,8 @@ class ProjectStore:
         clear_testbench_root: bool = False,
         clear_reference_model: bool = False,
         clear_verification_scripts: bool = False,
+        rtl_filelist: str | None = None,
+        validate_only: bool = False,
     ) -> dict[str, Any]:
         if self.initialized and not refresh:
             raise HarnessError("项目已经 bootstrap；如需刷新非语义清单，请使用 --refresh")
@@ -1580,6 +1608,9 @@ class ProjectStore:
             if not resolved_path(self.root, value).is_dir():
                 raise HarnessError(f"RTL root 不是目录: {value}")
         top_file_value = input_path(self.root, dut_top_file)
+        filelist_value = input_path(self.root, rtl_filelist) if rtl_filelist else previous.get("rtl_filelist")
+        if filelist_value and not resolved_path(self.root, filelist_value).is_file():
+            raise HarnessError("RTL filelist 不是可读取的普通文件")
         top_file_path = resolved_path(self.root, top_file_value)
         if not top_file_path.is_file():
             raise HarnessError(f"DUT top file 不是文件: {top_file_value}")
@@ -1601,6 +1632,7 @@ class ProjectStore:
             "project_name": project_name or previous.get("project_name") or self.root.name,
             "project_root": str(self.root), "runtime": selected,
             "baseline_revision": git_revision(self.root), "rtl_roots": rtl_values,
+            "rtl_filelist": filelist_value,
             "docs_roots": docs_values, "verif_root": verif_value,
             "verification_inputs": {
                 "testbench_root": testbench_value,
@@ -1614,10 +1646,14 @@ class ProjectStore:
         }
         capability_config = self.root / ".harness-config.json"
         capability_projection = capability_config_projection(capability_config, manifest, refresh)
+        if validate_only:
+            return manifest
         update_project_agents(self.root / "AGENTS.md", project_agents_block(manifest, vdoc_document_root))
         if capability_projection is not None:
             atomic_json(capability_config, capability_projection)
         inventory_inputs = [*rtl_values, *docs_values, *verification_script_values]
+        if filelist_value:
+            inventory_inputs.append(filelist_value)
         if testbench_value is not None:
             inventory_inputs.append(testbench_value)
         if reference_model_value is not None:
@@ -1894,7 +1930,8 @@ class ProjectStore:
         output.mkdir(parents=True, exist_ok=True)
         changed_paths: list[tuple[str, int]] = []
         results: list[dict[str, Any]] = []
-        skill_root = Path(__file__).resolve().parents[1] / "skills" / "verif-harness"
+        from .package import root as package_root
+        skill_root = package_root() / "skills" / "verif-harness"
         with self.connect() as connection:
             for desired in desired_rows:
                 contract = desired.get("document")

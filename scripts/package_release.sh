@@ -9,12 +9,5 @@ if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 2
 fi
 
-mkdir -p "$project_root/dist"
-git -C "$project_root" archive \
-  --format=tar.gz \
-  --prefix="verif-harness-${version#v}/" \
-  -o "$project_root/dist/verif-harness-${version#v}.tar.gz" \
-  "$version"
-
-cd "$project_root/dist"
-shasum -a 256 "verif-harness-${version#v}.tar.gz" > "verif-harness-${version#v}.sha256"
+python3 -c 'import json,sys; assert "v"+json.load(open(sys.argv[1]))["version"] == sys.argv[2], "release version differs"' "$project_root/release.json" "$version"
+exec python3 "$project_root/scripts/package_release.py" --release --output "$project_root/dist"

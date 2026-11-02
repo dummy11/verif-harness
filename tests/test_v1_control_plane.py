@@ -31,6 +31,10 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def invoke(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        if arguments and arguments[0] == "bootstrap" and "--rtl-root" in arguments:
+            filelist = self.root / "rtl/rtl.f"
+            filelist.write_text("dut.sv\n")
+            arguments = (*arguments, "--rtl-filelist", str(filelist))
         environment = os.environ.copy()
         environment["GIT_AUTHOR_NAME"] = "test-user"
         environment.pop("USER", None)
@@ -592,7 +596,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(
             [item["id"] for item in prompted["questions_for_human"]],
             [
-                "rtl_roots", "dut_top", "dut_top_file", "verif_root", "docs_roots",
+                "rtl_roots", "rtl_filelist", "dut_top", "dut_top_file", "verif_root", "docs_roots",
                 "testbench_root", "reference_model", "verification_scripts",
             ],
         )
@@ -604,11 +608,11 @@ class V1ControlPlaneTest(unittest.TestCase):
         })
         self.assertEqual(
             [item["sequence"] for item in prompted["questions_for_human"]],
-            list(range(1, 9)),
+            list(range(1, 10)),
         )
         self.assertTrue(all(
             item.get("skip_allowed") is True
-            for item in prompted["questions_for_human"][4:]
+            for item in prompted["questions_for_human"][5:]
         ))
         unchanged = json.loads(
             (self.root / ".verif-harness/project.json").read_text(encoding="utf-8")
@@ -729,6 +733,7 @@ class V1ControlPlaneTest(unittest.TestCase):
         self.assertEqual(refreshed["rtl_roots"], ["rtl-v2"])
         self.assertEqual(synchronized["project_name"], "updated-project")
         self.assertEqual(synchronized["rtl"], {
+            "filelist": "rtl/rtl.f",
             "root": "rtl-v2", "top_module": "dut_v2", "top_file": "rtl-v2/dut_v2.sv",
         })
         self.assertEqual(synchronized["verif"]["root"], "sim")

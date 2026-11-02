@@ -1,5 +1,22 @@
 # Architecture
 
+## Shared release installation
+
+`release.json` fixes the verif-harness version, exact nsim wheel/installer hashes,
+database schema and managed dependency lock hashes. The standalone installer
+publishes immutable version directories at user or system scope. The stable
+launcher discovers the nearest project, reads its selected release and verifies
+installed resources before dispatch. `toolchain.json` selects software only;
+ProjectStore remains the sole governance-state authority.
+
+Bootstrap receives a mandatory read-only RTL filelist, delegates nsim registration
+to that release's nsim and installs project Agent entries. Restart reenters the
+configured Agent after authorized Dashboard readiness checks. It never restarts
+a verification workflow. Tool switching excludes active Agent/nsim use and
+unresolved VREG execution, backs up SQLite consistently and records recoverable
+selection changes. Database schema mismatches stop the switch. Dashboard registries
+are separated by account, release and loaded build identity.
+
 ## VDOC v2 results and dependencies
 
 VDOC retains its two public WorkNodes: `document-writing-plan` and

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v3]
   pull_request:
   workflow_dispatch:
 
@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y verilator
-          python -m pip install --requirement requirements-docs.txt
+          python -m pip install --requirement requirements-docs.txt build 'setuptools>=77' wheel
       - name: Record tools
         run: |
           python --version
@@ -42,3 +42,17 @@ jobs:
         run: make example
       - name: Build documentation
         run: make docs
+      - name: Build and verify distribution
+        run: python scripts/package_release.py --output dist
+      - name: Test installed release and project profiles
+        run: |
+          python scripts/fetch_release_nsim.py --output /tmp/nsim-release
+          python -m pip download --dest /tmp/nsim-wheels /tmp/nsim-release/*.whl
+          python scripts/test_distribution_install.py --wheel dist/*.whl \
+            --nsim-wheel /tmp/nsim-release/*.whl --nsim-installer /tmp/nsim-release/nsim-install.py \
+            --wheelhouse /tmp/nsim-wheels
+          python verif-harness-install.py install --wheel dist/*.whl \
+            --root /tmp/installed-verif --nsim-root /tmp/installed-nsim --python "$(command -v python)" \
+            --nsim-wheel /tmp/nsim-release/*.whl --nsim-installer /tmp/nsim-release/nsim-install.py \
+            --wheelhouse /tmp/nsim-wheels
+          python scripts/test_installed_profiles.py --launcher /tmp/installed-verif/bin/verif-harness

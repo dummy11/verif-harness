@@ -31,8 +31,29 @@ def emit(value: object) -> None:
     print(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False))
 
 
+def display_dashboard_ready(ready, store):
+    print(ready["message"], flush=True)
+    if ready["status"] == "READY":
+        print(f"当前项目：{store.root}", flush=True)
+        print(f"访问地址：{ready['url']}", flush=True)
+        if ready["launch_status"] == "STARTED":
+            print("Dashboard 独立后台运行，退出 Agent CLI 不会停止它。", flush=True)
+        elif ready["launch_status"] == "RESTARTED":
+            print("Dashboard 已在原端口更新到当前代码版本，项目注册与验证记录保留。", flush=True)
+        else:
+            print("已复用现有 Dashboard，未重启服务。", flush=True)
+        if ready.get("warning"):
+            print(f"注意：{ready['warning']}", flush=True)
+        if _remote_session():
+            access = dashboard_access_instructions(ready["url"], True)
+            print("已有 SSH 转发仍连接时无需重新配置；否则在本机另开终端执行：", flush=True)
+            print(access["command"], flush=True)
+            print("以上只验证远端服务；本机 SSH 端口转发需要保持连接。", flush=True)
+
+
 def project_argument(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+    from .toolchain import discover
+    parser.add_argument("--project-root", type=Path, default=discover(Path.cwd()))
 
 
 def workstream_argument(parser: argparse.ArgumentParser, required: bool = True) -> None:
@@ -118,6 +139,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
+    version_parser = commands.add_parser("version", help="查看当前发布版本及固定的 nsim 版本")
+    version_parser.add_argument("--json", action="store_true")
+    restart_parser = commands.add_parser("restart", help="重新进入当前项目的 Agent；保留验证工作流和全部历史")
+    project_argument(restart_parser)
+    restart_parser.add_argument("--no-agent", action="store_true", help="只核对版本并准备 Dashboard")
+    switch_parser = commands.add_parser("switch", help="切换项目的 verif-harness 及配套 nsim 版本")
+    project_argument(switch_parser)
+    switch_parser.add_argument("version", nargs="?")
+    switch_parser.add_argument("--recover", action="store_true", help="恢复被中断的版本切换")
+
     service = commands.add_parser("agent-service", help="启动、查看或停止验证文档自动接续服务（不代替负责人审批）")
     service.add_argument("operation", choices=("start", "status", "stop", "retry", "run", "interactive"))
     project_argument(service)
@@ -130,6 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--runtime", choices=("auto", "codex", "kimi", "claude", "none"), default="auto")
     bootstrap.add_argument("--rtl-root", action="append", default=[],
                            help="只读 RTL 根目录；可重复，也可显式位于 project root 外")
+    bootstrap.add_argument("--rtl-filelist", help="必需的只读 RTL filelist，与 RTL 根目录一起登记")
+    bootstrap.add_argument("--verification-filelist", help="已有 testbench filelist；省略时由 nsim 创建待填写模板")
+    bootstrap.add_argument("--sim-output-root", action="append", default=[], help="nsim 仿真输出目录，与工程源码分开")
+    bootstrap.add_argument("--tool-version", help="稳定启动器为新项目选择已安装的准确发布版本")
     docs_input = bootstrap.add_mutually_exclusive_group()
     docs_input.add_argument("--docs-root", action="append", default=[],
                             help="可选只读 RTL spec 文件或目录；可重复，也可位于 project root 外")
@@ -703,7 +738,8 @@ def normalize(arguments: list[str]) -> list[str]:
 def run_adapter(name: str, arguments: list[str], parser: argparse.ArgumentParser) -> int:
     if not arguments:
         parser.error(f"{name} requires adapter arguments")
-    root = Path(__file__).resolve().parents[1]
+    from .package import root as package_root
+    root = package_root()
     if name == "xverif":
         relative = "skills/verif-harness/xverif/scripts/xverif_mcp.py" if arguments[0] == "mcp" else "skills/verif-harness/xverif/scripts/xverif_adapter.py"
         forwarded = arguments[1:] if arguments[0] == "mcp" else arguments
@@ -845,8 +881,17 @@ def bootstrap_dashboard(
 
 def main(arguments: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(normalize(list(sys.argv[1:] if arguments is None else arguments)))
+    argv = list(sys.argv[1:] if arguments is None else arguments)
+    if argv == ["--version"]:
+        argv = ["version"]
+    args = parser.parse_args(normalize(argv))
+    tool_lease = None
     try:
+        from . import toolchain
+        if args.command == "version":
+            from .package import release
+            emit(release())
+            return 0
         if args.command in {"xverif", "wavepeek"}:
             return run_adapter(args.command, args.adapter_args, parser)
         if args.command == "reason":
@@ -865,7 +910,22 @@ def main(arguments: list[str] | None = None) -> int:
                       "executed": False})
             return 0
         store = ProjectStore(args.project_root.resolve())
-        if args.command == "agent-service":
+        if args.command != "switch":
+            # The background Dashboard serves multiple projects; its requests
+            # hold Store leases individually, not for the server's lifetime.
+            if args.command != 'dashboard' or not args.foreground:
+                tool_lease = toolchain.acquire_lease(store)
+            toolchain.verify(store)
+        if args.command == "restart":
+            result = toolchain.restart(store, args.no_agent)
+            if isinstance(result, int):
+                return result
+            emit(result)
+        elif args.command == "switch":
+            if not args.version and not args.recover:
+                raise HarnessError("请指定目标版本，或使用 --recover 恢复中断的切换")
+            emit(toolchain.switch(store, args.version, args.recover))
+        elif args.command == "agent-service":
             from . import agent_service
             if args.operation in {"start", "run", "interactive"} and not args.runtime:
                 raise HarnessError("请显式选择项目已配置的 --runtime codex 或 kimi")
@@ -880,17 +940,29 @@ def main(arguments: list[str] | None = None) -> int:
             else:
                 emit(getattr(agent_service, args.operation)(store))
         elif args.command == "bootstrap":
+            if not args.refresh and not store.initialized and sys.stdin.isatty():
+                toolchain.wizard(args)
             supplied_reconfiguration = any((
                 args.project_name, args.rtl_root, args.docs_root, args.clear_docs_root,
                 args.verif_root, args.testbench_root, args.clear_testbench_root,
                 args.reference_model, args.clear_reference_model,
                 args.verification_script, args.clear_verification_scripts,
-                args.dut_top, args.dut_top_file,
+                args.dut_top, args.dut_top_file, args.rtl_filelist,
             ))
             if args.refresh and store.initialized and not supplied_reconfiguration:
                 emit(store.bootstrap_refresh_prompt())
             else:
-                result = store.bootstrap(
+                managed = bool(os.environ.get("VERIF_HARNESS_RELEASE"))
+                if store.initialized and not args.refresh and not managed:
+                    raise HarnessError("项目已经 bootstrap；如需刷新配置，请使用 --refresh")
+                if not args.rtl_filelist:
+                    raise HarnessError("bootstrap 必须提供 --rtl-filelist，与 --rtl-root 一起确认")
+                filelist = (store.root / Path(args.rtl_filelist).expanduser()).resolve()
+                if not filelist.is_file():
+                    raise HarnessError("RTL filelist 不存在或不是普通文件")
+                args.rtl_filelist = str(filelist)
+                args.rtl_root = [str((store.root / Path(p).expanduser()).resolve()) for p in args.rtl_root]
+                bootstrap_parameters = dict(
                     project_name=args.project_name, runtime=args.runtime,
                     rtl_roots=args.rtl_root, docs_roots=args.docs_root,
                     verif_root=args.verif_root, dut_top=args.dut_top,
@@ -902,7 +974,39 @@ def main(arguments: list[str] | None = None) -> int:
                     clear_testbench_root=args.clear_testbench_root,
                     clear_reference_model=args.clear_reference_model,
                     clear_verification_scripts=args.clear_verification_scripts,
+                    rtl_filelist=args.rtl_filelist,
                 )
+                if managed and store.initialized and not args.refresh:
+                    result = json.loads((store.state / "project.json").read_text())
+                    def paths(values):
+                        return [(store.root / Path(p).expanduser()).resolve() for p in values]
+                    previous_inputs = result.get('verification_inputs', {})
+                    same = (result.get("dut", {}).get("top_module") == args.dut_top
+                            and (store.root / result["dut"]["top_file"]).resolve() == (store.root / args.dut_top_file).resolve()
+                            and (store.root / result.get("rtl_filelist", "")).resolve() == filelist
+                            and [(store.root / p).resolve() for p in result["rtl_roots"]] == [Path(p) for p in args.rtl_root]
+                            and result["verif_root"] == (args.verif_root or "."))
+                    same = same and (args.runtime == 'auto' or result['runtime'] == args.runtime)
+                    same = same and (not args.project_name or result['project_name'] == args.project_name)
+                    same = same and (not args.docs_root or paths(result['docs_roots']) == paths(args.docs_root))
+                    same = same and (not args.verification_script or paths(previous_inputs.get('scripts', [])) == paths(args.verification_script))
+                    for key in ('testbench_root', 'reference_model'):
+                        supplied = getattr(args, key)
+                        same = same and (not supplied or paths([previous_inputs.get(key) or '.']) == paths([supplied]))
+                    same = same and not any((args.clear_docs_root, args.clear_testbench_root,
+                                             args.clear_reference_model, args.clear_verification_scripts))
+                    if not same:
+                        raise HarnessError("已有工程配置与输入不同，请使用 bootstrap --refresh 明确确认变更")
+                    nsim_project = toolchain.bootstrap_nsim(store, args)
+                else:
+                    preview = store.bootstrap(**bootstrap_parameters, validate_only=True)
+                    if managed and preview['runtime'] not in {'codex', 'kimi', 'none'}:
+                        raise HarnessError('请明确选择 --runtime codex、kimi 或 none')
+                    nsim_project = toolchain.bootstrap_nsim(store, args) if managed else None
+                    result = store.bootstrap(**bootstrap_parameters)
+                if managed:
+                    result["toolchain"] = toolchain.record_selection(store, nsim_project)
+                    toolchain.configure_agent(store, result["runtime"], adopt_existing=args.refresh)
                 result["dashboard"] = bootstrap_dashboard(
                     store, str(result.get("runtime", "")), args.force_dashboard,
                     args.no_dashboard, args.dashboard_port,
@@ -941,23 +1045,7 @@ def main(arguments: list[str] | None = None) -> int:
             if args.ensure_ready:
                 from .dashboard_startup import ensure_dashboard_ready
                 ready = ensure_dashboard_ready(store, args.host, args.port)
-                print(ready["message"], flush=True)
-                if ready["status"] == "READY":
-                    print(f"当前项目：{store.root}", flush=True)
-                    print(f"访问地址：{ready['url']}", flush=True)
-                    if ready["launch_status"] == "STARTED":
-                        print("Dashboard 独立后台运行，退出 Agent CLI 不会停止它。", flush=True)
-                    elif ready["launch_status"] == "RESTARTED":
-                        print("Dashboard 已在原端口更新到当前代码版本，项目注册与验证记录保留。", flush=True)
-                    else:
-                        print("已复用现有 Dashboard，未重启服务。", flush=True)
-                    if ready.get("warning"):
-                        print(f"注意：{ready['warning']}", flush=True)
-                    if _remote_session():
-                        access = dashboard_access_instructions(ready["url"], True)
-                        print("已有 SSH 转发仍连接时无需重新配置；否则在本机另开终端执行：", flush=True)
-                        print(access["command"], flush=True)
-                        print("以上只验证远端服务；本机 SSH 端口转发需要保持连接。", flush=True)
+                display_dashboard_ready(ready, store)
             elif args.snapshot:
                 emit(store.dashboard_snapshot())
             elif args.status:
@@ -1197,4 +1285,7 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     except HarnessError as exc:
         parser.error(str(exc))
+    finally:
+        if tool_lease is not None:
+            tool_lease.close()
     return 2

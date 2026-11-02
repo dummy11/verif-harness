@@ -16,63 +16,29 @@ Codex/Kimi 对话和 Dashboard 提供输入、审批方案、验收交付与回�
 
 第一次使用通常按以下顺序进行：
 
-1. 运行 **setup**，准备工具、runtime 和 Agent 工作环境。
-2. 通过 Agent 完成 **bootstrap**，登记当前 DUT、只读输入和验证输出目录。
+1. 使用 **install** 安装一次共享工具及固定版本的 nsim。
+2. 完成 **bootstrap**，登记当前 DUT、RTL filelist、只读输入和验证输出目录。
 3. 先完成 **VDOC** 验证文档，再按依赖形成并执行其余工作流方案。
 4. 在 Dashboard 审批方案、回答问题、验收交付；Agent 登记当前版本的验证证据。
 5. 断线或故障后读取原项目状态继续，不把进程恢复误当成工作流重启。
 
-`setup` 和 `bootstrap` 的区别是：
+## 1. install 安装，restart 接续项目
 
-> setup 准备工具和 Agent；bootstrap 登记当前 DUT 和验证项目。
+安装、系统共享部署、离线文件选项与版本切换见[安装指南](../../../docs/installation.md)。
+安装器准备程序和配套 nsim；bootstrap 配置项目；日常重新进入项目使用：
 
-## 1. setup：准备工具和进入项目
-
-### 1.1 首次 setup
-
-从已审核的 verif-harness checkout 执行：
-
-```text
-./scripts/setup --runtime codex --workspace-root /path/to/project
-# 或
-./scripts/setup --runtime kimi --workspace-root /path/to/project
+```bash
+verif-harness restart
 ```
 
-setup 会完成以下工作：
+在项目根目录或子目录均可执行。检查项目版本、Skill/MCP 和 Dashboard 后进入配置的 Agent，
+读取现有状态继续工作，不重建审批或证据。需要核对页面而不进入 Agent 时使用
+`restart --no-agent`。源码开发者仍可使用 `scripts/setup`，发布安装不要求每个项目执行 setup。
 
-1. 在 verif-harness 自身 Git-ignored 的 `.deps/` 下准备受管 Python 和锁定依赖。
-2. 安装并检查 xverif、WavePeek 等可选受管工具，但不据此声称仿真器已经验证可用。
-3. 在目标 workspace 安装项目级 Skill、Agent 角色和中文交互配置。
-4. 为所选 Codex 或 Kimi runtime 配置项目级 MCP。
-5. 切换到 workspace；已有项目先恢复并核对 Dashboard，再启动交互 Main Agent。
+Kimi 首次进入可信目录时可能显示 `Trust this folder?`，是否信任由负责人选择。
+restart 不代替负责人确认，也不覆盖已输入的文字。
 
-项目一次只选择一个受管 runtime。`--runtime codex|kimi` 不是 Codex 与 Kimi 的混合调度配置。
-setup 只证明框架和依赖已经配置；本机 CLI 探测、项目选择和端到端运行证据仍要分别检查。
-
-常用 setup 参数：
-
-| 参数 | 用途 |
-| --- | --- |
-| `--workspace-root PATH` | 指定要管理并进入的项目目录 |
-| `--runtime codex\|kimi` | 选择当前项目使用的 Agent runtime |
-| `--install-verilator` | 缺少 Verilator 时尝试安装；安装成功不等于项目仿真通过 |
-| `--no-agent` | 只安装和配置，不启动交互 Agent，也不启动 Dashboard |
-| `--interactive` | 兼容旧调用；交互启动已经是默认行为 |
-
-### 1.2 setup 后怎样开始工作
-
-正常 setup 会进入交互 Main Agent，并自动提交一次接续任务：
-
-- Codex 使用 `$verif-harness`；
-- Kimi 使用 `/skill:verif-harness`。
-
-Main Agent 重新读取当前 project、revision、节点、审批、问题、Activity 和证据，再选择当前允许的
-下一项动作。已有项目不会仅列出工具后等待，也不会根据旧 Dashboard 记录假装仍在执行。
-
-Kimi 首次进入可信目录时可能显示 `Trust this folder?`，是否信任必须由负责人选择。setup 不得
-代替负责人确认，也不能覆盖负责人已经在输入框中输入的文字。
-
-### 1.3 交互 Agent 与后台接续服务
+### 1.1 交互 Agent 与后台接续服务
 
 交互 Main Agent 和后台 `agent-service` 共用项目写锁，不能同时写入同一项目：
 
@@ -83,25 +49,13 @@ verif-harness agent-service stop
 verif-harness agent-service retry
 ```
 
-要从后台服务切回交互模式，先执行 `stop` 并确认状态已经是 `STOPPED`，再重新运行 setup。
+要从后台服务切回交互模式，先执行 `stop` 并确认状态已经是 `STOPPED`，再执行 restart。
 后台服务只处理 Closure 明确允许的动作，不会自动审批、回答负责人问题、接受例外、冻结、发布或
 运行 EDA。没有新事实时不应重复执行同一动作。
 
 Dashboard 的“Agent 工作状态”只有在当前 revision 存在受管任务并具有新鲜 heartbeat 或有效
 assignment lease 时，才表示实际正在执行。工作流为 `ACTIVE`、历史 Activity 为 `RUNNING`、
 服务进程存在或者浏览器仍打开，都不能单独证明 Agent 正在工作。
-
-### 1.4 已有项目再次运行 setup
-
-关闭终端、退出 Codex/Kimi、SSH 断线或电脑重启后，仍使用原 `--workspace-root` 重新运行 setup。
-setup 会读取 `.verif-harness/` 中的项目事实继续，不需要重新 bootstrap，也不会删除审批和证据历史。
-
-工具升级同样复用原 workspace：更新 verif-harness，再用相同 workspace 重新运行 setup。
-setup 核对后台实际加载的代码版本：相同时复用，旧版本则在原端口更新服务，保留全部项目注册、
-访问凭证和验证记录；已打开页面会重新读取状态，代码升级后自动加载新版界面。
-进入 Agent 前还会核对项目、数据库身份和当前状态版本；不一致时明确阻止启动。此检查只读
-轻量版本信息，不加载整份方案或重新计算审批。只有 bootstrap 管理的输入路径发生变化时，
-才进入 `bootstrap --refresh`。
 
 ## 2. bootstrap：登记当前 DUT 和项目输入
 
@@ -129,17 +83,18 @@ setup 核对后台实际加载的代码版本：相同时复用，旧版本则�
 
 | 顺序 | 输入 | 是否必填 | 含义 |
 | --- | --- | --- | --- |
-| 1 | `rtl root` | 必填 | 一个或多个只读 RTL 根目录 |
-| 2 | `dut top` | 必填 | DUT 顶层模块名 |
-| 3 | `dut top file` | 必填 | DUT 顶层源文件，必须位于已声明 RTL root 内 |
-| 4 | `verification output root` | 必填 | 项目内保存验证资产和产物的目录 |
-| 5 | `spec` | 可选 | 只读规格文件或目录；也可以明确回答“跳过” |
-| 6 | `testbench` | 可选 | 一个已有 testbench 根目录 |
-| 7 | `reference/golden model` | 可选 | 一个已有参考模型文件或目录 |
-| 8 | `verification scripts` | 可选 | 已有编译、仿真或回归入口脚本，可提供多个 |
+| 1 | `rtl root` | 必填 | 本次 nsim 工程的明确只读 RTL 根目录 |
+| 2 | `rtl filelist` | 必填 | 已存在的只读 RTL 编译输入清单 |
+| 3 | `dut top` | 必填 | DUT 顶层模块名 |
+| 4 | `dut top file` | 必填 | DUT 顶层源文件，必须位于已声明 RTL root 内 |
+| 5 | `verification output root` | 必填 | 项目内保存验证资产和产物的目录 |
+| 6 | `spec` | 可选 | 只读规格文件或目录；也可以明确回答“跳过” |
+| 7 | `testbench` | 可选 | 一个已有 testbench 根目录 |
+| 8 | `reference/golden model` | 可选 | 一个已有参考模型文件或目录 |
+| 9 | `verification scripts` | 可选 | 已有编译、仿真或回归入口脚本，可提供多个 |
 
 每个可选项也必须明确选择“提供路径”或“跳过”，不能把沉默当成跳过。Agent 不搜索候选目录，
-不猜测 DUT，也不把“文件存在”解释成“已经接入”或“验证通过”。八项处理完后，Agent 汇总答案并
+不猜测 DUT，也不把“文件存在”解释成“已经接入”或“验证通过”。九项处理完后，Agent 汇总答案并
 请负责人最后确认一次；确认前不写入项目状态。
 
 负责人通常只需在对话中输入：
@@ -154,6 +109,7 @@ $verif-harness bootstrap
 ```text
 verif-harness bootstrap \
   --rtl-root rtl \
+  --rtl-filelist rtl/rtl.f \
   --docs-root specs \
   --verif-root verification \
   --testbench-root tb \
@@ -585,11 +541,11 @@ revision 和 digest 的状态。若 CLI 与 Dashboard 对必需节点、待办�
 
 | 情况 | 恢复操作 | 是否需要 bootstrap |
 | --- | --- | --- |
-| Codex/Kimi、终端或 SSH 退出 | 使用相同 workspace 重跑 setup，读取当前状态继续 | 否 |
+| Codex/Kimi、终端或 SSH 退出 | 在项目或子目录执行 restart，读取当前状态继续 | 否 |
 | 后台 Agent 失败 | 查看 status/log，停止并确认后再 retry/start | 否 |
 | Dashboard 服务停止 | `dashboard --status` 后重新启动/注册 | 否 |
 | 浏览器关闭或 SSH 隧道断开 | 重新打开完整 URL 或重建隧道 | 否 |
-| verif-harness 工具升级 | 更新工具、同 workspace 重跑 setup；自动核对并更新旧 Dashboard | 通常否 |
+| verif-harness 工具升级 | 先 install 目标版本，再 switch，最后 restart | 通常否 |
 | bootstrap 管理的输入路径变化 | 逐项执行 `bootstrap --refresh` | 是，refresh |
 | 项目从未初始化或状态确实不存在 | 首次 bootstrap | 是 |
 | 当前方案范围需要重做 | 添加/删除节点，或负责人确认“重新启动工作流” | 否 |
@@ -597,7 +553,7 @@ revision 和 digest 的状态。若 CLI 与 Dashboard 对必需节点、待办�
 
 ### 4.2 Agent 中断
 
-交互会话中断后重新运行 setup。Main Agent 必须读取 `status`、`closure`、开放问题、审批意见批次、
+交互会话中断后在项目目录或子目录执行 restart。Main Agent 必须读取 `status`、`closure`、开放问题、审批意见批次、
 Activity 和实际外部任务状态，再决定下一步。不能把历史 `RUNNING` 直接当成当前执行。
 
 后台服务失败时：
@@ -639,18 +595,10 @@ Dashboard 始终监听远端服务器的 loopback 地址。远端先运行 `dash
 
 ### 4.4 工具升级
 
-工具升级的推荐顺序是：
-
-1. 更新 verif-harness checkout；
-2. 使用原 runtime、原 `--workspace-root` 重新运行 setup；
-3. setup 复用版本一致的服务，或在原端口更新旧服务并保留共享服务中的项目注册；
-4. 核对数据库状态版本，通知页面重读，检查通过后从 Closure 当前允许的动作继续。
-
-服务账号、进程或数据库兼容性无法确认时，setup 会报错并阻止进入 Agent；不会抢占端口。
-访问地址和原 SSH 转发端口保持，远端检查仍不代表本机隧道已经连通。
-
-不要仅因为升级工具而执行 bootstrap、重启 VDOC 或清空 `.verif-harness/`。只有输入路径或 DUT 身份
-变化时才使用 `bootstrap --refresh`。
+先 install 目标发布版本，再对项目执行 switch。目标发布清单决定 nsim 版本，
+不能单独修改 nsim。切换前检查数据库兼容性、Agent 和回归任务；准备备份并更新版本记录。
+随后 restart 更新项目入口和对应 Dashboard。安装新版本不影响其他项目。
+切换中断时使用 `switch --recover`，不通过重启工作流或清空数据库恢复进程。
 
 ### 4.5 工作流重新启动不是进程恢复
 
@@ -679,7 +627,7 @@ manifest、batch/seed/iteration 和 Activity。只有确认原任务已结束、
 
 | 目标 | 入口 |
 | --- | --- |
-| 安装、升级后恢复、重新进入项目 | `./scripts/setup ...` |
+| 共享安装、项目初始化、重新进入项目 | `install`、`bootstrap`、`restart` |
 | 首次登记 DUT | 在 Agent 对话中提出 `bootstrap` |
 | 更新 bootstrap 输入 | 在 Agent 对话中提出 `bootstrap --refresh` |
 | 查看负责人待办 | Dashboard“需要你处理” |

@@ -1,0 +1,16 @@
+include release.json verif-harness-install.py setup.py
+include LICENSE THIRD_PARTY_NOTICES.md ARCHITECTURE.md AGENTS.md Makefile
+include CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md requirements-docs.txt mkdocs.yml .gitignore
+recursive-include verif_harness *.py *.html *.js
+recursive-include skills *
+recursive-include scripts *
+recursive-include deps *.json *.lock *.in
+recursive-include templates *
+recursive-include filelists *
+recursive-include docs *.md
+recursive-include tests *.py *.cjs *.md
+recursive-include .codex *.toml *.rules *.md
+recursive-include .kimi-code *.md
+recursive-include .github *.yml *.md
+recursive-include examples *
+global-exclude __pycache__ *.pyc .DS_Store

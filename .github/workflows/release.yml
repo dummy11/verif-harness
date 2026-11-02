@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing reviewed vMAJOR.MINOR.PATCH tag
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -14,13 +17,36 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
-      - name: Build source archive
-        run: ./scripts/package_release.sh "${GITHUB_REF_NAME}"
-      - name: Publish release
-        uses: softprops/action-gh-release@v3
+      - uses: actions/setup-python@v6
         with:
-          generate_release_notes: true
-          files: |
-            dist/*.tar.gz
-            dist/*.sha256
+          python-version: '3.12'
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator
+          python -m pip install build 'setuptools>=77' wheel -r requirements-docs.txt
+      - name: Validate source, examples and documentation
+        run: |
+          make release-check
+          make docs
+      - name: Build immutable release
+        run: python scripts/package_release.py --release --output dist
+      - name: Exercise standalone installation and project versions
+        run: |
+          python scripts/fetch_release_nsim.py --output /tmp/nsim-release
+          python -m pip download --dest /tmp/nsim-wheels /tmp/nsim-release/*.whl
+          python scripts/test_distribution_install.py --wheel dist/*.whl \
+            --nsim-wheel /tmp/nsim-release/*.whl --nsim-installer /tmp/nsim-release/nsim-install.py \
+            --wheelhouse /tmp/nsim-wheels
+          python verif-harness-install.py install --wheel dist/*.whl \
+            --root /tmp/installed-verif --nsim-root /tmp/installed-nsim --python "$(command -v python)" \
+            --nsim-wheel /tmp/nsim-release/*.whl --nsim-installer /tmp/nsim-release/nsim-install.py \
+            --wheelhouse /tmp/nsim-wheels
+          python scripts/test_installed_profiles.py --launcher /tmp/installed-verif/bin/verif-harness
+      - name: Publish without replacing existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "verif-harness $RELEASE_TAG" --notes-file "docs/releases/${RELEASE_TAG#v}.md" dist/*

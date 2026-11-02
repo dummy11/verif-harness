@@ -25,7 +25,8 @@ from contextlib import contextmanager
 from .store import HarnessError, ProjectStore, json_text, now
 
 
-CLI = Path(__file__).resolve().parents[1] / "scripts/verif_harness.py"
+from .package import root as package_root
+CLI = package_root() / "scripts/verif_harness.py"
 KINDS = {"APPLY_REVIEW_FEEDBACK", "CHECK_DOCUMENT_REVIEW", "AUTHOR_DOCUMENT_CONTENT",
          "REFINE_DOCUMENT_DELIVERIES", "REFINE_DESIRED_STATE", "REPAIR_OR_REPLAN",
          "SATISFY_DESIRED_STATE", "RESOLVE_FINDING", "REVALIDATE"}
@@ -54,7 +55,7 @@ def kimi_skill_args(workspace_root: Path) -> list[str]:
     project_skills = workspace_root / ".kimi-code/skills"
     if not all((project_skills / name / "SKILL.md").is_file()
                for name in ("verif-harness", "verification-doc-authoring")):
-        raise HarnessError("当前验证项目的 Kimi Skill 未安装完整；请重新运行 setup --runtime kimi")
+        raise HarnessError("当前验证项目的 Kimi Skill 未安装完整；请运行 verif-harness restart（源码开发环境可重新 setup --runtime kimi）")
     data_root = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code").expanduser()
     directories = [project_skills, workspace_root / ".agents/skills",
                    data_root / "skills", Path.home() / ".agents/skills"]
@@ -74,7 +75,7 @@ def runtime_command(runtime: str, prompt: str | None = None,
         raise HarnessError("自动接续只支持项目已选择的 codex 或 kimi")
     executable = shutil.which(runtime) or (shutil.which("kimi-cli") if runtime == "kimi" else None)
     if not executable:
-        raise HarnessError(f"找不到 {runtime} CLI；请通过 managed setup 配置运行环境")
+        raise HarnessError(f"找不到 {runtime} CLI；请先安装并认证所选 Agent CLI")
     if prompt is None:
         return [executable]
     if runtime == "codex":
@@ -99,7 +100,7 @@ def runtime_command(runtime: str, prompt: str | None = None,
         profile = (workspace_root / ".kimi-code/agents/agent.md" if workspace_root is not None
                    else CLI.parent.parent / ".kimi-code/agents/agent.md")
         if not profile.is_file():
-            raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请重新运行 setup --runtime kimi")
+            raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请运行 verif-harness restart（源码开发环境可重新 setup --runtime kimi）")
         args += ["--agent-file", str(profile)]
     return [*args, "--prompt", prompt]
 
@@ -522,7 +523,7 @@ def interactive(store: ProjectStore, runtime: str, startup_prompt: str | None) -
             from .interactive_cli import run_kimi
             profile = store.root / ".kimi-code/agents/agent.md"
             if not profile.is_file():
-                raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请重新运行 setup --runtime kimi")
+                raise HarnessError("当前验证项目的 Kimi Agent 配置缺失；请运行 verif-harness restart（源码开发环境可重新 setup --runtime kimi）")
             command += [*kimi_skill_args(store.root), "--agent-file", str(profile), "--yolo"]
             return run_kimi(command, store.root, startup_prompt, lock_fd)
         return subprocess.call(command, cwd=store.root, pass_fds=(lock_fd,))

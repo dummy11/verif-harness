@@ -73,7 +73,7 @@ def _upgrade_service(
             raise HarnessError("共享 Dashboard 中存在不兼容的项目数据库；尚未更新服务或进入 Agent CLI")
     observed = _dashboard_health(host, port)
     if not _is_owned_dashboard_hub(observed) or observed.get("pid") != health.get("pid"):
-        raise HarnessError("Dashboard 服务在检查期间发生变化；请重新运行 setup，尚未进入 Agent CLI")
+        raise HarnessError("Dashboard 服务在检查期间发生变化；请重新运行 restart，尚未进入 Agent CLI")
     pid = observed.get("pid")
     if type(pid) is not int or pid <= 1 or pid == os.getpid():
         raise HarnessError("无法安全确认需要更新的 Dashboard 后台进程；尚未进入 Agent CLI")
@@ -114,7 +114,7 @@ def _check_state(store: ProjectStore, origin: str, project_id: str) -> None:
         except (ValueError, TypeError, AttributeError) as exc:
             raise HarnessError("Dashboard 与当前项目数据库的身份或状态版本不一致；尚未进入 Agent CLI") from exc
         return
-    raise HarnessError("检查期间项目状态持续变化；请稍后重试 setup，尚未进入 Agent CLI")
+    raise HarnessError("检查期间项目状态持续变化；请稍后重试 restart，尚未进入 Agent CLI")
 
 
 def ensure_dashboard_ready(
@@ -190,7 +190,7 @@ def ensure_dashboard_ready(
         if not payload or content_type not in {"text/javascript", "application/javascript"}:
             raise HarnessError("Dashboard 页面脚本无法正常读取；请检查安装文件，尚未进入 Agent CLI")
     if dashboard_build_identity() != expected:
-        raise HarnessError("检查期间工具代码发生变化；请重新运行 setup，尚未进入 Agent CLI")
+        raise HarnessError("检查期间工具代码发生变化；请重新运行 restart，尚未进入 Agent CLI")
     return {
         **result, "schema": "DashboardStartup/1", "status": "READY",
         "launch_status": result["status"],

@@ -5,6 +5,8 @@ theme:
   name: material
 nav:
   - Home: index.md
+  - Installation and versions: installation.md
+  - Release 3.0.0: releases/3.0.0.md
   - Architecture: architecture.md
   - Harness design: harness_design.md
   - DUT integration: dut_integration.md

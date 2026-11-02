@@ -7,6 +7,7 @@ __pycache__/
 *.fst
 .DS_Store
 .venv/
+*.egg-info/
 .deps/
 .harness/mcp/xverif.json
 .harness/mcp/xverif-mcp

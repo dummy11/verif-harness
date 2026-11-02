@@ -2,6 +2,17 @@
 
 ## Scope
 
+- v3 releases install once per user or system. Each immutable release fixes one
+  nsim version and wheel digest. Projects select verif-harness, never an independent
+  nsim version. Bootstrap requires both the RTL root and read-only RTL filelist.
+- Published installations use `restart` from a project or subdirectory to check
+  tool identity, prepare the Dashboard and reenter the configured Agent. It must
+  preserve all workflow revisions, approvals and evidence. Source `setup` is a
+  developer compatibility entry; its startup checks also apply to `restart`.
+- Project version switches must check active Agent/nsim/VREG work, preserve history,
+  keep recoverable selection records and reject incompatible database schemas.
+  Dashboard sharing is limited to the same account and installed release identity.
+
 This repository contains public, reusable verification infrastructure.
 
 - Keep `examples/*/rtl/` small, license-free, and self-contained.

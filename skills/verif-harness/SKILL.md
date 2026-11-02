@@ -3,7 +3,15 @@ name: verif-harness
 description: Govern continuous RTL verification engineering with the Verification Planner, Verification Knowledge Model, Verification Consistency Engine, Verification Closure Engine, and Verification Reasoning Engine. Use for project bootstrap, interactive Workstream desired-state design, traceability, change invalidation, closure actions, UVM/harness generation, deterministic evidence, and Human review/freeze. Never modify DUT RTL or approve Human Decisions.
 ---
 
-# verif-harness v1
+# verif-harness v3
+
+Released installations are shared across projects. Each project selects one
+verif-harness release, which fixes the exact nsim version and artifact digest.
+Use `restart` from the project or a subdirectory to reenter its configured Agent;
+it preserves workflow revisions and evidence. `switch` changes the project tool
+pair, never an individual nsim pin. Source `setup` remains a developer entry.
+Bootstrap must collect the read-only RTL filelist immediately after the RTL root;
+pass it as `--rtl-filelist`. It is mandatory and must never be guessed or generated.
 
 Use project VDOC Markdown as the source for verification engineering semantics,
 and `.verif-harness/model.sqlite3` as the source for governance state, relations,

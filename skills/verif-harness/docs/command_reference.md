@@ -11,7 +11,7 @@ verif-harness --help
 verif-harness COMMAND --help
 ```
 
-setup 创建的 launcher 通常位于：
+bootstrap 登记的 Skill launcher 通常位于：
 
 ```text
 .agents/skills/verif-harness/scripts/verif-harness      # Codex workspace
@@ -28,7 +28,11 @@ scripts/managed-python scripts/verif_harness.py COMMAND
 
 | 入口 | 主要调用者 | 用途与边界 |
 | --- | --- | --- |
-| `./scripts/setup` | 负责人/安装者 | 安装依赖、配置 runtime、进入项目；不登记 DUT |
+| `install` | 安装者 | 安装共享发布版本及固定的 nsim |
+| `restart` | 负责人 | 在项目或子目录重新进入原配置的 Agent |
+| `switch` | 负责人 | 切换项目工具版本，保留验证历史 |
+| `version` / `versions` | 负责人/诊断 | 查看发布清单和已安装版本 |
+| `./scripts/setup` | 开发者 | 源码 checkout 的开发兼容入口 |
 | `bootstrap` | Main Agent | 登记明确提供的 DUT 和只读输入；不生成验证结论 |
 | `runtime status` | Main Agent/诊断 | 查看项目选择的 runtime 和本机探测结果 |
 | `doctor` | Main Agent/CI | 只读审计当前项目，不自动修复 |

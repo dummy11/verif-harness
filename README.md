@@ -1,5 +1,9 @@
 # verif-harness
 
+v3 使用用户级或系统级共享安装。项目固定 verif-harness 版本，该发布版本固定对应的 nsim。
+首次安装使用 `install`，新项目使用 `bootstrap`，已有项目在根目录或子目录使用 `restart`
+继续工作，切换项目版本使用 `switch`。参见[安装与版本管理](docs/installation.md)。
+
 verif-harness 是面向 [RTL/ASIC 验证项目](skills/verif-harness/docs/glossary.md#dv-terms)的持续验证
 [控制面](skills/verif-harness/docs/glossary.md#control-plane)。它把验证目标、工程事实、
 变更影响、验证证据和人工决策放进同一个可追溯模型，让项目能够持续回答：
@@ -169,7 +173,8 @@ Human 决定。
   动作如何生成、依赖失效如何传播，以及当前实现边界。
 - [术语表](skills/verif-harness/docs/glossary.md)：目标、工作域、知识节点、证据、
   finding、closure、人工门禁、基线和 runtime 的含义与区别。
-- [用户指南](skills/verif-harness/docs/user_guide.md)：setup、bootstrap、七条工作流、反馈闭环与
+- [安装与版本管理](docs/installation.md)：共享安装、固定 nsim、bootstrap、restart 和 switch。
+- [用户指南](skills/verif-harness/docs/user_guide.md)：bootstrap、七条工作流、反馈闭环与
   故障恢复。
 - [Agent/CI 命令索引](skills/verif-harness/docs/command_reference.md)：底层 CLI 入口、调用者与
   权限边界；精确参数以当前 `--help` 为准。
