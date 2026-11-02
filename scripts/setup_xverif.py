@@ -46,10 +46,13 @@ def git(
     *arguments: str, cwd: Path | None = None, timeout_seconds: int = 300
 ) -> subprocess.CompletedProcess[str]:
     try:
+        # A shared system installation may be owned by its administrator. Trust
+        # only this explicit managed checkout, never a global safe.directory.
+        scoped = ["-c", f"safe.directory={cwd.resolve()}"] if cwd is not None else []
         return subprocess.run(
-            ["git", *arguments], cwd=cwd, check=False,
+            ["git", *scoped, *arguments], cwd=cwd, check=False,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            timeout=timeout_seconds,
+            timeout=timeout_seconds, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
         )
     except subprocess.TimeoutExpired:
         fail(f"git command timed out after {timeout_seconds} seconds: {arguments[0]}")

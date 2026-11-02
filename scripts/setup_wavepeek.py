@@ -82,7 +82,10 @@ def run(
 
 
 def git(*arguments: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return run(["git", *arguments], cwd=cwd, timeout=300)
+    # Permit the administrator-owned managed checkout for this command only.
+    scoped = ["-c", f"safe.directory={cwd.resolve()}"] if cwd is not None else []
+    return run(["git", *scoped, *arguments], cwd=cwd, timeout=300,
+               environment={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
 
 
 def load_lock(root: Path) -> dict[str, Any]:

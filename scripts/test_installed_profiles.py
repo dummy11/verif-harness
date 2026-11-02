@@ -15,7 +15,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='verif profiles ') as temporary:
         base = Path(temporary).resolve()
         env = dict(os.environ, XDG_CONFIG_HOME=str(base / 'config'),
-                   VERIF_HARNESS_DASHBOARD_REGISTRY_DIR=str(base / 'dashboard'))
+                   VERIF_HARNESS_DASHBOARD_REGISTRY_DIR=str(base / 'dashboard'),
+                   GIT_TEST_ASSUME_DIFFERENT_OWNER='1')
         for runtime in ('codex', 'kimi'):
             root = base / runtime
             (root / 'rtl').mkdir(parents=True)
