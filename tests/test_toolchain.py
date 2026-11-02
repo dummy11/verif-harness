@@ -99,7 +99,8 @@ class ToolchainTest(unittest.TestCase):
         target = home / 'versions/3.0.1'
         package = target / 'package'
         package.mkdir(parents=True)
-        manifest = {**release(), 'version': '3.0.1'}
+        manifest = {**release(), 'version': '3.0.1',
+                    'nsim': {**release()['nsim'], 'version': '0.2.0'}}
         (package / 'release.json').write_text(json.dumps(manifest))
         nsim_root = Path(self.temp.name) / 'nsim'
         nsim = nsim_root / 'versions' / manifest['nsim']['version']
@@ -113,6 +114,11 @@ class ToolchainTest(unittest.TestCase):
             result = toolchain.switch(self.store, '3.0.1')
         self.assertEqual(result['status'], 'SWITCHED')
         self.assertEqual(toolchain.selected(self.store)['version'], '3.0.1')
+        self.assertEqual(toolchain.selected(self.store)['nsim_version'], '0.2.0')
+        self.assertEqual((self.root / '.nsim/.nsim_version').read_text(), '0.2.0\n')
+        guard = json.loads((self.root / '.nsim/verif-harness.json').read_text())
+        self.assertEqual(guard['version'], '3.0.1')
+        self.assertEqual(guard['nsim_version'], '0.2.0')
         self.assertEqual(database, self.store.database.read_bytes())
         self.assertEqual(len(list((self.store.state / 'version-backups').glob('*/model.sqlite3'))), 1)
         self.assertFalse((self.store.state / 'version-transition.json').exists())
