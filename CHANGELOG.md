@@ -5,6 +5,41 @@ Versioning.
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarified the v3 install/bootstrap/restart/switch lifecycle, old setup project
+  migration, published artifacts, shared installation paths, and release checks.
+
+## [3.0.0] - 2026-11-02
+
+### Added
+
+- Versioned user/system installations with a standalone installer, wheel,
+  source distribution, release manifest, checksums, and core offline bundles.
+- Fixed NSIM 0.1.0 artifacts per verif-harness release; projects select the
+  verif-harness version and reuse the installed NSIM dependency.
+- Project bootstrap with required read-only RTL filelist input, NSIM project
+  configuration, and project-local Agent/Skill/MCP setup.
+- Restart from a project or subdirectory, paired version switching, compatible
+  database checks, switch recovery, and installation/profile tests.
+
+### Changed
+
+- Existing projects use restart to continue work; source setup remains a
+  developer compatibility entry. Old setup projects migrate through explicit
+  bootstrap refresh without deleting verification history.
+- Dashboard services are separated by account, release version and program
+  identity. Shared dependency checks use command-scoped Git trust without
+  changing users' global configuration.
+
+See the [release notes](docs/releases/3.0.0.md) and
+[installation guide](docs/installation.md) for evidence and migration details.
+
+## Pre-v3 development notes
+
+These historical notes were previously listed as unreleased. Current workflow
+and approval behavior is documented in the user guide and repository instructions.
+
 ### Added
 
 - Added single-runtime Codex/Kimi subagent collaboration with revision-bound

@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## v3 installation and project entry
+
+Start with [installation and migration](installation.md). Use
+`verif-harness restart` from the project or a subdirectory for ordinary re-entry;
+source setup is not a per-project installation step.
+
+| Symptom | Next step |
+| --- | --- |
+| `verif-harness` is not found | Add the selected installation's `bin` directory to PATH; verify with `command -v verif-harness`. |
+| A project version is not installed | Install that exact version into the root used by the current launcher, then retry restart. Installing a newer version does not change the project selection. |
+| An old setup project has no v3 selection | Review its existing inputs and run bootstrap with `--refresh` and the confirmed parameters; preserve `.verif-harness` and verification files. |
+| Refresh printed questions but nothing changed | A refresh without input arguments returns a checklist only. Supply the confirmed parameters to perform the update. |
+| NSIM version selection disagrees with the project | Check the verif-harness release and its fixed NSIM version; use verif-harness switch instead of editing version files or independently switching NSIM. |
+| A version switch did not finish | Run `verif-harness switch --recover`, check the result, then restart. This restores tool selection, not an old database. |
+| The selected installation's contents changed | Preserve the error details and have its installer/administrator restore the verified release. Do not git pull, edit receipts, or delete project state. |
+
+The source checkout diagnostics below describe writable development copies.
+Do not apply their dependency-directory repair commands directly to an immutable
+shared release; use the published installer and keep installed versions separate.
+
 ## Managed runtime is missing or blocked
 
 Start with `./scripts/runtime-versions --verbose` for the consolidated required,

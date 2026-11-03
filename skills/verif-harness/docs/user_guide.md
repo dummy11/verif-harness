@@ -18,7 +18,7 @@ Codex/Kimi 对话和 Dashboard 提供输入、审批方案、验收交付与回�
 
 1. 使用 **install** 安装一次共享工具及固定版本的 nsim。
 2. 完成 **bootstrap**，登记当前 DUT、RTL filelist、只读输入和验证输出目录。
-3. 先完成 **VDOC** 验证文档，再按依赖形成并执行其余工作流方案。
+3. 执行 **restart** 进入项目配置的 Agent，先完成 **VDOC** 验证文档，再按依赖形成并执行其余工作流方案。
 4. 在 Dashboard 审批方案、回答问题、验收交付；Agent 登记当前版本的验证证据。
 5. 断线或故障后读取原项目状态继续，不把进程恢复误当成工作流重启。
 
@@ -34,6 +34,8 @@ verif-harness restart
 在项目根目录或子目录均可执行。检查项目版本、Skill/MCP 和 Dashboard 后进入配置的 Agent，
 读取现有状态继续工作，不重建审批或证据。需要核对页面而不进入 Agent 时使用
 `restart --no-agent`。源码开发者仍可使用 `scripts/setup`，发布安装不要求每个项目执行 setup。
+旧 setup 项目先按安装指南执行一次带明确输入的 `bootstrap --refresh`，之后日常直接 restart。
+restart 相当于旧 setup 的重新进入项目用途，不会改变工具版本或重启验证工作流。
 
 Kimi 首次进入可信目录时可能显示 `Trust this folder?`，是否信任由负责人选择。
 restart 不代替负责人确认，也不覆盖已输入的文字。
@@ -108,6 +110,7 @@ $verif-harness bootstrap
 
 ```text
 verif-harness bootstrap \
+  --runtime codex \
   --rtl-root rtl \
   --rtl-filelist rtl/rtl.f \
   --docs-root specs \
@@ -128,7 +131,9 @@ bootstrap 只登记已经明确提供的事实，并创建或更新：
 - `.verif-harness/project.json` 与 `inventory.json`：项目身份和只读输入清单；
 - `.harness-config.json`：项目路径和 runtime 配置；
 - 项目根 `AGENTS.md` 中唯一的 verif-harness managed block；
-- 验证输出根目录。
+- 验证输出根目录；
+- `.verif-harness/toolchain.json`：本项目选择的 verif-harness 及配套 nsim 版本；
+- 验证资产目录下的 `.nsim` 工程配置，以及本项目的 Skill/MCP 入口。
 
 RTL、RTL spec、已有 testbench 和外部参考输入保持只读。项目状态、正式验证文档和新生成的验证资产
 必须位于 project root 内。bootstrap 不生成完整 testbench，不审批验证方案，也不建立验证结论。
@@ -147,6 +152,9 @@ bootstrap 完成后会为当前系统账号启动或复用 loopback Dashboard，
 不得为方便访问而暴露到 `0.0.0.0`。
 
 ### 2.5 bootstrap --refresh
+
+直接在终端执行不带输入参数的 `verif-harness bootstrap --refresh`，只显示当前值和待确认清单；
+它不会自动提问、修改配置或完成旧项目迁移。确认后需要提供完整参数再次调用。
 
 输入路径或 DUT 身份需要更新时，负责人在 Agent 对话中提出 `bootstrap --refresh`。Agent 按首次
 bootstrap 的同一顺序逐题显示当前值，让负责人对当前字段选择保留、替换或移除，最后再次汇总确认。

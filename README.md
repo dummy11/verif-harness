@@ -4,6 +4,21 @@ v3 使用用户级或系统级共享安装。项目固定 verif-harness 版本�
 首次安装使用 `install`，新项目使用 `bootstrap`，已有项目在根目录或子目录使用 `restart`
 继续工作，切换项目版本使用 `switch`。参见[安装与版本管理](docs/installation.md)。
 
+已发布 [verif-harness v3.0.0](https://github.com/dummy11/verif-harness/releases/tag/v3.0.0)，
+固定配套 [NSIM v0.1.0](https://github.com/dummy11/NSIM/releases/tag/v0.1.0)。
+按安装指南下载并校验安装器后：
+
+```bash
+python3 verif-harness-install.py install 3.0.0 --user
+export PATH="$HOME/.local/share/verif-harness/bin:$PATH"
+cd /path/to/project
+verif-harness bootstrap
+verif-harness restart
+```
+
+bootstrap 只在新项目登记或明确变更输入时使用；已有项目日常直接 restart。
+旧 setup 项目先按安装指南完成一次迁移。多个项目复用共享工具，各自保留配置、状态和版本选择。
+
 verif-harness 是面向 [RTL/ASIC 验证项目](skills/verif-harness/docs/glossary.md#dv-terms)的持续验证
 [控制面](skills/verif-harness/docs/glossary.md#control-plane)。它把验证目标、工程事实、
 变更影响、验证证据和人工决策放进同一个可追溯模型，让项目能够持续回答：

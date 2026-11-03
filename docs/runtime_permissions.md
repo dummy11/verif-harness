@@ -13,8 +13,11 @@ Kimi Code  /skill:verif-harness <mode>
 
 The repository controls which files and commands its modes are allowed to
 touch. Write modes must keep DUT RTL read-only, preserve reviewed decisions,
-and fail closed on ambiguous state. `setup.sh` installs dependencies and the
-runtime-native Skill link, but it never writes Codex or Kimi user settings.
+and fail closed on ambiguous state. In v3, `install` prepares shared dependencies,
+`bootstrap` writes project-local Skill/MCP configuration, and `restart` checks that
+configuration before entering the selected Agent. These operations do not write
+Codex or Kimi user settings. Source developers retain `scripts/setup` as a
+compatibility entry.
 
 The intended command policy is:
 
@@ -65,7 +68,7 @@ Kimi. Apply the same policy table above through Kimi's documented native
 settings, keeping the workspace root as the only writable workspace whenever
 possible.
 
-For Kimi projects, setup keeps Skills, Agent profiles, and workspace settings
+For Kimi projects, bootstrap and restart keep Skills, Agent profiles, and workspace settings
 in the explicitly selected verification workspace:
 
 ```text
@@ -80,12 +83,13 @@ The managed interactive and one-action launch paths therefore pass the selected
 workspace's Skill directory with `--skills-dir`, along with existing user Skill
 directories, and select its main Agent profile with `--agent-file`. A direct
 `kimi` invocation must also pass `--skills-dir` for a
-nested verification workspace; setup prints that command. The flag replaces
+nested verification workspace; prefer `verif-harness restart` to prepare the
+project's launch arguments. The flag replaces
 automatic user/project Skill discovery, so include any other desired Skill
 directories explicitly when starting Kimi directly.
 
 `local.toml` contains only Kimi Code's currently supported project-local
-workspace schema (`[workspace] additional_dir = []`). Setup never writes
+workspace schema (`[workspace] additional_dir = []`). Project configuration never writes
 `~/.kimi-code/config.toml` and never copies Codex TOML into the Kimi directory.
 Kimi's no-ask startup is selected by passing its native `--yolo` flag. Kimi
 permission rules are host-level in the current Kimi Code release, so the
@@ -98,6 +102,15 @@ model does not change the runtime key, specification artifacts, evidence, or
 approval records.
 
 ## Runtime setup
+
+For a released installation, follow the [installation guide](installation.md).
+Choose `--runtime codex` or `--runtime kimi` during bootstrap; subsequent
+`verif-harness restart` calls use that project's choice. `restart --no-agent`
+prepares the Dashboard without starting an Agent. It is different from the
+source setup flag `--no-agent`, which prepares dependencies without starting a
+project Dashboard.
+
+The following source-checkout commands are for contributors:
 
 Keep the package checkout, verification workspace, and RTL directory separate.
 Choose the workspace and runtime explicitly:

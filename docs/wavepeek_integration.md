@@ -11,6 +11,12 @@ Codex/Kimi Code Agent -> verif-harness Skill -> WavePeek adapter -> pinned WaveP
 
 ## Managed setup
 
+In v3, the default shared `install` prepares WavePeek once for that release;
+projects reuse it after bootstrap. See the [installation guide](installation.md).
+`--core-only` omits WavePeek. Do not run source setup or edit dependency files
+inside a shared installed version. The following commands are for a writable
+development checkout:
+
 ```bash
 cd /path/to/verif-harness
 ./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace

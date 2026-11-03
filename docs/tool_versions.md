@@ -1,8 +1,24 @@
 # Tool versions
 
+## Released tool pair
+
+| verif-harness release | Fixed NSIM release | Selection |
+| --- | --- | --- |
+| 3.0.0 | 0.1.0 | The project selects verif-harness; its release selects NSIM |
+
+The release attachment `release.json` records the exact NSIM commit, wheel and
+installer SHA-256 values, plus dependency-lock hashes. Use `verif-harness version`
+inside a project to inspect its selected release, and `verif-harness versions`
+to list versions in the current installation root. Installing another release
+does not change a project. See [installation and version switching](installation.md).
+
+## Runtime and analysis dependencies
+
 | Tool | Supported baseline | Purpose |
 | --- | --- | --- |
-| Managed CPython | 3.12.11 / python-build-standalone 20251007 | Default setup, v1 control plane, xverif MCP, generators, audits, tests |
+| Installer host Python | 3.9+ | Run the standalone v3 installer |
+| Explicit runtime Python | 3.11+ when selected with `install --python PATH` | Create an isolated runtime from an existing interpreter |
+| Managed CPython | 3.12.11 / python-build-standalone 20251007 | Default installed runtime, control plane, xverif MCP, generators, audits, tests |
 | MCP Python package set | `mcp[cli]` 1.29.1 plus hash-locked transitive dependencies | xverif MCP runtime; last reviewed 1.x API with `mcp.server.fastmcp` |
 | GNU Make | 3.81+ for contributor targets; 4.0+ for a conditional private glibc build | Command entry points and old-host WavePeek compatibility build |
 | Verilator | 5.x | Open example compile and run |
@@ -15,6 +31,11 @@
 | Private `libgcc_s` | Copied and SHA-256-recorded from validated GCC | WavePeek-only GCC runtime dependency inside the private-glibc boundary |
 
 ## Managed runtime
+
+Released installations prepare these dependencies once in their versioned
+installation directory. Project bootstrap and restart reuse them; ordinary
+project users do not run setup inside a shared installation. The commands below
+are for contributors working in a writable source checkout.
 
 `./scripts/setup --isolation managed` bootstraps CPython below
 `.deps/runtime` without invoking a host Python or pip. `deps/runtime.lock.json`
@@ -38,7 +59,7 @@ pins, integration locks, host bootstrap commands, conditional private-glibc
 build chain, optional EDA/scheduler tools, and Agent CLI selection. JSON output
 uses a non-zero exit status when a required entry is blocked.
 
-The remaining bootstrap host contract is standard POSIX file utilities, Bash,
+The source setup host contract is standard POSIX file utilities, Bash,
 Git, tar, an HTTPS downloader (`curl` or `wget`), a SHA-256 implementation
 (`sha256sum` or `shasum`), the supported kernel/CPU architecture, and
 writable/executable `.deps` storage.

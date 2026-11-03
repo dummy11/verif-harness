@@ -25,6 +25,14 @@ under the Git-ignored `.deps/` directory.
 
 ## Install the pinned dependency
 
+With a v3 release, the default `install` command prepares the pinned xverif
+dependency in the shared version directory. Project `bootstrap` and `restart`
+prepare or validate the project-local Skill/MCP entry points. Follow the
+[installation guide](installation.md); do not rerun source setup in each project
+or modify a shared installed version. `--core-only` omits the analysis tools.
+
+For development in a writable source checkout:
+
 ```bash
 cd /path/to/verif-harness
 ./scripts/setup --runtime codex --workspace-root /path/to/verification-workspace
@@ -67,7 +75,9 @@ administration, and test orchestration are not part of the CLI request contract.
 ## MCP 安装、配置和使用
 
 锁定的 xverif commit 已包含 `xverif_mcp` FastMCP server，以及
-`tools/xverif-mcp` launcher。安装 source checkout：
+`tools/xverif-mcp` launcher。发布版由默认 install 安装依赖，bootstrap/restart 准备项目配置；
+可以在项目内使用 `verif-harness xverif mcp status` 检查配置。
+下面的 source checkout 安装和 setup 行为说明供源码开发者使用：
 
 ```bash
 /path/to/verif-harness/scripts/managed-python \

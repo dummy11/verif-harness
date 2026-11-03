@@ -1,4 +1,12 @@
-# v1 troubleshooting
+# 项目故障排查
+
+## v3 安装或 restart 失败
+
+先核对 `command -v verif-harness`、`verif-harness versions` 和项目内的
+`verif-harness version`，确认当前启动器所在的安装目录和项目所选版本。
+安装、旧 setup 项目迁移和切换恢复步骤见[安装指南](../../../docs/installation.md)。
+旧项目尚未登记 v3 时，按原输入执行带参数的 `bootstrap --refresh`；不能用删除状态目录
+或重新启动验证工作流处理启动问题。安装新版本不会自动改变已有项目。
 
 <a id="dashboard-无法从本地浏览器打开"></a>
 ## Dashboard 无法从本地浏览器打开
@@ -15,7 +23,9 @@
    `NOT_REGISTERED` 表示共享服务还在、但当前项目尚未加入，直接运行 `verif-harness dashboard`
    即可注册。需要恢复时再次运行
    `verif-harness dashboard`，并检查当前项目的 `.verif-harness/dashboard-runtime.json` 和共享服务的
-   `~/.verif-harness/dashboard/dashboard.log`。不要使用 `verif-harness dashboard --foreground | head`，管道关闭会使
+   日志。发布版默认日志位于 `~/.verif-harness/dashboard/<发布版本>/<程序摘要>/dashboard.log`，
+   源码运行默认位于 `~/.verif-harness/dashboard/dashboard.log`；设置了自定义注册目录时以实际输出为准。
+   不要使用 `verif-harness dashboard --foreground | head`，管道关闭会使
    前台调试服务退出。
 2. 在本地电脑保持 `ssh -N ...` 隧道进程运行；该命令没有 shell 提示符是正常现象。
 3. 本地执行 `curl http://127.0.0.1:<local-port>/healthz`。返回 `status: ok` 才说明隧道完整。
@@ -23,7 +33,7 @@
 
 页面或 API 返回 `403 invalid dashboard access token` 时，不要手工删掉 URL 的 `token` 参数；重新运行
 `verif-harness dashboard`，使用结果中的完整 `access.url`。访问令牌保存在当前远端账号自己的
-`~/.verif-harness/dashboard/access-token`，不得复制其他账号的令牌文件。
+相应 Dashboard 注册目录的 `access-token` 中，不得复制其他账号或其他版本的令牌文件。
 
 常见 SSH 错误：
 
@@ -40,8 +50,9 @@
 - `channel ... open failed: connect failed: Connection refused`：SSH 隧道仍在，但远端转发目标没有
   服务监听。先在远端运行 `verif-harness dashboard --status`，若不是 `RUNNING`，再运行
   `verif-harness dashboard` 恢复后台服务；不必重建项目状态。
-- 同一账号的多个项目依次 bootstrap：不会冲突。第一个项目启动账号级共享服务，后续项目注册独立
+- 同一账号、相同发布版本和程序内容的多个项目依次 bootstrap：第一个项目启动共享服务，后续项目注册独立
   入口并复用它；顶部项目选择器只切换请求路由，不会合并项目的 SQLite、节点、问题、审批或证据。
+- 不同发布版本或程序内容使用各自的 Dashboard 服务；项目切换后执行 restart，使用本次返回的访问地址。
 - 同机不同账号依次 bootstrap：后启动的账号会识别并跳过其他账号的新版 Dashboard，从后续端口启动
   自己的服务；不会返回 `REUSED` 假装注册到了别人的服务。
 - bootstrap 返回 `PORT_CONFLICT`：显式端口已被占用，或自动账号端口范围耗尽。自动选择遇到

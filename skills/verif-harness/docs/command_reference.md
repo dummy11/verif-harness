@@ -4,7 +4,7 @@
 Dashboard 完成输入、审批、验收与问题回答；Main Agent 根据当前 revision、节点摘要和权限边界调用
 CLI。
 
-精确参数以当前 checkout 为准：
+精确参数以项目所选的安装版本为准；源码开发时以当前 checkout 为准：
 
 ```text
 verif-harness --help
@@ -39,6 +39,22 @@ scripts/managed-python scripts/verif_harness.py COMMAND
 
 Main Agent 实时 bootstrap 时显式使用 `--dashboard`。`--no-dashboard` 只有负责人明确要求关闭时使用。
 `bootstrap --refresh` 必须逐项向负责人显示当前输入并重新确认，不能静默沿用、删除或猜测路径。
+不带输入参数的 refresh 只返回待确认清单；它不修改项目。首次安装和旧项目迁移的完整命令见
+[安装指南](../../../docs/installation.md)。
+
+```text
+verif-harness install 3.0.0 --user
+verif-harness versions
+verif-harness version
+verif-harness restart
+verif-harness restart --no-agent
+verif-harness switch 3.0.0
+verif-harness switch --recover
+```
+
+`install` 默认安装到用户目录；系统安装必须显式使用 `--system`，自定义安装使用 `--root`
+及 `--nsim-root`。项目切换仅选择当前安装目录内的版本，并一起选择该发布版本固定的 nsim。
+`switch --recover` 只恢复未完成的切换，不回滚数据库；切换后执行 restart。
 
 ## 状态、依赖和下一步
 

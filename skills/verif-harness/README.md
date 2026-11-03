@@ -1,4 +1,8 @@
-# verif-harness Skill v1
+# verif-harness Skill
+
+v3 的首次使用顺序是共享安装 → 项目 `bootstrap` → `restart` 进入 Agent。
+已有项目在项目或子目录调用 `verif-harness restart` 即可继续，安装新版本不自动升级项目。
+下载、系统安装和旧 setup 项目迁移见[安装指南](../../docs/installation.md)。
 
 该 Skill 通过 Verification Planner、Verification Knowledge Model、Verification
 Consistency Engine、Verification Closure Engine 和 Verification Reasoning Engine
